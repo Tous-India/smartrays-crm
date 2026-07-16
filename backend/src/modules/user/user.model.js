@@ -1,0 +1,99 @@
+import mongoose from "mongoose";
+
+// Role and permission shape follow .context/final-plan.md §5/§6.1.
+// "Executive" is intentionally not a separate role — see final-plan.md §11.1.
+const USER_ROLES = ["admin", "manager", "sales_associate", "employee", "customer"];
+
+const userSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    email: {
+      type: String,
+      required: true,
+      unique: true,
+      lowercase: true,
+      trim: true,
+    },
+    phone: {
+      type: String,
+      trim: true,
+    },
+    passwordHash: {
+      type: String,
+      required: true,
+      select: false,
+    },
+    role: {
+      type: String,
+      enum: USER_ROLES,
+      required: true,
+    },
+    // Per-module action grants for non-admin roles, e.g. { leads: { view: true } }.
+    // Checked through src/helpers/permission.helper.js.
+    permissions: {
+      type: Object,
+      default: {},
+    },
+    // Self-reference to the user's manager. Used to compute "own team" scoping
+    // instead of a separate Team collection — see final-plan.md §6.1/§6.7/§11.9.
+    managerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+    // Added 2026-07-13 for Payroll (§7.7) — nothing before this tracked a
+    // salary figure, and Payroll can't compute gross/net without one.
+    // `select: false` (same defense-in-depth pattern as `passwordHash`):
+    // list/dropdown views never leak it, only an explicit `.select("+baseSalary")`
+    // (payroll.service.js) or the update flow itself (which sets it directly
+    // in memory, unaffected by select:false) sees the actual value.
+    baseSalary: {
+      type: Number,
+      min: 0,
+      default: null,
+      select: false,
+    },
+    // Added for Customer Portal self-signup (§7.8/§6.1) — only ever set for
+    // `role: "customer"` accounts, linking a portal user to the Customer
+    // company they belong to. Resolved automatically at self-signup via an
+    // email-domain match against known Contact/Customer emails (see
+    // customer.service.js#resolveCustomerIdByEmailDomain); can also be set
+    // directly by an admin via the existing POST /auth/register flow as a
+    // manual fallback.
+    customerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Customer",
+      default: null,
+    },
+  },
+  {
+    timestamps: true,
+    // Mongoose's default `minimize: true` silently strips empty nested objects
+    // (including `permissions` itself once it's empty) from both what's saved
+    // and what's returned. For a field whose entire meaning is "which grants
+    // does this user have," an empty object and a missing field are not the
+    // same thing — `permissions: {}` (no grants at all) must stay visibly
+    // present, not vanish, especially once §7.12's permissions-management UI
+    // exists and needs to show/edit the real stored state.
+    minimize: false,
+    toJSON: {
+      transform: (_doc, returnedObject) => {
+        delete returnedObject.passwordHash;
+        return returnedObject;
+      },
+    },
+  }
+);
+
+const User = mongoose.model("User", userSchema);
+
+export default User;
+export { USER_ROLES };

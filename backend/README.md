@@ -1,0 +1,1380 @@
+# Smartrays Solutions CMS — Backend
+
+Internal CRM + Operations platform API. Node.js + Express (ES Modules) + MongoDB/Mongoose.
+
+See `.context/final-plan.md` (repo root) for the full data model, permission matrix, and
+phased roadmap this backend is built against. `.context/smartrays.md` is the source of the
+coding standards referenced below.
+
+---
+
+## Setup
+
+```bash
+cd backend
+npm install
+cp .env.example .env
+cp .env.example .env.local   # optional, for personal machine overrides
+```
+
+Fill in `.env`:
+- `MONGODB_URI` — a running MongoDB instance (local install, Docker, or Atlas)
+- `JWT_SECRET` — any long random string for local dev
+- `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` — used once by the admin seed script below
+
+Cloudinary and `CREDENTIALS_ENCRYPTION_KEY` are not required yet — they're only used once the
+Attendance and Customer-credentials modules are built (Phase 2/3).
+
+### Bootstrapping the first admin
+
+This is an internal tool — there is no public self-registration, and `POST /auth/register`
+requires an already-authenticated admin. That means the very first admin account can't be
+created through the API. Run this once against a fresh database:
+
+```bash
+npm run seed:admin
+```
+
+It reads `SEED_ADMIN_NAME` / `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` from `.env` and inserts
+one admin user directly. After that, the admin can create every other account through
+`POST /auth/register`.
+
+Optionally, also run:
+
+```bash
+npm run seed:permission-templates
+```
+
+Ensures all 5 role permission templates exist (§7.12), seeded with the defaults from
+`.context/final-plan.md` §5. Not required — `GET /permissions/templates` lazily seeds the same
+way on first fetch — but useful to run explicitly as part of a deploy/setup step. Safe to
+re-run; only creates templates that don't exist yet, never overwrites a customized one.
+
+### Running
+
+```bash
+npm run dev     # nodemon, auto-restarts on file changes
+npm start       # plain node, for production
+```
+
+Health check: `GET /health` → `{ "success": true, "message": "Server is healthy" }`
+
+---
+
+## Architecture & Patterns
+
+Every module under `src/modules/<feature>/` follows the same 5-file shape (skip files a
+module genuinely doesn't need — e.g. `auth` has no model of its own, it uses the `User` model):
+
+```
+<feature>.model.js       Mongoose schema — DB operations only, no business logic
+<feature>.service.js     Business logic — the only place that touches models directly
+<feature>.controller.js  Thin HTTP layer — calls a service function, wraps result in ApiResponse
+<feature>.routes.js      Express Router — wires middleware + validation + controller together
+<feature>.validation.js  Request-shape checks that run before the controller
+```
+
+**Shared building blocks (`src/utils`, `src/middlewares`, `src/helpers`):**
+
+| File | Purpose |
+|---|---|
+| `src/utils/ApiError.js` | Throw this anywhere (service, validation, middleware) for any error. Carries `statusCode`, `message`, `errors[]`. |
+| `src/utils/ApiResponse.js` | Success response shape: `{ statusCode, success, message, data }`. Controllers do `res.status(x).json(new ApiResponse(x, data, message))`. |
+| `src/utils/asyncWrapper.js` | Wrap every **async** controller/middleware with this so rejected promises reach the error handler. Synchronous `throw` inside a plain (non-async) middleware does not need it — Express catches those natively. |
+| `src/middlewares/errorHandler.middleware.js` | Registered last in `app.js`. Converts any thrown error into `{ success: false, message, errors }`. Adds `stack` outside production. |
+| `src/middlewares/authenticate.middleware.js` | Reads the JWT from the auth cookie, loads the user, sets `req.user`. Required before `authorize`/`requireAdmin` or reading `req.user`. |
+| `src/middlewares/authorize.middleware.js` | `authorize(module, action)` — generic permission gate for single-tier modules, backed by `can()`. `authorizeAny(module, actions[])` — passes if the user holds *any* of the given actions, for modules with more than one viewing tier (currently just `location`: `view`/`view_team`/`view_all`). `requireAdmin` — plain role check for admin-only actions that aren't part of the module/action permission matrix (e.g. creating accounts). |
+| `src/helpers/permission.helper.js` | `can(user, module, action)` — admins always pass; everyone else needs `user.permissions[module][action] === true`. Role-based defaults used to live here (`getDefaultPermissionsForRole`) but were removed once the real `permission` module (below) replaced them with an admin-editable, database-backed template system — `can()` itself has always stayed role-unaware and still does. |
+| `src/constants/permissionRegistry.constants.js` | `PERMISSION_REGISTRY` — hardcoded structural list of every module + its valid actions. Not admin-editable; only grows when a developer builds a new module. See the Permissions section below. |
+| `src/config/env.js` | Loads `.env` then `.env.local` (which wins on conflicts), fails fast (`process.exit(1)`) if a required variable is missing. |
+| `src/database/connection.js` | `connectDatabase()` — connects Mongoose to `MONGODB_URI`, exits on failure. |
+
+**Response contract** (per `.context/smartrays.md`): every endpoint returns
+`{ success, message, data }` on success or `{ success: false, message, errors }` on failure.
+
+**Auth model**: JWT is signed and stored **only** in an httpOnly cookie
+(`COOKIE_NAME`, default `smartrays_token`) — `secure` in production, `sameSite: strict` in
+production / `lax` in dev. The token is never present in any response body.
+
+---
+
+## Modules
+
+| Module | Status |
+|---|---|
+| `auth` | ✅ Built — register (admin-gated), login, logout, `/me` |
+| `lead` | ✅ Built — full CRUD, board/table filters, calls, hot flag, import/export, lead sources. `Convert to Customer` is now a real implementation (see below) — no longer a 501 stub. |
+| `location` | ✅ Built — Live Location Tracking (see below). Backend only — map UI is a frontend follow-up. |
+| `permission` | ✅ Built — role permission templates + per-user overrides (see below). |
+| `user` | ✅ Built — roster CRUD, team scoping, self/admin field rules, manager assignment (see below). Model still shared by `auth`, `lead`, `location`, `permission`. |
+| `attendance` | ✅ **Fully built** — check-in/check-out with photo capture, connectivity-gap detection, `workingHours`, own/team/org history, PDF/Excel reports (see below). |
+| `customer` | ✅ Built (Phase 2) — Customer/Contact/Contract/Credential CRUD, contract→Project+Invoice automation, deactivation cascade, encrypted credentials vault, activity log (see below). `Invoice` is a minimal placeholder model only — no invoice service/controller/routes yet. |
+| `project` | ✅ Built (Phase 2) — Project + Task, team assignment, one-`in_progress`-task-per-employee constraint (see below). No `POST /projects` — projects are only ever created via the customer module's contract automation. |
+| `leave` | ✅ Built (Phase 3) — request/approve/mark-unapproved-absence, one-paid-leave-per-month quota (see below). |
+| `transport` | ✅ Built (Phase 6) — `TravelLog` auto-generated from Attendance checkout + manual entry, own/team/org history, PDF/Excel reports. **Retrofitted 2026-07-13** with a `pending`/`approved`/`rejected` approval workflow (see below). |
+| `payroll` | ✅ Built (Phase 4, 2026-07-13) — monthly gross/net computation from Attendance + Leave + approved TravelLog data, mileage reimbursement, PDF payslips, a monthly `node-cron` job (see below). |
+| `ticket` | ✅ Built (Phase 5) — raise/list/assign/status/comments/attachments, Customer Portal-scoped access (see below). Customer Portal self-signup is a companion piece built the same task — see the Auth section below. |
+| `payment` | ✅ Built (Phase 7) — admin-only manual payment log, with optional partial reconciliation against an existing `Invoice` (see below). |
+| `amc` | ✅ Built (Phase 7) — two-flow creation (new-or-existing customer), "own team"/"own" scoped via the underlying Customer's ownership (see below). |
+| `report` | ✅ Built (Phase 8) — unified `POST /reports/generate` dispatcher (attendance/leave/payroll/transport/leads/customers), no new permission, uploads to Cloudinary and returns a download URL (see below). **`GET /attendance/report`/`GET /travel-logs/report` now internally reuse this dispatcher — breaking response-shape change, see those sections.** |
+| `notification` | Scaffolded (empty), see roadmap in `.context/final-plan.md` §10 |
+
+### Auth (`/api/v1/auth`)
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| POST | `/register` | Authenticated admin only | Creates a **staff** account (`admin`/`manager`/`sales_associate`/`employee`, or a `customer` account manually as an admin fallback). No public self-registration for staff. `permissions` is always seeded from the new user's role's current template — see the Permissions section below. |
+| POST | `/customer/signup` | Public | **Customer Portal self-signup** (Phase 5, §7.8) — see below. |
+| POST | `/login` | Public | Sets the auth cookie on success. Unchanged for Customer Portal accounts — same login as everyone else. |
+| POST | `/logout` | Authenticated | Clears the auth cookie. |
+| GET | `/me` | Authenticated | Returns the current user (from `req.user`, no extra DB call). |
+
+`User.role` is one of `admin`, `manager`, `sales_associate`, `employee`, `customer` — see
+`.context/final-plan.md` §11.1 for why there's no separate `executive` role.
+
+**Customer Portal self-signup (`POST /auth/customer/signup`, Phase 5) — resolved decisions:**
+- Customer Portal users authenticate through the **exact same** auth system as every other
+  role — `role: "customer"`, the same JWT/cookie flow, the same `POST /auth/login`. No separate
+  auth mechanism.
+- Accounts are **self-signed-up**, never admin-created via `POST /auth/register` (though
+  `createUser` still accepts an optional `customerId` too, as an admin manual-fixup path).
+- Verification is an **email-domain match**, not an admin grant:
+  `user.service.js#createCustomerSelfSignupUser` calls
+  `customer.service.js#resolveCustomerIdByEmailDomain(email)`, which checks `Contact.email`
+  first (a company realistically has several people's addresses on file — higher hit-rate) and
+  falls back to `Customer.email` (a single company-level address) only if no `Contact` matches.
+  On a match, a `User` is created with `role: "customer"` and `customerId` set; on no match,
+  signup is rejected — **400** (this codebase has no 422 anywhere, so 400 keeps the error-code
+  vocabulary consistent) with "No matching company found for this email domain — please contact
+  your account manager."
+- Permissions are seeded from the new `customer` `RolePermissionTemplate` (see the Permissions
+  section below): `{ tickets: { create: true, view_own: true } }` and nothing else.
+- Deliberately a **separate** endpoint from `POST /auth/register`, not overloaded onto it —
+  public (no `authenticate`/`requireAdmin`), and its own validator
+  (`validateCustomerSignupInput`, no `role` field at all).
+
+6 new tests in `auth.test.js` (19 total for the module): succeeds via a `Contact`-email domain
+match, succeeds via the `Customer.email` fallback when no `Contact` matches, rejects clearly
+with no match at all, rejects a duplicate email, rejects an invalid email/short password, and
+the newly signed-up account logs in afterward like any other.
+
+**Resolved implementation note (was: added during the Leads build):** `POST /auth/register`
+used to accept an optional `permissions` object as a stopgap, before the Permissions module
+existed — without *some* way to grant module access at creation time, every non-admin account
+would have been permanently locked out of everything. **That field has been removed** now that
+the real Permissions module (below) exists; registration always seeds from the role's current
+template, and per-user customization happens afterward via `PATCH /users/:id/permissions`.
+
+**Resolved implementation note (added during the User Management build, §7.0b):** account
+creation logic now lives entirely in `user.service.js#createUser` — `auth.controller.js`'s
+`register` handler calls it directly instead of keeping its own copy. `auth.service.js` no
+longer has a `registerUser` function at all (no thin pass-through wrapper either — that would
+just be pointless indirection). `POST /auth/register` remains the **only** HTTP route that
+creates a user; no separate `POST /users` was added, since the actual problem being resolved was
+duplicated creation *logic*, not duplicated routes. `seedAdmin.js` was updated to call
+`user.service.js#createUser` too, so there is exactly one code path that creates a `User` document
+anywhere in the codebase.
+
+### Leads (`/api/v1/leads`, `/api/v1/lead-sources`)
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/leads` | `leads.view` | List with filters: `search`, `owner`, `followUp` (`today`\|`overdue`\|`this_week`\|`none`), `status`. |
+| POST | `/leads` | `leads.create` | `sales_associate` accounts always get `ownerId` forced to themselves, regardless of what's sent. |
+| GET | `/leads/export` | `leads.view` | Streams an `.xlsx` of the current filtered list directly (Cloudinary/reports pipeline isn't wired up until Phase 2/3/8). Registered before `/:id` so Express doesn't treat "export" as an id. |
+| POST | `/leads/import` | `leads.create` | `multipart/form-data`, field name `file` (CSV or `.xlsx`). First row is headers; matched case-insensitively against `name/email/phone/companyName/source/status/budget`. Invalid rows are skipped and reported, not fatal to the batch. Imported leads are always owned by the importer. |
+| GET | `/leads/:id` | `leads.view` | 404 (not 403) if the lead exists but is outside your scope — avoids confirming a lead's existence to someone who can't see it. |
+| PATCH | `/leads/:id` | `leads.edit` | `sales_associate` cannot reassign `ownerId` through this endpoint (that's a manager/admin action). |
+| DELETE | `/leads/:id` | `leads.delete` | |
+| PATCH | `/leads/:id/status` | `leads.edit` | Requires `lostReason` in the body when `status` is `lost`. |
+| PATCH | `/leads/:id/hot` | `leads.edit` | Toggles `isHot`. |
+| POST | `/leads/:id/calls` | `leads.edit` | Logs a `LeadCall`. |
+| GET | `/leads/:id/calls` | `leads.view` | Call history, newest first. |
+| POST | `/leads/:id/convert` | `leads.edit` | **Real implementation (Phase 2).** Creates a `Customer` from the lead's data — `companyName`/`email`/`phone`/`source` pre-fill from the lead but are overridable in the request body; `projectManagerId` has no lead-derived fallback and is the one field the caller must always supply (400 if missing). Sets `Lead.convertedCustomerId` — the closest thing to "archiving" a lead, since there's no separate archived flag and this endpoint doesn't force a status change (the caller marks the lead `won` beforehand as its own explicit step). |
+| GET | `/lead-sources` | Authenticated (any role) | Low-sensitivity config list. Lazily seeded with the 10 defaults from `.context/final-plan.md` §6.2 on first fetch if the collection is empty — no separate seed script. |
+
+**Scoping** (`.context/final-plan.md` §5/§11.9), enforced in `lead.service.js`, not just at the
+route layer:
+- `admin` — sees/edits everything
+- `manager` — sees/edits leads owned by themselves or anyone whose `User.managerId` equals
+  their own `_id` (direct reports only, one level)
+- `sales_associate` / everyone else — sees/edits only leads they own
+
+Verified end-to-end with real HTTP requests across an admin, a manager, two sales associates
+on that manager's team, and a third sales associate deliberately left off the team — see the
+verification notes below.
+
+### Live Location Tracking (`/api/v1/location`)
+
+Ties into Attendance but lives in its own `location` module — see `.context/final-plan.md`
+§7.4b for the full design writeup. Backend only; the map UI (live marker, path polyline) is a
+frontend follow-up, and the API shape here was designed so that UI can be added later with no
+API changes.
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| POST | `/pings` | Authenticated only, no module permission | Body `{ coords: {lat, lng}, capturedAt }`. `employeeId` always comes from the session, never the body — a client can't submit a ping on someone else's behalf. **409** if the employee has no open `Attendance` record (never checked in, or already checked out). |
+| GET | `/live` | `authorizeAny("location", ["view","view_team","view_all"])` | Latest ping per employee, restricted to employees who are currently checked in. |
+| GET | `/history?employeeId=&date=` | `authorizeAny("location", ["view","view_team","view_all"])` | One employee's full-day ping trail, oldest→newest. Both params optional (default self / today). Out-of-scope `employeeId` → **404**, matching the Leads precedent. |
+| GET | `/config` | Authenticated only | Returns `{ pingIntervalMinutes }` so the client schedules its own ping loop instead of hardcoding it. |
+
+**Permissions** — three tiers (`view`/`view_team`/`view_all`), the first module in this codebase
+with more than one. `employee`/`sales_associate` get `location.view: true` by default at
+registration; `manager` gets `location.view_team: true` by default. Admin always bypasses.
+None of this required a new permission mechanism — `can()` is unchanged; see `authorizeAny`
+below. (These role defaults used to be a hardcoded function; they're now generated from a
+real, admin-editable template — see the Permissions section right below.)
+
+**One small, generic addition made to support this (not location-specific):**
+`authorizeAny(module, actions[])` in `authorize.middleware.js` — passes if the user holds *any*
+of the given actions. `location.service.js` still resolves *which* tier(s) they hold to build
+the actual visible-employee-id set (a union of every grant held, not just the widest — an
+admin override granting a manager `view` on top of their `view_team` default must not be
+silently dropped).
+
+**Bug found and fixed during this build (in `User`, not `location`):** Mongoose's default
+`minimize: true` was silently stripping the entire `permissions` field from `GET /auth/me`
+whenever every module inside it ended up empty (e.g. an explicit `{}` override to revoke all
+`location` grants) — an empty object and a missing field are not the same thing for a
+permissions field. Fixed by setting `minimize: false` on the `User` schema. Caught by a test,
+not by inspection — see `.context/final-plan.md` §6.1/§7.4b for the full writeup.
+
+### Permissions (`/api/v1/permissions`, `/api/v1/users/:id/permissions`)
+
+See `.context/final-plan.md` §7.12 for the full design writeup. Formalizes the pattern used ad
+hoc for `location` above (role defaults + per-user admin override) into one real module,
+replacing the hardcoded `getDefaultPermissionsForRole()` function and the register-time
+`permissions` field workaround (§7.0) with a proper admin-editable system. Three distinct
+pieces:
+
+- **`PERMISSION_REGISTRY`** (`src/constants/permissionRegistry.constants.js`, hardcoded) — the
+  structural list of every module + valid action, used to validate everything below. Grows only
+  when a developer builds a new module.
+- **`RolePermissionTemplate`** (DB, admin-editable) — what's granted **by default** to a role.
+  Editing a template only affects users created *after* the edit — never retroactive.
+- **`User.permissions`** (DB, per-user) — what's **actually granted** to one person. Seeded
+  from their role's template at registration, independently editable per-user after that.
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| GET | `/permissions/registry` | `permissions.manage` | Returns `PERMISSION_REGISTRY` as-is. |
+| GET | `/permissions/templates` | `permissions.manage` | All 5 role templates, lazily seeding any missing. |
+| GET | `/permissions/templates/:role` | `permissions.manage` | One role's template. |
+| PATCH | `/permissions/templates/:role` | `permissions.manage` | Edits a template. **Full replace, not a deep merge.** Does not touch existing users. |
+| GET | `/users/:id/permissions` | `permissions.manage` | One user's actual permissions (a user's own are already visible via `GET /auth/me`). |
+| PATCH | `/users/:id/permissions` | `permissions.manage` | Admin override for one user. **Full replace, not a deep merge.** |
+| POST | `/users/:id/permissions/reset` | `permissions.manage` | Overwrites this user's permissions with their role's **current** template, discarding any customization. |
+
+No `POST /permissions/templates` — roles are a fixed 5-value enum, never user-created, so
+templates are only lazily seeded (GET) and edited (PATCH), same as `LeadSource` (§7.1).
+
+**Initial template seed values** — generated from the §5 permission matrix (every ✅ becomes a
+`true` grant), not carried over unchanged from the old hardcoded function. This is a
+**deliberate broadening**: Manager/Sales Associate now get real default Leads access, which the
+matrix always described but nothing previously enforced:
+```
+manager:          { leads: { view, create, edit, delete: true }, location: { view_team: true } }
+sales_associate:  { leads: { view, create, edit, delete: true }, location: { view: true } }
+employee:         { location: { view: true } }
+admin/customer:   {}
+```
+
+Gated by `authorize("permissions", "manage")` rather than `requireAdmin` — even though only an
+admin will ever hold that grant today, using the same `can()`-backed mechanism as every other
+module keeps this module self-consistent instead of a special case.
+
+No application bugs found while building or testing this module — 20 tests, all passing on the
+first implementation.
+
+### User Management (`/api/v1/users`)
+
+See `.context/final-plan.md` §7.0b for the full design writeup. The roster CRUD/management layer
+that was missing until now — `User` was previously a shared model only, imported by `auth`,
+`lead`, `location`, and `permission` but with no dedicated endpoints of its own.
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| GET | `/users/dropdown` | Authenticated (any role) | Low-sensitivity `_id`/`name`/`role` picker list, active users only — for other modules' "assign to" dropdowns (Leads owner, etc.). Not gated by `users.*`, same reasoning as `GET /lead-sources`. Registered before `/:id` so Express doesn't treat "dropdown" as an id. |
+| GET | `/users` | Authenticated (no route-level gate) | Full roster list, scoped in the service, not the route: `view_all` sees everyone; `view_team` sees direct reports + self; **no grant at all still returns 200 with a 1-item list containing just the caller** (`fallbackToSelf`, see below) rather than 403 — a plain "list my stuff" request always succeeds. Filters: `role`, `isActive`, `managerId`. |
+| GET | `/users/:id` | Authenticated (self always allowed) | A user can always fetch their own record regardless of any grant, matching `GET /auth/me`. Looking up **someone else's** specific id with no `users.*` grant is still a 403 (deliberately not narrowed to self the way the list is — see below); **404** (not 403) if the target exists but is outside scope for a caller who does hold a grant, matching the Leads/Location precedent. |
+| PATCH | `/users/:id` | Authenticated (self or admin) | Self can update `name`/`email`/`phone` only. Admin can additionally update `role`/`managerId`/`isActive`/**`baseSalary`** (added 2026-07-13, §7.7 Payroll prerequisite) on **anyone's** record, including their own. A non-admin sending a privileged field on their own record gets 403, not a silent drop. Enforced in **two layers**: `user.validation.js` rejects it before the controller even runs, and `user.service.js#updateUser` enforces the identical rule again — deliberate defense in depth, not accidental duplication. |
+| PATCH | `/users/:id/deactivate` | Admin only | |
+| PATCH | `/users/:id/reactivate` | Admin only | |
+| PATCH | `/users/:id/manager` | Admin only | Sets or clears (`managerId: null`) a user's manager. A non-null `managerId` must belong to a `manager` or `admin` — same rule enforced at creation time (see below). |
+
+**Permissions** — deliberately **two** tiers (`view_team`, `view_all`), not three like `location`.
+There's no plain `users.view` grant in `PERMISSION_REGISTRY` because a user's own record is
+always reachable regardless — via `GET /auth/me`, the self-bypass in `getUserById`, and (new)
+the `fallbackToSelf` behavior in `listUsers` — a separate "view own" permission grant would be
+redundant when the self-floor is unconditional either way. `manager` gets `users.view_team: true`
+in its default template (added to `RolePermissionTemplate`'s seed values alongside this build);
+`sales_associate`/`employee` get none by default, so `GET /users` for them returns just
+themselves and `GET /users/:id` for anyone else's id is a 403.
+
+**`resolveVisibleUserFilter(requestingUser, { fallbackToSelf })`** in `user.service.js` is the one
+function behind both `GET /users` and `GET /users/:id`'s scoping, but the two endpoints call it
+differently on purpose: `listUsers` passes `fallbackToSelf: true` (a list request should never
+hard-fail just because the caller can't see anyone else's records), while `getUserById` passes
+the default `false` (deliberately fetching a specific *other* person's id with no grant is still
+treated as a permission violation, not silently redirected to your own record).
+
+**`baseSalary` (added 2026-07-13, §6.1/§7.7 Payroll prerequisite):** a resolved schema gap, not
+a silent addition — nothing before Payroll tracked a salary figure at all. `select: false` on
+the schema (same defense-in-depth pattern as `passwordHash`) — never returned by a plain
+list/dropdown query, only by the update response itself or `payroll.service.js`'s explicit
+`.select("+baseSalary")`. Treated as a privileged field exactly like `role`/`managerId`/
+`isActive` — admin-only, not self-editable, for the obvious reason that letting anyone set
+their own salary would defeat the field's purpose.
+
+**`customerId` (added, §6.1/§7.8 Customer Portal prerequisite):** another resolved schema gap
+— only ever set for `role: "customer"` accounts, linking a portal user to the `Customer`
+company they belong to. Normally set automatically at self-signup (see the Auth section above),
+though `createUser`/`PATCH /users/:id` both accept it too as an admin manual-fixup path. Also a
+privileged field — admin-only, not self-editable, since letting a portal user relink themselves
+to a different company would be a security hole, not a convenience.
+
+**Shared manager-validation rule:** `ensureValidManagerId()` in `user.service.js` is the single
+place that enforces "a manager must be a user with role `manager` or `admin`" — used by
+`createUser` (registration), `updateUser` (admin editing `managerId` through the general update
+endpoint), and `assignManager` (the dedicated endpoint above). One rule, one implementation, three
+call sites.
+
+**Bug found and fixed during this build:** `getUserById`'s original query built the Mongo filter
+as `User.findOne({ _id: targetId, ...scopeFilter })`. For the `view_team` branch, `scopeFilter` is
+itself `{ _id: { $in: [...] } }` — the object spread silently let that key clobber the explicit
+`_id: targetId` constraint, so the query ignored which user was actually being requested and
+matched *any* visible user instead. A test asserting a manager gets 404 for an unaffiliated sales
+associate caught it (got 200 instead). Fixed with `$and: [{ _id: targetId }, scopeFilter]`. This
+is a genuinely new class of bug specific to `user` — Leads' ownership scoping filters on a
+separate `ownerId` field, so its filter and lookup key never collide the way `_id` does here.
+
+33 tests, all passing; this bug was the only one found.
+
+**Confirmed already correct (follow-up check):** `getUserById`'s self-shortcut
+(`if (String(targetId) === String(requestingUser._id)) return requestingUser;`) runs before any
+permission check at all, so a user with **no** `users.*` grant can always fetch their own `/:id`
+— this was already true from the initial build, not a fix. Locked in with an explicit regression
+pair in `user.test.js`: self-fetch with no grant succeeds (200), a *different* user's id with no
+grant still 403s (proving the self-bypass wasn't accidentally broadened into `GET /users`' list-
+level `fallbackToSelf` behavior above).
+
+### Attendance (`/api/v1/attendance`)
+
+See `.context/final-plan.md` §6.5/§7.4 for the full design writeup. Started as a minimal
+check-in/check-out slice (built the same day as `location`, which needed *some* `Attendance`
+model to query for its shift-gating check) and extended to the full spec in a later task — the
+model was extended in place, not replaced.
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| POST | `/attendance/check-in` | Authenticated, no module permission | Body `{ coords: {lat, lng}, photo }`. `photo` is **required** (400 if missing) — a base64 data URI (JSON body) or a multipart file field (`multer`, same as Leads' CSV import); either transport works on the same route. Creates a new `Attendance` record with `checkIn.time` set to the server clock and `date` set to today. `employeeId` always comes from the session. **409** if the employee already has an open record — one open check-in at a time, the same "reject the second one" pattern as the one-`in_progress`-task-per-employee rule (§6.4). |
+| POST | `/attendance/check-out` | Authenticated, no module permission | Body `{ coords: {lat, lng}, photo }`. `photo` is **required** (400 if missing). Closes the caller's own open record, runs the same connectivity-gap check a heartbeat would (covering any silence since the last one), computes `workingHours`, and auto-generates a `TravelLog` from this shift's check-in/check-out coords (§7.6, Phase 6) — never fails checkout if travel logging fails. **409** if there's no open record. |
+| POST | `/attendance/heartbeat` | Authenticated, no module permission | No body. A "still alive" signal the client calls periodically while checked in — see the connectivity-gap design below. **409** with no open shift. |
+| GET | `/attendance/me` | Authenticated | Own history, newest first, optional `?month=YYYY-MM` filter. Unconditional — no `attendance.*` grant needed, matching `GET /auth/me`. |
+| GET | `/attendance/team` | `attendance.view_team` or `view_all` | Direct reports' records (or everyone's, with `view_all`), optional `?month=`. |
+| GET | `/attendance/report` | `attendance.view_team` or `view_all` | `?from=&to=&format=pdf\|xlsx` (format defaults to `xlsx`). Same visible-employee scoping as `/team`. **Response changed in Phase 8 (§7.11) — see below.** |
+
+**Updated (Phase 8, §7.11) — `GET /attendance/report`'s response shape changed, a stated
+breaking change (no frontend exists yet to break):** this endpoint no longer streams the file
+directly. It now internally calls the new unified `report.service.js#generateReport` dispatcher
+(`module: "attendance"`) — `attendance.service.js#generateAttendanceReport` itself is completely
+unchanged, still the function that actually fetches and renders the data — and returns
+**`{ downloadUrl }`** (uploaded to Cloudinary) instead. See the Reports section below for the
+full dispatcher design.
+
+**Connectivity-gap detection — design (§6.5's own spec was intentionally terse: "if network
+issue/logout during shift, ... mark red"):** `POST /attendance/heartbeat` is a **deliberately
+separate concern from Location's GPS ping** (§7.4b) — not reused or coupled to it. A heartbeat
+carries no coords and exists purely to prove "the session is still alive"; conflating the two
+would make Location's ping cadence and Attendance's gap-sensitivity the same tunable when they
+answer different questions. The server can only ever detect a gap *retroactively*, at whichever
+arrives first — the next heartbeat, or checkout: if more time has passed since the last proof of
+life (a prior heartbeat, or check-in itself for the first one) than
+`ATTENDANCE_GAP_THRESHOLD_MINUTES` (new env var, optional, defaults to 10 — roughly two missed
+heartbeats at an expected ~2–5 minute client cadence before treating it as a real issue rather
+than routine jitter), the entire silent window becomes one `connectivityGaps` entry
+`{ start, end }`. This needed one field beyond `attendance.model.js`'s documented shape:
+`lastHeartbeatAt`, purely internal bookkeeping, never its own API concept.
+
+**`workingHours`** — computed once at checkout: gross shift duration minus total
+`connectivityGaps` duration, clamped to a minimum of 0. A gap means the employee wasn't
+verifiably working during that window, so it's subtracted rather than left out of the calculation
+in some other way.
+
+**Photo capture is mandatory, enforced server-side (revised after the initial build).** It was
+originally left optional at the API layer, reasoning that "never a file-upload input" (§7.4) was
+purely a client-side camera-widget constraint the API couldn't meaningfully enforce. That
+reasoning didn't hold up: smartrays.md's entire point in capturing a photo is to prove physical
+presence at check-in/check-out, and that protection doesn't actually exist if the API will
+silently accept a request with no photo at all — anyone hitting the endpoint directly, or a
+modified client, bypasses it entirely. `attendance.validation.js#validatePhotoPresence` now
+rejects (400) any check-in/check-out with neither `req.file` nor `req.body.photo` present, for
+both transports (base64 JSON and multipart). New shared `src/services/cloudinary.service.js`
+uploads the photo to Cloudinary and returns only the secure URL — the binary is never stored in
+MongoDB. `CLOUDINARY_CLOUD_NAME`/`CLOUDINARY_API_KEY`/`CLOUDINARY_API_SECRET` are now **required**
+env vars (see below).
+
+**Reused, not duplicated:** the "open record" query (`checkIn.time` set, `checkOut.time` null) is
+the exact same shape `location.service.js#findOpenAttendance` already uses.
+
+**No permission-registry entry for check-in/check-out/heartbeat** — like Location's
+`POST /pings`, these are facts about your own shift, not `can()`-gated "view" actions. `/team` and
+`/report` **are** gated — new `attendance.view_team`/`view_all` registry entries, no plain `view`
+tier (own attendance is always reachable via `GET /attendance/me` with no gate at all, the same
+reasoning as `users.*`).
+
+**Report generation goes through a new shared service, not inline controller code:**
+`src/services/report.service.js` exports `generateExcelReport({ sheetName, columns, rows })` and
+`generatePdfReport({ title, rows, formatRow })` — generic document-building primitives (`exceljs`
+for Excel, `pdfkit` for PDF). `attendance.service.js` calls these with its own column/row
+shaping; the actual streaming/buffer mechanics live in the shared service. This is deliberate
+groundwork for the real cross-module reports pipeline (§7.11, Phase 8) without building that
+pipeline now — when §7.11 gets built properly, it has one real function per format to
+formalize/extend rather than duplicated ad hoc `exceljs`/`pdfkit` calls scattered across modules.
+**Not** retrofitted onto Leads' existing `.xlsx` export (`lead.service.js#exportLeadsToExcel`,
+built before this service existed) — that code already works and is already tested; migrating it
+wasn't part of this task and risked a regression for no behavior change.
+
+31 tests (18 new, 13 from the original slice), all passing. No application bugs found. Cloudinary
+is mocked at the module boundary (`vi.mock("../../services/cloudinary.service.js", ...)`) — no
+test makes a real network call, keeping the suite fully self-contained; the gap-detection tests
+backdate `lastHeartbeatAt` directly via Mongoose rather than waiting out the real threshold. The
+report tests assert actual file structure, not just headers: the `.xlsx` response is re-read with
+`exceljs` (same pattern as Leads' own export test) to confirm both the "PK" zip signature and that
+only the manager's own team's records appear in it, and the PDF response is checked for the
+`%PDF-` magic-number header — proving the streamed bytes are real, well-formed documents, not
+just a response with the right `Content-Type`.
+
+**Location Tracking is now proven end-to-end, not just against directly-seeded test data.**
+`location.test.js` gained one new test that checks in via the real `POST /attendance/check-in`,
+pings via the real `POST /location/pings`, checks out via the real `POST /attendance/check-out`,
+then pings again and confirms the 409 — no direct Mongoose writes anywhere in that flow. The rest
+of `location.test.js`'s tests still seed an open shift directly via a `createOpenAttendance()`
+helper (deliberately — each one isolates a specific location scenario without an extra HTTP round
+trip); this one test is what actually proves the two modules' real endpoints connect.
+`location.test.js` now also mocks `src/services/cloudinary.service.js` and supplies a `photo` on
+both calls in that test — a follow-up fix, since photo capture became mandatory after this test
+was originally written and it would otherwise 400.
+
+### Leave (`/api/v1/leave`)
+
+See `.context/final-plan.md` §6.5/§7.5 and §11.7 (leave cadence, resolved this task).
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| POST | `/leave/request` | Authenticated, no module permission | Body `{ startDate, endDate, type?, reason? }`. Self-service — same reasoning as Attendance check-in/out. `employeeId` is forced to the caller unless they're admin (an admin can request on behalf of someone else — needed so `mark-unapproved-absence` below has a record to act on for an employee who never self-requested). `type` defaults to `paid`; `unapproved_absence` is rejected here (400) — it's only ever set via the dedicated admin action. |
+| GET | `/leave` | `leave.view`/`view_team`/`view_all`, per the requested `?scope=` | `?scope=own` (default), `team`, or `all` — each checked against its own matching permission action, not resolved as a union of whatever's held (unlike Location's implicit-view design; §7.5's endpoint gives the caller an explicit choice). |
+| PATCH | `/leave/:id/approve` | Admin only | Rejects (409) if the record isn't `pending`. A `paid`-type approval is capped by the one-paid-leave-per-month quota (§11.7) — see below. |
+| PATCH | `/leave/:id/mark-unapproved-absence` | Admin only | Unconditional admin decree — works regardless of current status. Sets `type: "unapproved_absence"`, `isDoubleDeduction: true`, `status: "approved"`, per the 2x rule (smartrays.md). |
+
+**One paid leave per month, no carry-over (§11.7, resolved this task):** neither source document
+said anything about carry-over either way — genuinely ambiguous, so this is a deliberate,
+explicitly-stated assumption, not an inferred one. Enforced in `approveLeave`: a single `paid`
+request spanning more than 1 day is rejected outright, and approving one is rejected if the
+employee already has another **approved** `paid` leave somewhere in that same calendar month
+(pending/rejected requests don't count against the quota).
+
+**Permission design:** mirrors Location's three-tier shape (`view`/`view_team`/`view_all`)
+rather than Attendance's/Users' unconditional-self-access pattern, because viewing your own leave
+data — not just requesting it — genuinely is gated behind a real grant here, matching how
+`GET /leave?scope=` lets the caller choose. `sales_associate`/`employee` get `leave.view: true`
+by default; `manager` gets `leave.view_team: true`. `/approve` and `/mark-unapproved-absence` are
+`requireAdmin`, not a permission tier — the same binary-admin-action reasoning as account
+creation and User deactivate/reactivate.
+
+18 tests, all passing. No application bugs found.
+
+### Transport/Travel (`/api/v1/travel-logs`) — Phase 6
+
+See `.context/final-plan.md` §6.5/§7.6. **Folder name note:** the module folder is
+`src/modules/transport/` (matching the single-lowercase-word convention every other module
+folder uses — `auth`, `lead`, `customer`, `project`, `leave`, etc.); the files inside are named
+`travelLog.*` (matching the actual model name `TravelLog`, the same relationship `customer/`'s
+folder has to its `customerActivity.model.js`).
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| POST | `/travel-logs` | Authenticated, no module permission (manual entry) | Body `{ originCoords?, destinationCoords?, distanceKm?, date?, employeeId? }`. Requires either `distanceKm` or both coords — there needs to be something to use or compute a distance from. If `distanceKm` is given, it's used as-is (manual entries may not always have precise coords); otherwise, if both coords are given, `distanceKm` is computed via Google Maps. Self-service by default; a manager may log on behalf of their own direct report, an admin on behalf of anyone — a **plain employee/sales_associate naming someone else's `employeeId` is rejected outright (403)**, deliberately not silently redirected to self the way Leads' `ownerId` is (see below). |
+| GET | `/travel-logs` | `travelLogs.view`/`view_team`/`view_all`, per the requested `?scope=` | `?scope=own` (default)/`team`/`all`, same explicit-scope-per-permission-action pattern as `GET /leave` — not Location's implicit union. Optional `?employeeId=` narrows further within whatever the scope already permits (e.g. a manager on `scope=team` filtering to one report); ignored on `scope=own`. Optional `?month=YYYY-MM`. |
+| GET | `/travel-logs/report` | `travelLogs.view_team` or `view_all` | `?from=&to=&format=pdf\|xlsx` (format defaults to `xlsx`) — same shape as `GET /attendance/report`, reusing `src/services/report.service.js`'s generic builders rather than writing new PDF/Excel generation code. **Response changed in Phase 8 (§7.11) — see below.** |
+| PATCH | `/travel-logs/:id/approve` | Authenticated only — structural check, not a permission tier (added 2026-07-13) | Allowed for the target employee's own manager or admin; 403 otherwise. 409 if the log isn't currently `pending`. |
+| PATCH | `/travel-logs/:id/reject` | Same as above | Same structural check and 409-if-not-pending rule. |
+
+**Auto-generation hooks into Attendance checkout, not the other way around.** `attendance.service.js#checkOut`
+calls `transport/travelLog.service.js#generateAutoTravelLog` directly (the same cross-module
+direct-call pattern as `location`→`Attendance` and `lead`→`customer.service.js#createCustomer`) —
+no event bus or callback mechanism, since none exists elsewhere in this codebase and introducing
+one here would be an inconsistent one-off. `generateAutoTravelLog` is guaranteed to **never throw**:
+missing `checkIn`/`checkOut` coords or a Google Maps failure both just mean no `TravelLog` gets
+created, so checkout itself can never fail because travel logging failed. `originCoords`/
+`destinationCoords` come from that shift's `checkIn.coords`/`checkOut.coords`; `distanceKm` is
+computed via the new `src/services/googleMaps.service.js` (Google Maps Distance Matrix API,
+`GOOGLE_MAPS_API_KEY` now a **required** env var).
+
+**Permission design:** mirrors `leave`'s three-tier shape (`view`/`view_team`/`view_all`) for the
+list endpoint (explicit `?scope=`, not an implicit union), and mirrors `attendance`'s report gate
+(`view_team`/`view_all` only, no explicit scope param) for the report endpoint. `sales_associate`/
+`employee` get `travelLogs.view: true` by default (their own history); `manager` gets
+`travelLogs.view_team: true`.
+
+**Updated (Phase 8, §7.11) — `GET /travel-logs/report`'s response shape changed, a stated
+breaking change:** same migration as Attendance's report endpoint — `travelLog.controller.js`
+now calls the unified `report.service.js#generateReport` dispatcher (`module: "transport"`)
+internally, `generateTravelLogReport` itself is unchanged, and the response is now
+`{ downloadUrl }` instead of a streamed file. See the Reports section below.
+
+**Approval workflow (added 2026-07-13, resolves §11.4) — "does travel distance feed payroll, or
+is it reporting-only?": it feeds payroll, but only entries someone with authority has
+explicitly approved.** Every `TravelLog` — `auto` or `manual` — is created `status: "pending"`;
+neither source auto-approves. `PATCH /travel-logs/:id/approve`/`reject` are gated by a
+**structural relationship check** in `travelLog.service.js` (mirrors
+`resolveEmployeeIdForManualEntry`'s existing shape for manual-entry attribution, not a new
+`can()` permission tier): the target employee's own manager, or admin; 403 otherwise. Re-
+resolving an already-approved/rejected log is rejected (409) — there's no unwind/re-open
+endpoint in v1. `approvedBy`/`approvedAt` are used generically for "who resolved this and when,"
+covering both outcomes — the same naming Leave's `approvedBy` already uses even for
+`mark-unapproved-absence`, which isn't a normal approval either. `payroll.service.js#runPayroll`
+sums `distanceKm` only from `status: "approved"` entries for the month, never
+`pending`/`rejected` ones — see the Payroll section below.
+
+28 tests, all passing (21 from the original build + 7 new for the approve/reject flow: default-
+to-`pending` for both sources, manager-approves-own-report, admin-can-reject, manager-blocked-
+for-non-report, non-manager/non-admin-blocked, re-resolving an already-resolved log rejected
+with 409, and a nonexistent id returning 404). `googleMaps.service.js` is mocked at the module boundary (`vi.mock`) in `travelLog.test.js`,
+`attendance.test.js` (since checkout now transitively calls it), and `location.test.js` (its
+end-to-end test performs a real checkout too) — no test makes a real Google Maps API call.
+
+### Payroll (`/api/v1/payroll`) — Phase 4
+
+See `.context/final-plan.md` §6.5/§7.7. Two prerequisites were closed first, in the same task:
+`User.baseSalary` (see the User Management section above) and TravelLog's approval workflow
+(see the Transport/Travel section above, §11.4 resolved).
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| POST | `/payroll/run` | Admin only (`requireAdmin`, no role holds `payroll.run` but admin) | `?month=&year=` required. `?employeeId=` (a stated addition beyond §7.7's literal endpoint list) runs just that one employee; omitted, it bulk-runs every active employee with a `baseSalary` set. `?regenerate=true` overrides the "already generated" guard — see below. |
+| GET | `/payroll` | `payroll.view`/`run`, per the requested `?scope=` | `?scope=own` (default) or `all` — **only two tiers, no `team`** (§7.7): Manager gets no payroll grant at all, a deliberate divergence from every other workforce module (salary data is more sensitive than attendance/leave/travel data). `?month=YYYY-MM` optional filter. |
+| GET | `/payroll/:id/payslip` | Self (`payroll.view`) or broad grant (`payroll.run`) | **PDF only** (§7.7 — no `xlsx` option, unlike every other module's report endpoint). 404 (not 403) for anyone out of scope, mirroring `user.service.js#getUserById`'s exact shape. |
+
+**Single-employee run vs. bulk run behave differently on an already-generated employee/month —
+a stated judgment call, not in §7.7's literal text:** a targeted `?employeeId=` run throws
+**409** unless `regenerate=true` is passed; a bulk run (the monthly cron's own call shape)
+**silently skips** already-generated employees instead, so a cron that fires twice — or a
+server restart on the 1st — stays idempotent rather than erroring on every employee.
+`regenerate=true` overrides both the same way (recomputes and overwrites in place, same
+document, not a duplicate record — enforced by a compound unique index on
+`employeeId`+`month`+`year`). Employees with no `baseSalary` set (every `admin` account
+included, which never has one) are skipped in a bulk run, not errored; a targeted run for such
+an employee is rejected outright (400).
+
+**`runPayroll`'s formulas, implementing §7.7 exactly:**
+- `daysInMonth` — actual calendar days in that month/year.
+- `presentDays` — count of `Attendance` records with status `present`/`half_day` that month.
+- `paidLeaveDays` — sum of inclusive days across approved `paid` `Leave` that month (capped at 1
+  in practice by `leave.service.js#approveLeave`'s own monthly quota, §11.7 — this doesn't
+  re-enforce the cap, it just sums whatever's actually approved).
+- `unpaidDeductionDays` — approved `unpaid` `Leave` days, **plus** approved
+  `unapproved_absence` days **doubled** — driven by the existing `isDoubleDeduction` flag
+  already on the `Leave` model, not a duplicated type check.
+- `workingHoursTotal` — sum of `Attendance.workingHours` for the month.
+- `grossAmount` = `(baseSalary / daysInMonth) × (presentDays + paidLeaveDays)`.
+- `mileageReimbursement` = sum of `distanceKm` from that employee's **`status: "approved"`**
+  `TravelLog` entries that month (never `pending`/`rejected`) × `MILEAGE_RATE_PER_KM`.
+- `netAmount` = `grossAmount − (unpaidDeductionDays × dailyRate) + mileageReimbursement`.
+- `paidOn` = the 1st of the month **after** the payroll month.
+- Leave records are attributed to the month containing their `startDate` (mirrors
+  `leave.service.js`'s own monthly-quota window) — a stated v1 simplification: paid leave is
+  capped at 1 day and unpaid/absence spans are short in practice, so a split-across-months day
+  count wasn't worth the added complexity.
+
+**`Payroll.mileageReimbursement`** — not in §6.5's documented field list, added the same way
+Attendance's `lastHeartbeatAt` was: necessary once §11.4 resolved to "yes, it feeds payroll,"
+and there's nowhere else on the model to record the resulting amount. Already folded into
+`netAmount`; kept as its own field too so a payslip can show it as a separate line item.
+
+**`MILEAGE_RATE_PER_KM`** (new env var, see below) — a deliberately simple v1: **one single
+global rate, not per-role/per-project.** A stated simplification, not an oversight; the default
+value is a **placeholder** the client must confirm before payroll is run for real.
+
+**Monthly cron (`src/cron/payrollCron.js`, registered from `server.js` after the database
+connects):** runs at 00:05 on the 1st of every month, bulk-running Payroll for the **previous**
+calendar month — matches smartrays.md's "salary paid on the first day of every month" cadence.
+Calls `payroll.service.js#runPayroll` directly, the same cross-module direct-call pattern used
+elsewhere (e.g. `attendance`→`travelLog`) — there's no HTTP request to run through the
+admin-gated route. `src/cron/` is a **new top-level directory**, not folded into
+`src/services/` — scheduled-job orchestration is a distinct concern from the stateless
+external-service wrappers that already live there (cloudinary/googleMaps/report).
+
+**Permission design:** new `payroll: ["view", "run"]` registry entry — only two actions, not
+three, since there's no `team` tier at all. `run` doubles as the "administrative access" gate
+for `scope=all` on the list endpoint too, since §5's matrix never lists a separate `view_all`
+for this module and only admin ever holds `run` anyway. Only `employee` defaults to
+`payroll.view: true` ("own payslip only"), per §5's matrix. `manager` and `sales_associate`
+both get **no** `payroll` grant at all — §5 marks `payroll.view/run` as "–" for both roles
+identically, not blank for `sales_associate`. **Correction (2026-07-13):** an earlier version
+of this build misread the `sales_associate` cell's "–" as unspecified/blank rather than an
+explicit "no access" (the same symbol the matrix uses for every other "–" cell, including
+Manager's), and granted `sales_associate` the same `payroll.view: true` default as `employee`.
+Fixed in `permission.service.js`'s `INITIAL_TEMPLATE_DEFAULTS` — `sales_associate` now gets no
+`payroll` key at all, matching Manager exactly, as a literal-text correction rather than a
+judgment call.
+
+19 tests (`payroll.test.js`), no application bugs found. Covers: validation (non-admin/manager
+blocked from `POST /payroll/run`, missing/invalid `month`/`year`, running for an employee with no
+`baseSalary`), the full formula computation against hand-computed expected values (present days,
+paid/unpaid/double-deducted leave days, working hours, mileage from approved-only TravelLog
+entries, gross/net amounts, `paidOn`), the 409-vs-silently-skip distinction between a targeted
+re-run and a bulk re-run, `regenerate=true` recomputing in place rather than duplicating,
+`scope=own`/`all` access (manager and sales_associate both blocked from `scope=all`, only admin
+allowed), an employee seeing their own payslip via the default `sales_associate`/`employee`
+template grant, and payslip access (self succeeds, admin succeeds for anyone, an unrelated
+employee gets 404, a manager gets 404 even for their own direct report since Payroll has no
+`team` tier, an unsupported `format` is rejected).
+
+**Cron job test coverage — 6 more tests, in `src/cron/payrollCron.test.js`,** since none of the
+above touches `payrollCron.js` itself: `resolvePreviousMonth` is a pure function, tested directly
+(same-year case, and the January→December-of-prior-year wraparound); `registerPayrollCron` is
+tested by mocking `node-cron`'s `schedule` export (`vi.spyOn`) and asserting it's called with the
+exact `"5 0 1 * *"` expression — the job is never actually left scheduled against a real timer,
+and no test waits for real time to pass. The job body itself was pulled out into a separately
+exported `runMonthlyPayrollJob(referenceDate = new Date())`, which accepts the reference date as
+a parameter specifically so tests can call it directly with a fixed date instead of faking global
+`Date`/timers (which would risk destabilizing `mongodb-memory-server`/Mongoose's own internal
+timer usage) — three tests seed real employees and real `baseSalary` values and confirm the job
+produces the exact same `Payroll` records a manual bulk `POST /payroll/run` would (idempotent on
+a second call for the same reference date, and skips — not errors on — an employee with no
+`baseSalary` set).
+
+### Support & Ticketing (`/api/v1/tickets`) — Phase 5
+
+See `.context/final-plan.md` §6.6/§7.8. Two-part task: (A) Customer Portal self-signup — see
+the Auth section above; (B) the `Ticket` module itself, below.
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| POST | `/tickets` | `tickets.create` | Body `{ subject, description, category?, customerId (internal only, required), assignedToId? (internal only, optional) }`. Internal (admin/manager): `customerId` required, must reference a real `Customer`; `category` optional (default `"other"`); `assignedToId` optional convenience for create-and-assign in one step. Portal (customer): `customerId`/`raisedByCustomerId` always derived from `req.user`, never trusted from the body; `category` is **always forced to `"other"`** regardless of what's sent — portal users are never asked to categorize. Both paths' `description` becomes the ticket's first `history[]` comment entry. |
+| GET | `/tickets?scope=all\|assigned\|own` | `tickets.view_all`/`view_assigned`/`view_own`, per the requested scope | `scope=all` (admin/manager) — **everything, including portal-raised tickets** (smartrays.md: internal visibility into those is Admin/PM only). `scope=assigned` (employee) — only tickets `assignedToId` matches them. `scope=own` (customer) — only their own company's tickets. A missing `?scope=` does **not** default to "own" the way Leave/TravelLog/Payroll do — Ticket has no universal "own" tier, so it resolves to whichever tier the caller's role holds, in priority order `all` > `assigned` > `own`. |
+| PATCH | `/tickets/:id/assign` | `tickets.assign` | Admin/manager only. `assignedToId` must reference a real `User` (400 otherwise). |
+| PATCH | `/tickets/:id/status` | Authenticated only — structural check inside the service | Admin/manager (anyone holding `tickets.assign`), **or** the ticket's own assigned employee — nobody else, notably not the raising customer. **404** if the caller can't even view the ticket at all; **403** if they can view it (e.g. the raising customer) but aren't allowed to manage its status — a different signal from "not found". **Any status transition is allowed** (including backwards, e.g. `closed` → `open`) — §6.6/§7.8 are silent on transition rules, a stated assumption. Appends a `status_change` history entry with `fromStatus`/`toStatus`. |
+| POST | `/tickets/:id/comments` | Authenticated only — "anyone with view access" inside the service | Admin/manager always; the assigned employee; the raising customer's own company. Appends a `comment` history entry. |
+| POST | `/tickets/:id/attachments` | Authenticated only — same view-access gate as comments | `multipart/form-data` (field `file`) or a base64 data URI in `req.body.attachment` — same either-transport acceptance as Attendance's photo capture. Uploads via `cloudinary.service.js#uploadTicketAttachment` (new export, reuses the existing Cloudinary client/config rather than duplicating upload logic; `resource_type: "auto"` since an attachment isn't guaranteed to be an image). |
+
+**No dedicated `GET /tickets/:id`** — deliberately not added beyond §7.8's literal endpoint
+list. Every mutating endpoint above returns the full updated `Ticket` (including its current
+`history[]`), the same "return the mutated record" convention already used everywhere else
+(`PATCH /leave/:id/approve`, `PATCH /travel-logs/:id/approve`, etc.) — so a frontend never
+actually needs a separate detail fetch.
+
+**`Ticket.subject`** — not in §6.6's terse field list, added the same way `baseSalary`/
+`lastHeartbeatAt` were: a short summary is necessary for any list view. There's no separate
+`description` field either — the raiser's initial free-text explanation becomes the very first
+`history[]` entry instead, since `history[]` already exists specifically to hold comments.
+`attachments[]` entries are `{ url, uploadedBy, uploadedAt }`, not bare URL strings.
+
+**Permission design:** new `tickets: ["create", "assign", "view_all", "view_assigned",
+"view_own"]` registry entry, matching §5's matrix exactly — `manager` gets
+create/assign/view_all (covers "PM"); `employee` gets only `view_assigned` (no `create` —
+employees don't raise tickets themselves in this design); `customer` gets
+`create`/`view_own` (the new `customer` `RolePermissionTemplate`, see the Auth section above);
+`sales_associate` gets **nothing** — the matrix marks both ticket rows "–" for that role.
+
+**Known deviations:** **§11.2 (category vs. lifecycle status split) resolved by this build** —
+the split itself (separate `category` and `status` fields) is adopted; the exact category enum
+values remain open to client confirmation if the list ever needs to grow, a narrower question
+than the shape decision §11.2 was actually about. No separate "recategorize" endpoint exists yet
+— `category` is set once, at creation.
+
+35 tests, no application bugs found on the first implementation. Covers: create (internal
+admin/manager raise with `customerId` required/validated, create-and-assign in one step, portal
+raise auto-scoped and forced to `category: "other"` regardless of what's sent,
+`sales_associate`/`employee` both blocked with 403, missing/invalid
+`customerId`/`subject`/`description` rejected); list scoping (`scope=all` sees everything
+including portal-raised tickets — checked separately for **both** admin and manager, since
+manager's "PM" access is its own distinct grant, not admin's bypass; `scope=assigned` sees only
+the caller's own assignments, not every ticket; `scope=own` sees only the caller's own company
+and **explicitly cannot** see another's — tested directly with two `Customer`s from two
+different companies and checked in both directions; `sales_associate` blocked entirely; a
+customer requesting `scope=assigned` blocked; the role-based default-scope resolution; an
+invalid scope rejected); assign (admin/manager only, a nonexistent assignee rejected,
+employee/customer blocked, a nonexistent ticket 404s); status (the assigned employee can change
+it with the resulting history entry showing the right `fromStatus`/`toStatus`, admin/manager can
+change it without being the assignee, an unrelated employee 404s, a customer on their own ticket
+gets 403 not 404, a backwards transition like `closed`→`open` is allowed and logged, an invalid
+status rejected); comments (admin/manager/assigned-employee/own-company-customer can all
+comment, an unrelated employee or a different company's customer both get 404, an empty comment
+rejected); **history ordering** (a mixed sequence of comments and status changes — initial raise,
+a comment, a status change, another comment, a final status change with an accompanying comment
+— is asserted to appear in `history[]` in the exact order it happened, not just "one new entry
+appeared"); and attachments (a valid upload via the mocked Cloudinary service appends the
+returned URL, a request with no file is rejected). `cloudinary.service.js` is mocked at the
+module boundary (`vi.mock`) — no test makes a real network call.
+
+### Payments (`/api/v1/payments`) — Phase 7
+
+See `.context/final-plan.md` §6.6/§7.9/§11.3. Admin-only tab — module folder is
+`src/modules/payment/`.
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| GET | `/payments` | `payments.view` | All payments, newest first. Admin-only — no ownership scoping exists for this module at all, unlike every other feature module (§5's matrix marks every other role "–"). |
+| POST | `/payments` | `payments.create` | Body `{ customerId\|manualClientName, date, amount, notes, invoiceId? }`. Exactly one of `customerId`/`manualClientName` required (never both, never neither). `invoiceId` can only be provided alongside a `customerId` — see the reconciliation logic below. |
+
+**§11.3 resolved — Payments use PARTIAL RECONCILIATION, not a fully standalone log and not full
+invoicing:**
+- When `customerId` **and** `invoiceId` are both given, the linked `Invoice` (validated to
+  actually belong to that `customerId` — 400 if it belongs to a different customer) has its
+  `balance` reduced by the payment amount. Reaching exactly 0 → `Invoice.status: "paid"`;
+  anything left over → `Invoice.status: "partially_paid"` (a new value added to
+  `INVOICE_STATUSES`, between `sent` and `paid` — the original 4-value enum had nothing to
+  represent "some money in, balance not zero yet"). An overpayment clamps the balance to 0
+  rather than going negative — a stated v1 simplification, no refund/credit tracking exists.
+  Reconciling against an invoice with no `balance` set (a `draft` created without a
+  `Contract.amount`) or a `cancelled` invoice is rejected (400).
+- A manual-only payment (`manualClientName`, no `customerId`), or a `customerId` with no
+  `invoiceId`, is just logged — **expected, not a gap**: not every payment is tied to a
+  specific invoice.
+- This does **not** mean full invoicing exists now — auto-numbering, recurring generation, and
+  ledger views all remain out of scope; `Invoice` is still the minimal Phase 2 placeholder
+  model. Only the balance/status update on an *existing* invoice, and only when a payment is
+  explicitly linked to one.
+
+16 tests, no application bugs found. Covers: access (admin-only, manager/sales_associate/
+employee all blocked), standalone logging (manual client, customerId with no invoiceId — the
+invoice is left untouched), validation (both/neither of customerId/manualClientName rejected,
+invoiceId without customerId rejected, invalid date/non-positive amount rejected), and partial
+reconciliation (a partial payment reduces balance and sets `partially_paid`, an exact payment
+sets `paid`, an overpayment clamps to 0 and sets `paid`, two sequential partial payments compound
+correctly, an invoiceId from a different customer is rejected, a null-balance or cancelled
+invoice is rejected, a nonexistent invoiceId is rejected).
+
+### AMC (`/api/v1/amc`) — Phase 7
+
+See `.context/final-plan.md` §6.6/§7.10. Module folder is `src/modules/amc/`.
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| GET | `/amc` | `amc.view` | "Own team" (manager) / "own" (sales_associate) scoping, resolved via the underlying `Customer.ownerId` — AMC has no `ownerId` field of its own. Admin sees everything. |
+| POST | `/amc` | `amc.edit` | Body `{ flow: 'new_customer'\|'existing_customer', customerId?, newCustomerPayload?, amount?, startDate, renewalDate }`. See the two-flow creation below. |
+| PATCH | `/amc/:id` | `amc.edit` | Updates `amount`/`startDate`/`renewalDate`/`status`. **404** (not 403) for an out-of-scope record, matching the Leads/Location/Customer precedent. |
+
+**Two-flow creation (smartrays.md: "AMC ... ask which create client or convert client"):**
+`flow: "new_customer"` creates a real `Customer` inline, reusing
+`customer.service.js#createCustomer` directly — the same cross-module direct-call pattern
+already used elsewhere (e.g. lead→customer conversion), not a duplicated creation path; its
+required-field validation (`companyName`/`projectManagerId`) is reused too, via
+`amc.validation.js` calling `customer.validation.js#validateCreateCustomerInput` directly
+against `newCustomerPayload`. `flow: "existing_customer"` requires `customerId`, which must
+reference a real `Customer` **within the requesting user's ownership scope** — a sales
+associate can't create an AMC record against another sales associate's customer.
+
+**"Manager = PM" scoping clarification:** unlike Leads/Customers (which have their own
+`ownerId` field), AMC's only link to ownership is indirect, through `customerId` →
+`Customer.ownerId`. New `customer.service.js#getVisibleCustomerIds(requestingUser)` export
+(returns `null` for admin — meaning unrestricted — or the visible `Customer` id list
+otherwise) resolves this without duplicating the ownership-scoping logic a second time.
+
+**Known deviations:** none from the ask. No automation on renewal for v1 — `status` only
+changes via an explicit `PATCH /amc/:id`; nothing watches `renewalDate` and flips it to
+`"expired"` automatically. No cross-linking to `Contract`/`Invoice` either.
+
+20 tests, no application bugs found. Covers: the `existing_customer` flow (admin/in-scope
+sales_associate succeed, out-of-scope sales_associate rejected, nonexistent/missing customerId
+rejected), the `new_customer` flow (creates a real Customer and links the AMC to it, missing/
+incomplete newCustomerPayload rejected), validation (invalid flow, missing dates), access
+(employee blocked entirely), list scoping (admin sees all, manager sees "own team" — their
+direct reports' customers — sales_associate sees only "own", employee blocked), update (admin/
+in-scope sales_associate succeed, out-of-scope 404s, invalid status rejected), and a dedicated
+regression test confirming a record with a long-past `renewalDate` never auto-flips to
+`"expired"` on its own.
+
+### Reports (`/api/v1/reports`) — Phase 8
+
+See `.context/final-plan.md` §7.11. Module folder is `src/modules/report/`.
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| POST | `/reports/generate` | Resolved per-module inside `generateReport` — no route-level gate, no new `reports.generate` permission | Body `{ module, filters?, format? }`. `module` is one of `attendance`/`leave`/`payroll`/`transport`/`leads`/`customers` (exactly the six §7.11 names). `format` defaults to `xlsx`. Returns `{ downloadUrl }` — uploads the generated file to Cloudinary rather than streaming it. |
+
+**Dispatcher design (`report.service.js`):** a small internal `module → { canAccess, generateBuffer }` map:
+- **`attendance`/`transport`** already had a combined fetch-and-render function from their own
+  earlier builds (`generateAttendanceReport`/`generateTravelLogReport`) — the dispatcher calls
+  those **directly, unmodified**, rather than splitting them apart or duplicating their
+  column/row shaping.
+- **`leave`/`payroll`/`leads`/`customers`** had no existing report-rendering code, only a scoped
+  list/query function (`listLeaves`/`listPayroll`/`listLeads`/`listCustomers`). The dispatcher
+  calls those **unmodified** to fetch data, then does its own **new** column/row shaping via the
+  existing shared `generateExcelReport`/`generatePdfReport` primitives — this rendering code is
+  new to this task and lives entirely in `report.service.js`, not inside each source module.
+  Owner/employee names are populated after the fact (`Model.populate(records, ...)`) without
+  touching the list functions themselves.
+
+**No new `reports.generate` permission — access is gated per-module by reusing `can()`** against
+that module's own existing actions:
+```
+attendance: view_team OR view_all        transport: view_team OR view_all (travelLogs)
+leave:      view OR view_team OR view_all payroll:   view
+leads:      view                          customers: view
+```
+This `canAccess` check is deliberately **coarse** — "can this role attempt a report from this
+module at all" — not the full scope resolution. The module's own data-fetcher (still called by
+the dispatcher) resolves the actual scope and may itself reject a *broader* one than the caller
+holds — e.g. `listPayroll` still 403s a `scope=all` request from someone who only has
+`payroll.view`, not `payroll.run`. **Scoping is never re-implemented**: the dispatcher fetches
+data *as the requesting user*, through each module's existing scoped function — the exact same
+one that module's own list/report endpoint already uses. A manager requesting an `attendance`
+report gets exactly their team's data, proven in `report.test.js` by asserting the dispatcher's
+report contains the exact same employee set `GET /attendance/team` independently returns.
+
+**BREAKING CHANGE (intentional — no frontend exists yet to break):** `GET /attendance/report`
+and `GET /travel-logs/report` now internally call this same dispatcher instead of duplicating
+report generation, and their response changed from streaming the file directly to returning
+`{ downloadUrl }` — see the Attendance/Transport sections above.
+
+**Explicitly out of scope:** `GET /payroll/:id/payslip` was **not** migrated and stays exactly
+as it was (a direct PDF stream) — it's a single-document artifact, not a filtered-list report,
+so it doesn't fit the dispatcher pattern. A dedicated regression test in `payroll.test.js`
+confirms this: it still streams `application/pdf` directly rather than returning
+`{ downloadUrl }`. Leads' `GET /leads/export` also stays exactly as-is —
+a deliberately separate, pre-existing CSV/Excel export; the new `leads` module report is
+additive (reuses `listLeads`, not `exportLeadsToExcel`), not a replacement.
+
+**Per-module `filters` validation (`report.validation.js`) reuses each target module's own
+existing query validator** rather than duplicating its checks — called as a plain function
+against a `{ query: filters }` stand-in, the same pattern `amc.validation.js` already uses for
+`customer.validation.js#validateCreateCustomerInput`:
+```
+attendance/transport: validateReportQuery  (date-range checks: from/to must parse, from ≤ to)
+leave:                 validateScopeQuery   (scope must be own/team/all)
+payroll:               validateListQuery    (scope must be own/all — no team tier; month format)
+leads/customers:       no dedicated query validator exists for either today (their list
+                       endpoints run unvalidated) — `status`, if given, is checked directly
+                       against LEAD_STATUSES/CUSTOMER_STATUSES, the same enum source their
+                       body validators already import, instead of a new hardcoded list.
+```
+
+18 tests, no application bugs found. Covers: validation (missing/invalid `module`, invalid
+`format`, non-object `filters`, unauthenticated request), `attendance` (a manager's report
+matches `GET /attendance/team`'s exact employee set; a `sales_associate` blocked), `transport`
+(same team-scoping proof; blocked role), `leave` (an employee's own report succeeds; a
+`sales_associate` requesting `scope=team` still 403s via the reused `listLeaves` check), `payroll`
+(an employee's own report succeeds with the right values in the rendered `.xlsx`; a manager is
+blocked entirely — Payroll has no manager grant at all), `leads` (a `sales_associate`'s report
+contains only their own leads, matching `listLeads`' ownership rule; an employee blocked),
+and `customers` (a manager's report contains only their team's customers, matching
+`listCustomers`' ownership rule; an employee blocked; a PDF format request). `cloudinary.service.js`
+is mocked at the module boundary — no test makes a real network call.
+
+### Customers (`/api/v1/customers`) — Phase 2
+
+See `.context/final-plan.md` §6.3/§7.2 for the full design writeup, and
+`leads-customer-functional-spec.md`'s CUSTOMER MODULE section for the UX/data reference this was
+built against (Next.js/Supabase stack ignored, data model and automation chain reused).
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/customers` | `customers.view` | Scoped identically to Leads: admin sees all, a manager sees their direct reports' customers, everyone else sees only their own. Filters: `search`, `status`, `owner`. |
+| POST | `/customers` | `customers.create` | `projectManagerId` required (400 if missing) — no role restriction on it, unlike `User.managerId`. `sales_associate` always gets `ownerId` forced to themselves. |
+| GET | `/customers/:id` | `customers.view` | 404 (not 403) for an out-of-scope customer. |
+| PATCH | `/customers/:id` | `customers.edit` | `sales_associate` cannot reassign `ownerId`. Setting `customerStatus` to `inactive` triggers the deactivation cascade (below). |
+| DELETE | `/customers/:id` | `customers.delete` | No cascading delete of contacts/contracts/credentials — same precedent as `deleteLead` not cascading `LeadCall`. |
+| POST | `/customers/bulk` | Checked inside the service, not the route | Body `{ ids, action: activate\|deactivate\|delete }`. `activate`/`deactivate` need `customers.edit`; `delete` needs `customers.delete` — the permission check happens in `bulkUpdateCustomers` itself since one route can't express "which permission" ahead of a mixed-action-type body. Reuses `updateCustomer`/`deleteCustomer` per id, so scoping and the cascade both apply per-item automatically. Registered before `/:id` so Express doesn't treat "bulk" as an id. |
+| GET/POST/PATCH/DELETE | `/customers/:id/contacts(/:contactId)` | `customers.view`/`customers.edit` | Plain sub-resource CRUD. |
+| GET/POST/PATCH/DELETE | `/customers/:id/contracts(/:contractId)` | `customers.view`/`customers.edit` | POST/DELETE trigger the contract automation below. |
+| GET/POST/PATCH/DELETE | `/customers/:id/credentials(/:credId)` | `customers.view or edit` **+ `credentials.view`** | Two `authorize()` calls chained in series (an AND gate — each just calls `next()` if permitted). |
+| POST | `/customers/:id/credentials/:credId/reveal` | `customers.view` + `credentials.view` | The only place plaintext ever leaves the service layer. Writes a `credential_revealed` activity log entry every time. |
+| GET | `/customers/:id/activity` | `customers.view` | Simple timeline: `created`, `edited`, `deactivated`, `reactivated`, `contract_added`, `contract_removed`, `credential_revealed`. |
+
+**Deliberately not built in this task:** `GET /customers/:id/invoices` and `GET /customers/:id/ledger`
+— both depend on real invoicing (numbering, ledger balances, payment tracking), which is Phase 7.
+`Invoice` exists only as a **minimal placeholder model** (customerId, contractId, number, type,
+amount, balance, status, issuedAt) so the contract automation below has somewhere real to write a
+draft record — the exact same treatment `Attendance` got for Location Tracking (§7.4b).
+
+**Contract automation (§6.3/§6.4, leads-customer-functional-spec.md):**
+- Adding a `monthly` contract auto-creates a `recurring`-type `Project` + a draft `Invoice`.
+- Adding a `onetime` contract auto-creates a `onetime`-type `Project` + a draft `Invoice`.
+- Adding a `yearly` contract triggers **no automation** — neither source document describes one,
+  so this is a deliberate no-op, not an oversight.
+- Deleting a contract completes its linked `Project` (`status: "completed"`) and cancels any of
+  its linked `Invoice`s that aren't already `paid`/`cancelled`. The reference spec's "pauses
+  recurring profile" has no literal analog here (there's no separate RecurringProfile model in
+  this build), so it maps onto completing the Project + cancelling the Invoice instead.
+
+**Deactivation cascade:** setting `customerStatus` to `inactive` (via `PATCH /customers/:id` or
+the bulk `deactivate` action — both funnel through the same `updateCustomer`) completes every
+currently-`active` `Project` for that customer. Only fires on the active→inactive transition, not
+on every save of an already-inactive customer.
+
+**Credentials vault encryption (§6.3/§11.8, resolved 2026-07-13):** AES-256-GCM via a new shared
+`src/services/credentialEncryption.service.js` — a fresh random IV per record
+(`Credential.passwordIv`), the key from `CREDENTIALS_ENCRYPTION_KEY` (now a **required** env var,
+see below). The GCM auth tag is appended to the ciphertext and stored in `passwordEncrypted`
+rather than given its own DB field, keeping the schema exactly as documented in §6.3 (no
+undocumented third field). `passwordEncrypted`/`passwordIv` are `select: false` on the schema —
+the same defense-in-depth pattern as `User.passwordHash` — so a plain `.find()`/`.findOne()`
+never returns them; only `revealCredential` explicitly re-selects them to decrypt.
+
+**Lead conversion is wired up for real now** — see the Leads section above. `lead.service.js`
+imports `customer.service.js#createCustomer` directly (the same cross-module pattern as
+`location` importing the `Attendance` model) rather than duplicating creation logic.
+
+**`getVisibleCustomerIds(requestingUser)` (added, §7.10 AMC prerequisite)** — exposes this
+module's existing ownership-scoping logic (the same one `GET /customers` already uses) as a
+reusable Customer-id list, returning `null` for admin (unrestricted) or the visible id list
+otherwise. Used by `amc.service.js` to scope AMC records via their underlying Customer's
+ownership, since AMC has no `ownerId` field of its own — see the AMC section above.
+
+21 tests, no application bugs found. Two test-authoring issues were caught and fixed while
+writing the suite (not app bugs): `validateContactInput` was wrongly reused for `PATCH .../contacts/:contactId`,
+rejecting a partial update with "name is required" even though name wasn't being changed — fixed
+with a dedicated `validateContactUpdateInput` that only checks name if it's present. And the bulk
+delete-permission test needed a user whose `customers.delete` grant was explicitly narrowed away,
+since both `manager` and `sales_associate` hold full `customers` CRUD by default (matching Leads'
+own precedent) — no role lacks `delete` while still holding other customer permissions.
+
+### Projects & Tasks (`/api/v1/projects`, `/api/v1/tasks`) — Phase 2
+
+See `.context/final-plan.md` §6.4/§7.3. **There is no `POST /projects` endpoint** — a project is
+only ever created by the customer module's contract automation above, never directly.
+
+| Method | Path | Permission | Notes |
+|---|---|---|---|
+| GET | `/projects` | `projects.view` | Scoped differently from Leads/Customers — there's no `managerId`-based "own team" concept for a Project (its own team IS `teamMemberIds`/`projectManagerId`). Admin sees all; everyone else sees only projects where they're the manager or a team member. |
+| GET | `/projects/:id` | `projects.view` | 404 (not 403) for an out-of-scope project. |
+| POST | `/projects/:id/team` | `projects.assign_team` **+** must be *this specific project's* `projectManagerId`, or admin | "Manager/Admin only" (§7.3) is interpreted narrowly — holding the permission grant is necessary but not sufficient; a different manager who isn't this project's own PM still gets 403 (mirrors `user.service.js#updateUser`'s "self OR admin" shape). Body `{ action: "add"\|"remove", userId }`. |
+| GET | `/projects/:id/tasks` | `tasks.view` | All tasks for the project — no further per-task narrowing once you can see the project at all. |
+| POST | `/tasks` | `tasks.assign` | Body `{ projectId, title, assignedToId }`. `assignedToId` must be the project's manager or a team member (400 otherwise). |
+| PATCH | `/tasks/:id/start` | Authenticated only — no `tasks.*` gate | Ownership check instead: the task's own assignee, or admin. **409** if another task is already `in_progress` for that same employee — the server-side "one `in_progress` task per employee at a time" constraint (§6.4), checked fresh against the database on every call, not client state. |
+| PATCH | `/tasks/:id/stop` | Authenticated only | Same ownership check. 409 if the task isn't currently `in_progress`. Moves it to `done` (there's no separate "paused" state in this 3-status model, so "stop" means "finish"). |
+
+**Permission design:** `projects.assign_team` and `tasks.assign` are real, admin-editable grants
+(manager/admin get both by default) rather than hardcoded role checks — consistent with this
+codebase's Single Source of Truth for Auth principle (§4.1), which the Permissions module (§7.12)
+exists specifically to uphold. There's deliberately no `tasks.update_own` registry entry — starting
+/stopping your own task is an ownership check, the same reasoning as Leads' `ownerId` scoping and
+`PATCH /users/:id`'s self-editable fields, not a permission tier.
+
+19 tests, no application bugs found.
+
+---
+
+## Environment Variables
+
+See `.env.example` for the full annotated list. Summary:
+
+| Variable | Required now? | Purpose |
+|---|---|---|
+| `NODE_ENV` | Yes | `development` / `production` |
+| `PORT` | Yes | API port |
+| `MONGODB_URI` | Yes | Mongoose connection string |
+| `JWT_SECRET` | Yes | JWT signing secret |
+| `JWT_EXPIRES_IN` | Yes | e.g. `7d` — also drives the auth cookie's `maxAge` |
+| `COOKIE_NAME` | Yes | Name of the httpOnly auth cookie |
+| `CLIENT_ORIGIN` | Yes | Allowed CORS origin (frontend dev server / prod domain) |
+| `SEED_ADMIN_NAME` / `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | Only for `npm run seed:admin` | One-time first-admin bootstrap |
+| `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | **Yes, as of 2026-07-13** | File storage for Attendance check-in/check-out photos (§6.5/§7.4) — `env.js` now fails fast at boot if any is missing. |
+| `CREDENTIALS_ENCRYPTION_KEY` | **Yes, as of 2026-07-13** | 32-byte base64 AES-256-GCM key for the customer credentials vault (§6.3/§11.8) — `env.js` now fails fast at boot if it's missing, since every `Credential` record depends on it. |
+| `LOCATION_PING_INTERVAL_MINUTES` | No — defaults to `2` if unset | Minutes between location pings; the client reads this via `GET /location/config` |
+| `ATTENDANCE_GAP_THRESHOLD_MINUTES` | No — defaults to `10` if unset | Minutes of heartbeat silence before a `connectivityGaps[]` entry is recorded (§6.5/§7.4) |
+| `GOOGLE_MAPS_API_KEY` | **Yes, as of Phase 6** | Google Maps Distance Matrix API key (§6.5/§7.6) — required for both auto-generated and coords-based manual `TravelLog` entries; `env.js` fails fast at boot if it's missing. |
+| `MILEAGE_RATE_PER_KM` | No — defaults to `10` if unset | Currency units per approved-`TravelLog`-km, Payroll's mileage reimbursement (§6.5/§7.7). **Placeholder value** — a deliberately simple v1 (one single global rate, not per-role/per-project); the client must confirm the real rate. |
+
+---
+
+## Testing
+
+```bash
+npm test          # runs the full suite once (vitest run)
+npm run test:watch   # re-runs on file changes
+```
+
+**Stack:** `vitest` (test runner — chosen over Jest for native ESM support, since this project
+is `"type": "module"` with no build step) + `supertest` (HTTP-level requests against the
+Express app) + `mongodb-memory-server` (spins up a real, disposable `mongod` per test file — no
+dependency on a running local/Docker MongoDB, and no risk of tests touching real data).
+
+**Layout:** test files are **colocated with the module they test** (`*.test.js` next to
+`*.model.js`/`*.service.js`/etc.), matching this project's per-module organization. Shared test
+infrastructure lives in one place, `tests/helpers/`, the same way shared app code lives in
+`src/utils`/`src/middlewares`/`src/helpers` rather than inside a module folder:
+
+```
+backend/
+├── tests/helpers/
+│   ├── testDb.js          start/stop the in-memory MongoDB, clear collections between tests
+│   ├── testApp.js         dynamically imports app.js (see note below)
+│   ├── authHelpers.js     create a user directly in the DB, log in and get a supertest agent
+│   └── binaryResponse.js  supertest response parser for binary downloads (xlsx export)
+├── src/modules/
+│   ├── auth/auth.test.js
+│   ├── lead/lead.test.js
+│   ├── location/location.test.js
+│   ├── permission/permission.test.js
+│   ├── user/user.test.js
+│   ├── attendance/attendance.test.js
+│   ├── customer/customer.test.js
+│   ├── project/project.test.js
+│   ├── leave/leave.test.js
+│   ├── transport/travelLog.test.js
+│   ├── payroll/payroll.test.js
+│   ├── ticket/ticket.test.js
+│   ├── payment/payment.test.js
+│   ├── amc/amc.test.js
+│   └── report/report.test.js
+└── src/cron/payrollCron.test.js   (colocated with the cron job it tests, same convention)
+```
+
+Vitest's default discovery (`**/*.test.js`, excluding `node_modules`) picks up colocated test
+files automatically — no config needed to point it at `src/modules/`.
+
+**Why the dynamic imports:** `src/config/env.js` validates required env vars and calls
+`process.exit(1)` the moment it's imported — including transitively, e.g. importing `app.js`
+imports `route.js` imports every module's routes imports `env.js`. Tests need to set
+`MONGODB_URI` (from the freshly-started in-memory server) and the other required vars *before*
+that happens, which is impossible with a static top-level `import app from "../../app.js"`
+(ES module imports are hoisted and evaluated before any `beforeAll` hook runs). `testApp.js` and
+`authHelpers.js` use `await import(...)` instead, deferred until a test's `beforeAll` explicitly
+calls them — after `startTestDatabase()` has already set every env var. This only applies to
+files that transitively import `env.js` (`app.js`, routes, controllers, services, middlewares);
+`lead.test.js` imports the `Lead`/`LeadCall`/`LeadSource` models directly and statically, since
+plain Mongoose schema files have no such dependency.
+
+**Coverage:**
+- **Auth** (19 tests): register blocked when unauthenticated and when authenticated as
+  non-admin, succeeds as admin and never leaks `passwordHash`, rejects duplicate email/short
+  password/invalid role; login succeeds/fails correctly and never puts the token in the
+  response body; `/me` with and without a session; logout invalidates the session — including a
+  **regression test** that asserts the `Set-Cookie` header expires immediately
+  (`Expires=Thu, 01 Jan 1970`, no `Max-Age`), locking in the cookie-clearing bug fixed during
+  the Auth module build; and (added, §7.8) Customer Portal self-signup — succeeds via a
+  `Contact`-email domain match, succeeds via the `Customer.email` fallback when no `Contact`
+  matches, rejects clearly with no domain match at all, rejects a duplicate email, rejects an
+  invalid email/short password, and the newly signed-up account logs in afterward like any
+  other.
+- **Leads** (34 tests): CRUD, validation (missing name, `lost` without `lostReason` on create/
+  update/status-change), pipeline transitions, hot-flag toggle, call logging + history + invalid
+  outcome, `search`/`owner`/`followUp`/`status` filters, permission scoping (admin/manager/
+  sales_associate, including that a sales associate gets **404** — not a silently empty result
+  or a 403 — when touching another sales associate's lead, and that ownership can't be
+  self-escalated by sending a different `ownerId`), CSV import (valid rows created, invalid rows
+  skipped and reported, not fatal to the batch), `.xlsx` export (byte-for-byte re-read and checked
+  against the database), and (replacing the old 501-stub test once the `customer` module existed)
+  the real conversion flow: rejects with no `projectManagerId`, then creates a real `Customer`
+  from the lead's data and sets `convertedCustomerId` on the lead.
+- **Location** (20 tests): ping accepted with an open Attendance record, rejected (409) with
+  none and after checkout, `employeeId` can't be spoofed from the request body, live-view
+  scoping (admin/manager/sales_associate/no-permission-at-all), an employee who's checked out
+  correctly disappears from the live view, history returns exactly the right employee+day
+  trail (ordered, excluding other employees/days) with 404 on out-of-scope `employeeId`, the
+  config endpoint, the TTL index configuration (`LocationPing.collection.indexes()`, not a real
+  45-day wait), the role-based permission defaults themselves (asserting the actual stored
+  `permissions.location` value for a manager, a sales associate, and an explicit override) —
+  fixtures for this suite register through the real `/auth/register` endpoint rather than
+  inserting directly into the database, specifically so the default-permission logic under test
+  actually runs — and (added once the `attendance` module existed) one end-to-end test proving a
+  real `POST /attendance/check-in` unblocks a real `POST /location/pings`, and a real
+  `POST /attendance/check-out` blocks the next one, with no direct database writes anywhere in
+  that flow.
+- **Permission** (20 tests): registry shape, template CRUD (view/edit as admin, blocked for
+  non-admin, invalid role rejected), the two behaviors that matter most for a template system —
+  editing a template does **not** retroactively change an existing user's permissions, and a
+  *newly* created user is seeded from the *current* template, not stale defaults — per-user
+  overrides that never leak into the template or another user with the same role, the reset
+  endpoint specifically proving it re-syncs to the template's **current** values rather than
+  creation-time or customized ones (edit the template *after* customizing the user, then
+  reset, then assert against the new template values), unknown module/action keys rejected with
+  a clear 400, and every one of the 7 endpoints in this module individually confirmed to reject
+  a non-admin with 403.
+- **User** (33 tests): `managerId` validation at creation time (rejected for a non-manager/admin
+  target, rejected for a nonexistent id, accepted for both `manager` and `admin`), the dropdown
+  endpoint (accessible with no `users.*` grant, excludes deactivated users, returns only
+  `_id`/`name`/`role` — explicitly asserting `passwordHash` and `permissions` are absent, not just
+  the other extra fields), list scoping (`view_all` sees everyone, `view_team` sees direct
+  reports + self but not an unaffiliated sales associate, **falls back to a self-only 1-item list
+  (200, not 403) when the caller holds no `users.*` grant at all**, filters by `role`/`isActive`/
+  `managerId`), single-record access (self always allowed regardless of grant, manager can fetch
+  a team member, **404** for an unaffiliated sales associate, **403** for no grant at all when
+  fetching someone else's specific id — deliberately not the same self-only fallback as the list
+  endpoint), self-vs-admin update rules (self can edit `name`/`email`/`phone`, self is blocked
+  from `role`/`isActive`/`managerId` with 403, one non-admin can't edit another user at all, admin
+  can edit every field on anyone, admin sending an invalid `managerId` through the general update
+  endpoint is rejected — enforced identically at both the validation and service layers),
+  deactivate/reactivate (admin-only, a non-admin is blocked even on their own record, a manager
+  can't deactivate a team member), manager assignment (valid assignment, invalid target
+  rejected, clearing with `managerId: null`, non-admin blocked), and (added 2026-07-13, §7.7
+  Payroll prerequisite) `baseSalary`: a non-admin is blocked (403) from setting their own, and
+  an admin setting it succeeds and never leaks it on a plain `GET /users` list fetch.
+- **Attendance** (32 tests): check-in creates an open record and rejects a second one while the
+  first is still open (409), rejects missing coords (400), always attributes the record to the
+  authenticated user regardless of any `employeeId` sent in the body, and lets two different
+  employees each hold their own independent open record at the same time; check-out closes the
+  open record, rejects when there's no open record (409) and when the record is already closed
+  (409), rejects missing coords, and never touches another employee's open record even when that
+  employee is the one calling check-out; `GET /attendance/me` returns only the caller's own
+  history, rejects a malformed `month` query (400), and correctly filters down to the given
+  month; photo capture uploads a base64 photo on check-in/check-out and stores the mocked
+  Cloudinary URL, **rejects a check-in and a check-out with no photo at all (400) — the photo
+  requirement is enforced server-side, not just client-side** — and accepts a real multipart
+  file alongside JSON-stringified coords; heartbeat rejects with no open shift (409), records no
+  gap within the threshold, records a `connectivityGaps` entry when the backdated last-heartbeat
+  exceeds the threshold (both via a follow-up heartbeat and via checkout), and `workingHours` is
+  asserted to exactly equal gross duration minus gap duration (and to equal gross duration alone
+  when there was no gap); `GET /attendance/team` scopes to direct reports only, 403s a role with
+  no `attendance.*` grant, and filters by month; `GET /attendance/report` (updated Phase 8, §7.11
+  — no longer streams the file, returns `{ downloadUrl }`) generates a real, non-empty `.xlsx` by
+  default — asserted against the actual buffer the mocked `uploadReportFile` was called with,
+  re-read with `exceljs` to confirm the "PK" zip signature and that only the manager's own team's
+  records appear in it, not an unaffiliated sales associate's — and a real, non-empty `.pdf` with
+  `?format=pdf` (checked for the `%PDF-` magic-number header on that same captured buffer),
+  rejects an invalid format and an inverted date range, and 403s a role with no `attendance.*`
+  grant.
+- **Leave** (18 tests): requesting creates a `pending` request, always attributes it to the caller
+  unless the caller is admin (who may request on behalf of someone else), rejects `endDate` before
+  `startDate` and a self-requested `type: "unapproved_absence"` (400, admin-only via the dedicated
+  action); `GET /leave?scope=own\|team\|all` — own returns only the caller's requests, team lets a
+  manager see direct reports' requests but 403s a sales_associate with no `view_team` grant, all
+  403s a manager but succeeds for admin, and an invalid scope value is rejected; approval — admin
+  approves a pending paid request, a non-admin (including the requester's own manager) is blocked,
+  approving an already-non-pending request is rejected (409), a single paid request over 1 day is
+  rejected, **the one-paid-leave-per-month quota is confirmed to be enforced at APPROVAL time, not
+  request time — two paid requests for the same employee in the same calendar month both submit
+  successfully (201), the first approval succeeds, and only the second approval is rejected
+  (409) with a message naming the quota** — and an unpaid request's approval never touches the
+  paid-leave quota; marking an unapproved absence sets `type`/`isDoubleDeduction`/`status`
+  correctly and is blocked for a non-admin.
+- **Customer** (21 tests): CRUD + scoping identical in shape to Leads (admin/manager-team/
+  sales_associate-own, including **404** not 403 for an out-of-scope fetch and `ownerId` forced to
+  self for a sales_associate), bulk activate/deactivate/delete (including that the delete action
+  specifically needs `customers.delete`, checked inside the service since one route can't express
+  a per-action permission ahead of a mixed-action body), the full contract automation chain
+  (`monthly`→recurring Project+draft Invoice, `onetime`→onetime Project+draft Invoice, `yearly`→no
+  automation, deleting a contract completes its Project and cancels its Invoice), the deactivation
+  cascade (active projects → completed, already-completed ones left alone), contacts CRUD, and the
+  credentials vault (the stored value is asserted to be neither the plaintext nor to contain it,
+  list/detail never expose `passwordEncrypted`/`passwordIv`, reveal decrypts correctly and writes
+  an activity-log entry, and a role without `credentials.view` is blocked from the vault
+  entirely), plus the activity log itself recording actions in the right order.
+- **Project** (19 tests): list/detail scoping (admin sees everything, everyone else only projects
+  where they're the manager or a team member, **404** not 403 for out-of-scope, **403** for a role
+  with no `projects.*` grant at all), team add/remove (this project's own manager or admin only —
+  a *different* manager who merely holds the role-level grant is still blocked, and an employee
+  with no `assign_team` grant is blocked at the route), task assignment (`assignedToId` must be
+  the project's manager or a team member, an employee with no `tasks.assign` grant is blocked),
+  and the one-`in_progress`-task-per-employee constraint (starting a second task while one is
+  already in progress is rejected with 409, a different employee can start their own task
+  independently, stopping a task frees that employee to start another, only the assignee or an
+  admin may start/stop a given task).
+- **Transport/Travel** (28 tests): a real Attendance checkout auto-creates a `source: "auto"`
+  `TravelLog` from that shift's check-in/check-out coords with the mocked distance; calling
+  `generateAutoTravelLog` directly with missing coords returns `null` and creates nothing;
+  a Google Maps failure during checkout never fails the checkout itself and creates no log;
+  manual entry uses a caller-supplied `distanceKm` as-is without calling Google Maps, computes
+  `distanceKm` via Google Maps when only coords are given, rejects an entry with neither, and
+  self-attributes when no `employeeId` is given; a plain sales_associate naming a peer's
+  `employeeId` is rejected outright (403, not silently redirected to self); a manager can log for
+  their own direct report but is blocked (403) from logging for a non-report; an admin can log for
+  anyone; `GET /travel-logs?scope=own\|team\|all` — own returns only the caller's own logs, team
+  lets a manager see direct reports' logs (and narrows further with `?employeeId=`) but 403s a
+  sales_associate with no `view_team` grant, all 403s a manager but succeeds for admin, an invalid
+  scope is rejected, and a dedicated side-by-side test proves admin/manager/employee scoping
+  simultaneously (three employees log travel, then admin's `scope=all`, the manager's
+  `scope=team`, and one employee's default `scope=own` are each asserted against the exact
+  expected employee-id set); the report (updated Phase 8, §7.11 — no longer streams the file,
+  returns `{ downloadUrl }`) generates a real, non-empty `.xlsx` by default (asserted against the
+  actual buffer the mocked `uploadReportFile` was called with, re-read with `exceljs` to confirm
+  both the "PK" signature and team-only scoping) and a real PDF with `?format=pdf` (checked for
+  the `%PDF-` header on that same captured buffer), and 403s a role with no
+  `view_team`/`view_all` grant; (added 2026-07-13) approve/reject: both `auto`- and
+  `manual`-source logs default to
+  `status: "pending"`, the target employee's own manager can approve, an admin can reject, a
+  manager is blocked (403) from resolving a non-report's log, a plain sales_associate is blocked
+  entirely, re-resolving an already-resolved log is rejected (409), and a nonexistent id is 404.
+- **Payroll** (20 tests, §7.7, Phase 4 + a Phase 8 regression test): see the Payroll section above for the full formula
+  coverage; also: a non-admin (manager included) is blocked from `POST /payroll/run`,
+  missing/invalid `month`/`year` rejected (400), running for an employee with no `baseSalary`
+  rejected (400), re-running an already-generated employee/month rejected (409) unless
+  `regenerate=true` (which recomputes the same document in place, not a duplicate), a bulk run
+  generates for every active employee with a `baseSalary` set and silently skips the rest (and
+  silently re-skips already-generated employees on a repeat bulk run), `scope=own`/`all` access
+  (manager blocked from `scope=all`; an `employee` sees their own payroll via the default
+  template grant), a **`sales_associate` with no override gets no payroll access at all** —
+  `GET /payroll` is 403, `GET /payroll/:id/payslip` on their own record is 404 (§5's matrix
+  marks `payroll.view/run` as "–" for Sales Associate, the same as Manager, not "own payslip
+  only" like Employee — a correction to an earlier misread of that cell as blank/unspecified,
+  see the Permissions section below), and payslip access (self succeeds, admin succeeds for
+  anyone, an unrelated employee gets 404, a manager gets 404 even for their own direct report
+  since Payroll has no `team` tier, an unsupported `format` is rejected), plus a dedicated
+  **Phase 8 regression test** confirming `GET /payroll/:id/payslip` still streams a direct PDF
+  response (`Content-Type: application/pdf`, real `%PDF-` bytes) and was NOT swept into the
+  §7.11 report dispatcher migration.
+- **Payroll cron job** (6 tests, `src/cron/payrollCron.test.js`): `resolvePreviousMonth`'s pure
+  date-math (same-year case and the January→prior-December wraparound), `registerPayrollCron`
+  schedules `"5 0 1 * *"` (asserted via a `node-cron` mock, never a real timer), and
+  `runMonthlyPayrollJob` (called directly with a fixed reference date, not real/faked time)
+  produces the exact same `Payroll` records a manual bulk run would — including staying
+  idempotent on a repeat call for the same reference date and skipping an employee with no
+  `baseSalary` set.
+- **Ticket** (35 tests, §7.8, Phase 5): see the Support & Ticketing section above for the full
+  coverage — create (internal admin/manager with `customerId` required/validated,
+  create-and-assign, portal raise auto-scoped and forced to `category: "other"`,
+  `sales_associate`/`employee` blocked), list scoping (`scope=all\|assigned\|own`, checked
+  separately for admin **and** manager since "PM" is its own grant not admin's bypass,
+  `scope=own` cross-company isolation tested directly in both directions with two different
+  `Customer`s, role-based default-scope resolution, `sales_associate` blocked entirely), assign
+  (admin/manager only), status (assigned-employee and admin/manager can change it, an unrelated
+  employee 404s, a customer on their own ticket gets 403 not 404, any transition including
+  backwards is allowed and logged), comments (admin/manager/assigned-employee/own-company-customer
+  can all comment, everyone else 404s), history ordering (a mixed sequence of comments/status
+  changes lands in `history[]` in the exact order they happened), and attachments (mocked
+  Cloudinary upload, no-file rejected).
+- **Payment** (16 tests, §7.9, Phase 7): access (admin-only, manager/sales_associate/employee
+  blocked), standalone logging (manual client name, or a `customerId` with no `invoiceId` —
+  either way nothing gets reconciled), validation (both/neither of `customerId`/
+  `manualClientName` rejected, `invoiceId` without `customerId` rejected, invalid date/
+  non-positive amount rejected), and partial reconciliation (a partial payment reduces balance
+  and sets `partially_paid`, an exact payment sets `paid`, an overpayment clamps to 0 and sets
+  `paid`, two sequential partial payments compound correctly, an `invoiceId` belonging to a
+  different customer is rejected, a null-balance or `cancelled` invoice is rejected, a
+  nonexistent `invoiceId` is rejected).
+- **AMC** (20 tests, §7.10, Phase 7): the `existing_customer` flow (admin and an in-scope
+  sales_associate succeed, an out-of-scope sales_associate is rejected, a nonexistent/missing
+  `customerId` is rejected), the `new_customer` flow (creates a real `Customer` and links the
+  AMC to it, a missing/incomplete `newCustomerPayload` is rejected), validation (invalid `flow`,
+  missing dates), access (employee blocked entirely), list scoping (admin sees all, a manager
+  sees "own team" — their direct reports' customers, not an unaffiliated sales associate's — a
+  sales associate sees only "own"), update (admin and an in-scope sales associate succeed, an
+  out-of-scope record 404s, an invalid status is rejected), and a dedicated regression test
+  confirming a record with a long-past `renewalDate` never auto-flips to `"expired"` on its own.
+- **Report** (24 tests, §7.11, Phase 8): validation (missing/invalid `module`, invalid `format`,
+  non-object `filters`, unauthenticated request), `attendance` (a manager's dispatcher report
+  contains the exact same employee set `GET /attendance/team` independently returns for that
+  manager — proving scoping is reused, not reimplemented — a `sales_associate` with no grant
+  is blocked, and an invalid date-range `filters` value is rejected via the reused
+  `validateReportQuery`), `transport` (same team-scoping proof; blocked role; a `from > to`
+  filter is rejected via the same reused validator), `leave` (an employee's own report succeeds
+  — now with an explicit "PK" xlsx-signature check on the captured buffer, not just a
+  `downloadUrl` check; a `sales_associate` requesting `scope=team` still 403s via the reused
+  `listLeaves` check even though the coarse dispatcher gate let them in; an invalid `scope`
+  value is rejected via the reused `validateScopeQuery`), `payroll` (an employee's own report
+  succeeds with the correct values in the rendered `.xlsx`, plus the "PK" signature check; a
+  manager is blocked entirely since Payroll has no manager grant at all; a `scope=team` filter
+  is rejected via the reused `validateListQuery`, since Payroll only supports own/all), `leads`
+  (a `sales_associate`'s report contains only their own leads, matching `listLeads`' ownership
+  rule, plus the "PK" check; an employee blocked; an invalid `status` filter is rejected against
+  `LEAD_STATUSES`), and `customers` (a manager's report contains only their team's customers,
+  matching `listCustomers`' ownership rule, plus the "PK" check; an employee blocked; a
+  `format=pdf` request generates a real PDF; an invalid `status` filter is rejected against
+  `CUSTOMER_STATUSES`). Every one of the six modules' success path now asserts the real
+  magic-number file signature ("PK"/"%PDF-") on the buffer captured from the mocked
+  `uploadReportFile` call, not just some of them. `cloudinary.service.js` is mocked at the
+  module boundary — no test makes a real network call.
+
+Total: **365 tests**, all passing — verified via a real `npm test` run, per-file breakdown:
+19 auth + 34 leads + 20 location + 20 permissions + 33 user + 32 attendance + 21 customer +
+19 project + 18 leave + 28 transport + 20 payroll + 6 payrollCron + 35 ticket + 16 payment +
+20 amc + 24 report = 365. (358 at the end of the initial Phase 8 build, +6 `report.test.js`
+filter-validation/signature tests +1 `payroll.test.js` payslip-exclusion regression test = 365 —
+a follow-up rigor pass, not a behavior change; the Attendance/Transport suites' own counts are
+unchanged, 32/28.) No real MongoDB or
+running server is required to run the suite — `npm test` is fully self-contained. No test makes
+a real Cloudinary or Google Maps API call — `attendance.test.js` and `location.test.js` (whose
+end-to-end test now supplies a photo too, since check-in/check-out require one, and performs a
+real checkout that would otherwise call Google Maps) mock both
+`src/services/cloudinary.service.js` and `src/services/googleMaps.service.js` at the module
+boundary; `travelLog.test.js` and `ticket.test.js` mock the same Cloudinary module too.
+
+---
+
+## Coding Standards (enforced across every module)
+
+From `.context/smartrays.md` — ES modules everywhere, thin controllers, business logic lives
+in services, models only do DB operations, early returns over nesting, no clever one-liners,
+meaningful names, `{success, message, data}` response envelope. Keep new modules consistent
+with the `auth` module's file layout above rather than inventing new patterns.
+
+---
+
+## Dependencies added for Leads
+
+- `exceljs` — CSV/Excel parsing (import) and `.xlsx` generation (export), per
+  `.context/final-plan.md` §3.
+- `multer` — multipart file upload handling for `POST /leads/import` (memory storage; files
+  are parsed in-memory and never written to disk).
+
+**Known issue:** `npm audit` reports a moderate-severity advisory in `uuid` (a transitive
+dependency of `exceljs`) — a missing buffer bounds check that only triggers if a caller passes
+a `buf` option directly to `uuid`'s v3/v5/v6 functions. Nothing in this codebase calls `uuid`
+directly or passes attacker-controlled buffers into it, so this isn't reachable through our
+usage. The suggested fix (`npm audit fix --force`) would downgrade `exceljs` to `3.4.0`, a
+breaking change, for a library `.context/final-plan.md` §3 specifically pins as our tool —
+left as-is and flagged here rather than silently downgraded. Revisit if `exceljs` publishes a
+fix release.
+
+## Dependencies added for Attendance (full Phase 3 build)
+
+- `cloudinary` — official v2 SDK, `src/services/cloudinary.service.js`, uploads check-in/
+  check-out photos and returns the secure URL. Configured from `CLOUDINARY_CLOUD_NAME`/
+  `CLOUDINARY_API_KEY`/`CLOUDINARY_API_SECRET` (now required env vars).
+- `pdfkit` — `GET /attendance/report?format=pdf`, via the new `src/services/report.service.js`
+  (see the Attendance section above). `exceljs` (already a dependency) handles the `.xlsx` case,
+  the default format, through the same shared service.
+
+`npm audit` after installing both: no new advisories beyond the pre-existing `uuid`/`exceljs`
+one documented above.
+
+## Transport/Travel — no new dependency added
+
+`src/services/googleMaps.service.js` calls the Google Maps Distance Matrix REST API directly via
+the Node runtime's built-in `fetch` — deliberately not adding an official Google Maps SDK package
+for what's a single, simple HTTP GET. Revisit if this module's Google Maps usage grows beyond
+plain distance lookups.
+
+## Dependencies added for Payroll
+
+- `node-cron` — already a listed §3 tech-stack dependency, installed for real with this task.
+  Drives `src/cron/payrollCron.js` (see the Payroll section above). `npm audit` after installing:
+  no new advisories beyond the pre-existing `uuid`/`exceljs` one documented above.
+
+---
+
+## Verification Notes (Leads module)
+
+Verified with real HTTP requests against a running server + MongoDB (not just "it boots"):
+one admin, one manager, two sales associates on that manager's team, a third sales associate
+deliberately left off the team, and an employee account with no `leads` permission granted.
+
+Confirmed:
+- List scoping is exactly right for all 5 accounts (admin sees all; manager sees their 2 team
+  members' leads but not the unaffiliated sales associate's; each sales associate sees only
+  their own).
+- Single-record access (`GET`/`PATCH`/`DELETE /leads/:id`) returns 404, not 403, for
+  out-of-scope leads.
+- An account with no `leads` permission granted gets 403 on `GET /leads`.
+- `sales_associate` create requests always get `ownerId` forced to themselves even when a
+  different `ownerId` is sent in the payload.
+- `PATCH /leads/:id/status` to `lost` without `lostReason` is rejected (400); with it, succeeds.
+- Hot-flag toggle flips correctly across repeated calls.
+- Call logging + call history round-trip correctly; an invalid `outcome` is rejected (400).
+- `POST /leads/:id/convert` returns 501 with a clear message, as designed.
+- `followUp=today` / `followUp=overdue` / `search` / `status` filters all returned the exact
+  expected subsets.
+- CSV import correctly created valid rows and skipped/reported invalid ones (missing name,
+  invalid status) with row numbers, without aborting the whole batch.
+- `.xlsx` export downloaded with the correct content type and was re-read with `exceljs` to
+  confirm every column and row matched the database.
+- A manager creating a lead and assigning it to a team member's `ownerId` correctly made it
+  visible in that team member's own list.
+
+No bugs found during this verification pass (contrast with the Auth module build, where a
+cookie-clearing bug was found and fixed — see the git history / prior session notes).
+
+**Update:** the above was manual `curl` verification, done before the automated suite existed.
+An automated suite now exists (see **Testing** above, `npm test`) and covers all of this plus
+the permission-scoping edge cases in far more depth — 46 tests, all passing. Writing it found
+**no application bugs** (the Leads module's logic held up), only two test-authoring issues,
+fixed in the tests themselves, not the app:
+1. `supertest`/`superagent` has no built-in parser for the `.xlsx` MIME type, so
+   `response.body` was an empty object instead of a `Buffer` until a custom binary parser
+   (`tests/helpers/binaryResponse.js`) was added.
+2. An early version of the export test asserted the wrong worksheet column (mixed up "Name" vs.
+   "Company" — column 1 vs. column 2 in `lead.service.js#exportLeadsToExcel`'s column order).

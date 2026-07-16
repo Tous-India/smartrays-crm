@@ -1,0 +1,20 @@
+node_modules/
+
+# Env files — never commit real secrets, only the example template
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs
+
+# Test/coverage output
+coverage
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+Thumbs.db

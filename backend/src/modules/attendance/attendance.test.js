@@ -1,0 +1,474 @@
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
+import { startTestDatabase, stopTestDatabase } from "../../../tests/helpers/testDb.js";
+import { getTestApp } from "../../../tests/helpers/testApp.js";
+import { createUserDirectly, loginAsAgent } from "../../../tests/helpers/authHelpers.js";
+import Attendance from "./attendance.model.js";
+
+const FAKE_PHOTO_URL = "https://fake.cloudinary.test/photo.jpg";
+const FAKE_REPORT_URL = "https://fake.cloudinary.test/report.file";
+// A photo is mandatory server-side on every check-in/check-out (see
+// attendance.validation.js) — this is the throwaway base64 payload nearly
+// every test in this file needs, since the goal of most tests here is
+// something other than photo handling itself.
+const TEST_PHOTO = "data:image/jpeg;base64,ZmFrZWltYWdlZGF0YQ==";
+
+// No test ever makes a real Cloudinary API call — the credentials configured
+// for the test suite (testDb.js) aren't for a real account. This mock proves
+// the upload wiring itself (photo in → secure URL stored on the record)
+// without a network dependency, keeping the suite fully self-contained.
+// `uploadReportFile` (added for the Phase 8 report dispatcher, §7.11) is
+// mocked too, since GET /attendance/report now goes through it — the mock
+// itself is what lets tests assert against the actual generated buffer
+// (real bytes it was called with) instead of a streamed response body.
+vi.mock("../../services/cloudinary.service.js", () => ({
+  uploadAttendancePhoto: vi.fn(async () => FAKE_PHOTO_URL),
+  uploadReportFile: vi.fn(async () => FAKE_REPORT_URL),
+}));
+
+// Every check-out in this file now also triggers travelLog.service.js's
+// auto travel-log generation (§7.6), which calls this service — mocked here
+// too so nothing in this file ever makes a real Google Maps API call either.
+vi.mock("../../services/googleMaps.service.js", () => ({
+  getDistanceKm: vi.fn(async () => 5),
+}));
+
+let app;
+let sales1Agent, sales2Agent, sales3Agent, managerAgent;
+let sales1, sales2, sales3;
+
+function buildCoords(overrides = {}) {
+  return { lat: 12.9716, lng: 77.5946, ...overrides };
+}
+
+beforeAll(async () => {
+  await startTestDatabase();
+  app = await getTestApp();
+
+  await createUserDirectly({
+    name: "Admin",
+    email: "admin@test.local",
+    password: "AdminPass123!",
+    role: "admin",
+  });
+  const adminAgent = await loginAsAgent(app, "admin@test.local", "AdminPass123!");
+
+  // Registered through the real /auth/register endpoint so these fixtures
+  // get the actual role-based attendance permission defaults.
+  const managerResponse = await adminAgent.post("/api/v1/auth/register").send({
+    name: "Manager One",
+    email: "manager1@test.local",
+    password: "Password123",
+    role: "manager",
+  });
+  managerAgent = await loginAsAgent(app, "manager1@test.local", "Password123");
+  const manager1Id = managerResponse.body.data._id;
+
+  const sales1Response = await adminAgent.post("/api/v1/auth/register").send({
+    name: "Sales One",
+    email: "sales1@test.local",
+    password: "Password123",
+    role: "sales_associate",
+    managerId: manager1Id,
+  });
+  sales1 = sales1Response.body.data;
+  sales1Agent = await loginAsAgent(app, "sales1@test.local", "Password123");
+
+  const sales2Response = await adminAgent.post("/api/v1/auth/register").send({
+    name: "Sales Two",
+    email: "sales2@test.local",
+    password: "Password123",
+    role: "sales_associate",
+    managerId: manager1Id,
+  });
+  sales2 = sales2Response.body.data;
+  sales2Agent = await loginAsAgent(app, "sales2@test.local", "Password123");
+
+  // Deliberately NOT on manager1's team.
+  const sales3Response = await adminAgent.post("/api/v1/auth/register").send({
+    name: "Sales Three",
+    email: "sales3@test.local",
+    password: "Password123",
+    role: "sales_associate",
+  });
+  sales3 = sales3Response.body.data;
+  sales3Agent = await loginAsAgent(app, "sales3@test.local", "Password123");
+});
+
+afterEach(async () => {
+  await Attendance.deleteMany({});
+});
+
+afterAll(async () => {
+  await stopTestDatabase();
+});
+
+describe("POST /attendance/check-in", () => {
+  it("creates an open attendance record for the authenticated employee", async () => {
+    const response = await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.employeeId).toBe(String(sales1._id));
+    expect(response.body.data.checkIn.coords).toEqual(buildCoords());
+    expect(response.body.data.checkOut.time).toBeNull();
+  });
+
+  it("rejects a second check-in while one is already open", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const response = await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    expect(response.status).toBe(409);
+  });
+
+  it("rejects a check-in with missing coords", async () => {
+    const response = await sales1Agent.post("/api/v1/attendance/check-in").send({});
+
+    expect(response.status).toBe(400);
+  });
+
+  it("always attributes the check-in to the authenticated user, ignoring any employeeId in the body", async () => {
+    const response = await sales1Agent
+      .post("/api/v1/attendance/check-in")
+      .send({ coords: buildCoords(), photo: TEST_PHOTO, employeeId: String(sales2._id) });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.employeeId).toBe(String(sales1._id));
+  });
+
+  it("lets a different employee check in independently while another employee has an open record", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const response = await sales2Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    expect(response.status).toBe(201);
+  });
+});
+
+describe("POST /attendance/check-out", () => {
+  it("closes the employee's open attendance record", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const response = await sales1Agent
+      .post("/api/v1/attendance/check-out")
+      .send({ coords: buildCoords({ lat: 13 }), photo: TEST_PHOTO });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.checkOut.time).not.toBeNull();
+    expect(response.body.data.checkOut.coords.lat).toBe(13);
+  });
+
+  it("rejects a check-out when there's no open record", async () => {
+    const response = await sales1Agent.post("/api/v1/attendance/check-out").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    expect(response.status).toBe(409);
+  });
+
+  it("rejects a second check-out once the record is already closed", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+    await sales1Agent.post("/api/v1/attendance/check-out").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const response = await sales1Agent.post("/api/v1/attendance/check-out").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    expect(response.status).toBe(409);
+  });
+
+  it("rejects a check-out with missing coords", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const response = await sales1Agent.post("/api/v1/attendance/check-out").send({});
+
+    expect(response.status).toBe(400);
+  });
+
+  it("only ever closes the authenticated user's own open record, never someone else's", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const response = await sales2Agent.post("/api/v1/attendance/check-out").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    expect(response.status).toBe(409);
+
+    const sales1Record = await Attendance.findOne({ employeeId: sales1._id });
+    expect(sales1Record.checkOut.time).toBeNull();
+  });
+});
+
+describe("GET /attendance/me", () => {
+  it("returns only the authenticated user's own attendance history", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+    await sales1Agent.post("/api/v1/attendance/check-out").send({ coords: buildCoords(), photo: TEST_PHOTO });
+    await sales2Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const response = await sales1Agent.get("/api/v1/attendance/me");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0].employeeId).toBe(String(sales1._id));
+  });
+
+  it("rejects an invalid month format", async () => {
+    const response = await sales1Agent.get("/api/v1/attendance/me?month=2026-7");
+
+    expect(response.status).toBe(400);
+  });
+
+  it("filters history down to the given month", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+    await sales1Agent.post("/api/v1/attendance/check-out").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const otherMonth = currentMonth === "2020-01" ? "2020-02" : "2020-01";
+
+    const currentResponse = await sales1Agent.get(`/api/v1/attendance/me?month=${currentMonth}`);
+    const otherResponse = await sales1Agent.get(`/api/v1/attendance/me?month=${otherMonth}`);
+
+    expect(currentResponse.status).toBe(200);
+    expect(currentResponse.body.data).toHaveLength(1);
+    expect(otherResponse.body.data).toHaveLength(0);
+  });
+});
+
+describe("Photo capture (check-in/check-out)", () => {
+  it("uploads a base64 photo on check-in and stores the returned secure URL", async () => {
+    const response = await sales1Agent.post("/api/v1/attendance/check-in").send({
+      coords: buildCoords(),
+      photo: "data:image/jpeg;base64,ZmFrZWltYWdlZGF0YQ==",
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.checkIn.photoUrl).toBe(FAKE_PHOTO_URL);
+  });
+
+  it("rejects a check-in with no photo at all — the photo requirement is enforced server-side, not just client-side", async () => {
+    const response = await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords() });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects a check-out with no photo at all", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const response = await sales1Agent.post("/api/v1/attendance/check-out").send({ coords: buildCoords() });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("uploads a base64 photo on check-out too", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const response = await sales1Agent.post("/api/v1/attendance/check-out").send({
+      coords: buildCoords(),
+      photo: "data:image/jpeg;base64,ZmFrZWltYWdlZGF0YQ==",
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.checkOut.photoUrl).toBe(FAKE_PHOTO_URL);
+  });
+
+  it("accepts a multipart photo file alongside JSON-stringified coords", async () => {
+    const response = await sales1Agent
+      .post("/api/v1/attendance/check-in")
+      .field("coords", JSON.stringify(buildCoords()))
+      .attach("photo", Buffer.from("fake-image-bytes"), "photo.jpg");
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.checkIn.photoUrl).toBe(FAKE_PHOTO_URL);
+    expect(response.body.data.checkIn.coords).toEqual(buildCoords());
+  });
+});
+
+describe("POST /attendance/heartbeat and connectivity-gap detection", () => {
+  it("rejects a heartbeat with no open check-in", async () => {
+    const response = await sales1Agent.post("/api/v1/attendance/heartbeat");
+
+    expect(response.status).toBe(409);
+  });
+
+  it("does not record a gap when a heartbeat arrives within the threshold", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const response = await sales1Agent.post("/api/v1/attendance/heartbeat");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.connectivityGaps).toHaveLength(0);
+  });
+
+  it("records a connectivity gap when a heartbeat arrives after the threshold has elapsed", async () => {
+    const checkInResponse = await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+    const backdated = new Date(Date.now() - 20 * 60 * 1000);
+
+    await Attendance.findByIdAndUpdate(checkInResponse.body.data._id, { lastHeartbeatAt: backdated });
+
+    const heartbeatResponse = await sales1Agent.post("/api/v1/attendance/heartbeat");
+
+    expect(heartbeatResponse.status).toBe(200);
+    expect(heartbeatResponse.body.data.connectivityGaps).toHaveLength(1);
+    expect(new Date(heartbeatResponse.body.data.connectivityGaps[0].start).getTime()).toBe(
+      backdated.getTime()
+    );
+  });
+
+  it("also detects a gap between the last heartbeat and checkout, not just between heartbeats", async () => {
+    const checkInResponse = await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+    const backdated = new Date(Date.now() - 15 * 60 * 1000);
+
+    await Attendance.findByIdAndUpdate(checkInResponse.body.data._id, { lastHeartbeatAt: backdated });
+
+    const checkOutResponse = await sales1Agent.post("/api/v1/attendance/check-out").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    expect(checkOutResponse.status).toBe(200);
+    expect(checkOutResponse.body.data.connectivityGaps).toHaveLength(1);
+  });
+
+  it("subtracts connectivity-gap duration from workingHours at checkout", async () => {
+    const checkInResponse = await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+    const backdated = new Date(Date.now() - 30 * 60 * 1000);
+
+    await Attendance.findByIdAndUpdate(checkInResponse.body.data._id, { lastHeartbeatAt: backdated });
+
+    const checkOutResponse = await sales1Agent.post("/api/v1/attendance/check-out").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    expect(checkOutResponse.status).toBe(200);
+    const gap = checkOutResponse.body.data.connectivityGaps[0];
+    const gapMs = new Date(gap.end) - new Date(gap.start);
+    const grossMs =
+      new Date(checkOutResponse.body.data.checkOut.time) - new Date(checkInResponse.body.data.checkIn.time);
+    const expectedWorkingHours = Math.round((Math.max(0, grossMs - gapMs) / 3600000) * 100) / 100;
+
+    expect(checkOutResponse.body.data.workingHours).toBe(expectedWorkingHours);
+  });
+
+  it("computes workingHours with no subtraction when there was no gap", async () => {
+    const checkInResponse = await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+    const checkOutResponse = await sales1Agent.post("/api/v1/attendance/check-out").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const grossMs =
+      new Date(checkOutResponse.body.data.checkOut.time) - new Date(checkInResponse.body.data.checkIn.time);
+    const expectedWorkingHours = Math.round((grossMs / 3600000) * 100) / 100;
+
+    expect(checkOutResponse.body.data.connectivityGaps).toHaveLength(0);
+    expect(checkOutResponse.body.data.workingHours).toBe(expectedWorkingHours);
+  });
+});
+
+describe("GET /attendance/team", () => {
+  it("a manager (attendance.view_team default) sees only their direct reports, not an unaffiliated sales associate", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+    await sales2Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+    await sales3Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const response = await managerAgent.get("/api/v1/attendance/team");
+
+    expect(response.status).toBe(200);
+    const employeeIds = response.body.data.map((record) => record.employeeId).sort();
+    expect(employeeIds).toEqual([String(sales1._id), String(sales2._id)].sort());
+  });
+
+  it("returns 403 for a role with no attendance.* grant at all", async () => {
+    const response = await sales1Agent.get("/api/v1/attendance/team");
+
+    expect(response.status).toBe(403);
+  });
+
+  it("filters team attendance down to the given month", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const otherMonth = currentMonth === "2020-01" ? "2020-02" : "2020-01";
+
+    const currentResponse = await managerAgent.get(`/api/v1/attendance/team?month=${currentMonth}`);
+    const otherResponse = await managerAgent.get(`/api/v1/attendance/team?month=${otherMonth}`);
+
+    expect(currentResponse.body.data).toHaveLength(1);
+    expect(otherResponse.body.data).toHaveLength(0);
+  });
+});
+
+describe("GET /attendance/report", () => {
+  // Migrated onto the unified §7.11 report dispatcher (Phase 8) — this
+  // endpoint no longer streams the file itself, so these tests assert
+  // against the real buffer the mocked `uploadReportFile` was called with
+  // (proving a genuine, well-formed file was generated) and the
+  // `{ downloadUrl }` the mocked upload resolves to, rather than a streamed
+  // response body — the same general approach already used for mocking
+  // Cloudinary elsewhere in this project.
+  it("generates a valid, non-empty .xlsx report by default, scoped to the manager's team only, and returns a downloadUrl", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+    await sales2Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+    await sales3Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const { uploadReportFile } = await import("../../services/cloudinary.service.js");
+    uploadReportFile.mockClear();
+
+    const response = await managerAgent.get("/api/v1/attendance/report");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.downloadUrl).toBe(FAKE_REPORT_URL);
+    expect(uploadReportFile).toHaveBeenCalledTimes(1);
+
+    const [buffer, format] = uploadReportFile.mock.calls[0];
+    expect(format).toBe("xlsx");
+    expect(Buffer.isBuffer(buffer)).toBe(true);
+    // .xlsx is a zip archive — its first two bytes are always the "PK" local
+    // file header signature. Asserting this on the actual generated buffer
+    // (not just trusting the format string) is what proves a real,
+    // well-formed archive was built, not just an empty/garbage buffer.
+    expect(buffer.subarray(0, 2).toString()).toBe("PK");
+
+    const { default: ExcelJS } = await import("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    const worksheet = workbook.worksheets[0];
+
+    // Row 1 is the header, so data starts at row 2. Only sales1/sales2 (the
+    // manager's direct reports) should appear — sales3 is deliberately
+    // unaffiliated and must not leak into the report.
+    const employeeNames = [];
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber > 1) {
+        employeeNames.push(row.getCell(1).value);
+      }
+    });
+
+    expect(employeeNames.sort()).toEqual(["Sales One", "Sales Two"].sort());
+  });
+
+  it("generates a valid, non-empty PDF report when format=pdf, and returns a downloadUrl", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const { uploadReportFile } = await import("../../services/cloudinary.service.js");
+    uploadReportFile.mockClear();
+
+    const response = await managerAgent.get("/api/v1/attendance/report?format=pdf");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.downloadUrl).toBe(FAKE_REPORT_URL);
+    expect(uploadReportFile).toHaveBeenCalledTimes(1);
+
+    const [buffer, format] = uploadReportFile.mock.calls[0];
+    expect(format).toBe("pdf");
+    // Every valid PDF file starts with this exact magic-number header.
+    expect(buffer.subarray(0, 5).toString()).toBe("%PDF-");
+  });
+
+  it("rejects an invalid format", async () => {
+    const response = await managerAgent.get("/api/v1/attendance/report?format=csv");
+
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects from after to", async () => {
+    const response = await managerAgent.get(
+      "/api/v1/attendance/report?from=2026-02-01&to=2026-01-01"
+    );
+
+    expect(response.status).toBe(400);
+  });
+
+  it("returns 403 for a role with no attendance.* grant at all", async () => {
+    const response = await sales1Agent.get("/api/v1/attendance/report");
+
+    expect(response.status).toBe(403);
+  });
+});

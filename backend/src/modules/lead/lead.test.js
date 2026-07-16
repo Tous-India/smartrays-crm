@@ -1,0 +1,549 @@
+import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import { startTestDatabase, stopTestDatabase } from "../../../tests/helpers/testDb.js";
+import { getTestApp } from "../../../tests/helpers/testApp.js";
+import { createUserDirectly, loginAsAgent } from "../../../tests/helpers/authHelpers.js";
+import { bufferParser } from "../../../tests/helpers/binaryResponse.js";
+import Lead from "./lead.model.js";
+import LeadCall from "./leadCall.model.js";
+import LeadSource from "./leadSource.model.js";
+
+const FULL_LEADS_PERMISSIONS = { leads: { view: true, create: true, edit: true, delete: true } };
+
+let app;
+let adminAgent, managerAgent, sales1Agent, sales2Agent, sales3Agent, noPermAgent;
+let manager1, sales1, sales2, sales3;
+
+function buildLeadPayload(overrides = {}) {
+  return {
+    name: "Test Lead",
+    email: "lead@example.com",
+    phone: "1234567890",
+    companyName: "Test Co",
+    source: "Website",
+    ...overrides,
+  };
+}
+
+async function clearLeadData() {
+  await Lead.deleteMany({});
+  await LeadCall.deleteMany({});
+  await LeadSource.deleteMany({});
+}
+
+beforeAll(async () => {
+  await startTestDatabase();
+  app = await getTestApp();
+
+  await createUserDirectly({
+    name: "Admin",
+    email: "admin@test.local",
+    password: "AdminPass123!",
+    role: "admin",
+  });
+  adminAgent = await loginAsAgent(app, "admin@test.local", "AdminPass123!");
+
+  manager1 = await createUserDirectly({
+    name: "Manager One",
+    email: "manager1@test.local",
+    password: "Password123",
+    role: "manager",
+    permissions: FULL_LEADS_PERMISSIONS,
+  });
+  managerAgent = await loginAsAgent(app, "manager1@test.local", "Password123");
+
+  sales1 = await createUserDirectly({
+    name: "Sales One",
+    email: "sales1@test.local",
+    password: "Password123",
+    role: "sales_associate",
+    managerId: manager1._id,
+    permissions: FULL_LEADS_PERMISSIONS,
+  });
+  sales1Agent = await loginAsAgent(app, "sales1@test.local", "Password123");
+
+  sales2 = await createUserDirectly({
+    name: "Sales Two",
+    email: "sales2@test.local",
+    password: "Password123",
+    role: "sales_associate",
+    managerId: manager1._id,
+    permissions: FULL_LEADS_PERMISSIONS,
+  });
+  sales2Agent = await loginAsAgent(app, "sales2@test.local", "Password123");
+
+  // Deliberately NOT on manager1's team — used to prove manager scoping
+  // doesn't leak across unrelated teams.
+  sales3 = await createUserDirectly({
+    name: "Sales Three",
+    email: "sales3@test.local",
+    password: "Password123",
+    role: "sales_associate",
+    permissions: FULL_LEADS_PERMISSIONS,
+  });
+  sales3Agent = await loginAsAgent(app, "sales3@test.local", "Password123");
+
+  await createUserDirectly({
+    name: "No Permission",
+    email: "noperm@test.local",
+    password: "Password123",
+    role: "employee",
+  });
+  noPermAgent = await loginAsAgent(app, "noperm@test.local", "Password123");
+});
+
+// Users are fixtures shared across the whole file (expensive to recreate);
+// only lead-related collections reset between tests.
+afterEach(async () => {
+  await clearLeadData();
+});
+
+afterAll(async () => {
+  await stopTestDatabase();
+});
+
+describe("Lead CRUD", () => {
+  it("sales1 can create a lead", async () => {
+    const response = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload());
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.ownerId).toBe(String(sales1._id));
+  });
+
+  it("fails to create a lead without a name", async () => {
+    const payload = buildLeadPayload();
+    delete payload.name;
+
+    const response = await sales1Agent.post("/api/v1/leads").send(payload);
+
+    expect(response.status).toBe(400);
+  });
+
+  it("sales1 can read their own lead", async () => {
+    const created = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload());
+
+    const response = await sales1Agent.get(`/api/v1/leads/${created.body.data._id}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.name).toBe("Test Lead");
+  });
+
+  it("sales1 can update their own lead", async () => {
+    const created = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload());
+
+    const response = await sales1Agent
+      .patch(`/api/v1/leads/${created.body.data._id}`)
+      .send({ notes: "Updated notes" });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.notes).toBe("Updated notes");
+  });
+
+  it("sales1 can delete their own lead", async () => {
+    const created = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload());
+
+    const deleteResponse = await sales1Agent.delete(`/api/v1/leads/${created.body.data._id}`);
+    expect(deleteResponse.status).toBe(200);
+
+    const getResponse = await sales1Agent.get(`/api/v1/leads/${created.body.data._id}`);
+    expect(getResponse.status).toBe(404);
+  });
+});
+
+describe("Validation", () => {
+  it("rejects creating with status=lost and no lostReason", async () => {
+    const response = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload({ status: "lost" }));
+
+    expect(response.status).toBe(400);
+  });
+
+  it("allows creating with status=lost when lostReason is given", async () => {
+    const response = await sales1Agent
+      .post("/api/v1/leads")
+      .send(buildLeadPayload({ status: "lost", lostReason: "Too expensive" }));
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.lostReason).toBe("Too expensive");
+  });
+
+  it("rejects updating status to lost without lostReason", async () => {
+    const created = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload());
+
+    const response = await sales1Agent
+      .patch(`/api/v1/leads/${created.body.data._id}`)
+      .send({ status: "lost" });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects PATCH /:id/status to lost without lostReason", async () => {
+    const created = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload());
+
+    const response = await sales1Agent
+      .patch(`/api/v1/leads/${created.body.data._id}/status`)
+      .send({ status: "lost" });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("accepts PATCH /:id/status to lost with lostReason", async () => {
+    const created = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload());
+
+    const response = await sales1Agent
+      .patch(`/api/v1/leads/${created.body.data._id}/status`)
+      .send({ status: "lost", lostReason: "No budget" });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.status).toBe("lost");
+    expect(response.body.data.lostReason).toBe("No budget");
+  });
+});
+
+describe("Pipeline stage changes and hot flag", () => {
+  it("allows a valid sequence of status transitions", async () => {
+    const created = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload());
+    const id = created.body.data._id;
+
+    const toContacted = await sales1Agent.patch(`/api/v1/leads/${id}/status`).send({ status: "contacted" });
+    expect(toContacted.status).toBe(200);
+    expect(toContacted.body.data.status).toBe("contacted");
+
+    const toQualified = await sales1Agent.patch(`/api/v1/leads/${id}/status`).send({ status: "qualified" });
+    expect(toQualified.status).toBe(200);
+    expect(toQualified.body.data.status).toBe("qualified");
+  });
+
+  it("rejects an invalid status value", async () => {
+    const created = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload());
+
+    const response = await sales1Agent
+      .patch(`/api/v1/leads/${created.body.data._id}/status`)
+      .send({ status: "not_a_real_status" });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("toggles isHot on and off", async () => {
+    const created = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload());
+    const id = created.body.data._id;
+
+    const firstToggle = await sales1Agent.patch(`/api/v1/leads/${id}/hot`);
+    expect(firstToggle.body.data.isHot).toBe(true);
+
+    const secondToggle = await sales1Agent.patch(`/api/v1/leads/${id}/hot`);
+    expect(secondToggle.body.data.isHot).toBe(false);
+  });
+});
+
+describe("Call logging", () => {
+  it("logs a call and it appears in call history", async () => {
+    const created = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload());
+    const id = created.body.data._id;
+
+    const logResponse = await sales1Agent.post(`/api/v1/leads/${id}/calls`).send({
+      calledAt: new Date().toISOString(),
+      durationSeconds: 60,
+      outcome: "connected",
+      notes: "Good call",
+    });
+    expect(logResponse.status).toBe(201);
+
+    const historyResponse = await sales1Agent.get(`/api/v1/leads/${id}/calls`);
+    expect(historyResponse.status).toBe(200);
+    expect(historyResponse.body.data).toHaveLength(1);
+    expect(historyResponse.body.data[0].outcome).toBe("connected");
+  });
+
+  it("rejects an invalid outcome", async () => {
+    const created = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload());
+
+    const response = await sales1Agent.post(`/api/v1/leads/${created.body.data._id}/calls`).send({
+      calledAt: new Date().toISOString(),
+      outcome: "not_a_real_outcome",
+    });
+
+    expect(response.status).toBe(400);
+  });
+});
+
+describe("Filters", () => {
+  it("search matches by name, company, email, and phone", async () => {
+    await sales1Agent.post("/api/v1/leads").send(
+      buildLeadPayload({
+        name: "Alice Buyer",
+        companyName: "Acme Co",
+        email: "alice@example.com",
+        phone: "1111111111",
+      })
+    );
+    await sales1Agent.post("/api/v1/leads").send(
+      buildLeadPayload({
+        name: "Bob Buyer",
+        companyName: "Beta Co",
+        email: "bob@example.com",
+        phone: "2222222222",
+      })
+    );
+
+    const byName = await sales1Agent.get("/api/v1/leads?search=alice");
+    expect(byName.body.data.map((lead) => lead.name)).toEqual(["Alice Buyer"]);
+
+    const byCompany = await sales1Agent.get("/api/v1/leads?search=Beta");
+    expect(byCompany.body.data.map((lead) => lead.name)).toEqual(["Bob Buyer"]);
+
+    const byEmail = await sales1Agent.get("/api/v1/leads?search=alice@example.com");
+    expect(byEmail.body.data.map((lead) => lead.name)).toEqual(["Alice Buyer"]);
+
+    const byPhone = await sales1Agent.get("/api/v1/leads?search=2222222222");
+    expect(byPhone.body.data.map((lead) => lead.name)).toEqual(["Bob Buyer"]);
+  });
+
+  it("owner filter returns only that owner's leads", async () => {
+    await sales1Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "Sales1 Lead" }));
+    await sales2Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "Sales2 Lead" }));
+
+    const response = await adminAgent.get(`/api/v1/leads?owner=${sales1._id}`);
+
+    expect(response.body.data.map((lead) => lead.name)).toEqual(["Sales1 Lead"]);
+  });
+
+  it("followUp today/overdue/this_week/none each return the right subset", async () => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0);
+    const twoDaysAgo = new Date(today);
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+    const inThreeDays = new Date(today);
+    inThreeDays.setDate(inThreeDays.getDate() + 3);
+
+    const withToday = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "Today Lead" }));
+    await sales1Agent
+      .patch(`/api/v1/leads/${withToday.body.data._id}`)
+      .send({ followUpDate: today.toISOString() });
+
+    const withOverdue = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "Overdue Lead" }));
+    await sales1Agent
+      .patch(`/api/v1/leads/${withOverdue.body.data._id}`)
+      .send({ followUpDate: twoDaysAgo.toISOString() });
+
+    const withThisWeek = await sales1Agent
+      .post("/api/v1/leads")
+      .send(buildLeadPayload({ name: "This Week Lead" }));
+    await sales1Agent
+      .patch(`/api/v1/leads/${withThisWeek.body.data._id}`)
+      .send({ followUpDate: inThreeDays.toISOString() });
+
+    await sales1Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "No Follow Up Lead" }));
+
+    const todayResults = await sales1Agent.get("/api/v1/leads?followUp=today");
+    expect(todayResults.body.data.map((lead) => lead.name)).toEqual(["Today Lead"]);
+
+    const overdueResults = await sales1Agent.get("/api/v1/leads?followUp=overdue");
+    expect(overdueResults.body.data.map((lead) => lead.name)).toEqual(["Overdue Lead"]);
+
+    // "this_week" is a rolling 7-day window starting today (see lead.service.js),
+    // so "Today Lead" is included alongside "This Week Lead".
+    const thisWeekResults = await sales1Agent.get("/api/v1/leads?followUp=this_week");
+    expect(thisWeekResults.body.data.map((lead) => lead.name).sort()).toEqual(
+      ["This Week Lead", "Today Lead"].sort()
+    );
+
+    const noneResults = await sales1Agent.get("/api/v1/leads?followUp=none");
+    expect(noneResults.body.data.map((lead) => lead.name)).toEqual(["No Follow Up Lead"]);
+  });
+});
+
+describe("Permission scoping", () => {
+  it("admin sees all leads", async () => {
+    await sales1Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "S1 Lead" }));
+    await sales2Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "S2 Lead" }));
+    await sales3Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "S3 Lead" }));
+
+    const response = await adminAgent.get("/api/v1/leads");
+
+    expect(response.body.data.map((lead) => lead.name).sort()).toEqual(
+      ["S1 Lead", "S2 Lead", "S3 Lead"].sort()
+    );
+  });
+
+  it("manager sees only leads owned by their direct reports, not an unaffiliated sales associate", async () => {
+    await sales1Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "S1 Lead" }));
+    await sales2Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "S2 Lead" }));
+    await sales3Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "S3 Lead" }));
+
+    const response = await managerAgent.get("/api/v1/leads");
+
+    expect(response.body.data.map((lead) => lead.name).sort()).toEqual(["S1 Lead", "S2 Lead"].sort());
+  });
+
+  it("sales_associate sees only their own leads", async () => {
+    await sales1Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "S1 Lead" }));
+    await sales2Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "S2 Lead" }));
+
+    const response = await sales1Agent.get("/api/v1/leads");
+
+    expect(response.body.data.map((lead) => lead.name)).toEqual(["S1 Lead"]);
+  });
+
+  // backend/README.md and .context/final-plan.md §7.1 document this as
+  // intentional: out-of-scope leads return 404, not 403, so a user who can't
+  // see a lead also can't tell whether it exists.
+  it("sales_associate cannot GET another sales_associate's lead (404)", async () => {
+    const created = await sales2Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "S2 Lead" }));
+
+    const response = await sales1Agent.get(`/api/v1/leads/${created.body.data._id}`);
+
+    expect(response.status).toBe(404);
+  });
+
+  it("sales_associate cannot UPDATE another sales_associate's lead (404)", async () => {
+    const created = await sales2Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "S2 Lead" }));
+
+    const response = await sales1Agent
+      .patch(`/api/v1/leads/${created.body.data._id}`)
+      .send({ notes: "hijacked" });
+
+    expect(response.status).toBe(404);
+  });
+
+  it("sales_associate cannot DELETE another sales_associate's lead (404), and it stays intact", async () => {
+    const created = await sales2Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "S2 Lead" }));
+
+    const deleteResponse = await sales1Agent.delete(`/api/v1/leads/${created.body.data._id}`);
+    expect(deleteResponse.status).toBe(404);
+
+    const stillThere = await sales2Agent.get(`/api/v1/leads/${created.body.data._id}`);
+    expect(stillThere.status).toBe(200);
+  });
+
+  it("forces ownerId to self when a sales_associate tries to create a lead for someone else", async () => {
+    const response = await sales1Agent
+      .post("/api/v1/leads")
+      .send(buildLeadPayload({ ownerId: String(sales2._id) }));
+
+    expect(response.body.data.ownerId).toBe(String(sales1._id));
+  });
+
+  it("prevents a sales_associate from reassigning ownerId on update", async () => {
+    const created = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload());
+
+    const response = await sales1Agent
+      .patch(`/api/v1/leads/${created.body.data._id}`)
+      .send({ ownerId: String(sales2._id) });
+
+    expect(response.body.data.ownerId).toBe(String(sales1._id));
+  });
+
+  it("allows a manager to create a lead assigned to a team member", async () => {
+    const response = await managerAgent
+      .post("/api/v1/leads")
+      .send(buildLeadPayload({ ownerId: String(sales2._id) }));
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.ownerId).toBe(String(sales2._id));
+  });
+
+  it("returns 403 for a user with no leads permission granted", async () => {
+    const response = await noPermAgent.get("/api/v1/leads");
+
+    expect(response.status).toBe(403);
+  });
+});
+
+describe("Convert to customer", () => {
+  it("rejects a convert request with no projectManagerId", async () => {
+    const created = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload());
+
+    const response = await sales1Agent.post(`/api/v1/leads/${created.body.data._id}/convert`).send({});
+
+    expect(response.status).toBe(400);
+  });
+
+  it("creates a real Customer from the lead's data and marks the lead converted", async () => {
+    const created = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload());
+    const leadId = created.body.data._id;
+
+    await sales1Agent.patch(`/api/v1/leads/${leadId}/status`).send({ status: "won" });
+
+    const response = await sales1Agent
+      .post(`/api/v1/leads/${leadId}/convert`)
+      .send({ projectManagerId: String(manager1._id) });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.companyName).toBe(buildLeadPayload().companyName);
+    expect(response.body.data.email).toBe(buildLeadPayload().email);
+    expect(response.body.data.projectManagerId).toBe(String(manager1._id));
+
+    const leadAfter = await sales1Agent.get(`/api/v1/leads/${leadId}`);
+
+    expect(leadAfter.body.data.convertedCustomerId).toBe(response.body.data._id);
+  });
+});
+
+describe("CSV import", () => {
+  it("bulk-creates valid rows and reports skipped invalid rows without aborting the batch", async () => {
+    const csv = [
+      "Name,Email,Phone,Company,Source,Status,Budget",
+      "Dave Import,dave@example.com,4444444444,Delta Inc,Referral,new,3000",
+      "Eve Import,,5555555555,Epsilon LLC,Cold Call,contacted,7000",
+      ",noemail@example.com,6666666666,Missing Name Co,Website,new,1000",
+      "Frank Import,frank@example.com,7777777777,Foxtrot Co,BadStatus,not_a_real_status,2000",
+    ].join("\n");
+
+    const response = await sales1Agent
+      .post("/api/v1/leads/import")
+      .attach("file", Buffer.from(csv), "leads.csv");
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.importedCount).toBe(2);
+    expect(response.body.data.skippedCount).toBe(2);
+    expect(response.body.data.skipped.map((row) => row.reason)).toEqual([
+      "Missing name",
+      "Invalid status: not_a_real_status",
+    ]);
+
+    const list = await sales1Agent.get("/api/v1/leads");
+    expect(list.body.data.map((lead) => lead.name).sort()).toEqual(["Dave Import", "Eve Import"]);
+  });
+
+  it("rejects an import request with no file", async () => {
+    const response = await sales1Agent.post("/api/v1/leads/import");
+
+    expect(response.status).toBe(400);
+  });
+});
+
+describe("Excel export", () => {
+  it("exports only the currently filtered set", async () => {
+    await sales1Agent
+      .post("/api/v1/leads")
+      .send(buildLeadPayload({ name: "Lost Lead", status: "lost", lostReason: "No budget" }));
+    await sales1Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "New Lead" }));
+
+    const response = await sales1Agent
+      .get("/api/v1/leads/export?status=lost")
+      .buffer(true)
+      .parse(bufferParser);
+
+    expect(response.status).toBe(200);
+    expect(response.headers["content-type"]).toContain("spreadsheetml");
+
+    const { default: ExcelJS } = await import("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(response.body);
+
+    const worksheet = workbook.worksheets[0];
+    // header row + exactly 1 data row (the lost lead only)
+    expect(worksheet.rowCount).toBe(2);
+    // Column 1 is "Name" per the worksheet.columns order in lead.service.js#exportLeadsToExcel
+    expect(worksheet.getRow(2).getCell(1).value).toBe("Lost Lead");
+  });
+});
+
+describe("Lead sources", () => {
+  it("lazily seeds the default list on first fetch", async () => {
+    const response = await sales1Agent.get("/api/v1/lead-sources");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toHaveLength(10);
+    expect(response.body.data.map((source) => source.name)).toContain("Website");
+  });
+});
