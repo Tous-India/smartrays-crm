@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import request from "supertest";
 import { startTestDatabase, stopTestDatabase, clearAllCollections } from "../../../tests/helpers/testDb.js";
 import { getTestApp } from "../../../tests/helpers/testApp.js";
 import { createUserDirectly, loginAsAgent } from "../../../tests/helpers/authHelpers.js";
@@ -383,6 +384,53 @@ describe("PATCH /users/:id/manager", () => {
     const response = await managerAgent
       .patch(`/api/v1/users/${sales1._id}/manager`)
       .send({ managerId: null });
+
+    expect(response.status).toBe(403);
+  });
+});
+
+describe("PATCH /users/:id/reset-password (admin override, §7.13)", () => {
+  it("admin can set an exact new password, and it is never echoed back", async () => {
+    const response = await adminAgent
+      .patch(`/api/v1/users/${sales1._id}/reset-password`)
+      .send({ newPassword: "AdminChosenPass123" });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.tempPassword).toBeNull();
+
+    const loginResponse = await request(app)
+      .post("/api/v1/auth/login")
+      .send({ email: "sales1@test.local", password: "AdminChosenPass123" });
+
+    expect(loginResponse.status).toBe(200);
+  });
+
+  it("generates and returns a one-time temp password when none is supplied", async () => {
+    const response = await adminAgent.patch(`/api/v1/users/${sales1._id}/reset-password`).send({});
+
+    expect(response.status).toBe(200);
+    expect(typeof response.body.data.tempPassword).toBe("string");
+    expect(response.body.data.tempPassword.length).toBeGreaterThanOrEqual(8);
+
+    const loginResponse = await request(app)
+      .post("/api/v1/auth/login")
+      .send({ email: "sales1@test.local", password: response.body.data.tempPassword });
+
+    expect(loginResponse.status).toBe(200);
+  });
+
+  it("rejects a supplied newPassword shorter than 8 characters", async () => {
+    const response = await adminAgent
+      .patch(`/api/v1/users/${sales1._id}/reset-password`)
+      .send({ newPassword: "short" });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("blocks a non-admin from resetting anyone's password, including their own", async () => {
+    const response = await sales1Agent
+      .patch(`/api/v1/users/${sales1._id}/reset-password`)
+      .send({ newPassword: "SomeNewPass123" });
 
     expect(response.status).toBe(403);
   });

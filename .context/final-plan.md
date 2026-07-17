@@ -66,12 +66,14 @@ original intent.*
 │  route map)                 │        │  authorize(Any) → controller  │
 └─────────────────────────────┘        │  → service → model            │
                                         │  - node-cron — monthly payroll│
-                                        │    run wired (§7.7,           │
-                                        │    2026-07-13); other jobs    │
-                                        │    (follow-up reminders, etc.)│
-                                        │    still planned              │
-                                        │  - web-push sender (planned)  │
-                                        │  - report generator (planned) │
+                                        │    run (§7.7, 2026-07-13) AND │
+                                        │    the 5-min lead follow-up   │
+                                        │    reminder cron (§7.16,      │
+                                        │    2026-07-16) — both wired   │
+                                        │  - web-push sender — wired    │
+                                        │    (§7.16, 2026-07-16)        │
+                                        │  - report generator — wired   │
+                                        │    (§7.11, Phase 8)           │
                                         └───────────────┬───────────────┘
                                                          │
                                         ┌────────────────▼───────────────┐
@@ -93,7 +95,9 @@ original intent.*
                                         │  - Google Maps Distance Matrix │
                                         │    — wired and in use          │
                                         │    (Transport, §7.6, 2026-07-13)│
-                                        │  - Web Push (VAPID) — planned  │
+                                        │  - Web Push (VAPID) — wired    │
+                                        │    and in use (§7.16,          │
+                                        │    2026-07-16)                 │
                                         └─────────────────────────────────┘
 ```
 
@@ -119,9 +123,11 @@ Source of Truth rule made concrete, and to mark what's real vs. planned in the d
 | `payment` | ✅ Built (§7.9, Phase 7) | Admin-only manual payment log, with optional partial reconciliation against an existing `Invoice` (§11.3, resolved) |
 | `amc` | ✅ Built (§7.10, Phase 7) | Annual maintenance contract tracking per customer, "own team"/"own" scoped via the underlying Customer's ownership |
 | `report` | ✅ Built (§7.11, Phase 8) | Unified `POST /reports/generate` dispatcher (attendance/leave/payroll/transport/leads/customers) — uploads to Cloudinary, returns a download URL. `GET /attendance/report`/`GET /travel-logs/report` now internally reuse it (breaking response-shape change) |
-| `notification` | ⬜ Planned (§3/§7.1, Phase 9) | Push notification delivery (lead assignment, follow-up reminders, etc.) |
+| `notification` | ✅ **Built (§6.7/§7.11-Platform, Phase 9, 2026-07-16)** | `Notification`/`PushSubscription` models, Web Push (VAPID) delivery via `web-push`, self-scoped subscribe/list/mark-read endpoints. Wired into Leads (assignment + a 24h/15m follow-up-reminder cron) and Ticket assignment (a deliberate small addition beyond the Leads-only spec) — see §7.16 |
 | `transport` | ✅ Built (§7.6, Phase 6, 2026-07-13) | Distance-per-shift (auto from Attendance checkout, or manual entry) via Google Maps, separate from `location`'s raw GPS stream. Approval workflow (`pending`/`approved`/`rejected`) added 2026-07-13; only `approved` entries feed Payroll mileage reimbursement (§11.4, resolved) |
 | Dashboards | ⬜ Planned (§7.13, Phase 9) | Frontend widget shell composed by role + permissions — no dedicated backend module |
+| `frontend` (scaffold) | ✅ **Built (Frontend Phase 0, 2026-07-16)** | Vite + Tailwind + Ant Design scaffold, API client, session store, route guards, dashboard/portal layout shells, full §8 route map wired (every route exists; only `/login` and `/` are functionally complete, the rest are placeholders) — see the Frontend Phase 0 LLD entry below and `frontend/README.md` |
+| `lead` (frontend) | ✅ **Built (2026-07-16) — the reference implementation for every later frontend module** | Table View + Board View (`@dnd-kit` kanban) behind one shared page shell, Lead Detail slide-over (real route), Import wizard, filtered export — see §7.15 |
 
 #### Major Cross-Module Flows
 
@@ -173,7 +179,7 @@ Full statements live where cited — this is a summary index, not a restatement:
 |---|---|---|
 | Cloudinary | File storage — attendance photos, ticket attachments, generated PDF/Excel reports | ✅ Wired and in use — `src/services/cloudinary.service.js`, Attendance check-in/check-out photos (§7.4, 2026-07-13) and Ticket attachments (§7.8, `uploadTicketAttachment`, `resource_type: "auto"` since attachments aren't guaranteed to be images). Generated-report storage still pending §7.11 |
 | Google Maps Distance Matrix | Computing per-shift travel distance for the Transport/Travel module | ✅ Wired and in use (§7.6, 2026-07-13) — `src/services/googleMaps.service.js`, no SDK dependency (calls the REST API via `fetch`) |
-| Web Push (VAPID) | Push notifications — lead assignment, follow-up reminders | Planned (§3), not built |
+| Web Push (VAPID) | Push notifications — lead assignment, follow-up reminders, ticket assignment | ✅ Wired and in use (§6.7/§7.16, Phase 9, 2026-07-16) — `src/services/webPush.service.js`, no SDK beyond the `web-push` npm package itself. Browser-side receipt (PWA service worker) is a frontend follow-up |
 
 ---
 
@@ -583,8 +589,8 @@ what to build next and why.
 | Global state | Zustand — only for genuine cross-page state (session/user, active running task timer, notification count) |
 | Styling | Tailwind CSS (layout/utility) + Ant Design (production components) |
 | Auth | JWT in httpOnly + secure + sameSite cookies — never localStorage/sessionStorage |
-| Push notifications | Web Push (VAPID) via a PWA service worker + `web-push` npm package |
-| Scheduled jobs | `node-cron` (in-process) — ✅ monthly payroll run wired 2026-07-13 (`src/cron/payrollCron.js`, §7.7); follow-up reminders and recurring invoice generation still planned |
+| Push notifications | Web Push (VAPID) via a PWA service worker + `web-push` npm package — ✅ **backend half wired 2026-07-16** (§7.16, Phase 9): `web-push` sender, `Notification`/`PushSubscription` models, VAPID keypair now required env vars. The PWA service worker (browser-side receipt/display) is a frontend concern, still planned |
+| Scheduled jobs | `node-cron` (in-process) — ✅ monthly payroll run wired 2026-07-13 (`src/cron/payrollCron.js`, §7.7); ✅ **lead follow-up reminder cron wired 2026-07-16** (`src/cron/leadFollowUpReminderCron.js`, §7.16, every 5 minutes); recurring invoice generation still planned |
 | PDF/Excel export | `pdfkit` (PDF) — resolved 2026-07-13, `exceljs` already in use for Leads' export. Generic building blocks now live in `src/services/report.service.js` (`generateExcelReport`/`generatePdfReport`, added alongside Attendance's report endpoint) — groundwork for §7.11's real shared pipeline, not the pipeline itself. Leads' export predates this service and was not migrated onto it |
 | File storage | **Cloudinary** — resolved 2026-07-13 (see §11.6). Used uniformly across all environments for attendance login photos, ticket attachments, and generated PDF/Excel reports; no separate local-disk path for dev, to avoid a dev/prod behavior split |
 | Backend testing | **Resolved 2026-07-13** (added during the Leads test-suite build, not in the original plan): `vitest` (test runner — chosen over Jest for native ESM support, no build step needed) + `supertest` (HTTP-level tests against the Express app) + `mongodb-memory-server` (disposable per-test-file MongoDB, no dependency on a real running instance). See `backend/README.md` → Testing. |
@@ -622,6 +628,11 @@ MILEAGE_RATE_PER_KM=10           # see §6.5/§7.7 — currency units per approv
                                   # required — defaults to 10 if unset. PLACEHOLDER value, a
                                   # deliberately simple v1 (single global rate, not
                                   # per-role/per-project) — client must confirm the real rate.
+VAPID_PUBLIC_KEY=                # required as of Phase 9 (§6.7/§7.16) — web-push's own
+VAPID_PRIVATE_KEY=               # generateVAPIDKeys() utility generates a real pair; no safe
+                                  # placeholder exists for a public-key-cryptography keypair.
+VAPID_SUBJECT=                   # optional — mailto:/https: contact URL per the Web Push spec.
+                                  # Defaults to mailto:support@smartrayssolutions.com if unset.
 ```
 
 All coding-standard rules from `.context/smartrays.md` (modular `modules/<feature>/` structure
@@ -974,6 +985,9 @@ deliberate, stated v1 simplifications, not gaps. See §7.10.
 
 ### 6.7 Platform
 
+✅ **Built (§7.16, Phase 9, 2026-07-16)** — both models built exactly as documented below, no
+fields added or changed. See §7.16 for the full write-up.
+
 **`PushSubscription`** — userId, endpoint, keys (VAPID)
 **`Notification`** — userId, type, message, isRead, relatedEntity (module + id)
 
@@ -1204,9 +1218,9 @@ import wizard (upload → column mapping → preview → bulk create), Bulk expo
 
 **Rules:** one active follow-up per lead; `lost` requires `lostReason`; hot flag toggle;
 convert-to-customer pre-fills but stays fully editable before save; push on assignment and
-24h/15min before follow-up (cron: `follow-up-reminders`) — **not built yet**, no push
-notification infrastructure exists (Web Push/VAPID, §3) so assignment/follow-up notifications
-are deferred, tracked as a gap below, not silently dropped.
+24h/15min before follow-up (cron: `follow-up-reminders`) — ✅ **built 2026-07-16, §7.16** —
+`lead.service.js#notifyLeadAssignment` (createLead/updateLead) and
+`src/cron/leadFollowUpReminderCron.js` (5-minute tick, `lead.service.js#sendDueFollowUpReminders`).
 
 **Endpoints (as built — see `backend/README.md` for the full table with permissions):**
 ```
@@ -1251,9 +1265,9 @@ GET    /lead-sources          config list, lazily seeded with the 10 defaults on
   skipped and reported with a reason + row number rather than failing the whole batch. Imported
   leads are always owned by the importing user — mapping an "Owner" column to a different user
   isn't supported yet.
-- **Assignment/follow-up push notifications are not built** — no gap was silently dropped, but
-  none of Web Push/VAPID/service worker/`node-cron` infrastructure exists yet (§3), so this
-  waits for whichever phase builds that shared piece.
+- **Assignment/follow-up push notifications** — ✅ **built 2026-07-16, §7.16** (Phase 9's
+  Notification module). Previously deferred here pending that shared infrastructure; no longer
+  a gap.
 
 ### 7.2 Customers
 
@@ -2233,6 +2247,253 @@ list/filter/detail components four times.
 
 ---
 
+### 7.14 Frontend Phase 0 (Scaffold + Auth + Routing Shell)
+
+✅ **Built 2026-07-16** — mirrors what backend Phase 0 established: the foundation every
+later frontend task builds on, not full-featured pages. No automated-test module list to
+report per-file counts against yet (frontend testing just started) — 15 tests total across
+4 files, all passing; see `frontend/README.md` for how to run them.
+
+**Stack, exactly per §3 (no deviation):** Vite + React (JS only), Tailwind CSS + Ant Design,
+React Router DOM (`createBrowserRouter`/`createRoutesFromElements` only), Zustand (session
+store is the only global store so far), Axios. **One deliberate cleanup on top of the
+pre-existing `frontend/` scaffold:** the default Vite template had wired an experimental
+`@rolldown/plugin-babel` + React Compiler preset — neither is part of the fixed §3 stack,
+and both add real risk (bleeding-edge, unproven interop with Tailwind/Ant Design/Vitest) for
+zero required benefit at Phase 0. Replaced with the standard `@vitejs/plugin-react`.
+
+**API client (`src/services/apiClient.js`):** one shared Axios instance,
+`baseURL` from `VITE_API_BASE_URL`, `withCredentials: true` (the httpOnly cookie is never
+read/stored client-side — token invisible to JS by design, §4.1). A response interceptor
+clears session state and redirects to `/login` on any 401 **except** a failed login attempt
+itself (that 401 is expected — wrong password, not an expiring session).
+
+**Session store (`src/store/sessionStore.js`, Zustand — the only genuine cross-page state
+built so far, per smartrays.md's "Zustand only when global state is required"):** calls
+`GET /auth/me` once on app load to resolve `{ user, isAuthenticated, isLoading }` from a real
+request — never a decoded token, mirroring §4.1's backend principle on the client side.
+Exposes `login()`, `logout()`, `refetchSession()`, `clearSession()` (wired to the API
+client's 401 handler via a `registerUnauthorizedHandler` indirection, avoiding a circular
+import between the two files).
+
+**Route guards (`src/routes/`):** `ProtectedRoute` (redirect-to-`/login` + loading state
+while the initial `/auth/me` call is in flight — no flash of protected content),
+`PermissionGate`/`usePermission` (mirrors backend `can(user, module, action)` for
+hiding/disabling UI — **UI convenience only, stated as a comment in
+`src/utils/permission.utils.js` itself, not just here**, since the backend is the only real
+enforcement point), `RootRedirect` (`/`'s real by-role redirect: `customer` → `/portal`,
+every staff role → `/dashboard`).
+
+**Layouts (`src/layouts/`):** `MainLayout` (the one shared dashboard shell per §7.13 — nav
+items filtered by `can()`, not four separate per-role layouts) and `PortalLayout` (separate,
+no internal nav, per §8, for `role: customer`).
+
+**Routing (`src/routes/router.jsx`):** every route in §8's map is wired today. `/login` and
+`/` are fully functional; every other route renders a shared `PlaceholderPage` component
+(heading + "coming soon") — filled in module-by-module in later frontend tasks, the same
+phase-by-phase discipline the backend was built with.
+
+**Testing:** Vitest + React Testing Library + `@testing-library/user-event`, jsdom
+environment. Login page (renders/submits/error/redirect), `ProtectedRoute`
+(loading/redirect/authenticated), `PermissionGate` (hide/fallback/show/admin-bypass), and
+`RootRedirect` (customer vs. every staff role) are all covered — every API call mocked at
+the module boundary, no real network calls, matching backend's Cloudinary/Google Maps
+mocking discipline. **One real interop bug found and fixed during this build:** the
+scaffold's pinned `vitest@2` bundles its own internal Vite 5.x (`vite-node`,
+`@vitest/mocker`), which doesn't correctly apply this project's Vite-8-targeted
+`@vitejs/plugin-react` — JSX silently fell back to the classic runtime in tests
+(`ReferenceError: React is not defined`) even though the real dev/build pipeline was
+unaffected. Fixed by upgrading to `vitest@4` (also resolves the transitive `esbuild`/`vite`
+audit advisory `vitest@2` carried — the same fix `npm audit` itself suggested, not a forced
+workaround). A second, unrelated fix: jsdom has no `window.matchMedia`, which Ant Design's
+responsive components call unconditionally on mount — stubbed in `src/test/setup.js`.
+
+**Known deviations:** none from this task's own scope — registration/Customer-signup pages,
+real module pages (Leads/Customers/Attendance/...), and the Dashboard's actual widgets are
+all explicitly out of scope for Phase 0, deferred to later frontend tasks per §10.
+
+---
+
+### 7.15 Leads Frontend Module
+
+✅ **Built 2026-07-16** — the first real feature module built on the Phase 0 scaffold, and
+the one every later frontend module should follow the shape of (see `frontend/README.md`'s
+"Adding a new module" section, rewritten around this build). Built under
+`frontend/src/modules/lead/`, wired into the existing placeholder routes `/leads`,
+`/leads/board`, `/leads/:id`.
+
+**New dependency:** `@dnd-kit/core` + `@dnd-kit/sortable` + `@dnd-kit/utilities` — the
+kanban board's drag-to-move-between-stages interaction. `dayjs` was also added as an
+explicit direct dependency (previously only resolvable transitively through `antd`) since
+`LeadFormModal`/`LogCallModal` import it directly for `DatePicker` value handling.
+
+**Table View + Board View share one page shell** (`LeadsListPage`, rendered by both
+`LeadsPage.jsx` and `LeadsBoardPage.jsx` with a `view` prop) — filters
+(search/owner/follow-up) live in the URL's search params so toggling between the two
+routes never loses the current filter selection. Table: Name/Company/Status/Source/Owner/
+Follow-up/Budget/Created columns per leads-customer-functional-spec.md, inline status
+dropdown, overdue follow-ups in red, quick hot-toggle and owner-reassignment actions from
+the row itself. Board: one column per `LEAD_STATUSES` entry, `@dnd-kit` drag between
+columns.
+
+**One dispatcher for status changes, shared by three surfaces** —
+`useLeadStatusChangeFlow` centralizes what happens when a lead's status changes, since
+three different UI surfaces (Table's dropdown, Board's drag-and-drop, Detail page's action
+buttons) all need the exact same two special cases: moving to `lost` opens a modal
+collecting `lostReason` **before** the API call (never after a drag/click already looked
+like it succeeded, which would otherwise silently fail against the backend's required-
+field validation), and moving to `won` opens the Convert-to-Customer modal instead of a
+plain status change, then calls the real convert endpoint followed by the actual status
+change to `won` — matching leads-customer-functional-spec.md's stated behavior ("Won —
+marks lead as won, triggers Convert to Customer flow"). Every other transition changes
+immediately, no modal.
+
+**Convert to Customer** (`ConvertToCustomerModal`) pre-fills `companyName`/`email`/
+`phone`/`source` from the lead but stays fully editable before submit, per the spec.
+`projectManagerId` has no lead-derived fallback (Lead has no equivalent field, and it's
+the one value `POST /leads/:id/convert` requires) — picked from the shared `/users/
+dropdown` list. On success, navigates to `/customers/:id` (still a placeholder page — that
+route already existed from Phase 0's routing skeleton, confirmed rather than assumed).
+Reachable two ways: the Detail page's dedicated "Convert to Customer" button (converts
+without forcing status to `won` — for converting before the lead is formally marked won),
+and the "Won" action/board-drop (converts **and** marks `won`) — a deliberate, stated
+distinction between the two, not an inconsistency.
+
+**Activity Timeline — a real backend gap found and handled, not silently worked around:**
+leads-customer-functional-spec.md calls for an Activity Timeline in the detail slide-over,
+but the backend has no lead-specific activity log (`backend/src/modules/lead/` has only
+`lead`/`leadCall`/`leadSource` — no `leadActivity.model.js`, unlike `customer`'s
+`customerActivity.model.js`). Rather than treating this as a blocker or inventing a new
+backend feature this task wasn't scoped to build, `buildActivityTimeline.js` assembles a
+timeline client-side from data the API already returns: the lead's own creation/lost/
+converted facts plus its call history, sorted newest-first. Documented in the code itself
+(a comment stating exactly what was checked and why) so a future reader doesn't mistake it
+for a backend-provided feed.
+
+**Import wizard** (`ImportWizardModal`) — Upload → Preview & Mapping → Result, 3 Ant Design
+`Steps`. **Also an honest reflection of an existing backend constraint, not a new one
+introduced here:** `lead.service.js#importLeadsFromFile` matches columns against a
+**fixed** alias list server-side — there is no interactive remapping endpoint. So the
+wizard's "mapping" step is a read-only preview of that exact matching (a client-side
+mirror of `COLUMN_ALIASES`, commented as such), not an editable remap that the API
+couldn't act on anyway. Row preview parsing is a small hand-rolled CSV split (good enough
+for a preview; the server does the real parsing via `exceljs`) — Excel files skip the row
+preview rather than pulling in a second heavy parsing dependency just for that.
+
+**Permission gating** (UI convenience only, real enforcement stays server-side, per §4.1
+applied to the frontend) — every action gated against the exact `leads` `PERMISSION_REGISTRY`
+actions the corresponding backend route requires: New Lead/Import → `create`; Edit/hot-
+toggle/status-change/drag/Won/Lost/Convert → `edit`; Delete → `delete`; Export → `view`.
+Owner reassignment is additionally gated by role (`role !== "sales_associate"`), mirroring
+`lead.service.js#updateLead`'s own extra restriction beyond the plain permission check.
+
+**Testing:** 40 tests total (`resolveDropDestination.test.js`, `useLeadStatusChangeFlow.test.js`,
+`LeadBoard.test.jsx`, `LeadsListPage.test.jsx`, `LeadDetailPage.test.jsx`,
+`ImportWizardModal.test.jsx`, plus Phase 0's original 15), all passing, no real network calls
+(every `leadApi`/`userDirectoryApi` call mocked at the module boundary). **A deliberate,
+documented testing-strategy decision:** simulating a real `@dnd-kit` pointer-drag sequence
+under jsdom is brittle and doesn't exercise logic beyond what's already covered by testing
+the pieces directly — so the drag interaction is tested as (1) a pure-function unit test of
+the drop-target resolution logic, (2) a unit test of the status-change flow hook (immediate
+transition / lost-needs-reason / won-triggers-convert), and (3) a plain rendering test that
+cards land in the right columns — together covering every rule the drag enforces without a
+flaky DOM-drag simulation layered on top.
+
+**Known deviations:** none from this task's own scope. `/customers/:id` remains the Phase
+0 placeholder (confirmed to exist, not built out — that's Customers' own future frontend
+task).
+
+---
+
+### 7.16 Notifications & Web Push (Platform, Phase 9)
+
+✅ **Built 2026-07-16** — the Notification module (§6.7), Web Push (VAPID) delivery, and the
+lead follow-up reminder cron. **This closes out every backend phase in §10** — the last
+unbuilt backend piece was Phase 9's backend half; only Phase 9's frontend half (Dashboard
+polish, PWA service worker wiring) remains anywhere in the plan.
+
+**Module folder:** `backend/src/modules/notification/` — `notification.model.js`,
+`pushSubscription.model.js`, `notification.service.js`, `notification.controller.js`,
+`notification.routes.js`, `notification.validation.js`. Both models built exactly as §6.7
+documents them, no fields added beyond what's listed there.
+
+**New required env vars:** `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` — `src/services/
+webPush.service.js` calls `web-push`'s `setVapidDetails()` at import time, which validates the
+public key is a real 65-byte VAPID key and throws synchronously if it isn't; there's no safe
+placeholder for a public-key-cryptography pair the way there is for e.g. a Cloudinary cloud
+name, so a real keypair (generated once via `web-push`'s own `generateVAPIDKeys()` utility)
+must exist from boot. `VAPID_SUBJECT` is optional (defaults to
+`mailto:support@smartrayssolutions.com`).
+
+**No `PERMISSION_REGISTRY` entry** — every action (subscribe/unsubscribe/list/mark-read) is
+inherently self-scoped (your own subscriptions, your own notifications), the same "self data
+needs no grant" reasoning already established for `users.*`/`attendance.*`'s always-reachable
+own-data endpoints.
+
+**`notification.service.js#createNotification(userId, type, message, relatedEntity?)`** creates
+the DB record (the real source of truth regardless of push outcome) and attempts a push to
+every **active** `PushSubscription` the user has, each attempted independently — a push failure
+is logged and swallowed per-subscription, never thrown out of `createNotification`, so one bad
+subscription can't suppress delivery to the user's other devices and the notification record is
+never blocked by a delivery failure. A `404`/`410` response deactivates that subscription
+(push service says it's gone) rather than deleting the row, so a later re-subscribe of the same
+endpoint is a straightforward re-activate.
+
+**`subscribe(userId, subscriptionObject)`** upserts by `endpoint`, not `userId` — the Push API
+gives each browser/device subscription a globally unique endpoint, so this is the natural key;
+re-subscribing an already-known endpoint (e.g. a shared device logged in as a different user)
+re-associates it rather than erroring on a duplicate key. Links the subscription's id onto the
+new `User.pushSubscriptions` array (§6.1/§6.7) — kept in sync, though `PushSubscription.isActive`
+(not this array's membership) is what `createNotification` actually checks before sending.
+
+**Wired into two existing modules:**
+- **Leads** (`lead.service.js`) — exactly the spec's own requirement. `notifyLeadAssignment`
+  (shared by `createLead` and `updateLead`) fires whenever a lead's `ownerId` ends up set to
+  someone other than whoever made the change — assigning a lead to yourself needs no
+  notification telling you what you just did.
+- **Tickets** (`ticket.service.js#assignTicket`) — **a deliberate small addition beyond §7.8's
+  literal scope**, stated here explicitly as an addition rather than a silent scope expansion.
+  Made because the Notification infrastructure is fully generic and Ticket already has an
+  `assign` action ready to hang a notification off of. Skipped when an admin/manager assigns a
+  ticket to themselves, the same self-notify guard as Leads.
+
+**`src/cron/leadFollowUpReminderCron.js`** — the other literal Leads requirement. Runs every 5
+minutes (`*/5 * * * *`) — far more frequent than the monthly payroll cron, since "24h before"
+and "15min before" are both precise-ish moments, not a once-a-day batch. The job body,
+`lead.service.js#sendDueFollowUpReminders(referenceDate)`, is exported separately for direct
+testing with a fixed date, the same pattern `payrollCron.js#runMonthlyPayrollJob` established.
+Checks two independent windows (24h, 15m) per tick — "`followUpDate` falls inside the next N
+and hasn't been reminded for yet" — deliberately a "due within the window" check, not an
+exact-time match, so a cron restart or a delayed tick can never cause a reminder to be silently
+skipped: once a lead's follow-up enters a window it keeps matching every tick until the guard is
+set. `won`/`lost` leads are excluded (nothing left to follow up on). A follow-up that's already
+fully passed (server down through the whole window) never gets a reminder at all — this is a
+"before it's due" nudge, not an after-the-fact one; the existing `followUp=overdue` filter
+already covers that case.
+
+**New `Lead` fields — a necessary schema addition, the same treatment as Attendance's
+`lastHeartbeatAt`:** `followUpReminder24hSentAt`/`followUpReminder15mSentAt` (`Date`, nullable)
+— idempotency guards so the cron never double-sends. Both reset to `null` whenever
+`followUpDate` actually changes (`updateLead`), so rescheduling a follow-up "re-arms" both
+reminders instead of silently staying suppressed for the new date.
+
+**Testing:** 34 new tests (399 total backend suite) — 17 in `notification.test.js`
+(subscribe/unsubscribe upsert-by-endpoint semantics, self-scoped list/read/read-all,
+push-delivery behavior including the 404/410-deactivate-vs-transient-failure distinction), 9
+in `leadFollowUpReminderCron.test.js` (both windows independently, no double-send, excluded
+won/lost, already-passed follow-ups never remind, never throws), 6 new in `lead.test.js`
+(assignment notification on create/reassign, no self-notify, follow-up reminder reset on
+reschedule), 2 new in `ticket.test.js` (assignment notification, no self-notify). `web-push`
+mocked at the module boundary in every test that touches it — no test ever sends a real push,
+same pattern as Cloudinary/Google Maps mocking. No application bugs found — a clean net-new
+build.
+
+**Known deviations:** none from this task's own scope. The PWA service worker (browser-side
+push receipt/display/click-through) is explicitly a frontend concern, not built here — this
+task is the backend half only, per its own stated scope.
+
+---
+
 ## 8. Frontend Route Map (indicative)
 
 ```
@@ -2301,12 +2562,15 @@ backend/
     │   │                    scoping via the underlying Customer's ownership, §7.10, Phase 7)
     │   ├── report/          (✅ Built — unified POST /reports/generate dispatcher, six modules,
     │   │                    no new permission, §7.11, Phase 8)
-    │   └── notification/
+    │   └── notification/    (✅ Built — Notification/PushSubscription models, self-scoped
+    │                        subscribe/list/mark-read, wired into Leads assignment + follow-up
+    │                        cron and Ticket assignment, §6.7/§7.16, Phase 9, 2026-07-16)
     ├── middlewares/       (auth, can(), errorHandler, asyncWrapper)
     ├── services/          (✅ cloudinary.service.js, credentialEncryption.service.js,
-    │                        report.service.js (generic Excel/PDF builders), googleMaps.service.js
-    │                        — all built; webPush still planned)
-    ├── cron/              (✅ payrollCron.js, added 2026-07-13, §7.7 — new top-level directory,
+    │                        report.service.js (generic Excel/PDF builders), googleMaps.service.js,
+    │                        webPush.service.js (§7.16, 2026-07-16) — all built)
+    ├── cron/              (✅ payrollCron.js, added 2026-07-13, §7.7; ✅ leadFollowUpReminderCron.js,
+    │                        added 2026-07-16, §7.16 — new top-level directory,
     │                        not folded into services/: scheduled-job orchestration is a
     │                        distinct concern from the stateless external-service wrappers above)
     ├── utils/ constants/ (incl. permissionRegistry.constants.js, §7.12) validations/ helpers/
@@ -2327,8 +2591,8 @@ frontend/
 
 | Phase | Scope | Depends on |
 |---|---|---|
-| 0 | ✅ **Built:** Auth (register/login/logout/me, §7.0), User model + Permission helper (single `employee` role, `User.managerId` self-reference, no `Team` collection), `can()`/`authorize`/`requireAdmin` middleware, base scaffolding. Cloudinary SDK wiring deferred to Phase 2/3 (not needed until Attendance/Credentials). ✅ **Permissions module built and verified 2026-07-13** (§7.12 — `permission` module, `RolePermissionTemplate` + `PERMISSION_REGISTRY`, `authorizeAny` reused from §7.4b, 20 tests). Replaces the `location`-only hardcoded role defaults (§7.4b) and the register-time `permissions` override workaround (§7.0) with a real, admin-editable, non-retroactive template system. ✅ **User Management built and verified 2026-07-13** (§7.0b — `user` module completes the roster/CRUD layer on top of the shared `User` model, 33 tests as of the Payroll task's `baseSalary` addition, §7.7). Also deduplicated account-creation logic: `createUser` now lives only in `user.service.js`; `auth.service.js` no longer has a `registerUser` function. | – |
-| 1 | ✅ **Built (backend only):** Leads — CRUD, scoping, calls, hot flag, CSV/Excel import/export, lead sources (§7.1). Table/board UI and assignment/follow-up push notifications not built — no frontend work has started and Web Push infra doesn't exist yet. | Phase 0 |
+| 0 | ✅ **Built:** Auth (register/login/logout/me, §7.0), User model + Permission helper (single `employee` role, `User.managerId` self-reference, no `Team` collection), `can()`/`authorize`/`requireAdmin` middleware, base scaffolding. Cloudinary SDK wiring deferred to Phase 2/3 (not needed until Attendance/Credentials). ✅ **Permissions module built and verified 2026-07-13** (§7.12 — `permission` module, `RolePermissionTemplate` + `PERMISSION_REGISTRY`, `authorizeAny` reused from §7.4b, 20 tests). Replaces the `location`-only hardcoded role defaults (§7.4b) and the register-time `permissions` override workaround (§7.0) with a real, admin-editable, non-retroactive template system. ✅ **User Management built and verified 2026-07-13** (§7.0b — `user` module completes the roster/CRUD layer on top of the shared `User` model, 33 tests as of the Payroll task's `baseSalary` addition, §7.7). Also deduplicated account-creation logic: `createUser` now lives only in `user.service.js`; `auth.service.js` no longer has a `registerUser` function. **Frontend Phase 0 (scaffold + auth flow + routing shell) also built 2026-07-16 — see §7.14** — Vite + Tailwind + Ant Design, API client, session store, route guards, dashboard/portal layout shells, full §8 route map wired (only `/login` and `/` functionally complete). | – |
+| 1 | ✅ **Backend built:** Leads — CRUD, scoping, calls, hot flag, CSV/Excel import/export, lead sources (§7.1). ✅ **Frontend built 2026-07-16 — see §7.15**, the reference implementation for later frontend modules: Table + Board (kanban, `@dnd-kit`) views, Lead Detail slide-over, Import wizard, filtered export. ✅ **Assignment/follow-up push notifications built 2026-07-16 — see §7.16** (Phase 9's Notification module). | Phase 0 |
 | 2 | ✅ **Built and verified 2026-07-13:** Customers + Contracts/Contacts/Credentials (incl. AES-256-GCM credential-encryption utility, `src/services/credentialEncryption.service.js`) + Project/Task automations (§7.2 — `customer` module, 21 tests; §7.3 — `project` module, 19 tests). Contract automation chain (monthly→recurring Project+draft Invoice, onetime→onetime Project+draft Invoice, delete→complete Project+cancel Invoice) and the deactivation cascade (active projects → completed) both implemented as real logic, not stubs. `Invoice` is a minimal placeholder model only (no service/controller/routes) — full invoicing is Phase 7, and `GET /customers/:id/invoices`/`/ledger` were deliberately not built. `POST /leads/:id/convert`'s 501 stub (§7.1) was resolved as part of this same task. `CREDENTIALS_ENCRYPTION_KEY` is now a **required** env var (`env.js` fails fast at boot without it). | Phase 1 |
 | 3 | ✅ **Fully built and verified 2026-07-13:** Attendance (camera+geo capture, photos to Cloudinary, connectivity-gap detection, workingHours, team/org reports — §7.4, `attendance` module, 32 tests) + Leave (request/approve/mark-unapproved-absence, one-paid-leave-per-month quota resolved in §11.7 and confirmed enforced at approval time not request time — §7.5, `leave` module, 18 tests). ✅ **Live Location Tracking built and verified 2026-07-13** (§7.4b — `location` module, 19+1 tests), ahead of the rest of this phase. Attendance started as a minimal check-in/check-out slice built the same day as Location (13 tests) and was extended to the full spec in this task, reusing rather than replacing the placeholder model. New: `POST /attendance/heartbeat` (not in the original endpoint list — added because connectivity-gap detection needs a distinct "still alive" signal, deliberately not coupled to Location's GPS ping), new shared `src/services/cloudinary.service.js` and `src/services/report.service.js`, `pdfkit` dependency added for `GET /attendance/report?format=pdf`. `CLOUDINARY_CLOUD_NAME`/`CLOUDINARY_API_KEY`/`CLOUDINARY_API_SECRET` are now **required** env vars. **Follow-up fix the same day:** the photo requirement on check-in/check-out was moved from client-side-only to server-side-enforced (400 if missing) — `location.test.js`'s end-to-end test updated to supply one. Full suite: **208 tests, all passing.** | Phase 0 (independent of 1–2) |
 | 4 | ✅ **Built and verified 2026-07-13:** Payroll (§7.7, `payroll` module, 19 tests + 6 for `src/cron/payrollCron.test.js` = 25) — gross/net computed from Attendance + Leave + approved-only TravelLog mileage, `POST /payroll/run` (single-employee or bulk), `GET /payroll?scope=own\|all`, `GET /payroll/:id/payslip?format=pdf`, a monthly `node-cron` job (`src/cron/payrollCron.js`, new top-level directory). Two prerequisites closed first, in the same task: `User.baseSalary` (§6.1) and TravelLog's `pending`/`approved`/`rejected` approval workflow (§6.5/§7.6, resolving §11.4). `MILEAGE_RATE_PER_KM` is a new, optional env var (defaults to 10, a stated placeholder). **§11.5 resolved: record-keeping only for v1, no disbursement/payment-gateway integration.** **Correction (2026-07-13, follow-up):** `sales_associate`'s default `payroll` grant was fixed — §5 marks it "–" (no access), same as Manager, not "own payslip only" like Employee; an earlier build misread that "–" as blank and granted `sales_associate` the Employee default, now corrected in `permission.service.js`. Full suite: **263 tests, all passing** (verified via a real `npm test` run; the previously reported total also required correcting a miscount in the Transport/Travel approve/reject test count, 7 not 6). | Phase 3 |
@@ -2336,7 +2600,7 @@ frontend/
 | 6 | ✅ **Built and verified 2026-07-13:** Transport/Travel (Google Maps Distance Matrix integration — §7.6, `transport` module, 28 tests). Auto-generates a `TravelLog` from Attendance checkout coords (direct call into `attendance.service.js#checkOut`, never fails checkout); manual entry with coords or a direct `distanceKm` override; `GET /travel-logs?scope=own\|team\|all` (mirrors Leave's shape) + `PATCH /travel-logs/:id/approve\|reject` (added 2026-07-13, resolves §11.4) + `GET /travel-logs/report` (reuses `src/services/report.service.js`). `GOOGLE_MAPS_API_KEY` is now a required env var. §11.4 (feeds payroll?) resolved 2026-07-13 — only `status: "approved"` entries feed Payroll mileage reimbursement. | Phase 3 |
 | 7 | ✅ **Built and verified:** Payments + AMC (§7.9/§7.10, `payment`/`amc` modules, 16 + 20 tests). `Payment` (admin-only, no ownership scoping at all per §5) can optionally attach to a real `Invoice` via a new `invoiceId` field — applying it reduces `Invoice.balance` and updates `Invoice.status` (`paid` at 0, the newly-added `partially_paid` otherwise) — **§11.3 resolved: partial reconciliation, not a standalone log and not full invoicing**. `AMC`'s two-flow creation (`new_customer` reuses `customer.service.js#createCustomer` directly; `existing_customer` requires an in-scope `customerId`) matches smartrays.md's "ask which create client or convert client"; `view`/`edit` scoping ("own team"/"own") is resolved via the underlying Customer's ownership (new `customer.service.js#getVisibleCustomerIds` export), since AMC has no `ownerId` field of its own — Manager's "own team" tier is the "PM" role smartrays.md describes elsewhere. No automation on renewal for v1 (stated simplification). Full suite: **340 tests, all passing.** | Phase 2 |
 | 8 | ✅ **Built and verified:** Reports (§7.11, `report` module, 24 tests). Single `POST /reports/generate` `{module, filters, format}` dispatching to `attendance`/`leave`/`payroll`/`transport`/`leads`/`customers` — each via that module's own existing, already-scoped data-fetcher (`generateAttendanceReport`/`generateTravelLogReport` reused unmodified; `listLeaves`/`listPayroll`/`listLeads`/`listCustomers` reused with new column/row rendering added in `report.service.js` itself). No new `reports.generate` permission — gated per-module by reusing `can()` against that module's own actions. Per-module `filters` shape validated by reusing each target module's own existing query validator (`validateReportQuery`/`validateScopeQuery`/`validateListQuery`) rather than duplicating checks; `leads`/`customers` fall back to their model's own status enum since neither has a dedicated query validator to reuse. **Breaking change (intentional):** `GET /attendance/report`/`GET /travel-logs/report` now internally call this dispatcher and return `{ downloadUrl }` instead of streaming the file — existing tests rewritten to assert against the real buffer the mocked upload was called with. `GET /leads/export` and `GET /payroll/:id/payslip` both deliberately excluded (pre-existing separate export; single-document artifact, respectively) — the payslip exclusion now has a dedicated regression test proving it still streams directly. Full suite: **365 tests, all passing.** | All prior phases have data to report on |
-| 9 | Dashboards polish, permission-driven widget composition, push notifications end-to-end | All |
+| 9 | ✅ **Backend half built 2026-07-16 — see §7.16:** Notification module (§6.7), Web Push (VAPID) delivery, lead follow-up reminder cron — wired into Leads (assignment + reminders) and Ticket assignment. **This closes out every backend phase.** Remaining, frontend-only: Dashboards polish, permission-driven widget composition, PWA service worker wiring for push receipt/display. | All |
 
 Phases 1–2 and 3 can be built in parallel by two developers since they don't share models
 until Phase 4/5.

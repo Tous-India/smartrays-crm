@@ -60,6 +60,22 @@ export function validateUpdateUserInput(req, res, next) {
 }
 
 /**
+ * Validates the body of PATCH /users/:id/reset-password (§7.13, admin
+ * override). `newPassword` is optional — see user.service.js#adminResetPassword
+ * for the "supplied vs. generated temp password" behavior; when supplied, it
+ * must meet the same minimum-length rule as every other password in the app.
+ */
+export function validateAdminResetPasswordInput(req, res, next) {
+  const { newPassword } = req.body;
+
+  if (newPassword !== undefined && (typeof newPassword !== "string" || newPassword.length < 8)) {
+    throw new ApiError(400, "newPassword must be a string of at least 8 characters");
+  }
+
+  next();
+}
+
+/**
  * Validates the body of PATCH /users/:id/manager.
  */
 export function validateAssignManagerInput(req, res, next) {

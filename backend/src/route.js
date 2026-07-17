@@ -14,6 +14,7 @@ import ticketRouter from "./modules/ticket/ticket.routes.js";
 import paymentRouter from "./modules/payment/payment.routes.js";
 import amcRouter from "./modules/amc/amc.routes.js";
 import reportRouter from "./modules/report/report.routes.js";
+import notificationRouter from "./modules/notification/notification.routes.js";
 
 const router = Router();
 
@@ -33,6 +34,7 @@ router.use("/tickets", ticketRouter);
 router.use("/payments", paymentRouter);
 router.use("/amc", amcRouter);
 router.use("/reports", reportRouter);
+router.use("/notifications", notificationRouter);
 // Two routers share the "/users" prefix: userRouter owns the core identity
 // endpoints (list/get/update/deactivate/manager), userPermissionRouter (from
 // the permission module) owns the nested "/:id/permissions" sub-resource.

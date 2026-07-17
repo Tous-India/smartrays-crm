@@ -91,6 +91,22 @@ const leadSchema = new mongoose.Schema(
       ref: "Customer",
       default: null,
     },
+    // Added for the follow-up reminder cron (§6.7/§7.1's "push 24h/15min
+    // before follow-up," Phase 9) — necessary idempotency bookkeeping, the
+    // same treatment as Attendance's `lastHeartbeatAt`: not part of §6.2's
+    // documented Lead fields, but the cron can't run correctly without
+    // somewhere to record "already reminded for this follow-up" so it never
+    // double-sends on its next tick. Reset to null whenever `followUpDate`
+    // changes (lead.service.js#updateLead) so a rescheduled follow-up
+    // "re-arms" both reminders instead of silently staying suppressed.
+    followUpReminder24hSentAt: {
+      type: Date,
+      default: null,
+    },
+    followUpReminder15mSentAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

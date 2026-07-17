@@ -73,6 +73,39 @@ const userSchema = new mongoose.Schema(
       ref: "Customer",
       default: null,
     },
+    // Added for the Notification module (§6.7/§7.11-Platform, Phase 9) — one
+    // entry per browser/device the user has enabled Web Push on.
+    // `notification.service.js#subscribe`/`unsubscribe` keep this in sync
+    // with the `PushSubscription` collection itself, which stays the
+    // authoritative source (its own `isActive` flag, not this array's
+    // membership, is what `createNotification` actually checks before
+    // sending) — this array exists so a user's active subscriptions are
+    // reachable from their own document too, without a separate query.
+    pushSubscriptions: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: "PushSubscription" }],
+      default: [],
+    },
+    // Added for the self-service forgot/reset-password flow (§7.13). Only
+    // ever the SHA-256 hash of the token emailed to the user, never the raw
+    // token itself — same "never store the real secret" reasoning as
+    // `passwordHash`, so a database leak alone can't be used to reset a
+    // user's password. `select: false` for the same defense-in-depth reason
+    // as `passwordHash`/`baseSalary`: no ordinary find() should ever return
+    // this, only auth.service.js's explicit `.select("+passwordResetToken
+    // +passwordResetExpiresAt")` during the reset itself.
+    passwordResetToken: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    // Short-lived (~1 hour, set alongside the token) — checked against
+    // `Date.now()` at reset time; an expired-but-still-present token is
+    // treated exactly like no token at all.
+    passwordResetExpiresAt: {
+      type: Date,
+      default: null,
+      select: false,
+    },
   },
   {
     timestamps: true,

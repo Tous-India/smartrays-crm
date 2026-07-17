@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import ApiError from "../../utils/ApiError.js";
 import { can } from "../../helpers/permission.helper.js";
 import { getTemplatePermissionsForRole } from "../permission/permission.service.js";
@@ -268,6 +269,39 @@ export async function setUserActiveStatus(targetId, isActive) {
   await user.save();
 
   return user;
+}
+
+/**
+ * Admin override for a user's password (§7.13) — route-level `requireAdmin`
+ * is the only permission gate, same as deactivate/reactivate above. Two
+ * modes, both admin-initiated (unlike the self-service forgot/reset-password
+ * flow in auth.service.js, which is token-based and never touches this
+ * function):
+ *
+ * - `newPassword` supplied: the admin sets the exact password directly.
+ * - omitted: the backend generates a random one-time temp password and
+ *   returns it in the response, the ONLY time it's ever visible in plaintext
+ *   — nothing persists it anywhere outside this one response. Chosen as the
+ *   default-friendly path (e.g. "reset this locked-out user's password" from
+ *   the User Management screen with a single click) over forcing the admin
+ *   to invent and type a password themselves every time; an admin who wants
+ *   to set a specific password still can via `newPassword`.
+ */
+export async function adminResetPassword(targetId, newPassword) {
+  const user = await User.findById(targetId);
+
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  const tempPassword = newPassword || crypto.randomBytes(9).toString("base64url");
+
+  user.passwordHash = await bcrypt.hash(tempPassword, SALT_ROUNDS);
+  user.passwordResetToken = null;
+  user.passwordResetExpiresAt = null;
+  await user.save();
+
+  return { user, tempPassword: newPassword ? null : tempPassword };
 }
 
 /**

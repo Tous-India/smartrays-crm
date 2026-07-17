@@ -13,7 +13,7 @@ and more, unified under one role/permission system.
 | [`.context/leads-customer-functional-spec.md`](.context/leads-customer-functional-spec.md) | UX/data-model reference for Leads & Customers only (from a different product — its tech stack is not used here). |
 | [`docs/project-status.md`](docs/project-status.md) | Current implementation status — what's built, what's next, open decisions. |
 | [`backend/README.md`](backend/README.md) | Backend setup, architecture, module list, endpoints, env vars. |
-| `frontend/README.md` | Not created yet — added once frontend work begins. |
+| [`frontend/README.md`](frontend/README.md) | Frontend setup, folder conventions, module pattern, how to run tests. |
 
 ## Tech Stack
 
@@ -29,7 +29,8 @@ Fixed per `.context/smartrays.md` — see that file before proposing any stack c
 ```bash
 cd backend
 npm install
-cp .env.example .env      # fill in CREDENTIALS_ENCRYPTION_KEY, CLOUDINARY_*, and GOOGLE_MAPS_API_KEY — all required, see below
+cp .env.example .env      # fill in CREDENTIALS_ENCRYPTION_KEY, CLOUDINARY_*, GOOGLE_MAPS_API_KEY,
+                          # and VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY — all required, see below
 npm run seed:admin                    # one-time: creates the first admin user
 npm run seed:permission-templates     # optional: pre-seeds the 5 role permission templates
 npm run dev
@@ -39,8 +40,35 @@ Full setup details, module list, and API reference: [`backend/README.md`](backen
 
 ### Frontend
 
-Not started yet — only the backend has been built so far (`auth` — including Customer Portal
-self-signup — `lead`, `location`, `permission`, `user`, `customer`, `project`, `attendance`,
-`leave`, `transport`, `payroll`, `ticket`, `payment`, `amc`, and `report` modules). See
+```bash
+cd frontend
+npm install
+cp .env.example .env      # VITE_API_BASE_URL, default http://localhost:5000/api/v1
+npm run dev
+```
+
+Full setup details, folder conventions, and how to add a new module:
+[`frontend/README.md`](frontend/README.md).
+
+### Running both together
+
+Two terminals, backend first (the frontend has no mock data layer — every non-placeholder
+page talks to the real API):
+
+```bash
+# terminal 1
+cd backend && npm run dev     # http://localhost:5000
+
+# terminal 2
+cd frontend && npm run dev    # http://localhost:5173
+```
+
+**Every backend phase is now built** (Phase 9's backend half — Notification module, Web Push,
+lead follow-up reminder cron — closed it out). Frontend Phase 0 (scaffold, auth flow, routing
+shell) and the Leads frontend module (Table/Board/Detail/Import/Export — the reference
+implementation for later modules) are built — see
 [`docs/project-status.md`](docs/project-status.md) for current progress and
-[`.context/final-plan.md`](.context/final-plan.md) §10 for the phased roadmap.
+[`.context/final-plan.md`](.context/final-plan.md) §10 for the phased roadmap. Every other
+module's frontend (Customers, Attendance, ...) is still routing-skeleton + placeholder
+pages only, filled in module-by-module in later frontend tasks; Phase 9's frontend half
+(Dashboard polish, PWA service worker for push receipt/display) is also still open.

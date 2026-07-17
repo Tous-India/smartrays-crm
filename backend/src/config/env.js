@@ -15,6 +15,14 @@ dotenv.config({ path: ".env.local", override: true });
 // TravelLog distance computation depends on it (auto-generated at Attendance
 // checkout, or on manual entry when coords are supplied without a distanceKm
 // override), so the app can't run this feature correctly without it either.
+// VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY were added for Phase 9's Notification
+// module (§6.7/§7.11-Platform) — src/services/webPush.service.js configures
+// the `web-push` package with these at import time, so a real push send
+// (lead assignment, ticket assignment, follow-up reminders) can't work
+// without them. Generate a real pair with `web-push`'s own
+// `generateVAPIDKeys()` utility (see .env.example) — there's no safe
+// placeholder for a public-key-cryptography keypair the way there is for
+// e.g. a Cloudinary cloud name.
 const requiredEnvVars = [
   "NODE_ENV",
   "PORT",
@@ -28,6 +36,13 @@ const requiredEnvVars = [
   "CLOUDINARY_API_KEY",
   "CLOUDINARY_API_SECRET",
   "GOOGLE_MAPS_API_KEY",
+  "VAPID_PUBLIC_KEY",
+  "VAPID_PRIVATE_KEY",
+  "SMTP_HOST",
+  "SMTP_PORT",
+  "SMTP_USER",
+  "SMTP_PASSWORD",
+  "SMTP_FROM",
 ];
 
 function validateEnvVars() {
@@ -83,4 +98,21 @@ export const env = {
   // per-role/per-project (a documented v1 simplification, not an oversight) — see
   // payroll.service.js#runPayroll. PLACEHOLDER: the client must set the real rate.
   mileageRatePerKm: Number(process.env.MILEAGE_RATE_PER_KM) || 10,
+  // VAPID keypair for Web Push (§6.7/§3) — see src/services/webPush.service.js.
+  vapidPublicKey: process.env.VAPID_PUBLIC_KEY,
+  vapidPrivateKey: process.env.VAPID_PRIVATE_KEY,
+  // Not required at boot — the `mailto:`/`https:` contact URL web-push's spec
+  // asks VAPID senders to supply (so a push service operator has somewhere to
+  // reach the sender about abuse) — has a sensible default, no reason to force
+  // every environment to set it explicitly.
+  vapidSubject: process.env.VAPID_SUBJECT || "mailto:support@smartrayssolutions.com",
+  // SMTP config for the self-service forgot/reset-password email flow (§7.13)
+  // — see src/services/email.service.js. Required at boot like the other
+  // real third-party integrations above (Cloudinary, Google Maps, VAPID):
+  // password reset genuinely cannot work without a working mail transport.
+  smtpHost: process.env.SMTP_HOST,
+  smtpPort: process.env.SMTP_PORT,
+  smtpUser: process.env.SMTP_USER,
+  smtpPassword: process.env.SMTP_PASSWORD,
+  smtpFrom: process.env.SMTP_FROM,
 };

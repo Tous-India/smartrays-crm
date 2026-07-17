@@ -6,6 +6,31 @@ import LeadCall from "./leadCall.model.js";
 import LeadSource from "./leadSource.model.js";
 import User from "../user/user.model.js";
 import { createCustomer } from "../customer/customer.service.js";
+import { createNotification } from "../notification/notification.service.js";
+
+/**
+ * "Push notification when a lead is assigned to you" (leads-customer-
+ * functional-spec.md) — fires whenever a lead's `ownerId` is set to someone
+ * OTHER than whoever just made the change (assigning a lead to yourself, or
+ * creating your own lead, needs no notification telling you what you just
+ * did). Used by both `createLead` (initial assignment) and `updateLead`
+ * (reassignment) below, so there's exactly one implementation of this rule.
+ * Never awaited by its caller for its own sake — `createNotification` itself
+ * already never throws on a push failure, so this only ever fails the same
+ * way the database write it depends on would.
+ */
+async function notifyLeadAssignment(lead, requestingUser) {
+  if (String(lead.ownerId) === String(requestingUser._id)) {
+    return;
+  }
+
+  await createNotification(
+    lead.ownerId,
+    "lead_assigned",
+    `You've been assigned a lead: ${lead.name}${lead.companyName ? ` (${lead.companyName})` : ""}`,
+    { module: "leads", id: lead._id }
+  );
+}
 
 const DEFAULT_LEAD_SOURCES = [
   "Website",
@@ -87,6 +112,8 @@ export async function createLead(payload, requestingUser) {
     notes: payload.notes,
     lostReason: payload.status === "lost" ? payload.lostReason : null,
   });
+
+  await notifyLeadAssignment(lead, requestingUser);
 
   return lead;
 }
@@ -195,13 +222,30 @@ export async function updateLead(leadId, payload, requestingUser) {
     updatableFields.push("ownerId");
   }
 
+  const previousOwnerId = String(lead.ownerId);
+  const previousFollowUpTime = lead.followUpDate ? lead.followUpDate.getTime() : null;
+
   updatableFields.forEach((field) => {
     if (payload[field] !== undefined) {
       lead[field] = payload[field];
     }
   });
 
+  // A rescheduled follow-up "re-arms" both reminders — otherwise a lead
+  // reminded for its old followUpDate would silently never get reminded
+  // again after being pushed to a new date, since the SentAt guards would
+  // still be set from the previous one. See lead.model.js for the fields.
+  const nextFollowUpTime = lead.followUpDate ? lead.followUpDate.getTime() : null;
+  if (payload.followUpDate !== undefined && nextFollowUpTime !== previousFollowUpTime) {
+    lead.followUpReminder24hSentAt = null;
+    lead.followUpReminder15mSentAt = null;
+  }
+
   await lead.save();
+
+  if (payload.ownerId !== undefined && String(lead.ownerId) !== previousOwnerId) {
+    await notifyLeadAssignment(lead, requestingUser);
+  }
 
   return lead;
 }
@@ -472,4 +516,64 @@ export async function exportLeadsToExcel(filters, requestingUser) {
   const buffer = await workbook.xlsx.writeBuffer();
 
   return buffer;
+}
+
+const REMINDER_EXCLUDED_STATUSES = ["won", "lost"];
+
+/**
+ * "Push for upcoming follow-ups: 24h and 15min before, via cron"
+ * (leads-customer-functional-spec.md / final-plan.md §7.1). Called by
+ * `src/cron/leadFollowUpReminderCron.js` on a 5-minute tick — deliberately a
+ * "due within the window and not yet sent" check rather than an exact-match
+ * window, so a cron restart or a delayed tick can never cause a reminder to
+ * be silently skipped: once `followUpDate` falls inside the next 24h (or
+ * 15m), it stays a match on every subsequent tick until the
+ * `followUpReminder*SentAt` guard is set, at which point it stops matching
+ * for good (see lead.model.js for those fields, and `updateLead` above for
+ * how a rescheduled follow-up resets them). A follow-up that's already
+ * fully passed (server was down through the whole window) never gets a
+ * reminder at all — this is a "before it's due" nudge, not an
+ * after-the-fact one; the existing `followUp=overdue` filter already
+ * surfaces those. `won`/`lost` leads are excluded — there's nothing left to
+ * follow up on.
+ */
+export async function sendDueFollowUpReminders(referenceDate = new Date()) {
+  const [sent24h, sent15m] = await Promise.all([
+    sendRemindersForWindow({
+      referenceDate,
+      windowMs: 24 * 60 * 60 * 1000,
+      sentAtField: "followUpReminder24hSentAt",
+      windowLabel: "24 hours",
+    }),
+    sendRemindersForWindow({
+      referenceDate,
+      windowMs: 15 * 60 * 1000,
+      sentAtField: "followUpReminder15mSentAt",
+      windowLabel: "15 minutes",
+    }),
+  ]);
+
+  return { reminders24h: sent24h, reminders15m: sent15m };
+}
+
+async function sendRemindersForWindow({ referenceDate, windowMs, sentAtField, windowLabel }) {
+  const dueLeads = await Lead.find({
+    followUpDate: { $gt: referenceDate, $lte: new Date(referenceDate.getTime() + windowMs) },
+    [sentAtField]: null,
+    status: { $nin: REMINDER_EXCLUDED_STATUSES },
+  });
+
+  for (const lead of dueLeads) {
+    await createNotification(
+      lead.ownerId,
+      "lead_follow_up_due",
+      `Follow-up due in ${windowLabel} for ${lead.name}${lead.companyName ? ` (${lead.companyName})` : ""}`,
+      { module: "leads", id: lead._id }
+    );
+
+    lead[sentAtField] = referenceDate;
+    await lead.save();
+  }
+
+  return dueLeads.length;
 }

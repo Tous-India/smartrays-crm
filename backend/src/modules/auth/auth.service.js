@@ -1,8 +1,13 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import crypto from "crypto";
 import ApiError from "../../utils/ApiError.js";
 import { env } from "../../config/env.js";
+import { sendPasswordResetEmail } from "../../services/email.service.js";
 import User from "../user/user.model.js";
+
+const SALT_ROUNDS = 10;
+const PASSWORD_RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour, per §7.13
 
 // Account creation ("register a user") lives entirely in
 // user.service.js#createUser now — auth.controller.js calls it directly.
@@ -55,7 +60,12 @@ export function getAuthCookieOptions() {
   return {
     httpOnly: true,
     secure: env.isProduction,
-    sameSite: env.isProduction ? "strict" : "lax",
+    // "none" (not "strict") in production: the frontend and backend deploy
+    // to separate Vercel domains, so this cookie is genuinely cross-site —
+    // "strict"/"lax" would simply never be sent back to the backend at all.
+    // Requires `secure: true` (paired above), which browsers enforce for
+    // SameSite=None; Vercel serves everything over HTTPS, so that's met.
+    sameSite: env.isProduction ? "none" : "lax",
   };
 }
 
@@ -89,4 +99,61 @@ function parseDurationToMs(duration) {
   };
 
   return amount * unitToMs[unit];
+}
+
+/**
+ * Self-service "forgot password" (§7.13). ALWAYS resolves with the same
+ * generic outcome regardless of whether the email matches an account —
+ * callers must never be able to distinguish "no such account" from "email
+ * sent" (account enumeration). The real work (generating/storing the token,
+ * emailing it) only happens when a matching, active account exists; a
+ * deactivated account is treated the same as no account at all, since
+ * resetting its password wouldn't let anyone log in anyway.
+ *
+ * The raw token is only ever emailed, never stored — the DB keeps just its
+ * SHA-256 hash, the same one-way-hash reasoning as `passwordHash` itself,
+ * so a database compromise alone can't be used to complete a reset.
+ */
+export async function requestPasswordReset(email) {
+  const user = await User.findOne({ email });
+
+  if (!user || !user.isActive) {
+    return;
+  }
+
+  const rawToken = crypto.randomBytes(32).toString("hex");
+  const hashedToken = hashResetToken(rawToken);
+
+  user.passwordResetToken = hashedToken;
+  user.passwordResetExpiresAt = new Date(Date.now() + PASSWORD_RESET_TOKEN_TTL_MS);
+  await user.save();
+
+  const resetUrl = `${env.clientOrigin}/reset-password?token=${rawToken}`;
+  await sendPasswordResetEmail({ to: user.email, resetUrl });
+}
+
+/**
+ * Completes a reset: the raw token from the emailed link is hashed and
+ * matched against the stored hash, must not be expired, and — once used —
+ * is cleared so the same link can't be replayed.
+ */
+export async function resetPassword(rawToken, newPassword) {
+  const hashedToken = hashResetToken(rawToken);
+
+  const user = await User.findOne({ passwordResetToken: hashedToken }).select(
+    "+passwordResetToken +passwordResetExpiresAt +passwordHash"
+  );
+
+  if (!user || !user.passwordResetExpiresAt || user.passwordResetExpiresAt.getTime() < Date.now()) {
+    throw new ApiError(400, "This password reset link is invalid or has expired");
+  }
+
+  user.passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+  user.passwordResetToken = null;
+  user.passwordResetExpiresAt = null;
+  await user.save();
+}
+
+function hashResetToken(rawToken) {
+  return crypto.createHash("sha256").update(rawToken).digest("hex");
 }

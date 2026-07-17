@@ -30,12 +30,16 @@ sections below it.
 
 ## Current Stage
 
-**Phase 0 (scaffolding + Auth + Permissions + User Management), Phase 1 (Leads, backend only),
-Phase 2 (Customers + Projects/Tasks, backend only), Phase 3 (Attendance, fully built, + Leave;
-Live Location Tracking, §7.4b, was already built ahead of the rest of this phase), Phase 4
-(Payroll), Phase 5 (Support/Tickets + Customer Portal), Phase 6 (Transport/Travel), Phase 7
-(Payments + AMC), and Phase 8 (unified Reports) are built and covered by an automated test
-suite (365 tests, all passing — verified via a real `npm test` run). Location Tracking and
+**Phase 0 (scaffolding + Auth + Permissions + User Management), Phase 1 (Leads, backend +
+frontend), Phase 2 (Customers + Projects/Tasks, backend only), Phase 3 (Attendance, fully
+built, + Leave; Live Location Tracking, §7.4b, was already built ahead of the rest of this
+phase), Phase 4 (Payroll), Phase 5 (Support/Tickets + Customer Portal), Phase 6 (Transport/
+Travel), Phase 7 (Payments + AMC), Phase 8 (unified Reports), and Phase 9's backend half
+(Notifications + Web Push + lead follow-up reminder cron, §6.7/§7.16) are built and covered
+by an automated test suite (399 backend tests, all passing — verified via a real `npm test`
+run). **This closes out every backend phase in the roadmap** — only Phase 9's frontend half
+(Dashboard polish, PWA service worker wiring) and the rest of the frontend module-by-module
+build-out remain anywhere in the plan. Location Tracking and
 Attendance are proven to work together end-to-end through real HTTP endpoints, not just against
 directly-seeded test data — see the changelog. Photo capture on check-in/check-out is now
 **mandatory, enforced server-side** (a follow-up fix — see the changelog). Attendance checkout
@@ -93,15 +97,17 @@ streaming the file directly.
   Originally verified by booting the server against a real MongoDB instance and exercising
   every endpoint with curl; that manual pass has since been superseded by a real automated
   suite (`vitest` + `supertest` + `mongodb-memory-server`, `npm test` — no real MongoDB or
-  running server required): 19 tests for auth, 34 for leads, 20 for location, 20 for
+  running server required): 19 tests for auth, 40 for leads (34 + 6 new for assignment
+  notifications/follow-up reminder reset, §7.16), 20 for location, 20 for
   permissions, 33 for user, 32 for attendance, 21 for customer, 19 for project, 18 for leave,
   28 for transport, 26 for payroll (20 in `payroll.test.js` + 6 in
-  `src/cron/payrollCron.test.js`), 35 for ticket, 16 for payment, 20 for amc, and 24 for report
-  — covering
+  `src/cron/payrollCron.test.js`), 37 for ticket (35 + 2 new for assignment notifications,
+  §7.16), 16 for payment, 20 for amc, 24 for report, 17 for notification, and 9 for
+  `src/cron/leadFollowUpReminderCron.test.js` — covering
   CRUD, validation, filters, and — most importantly — permission scoping in depth. Total
   verified via a real `npm test` run:
-  19 + 34 + 20 + 20 + 33 + 32 + 21 + 19 + 18 + 28 + 26 + 35 + 16 + 20 + 24 = **365 tests**. The
-  Location and Permission suites' fixtures
+  19 + 40 + 20 + 20 + 33 + 32 + 21 + 19 + 18 + 28 + 26 + 37 + 16 + 20 + 24 + 17 + 9 =
+  **399 tests**. The Location and Permission suites' fixtures
   register through the real `/auth/register` endpoint (not a direct DB insert) specifically to
   exercise the default-permission logic; the Customer, Project, Attendance, Leave, Transport,
   Payroll, Ticket, and AMC suites do the same, to exercise their own new template defaults.
@@ -116,18 +122,47 @@ streaming the file directly.
   → real check-out → real ping rejected). `attendance.test.js` mocks both
   `src/services/cloudinary.service.js` and `src/services/googleMaps.service.js` at the module
   boundary — no test makes a real network call to either.
-- `frontend/` — empty (scaffold folder only) — no frontend work has started. Location
-  Tracking's API shape (ordered `{coords, capturedAt}` for history, latest-ping-per-employee
-  for live) was deliberately designed so the eventual map UI (live marker, path polyline)
-  needs no API changes when it's built.
+- `frontend/` — **Frontend Phase 0 built 2026-07-16** (scaffold + auth flow + routing shell,
+  mirroring what backend Phase 0 established — see `.context/final-plan.md` §7.14). Vite +
+  Tailwind CSS + Ant Design + React Router DOM (`createBrowserRouter`/
+  `createRoutesFromElements`) + Zustand (session store only) + Axios, per §3's fixed stack.
+  A shared `apiClient.js` (httpOnly-cookie auth, `withCredentials: true`, 401 interceptor), a
+  `sessionStore.js` resolving identity from a real `GET /auth/me` call (never a decoded
+  token), route guards (`ProtectedRoute`, `PermissionGate`/`usePermission` — UI convenience
+  only, not a real security boundary, stated in the code itself), a shared `MainLayout`
+  dashboard shell (§7.13) and a separate no-nav `PortalLayout` for `role: customer`, and every
+  route in §8's route map wired up. Only `/login` (fully functional) and `/` (real
+  redirect-by-role logic) are built out beyond a placeholder — every other route
+  (`/leads`, `/customers`, `/attendance`, ...) renders a shared "coming soon" placeholder,
+  to be filled in module-by-module in later frontend tasks, the same phase-by-phase
+  discipline the backend was built with. **Leads frontend module built 2026-07-16** (see
+  `.context/final-plan.md` §7.15) — the first real feature module, and the reference
+  implementation every later module follows: Table View + Board View (kanban, new
+  `@dnd-kit` dependency for drag-between-stages) share one page shell with URL-persisted
+  filters, Lead Detail (`/leads/:id`) is a real route rendered as a slide-over (Log Call,
+  Hot toggle, Won, Lost, Convert to Customer, Edit, Delete), an Import wizard (upload →
+  automatic column-matching preview → per-row result), and a filtered Excel export. One
+  real backend gap found and handled, not silently worked around: leads has no dedicated
+  activity-log endpoint (unlike `customer`), so the Activity Timeline is assembled
+  client-side from call history + lead fields, documented as such in the code. 40 tests
+  total (25 new — `vitest` + React Testing Library + `@testing-library/user-event`,
+  jsdom), all passing, no real network calls. Full test suite still uses a deliberate,
+  documented split for testing the kanban drag interaction (pure drop-resolution logic +
+  the status-change flow hook + a plain rendering test) rather than simulating real
+  `@dnd-kit` pointer-drag sequences under jsdom, which is brittle. Location Tracking's API
+  shape (ordered `{coords, capturedAt}` for history, latest-ping-per-employee for live) was
+  deliberately designed so the eventual map UI (live marker, path polyline) needs no API
+  changes when it's built.
 - `docs/` — this status file
-- See `backend/README.md` for setup, patterns, the full endpoint list, and how to run tests.
+- See `backend/README.md` for backend setup/patterns/endpoints, `frontend/README.md` for
+  frontend setup/folder conventions/module pattern, and both files for how to run tests.
 
 The full plan (architecture, data models, API surface, permission matrix, folder structure,
-phased roadmap) lives in `.context/final-plan.md`. Next step is Phase 9 (Dashboard polish +
-push notifications end-to-end), real invoicing (still deferred — `Invoice` remains a
-placeholder, Phase 7 only added partial reconciliation on top of it), or a frontend — whichever
-is prioritized next.
+phased roadmap) lives in `.context/final-plan.md`. **Every backend phase is now built.**
+Next step is filling in the rest of the frontend module-by-module (Customers next, mirroring
+Leads' own reference implementation), the PWA service worker + Dashboard polish (Phase 9's
+remaining frontend half), or real invoicing (still deferred — `Invoice` remains a placeholder,
+Phase 7 only added partial reconciliation on top of it) — whichever is prioritized next.
 
 ---
 
@@ -136,7 +171,7 @@ is prioritized next.
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | Auth (register/login/logout/me), User + Permission module, `can()` middleware, base scaffolding | ✅ Built, verified. Auth: 13 automated tests. Governed by the **Single Source of Truth for Auth** principle (`.context/final-plan.md` §4.1, formalized 2026-07-13) — JWT carries `{ userId }` only, role/permissions always re-read from the DB per request. ✅ **Permissions module (§7.12) built, verified, 20 automated tests** — role templates + per-user overrides replace the earlier hardcoded/register-time workarounds; §4.1 is exactly why a permission edit takes effect on the user's next request with no re-login needed. ✅ **User Management module (§7.0b) built, verified, 31 automated tests** — roster CRUD, team scoping, self/admin field rules, manager assignment; account creation logic deduplicated into `user.service.js#createUser`, called by `auth.controller.js` directly, no separate `POST /users` route added. **Confirmed 2026-07-13:** `getUserById`'s self-fetch bypass (a user can always fetch their own `/:id` regardless of any `users.*` grant) was already correct from the original build — no fix was needed, only an explicit regression test locking it in. |
-| 1 | Leads (CRUD, scoping, calls, hot flag, import/export, lead sources) | ✅ Backend built, verified, 34 automated tests (33 before the conversion flow replaced the 501-stub test with two real ones). Table/board UI and push notifications (assignment, follow-up reminders) not built — no frontend yet, no Web Push infra yet. |
+| 1 | Leads (CRUD, scoping, calls, hot flag, import/export, lead sources) | ✅ Backend built, verified, 40 automated tests (34 original + 6 new for §7.16's assignment-notification/follow-up-reminder wiring). ✅ Frontend built 2026-07-16 (Frontend 1 row below). ✅ Push notifications (assignment + 24h/15m follow-up reminders) built 2026-07-16 — see Phase 9 row below and `.context/final-plan.md` §7.16. |
 | 2 | Customers + Contracts/Contacts/Credentials + Project/Task automations | ✅ **Backend built and verified 2026-07-13.** `customer` module: 21 automated tests (CRUD/scoping, bulk actions, contract automation, deactivation cascade, encrypted credentials vault, activity log). `project` module: 19 automated tests (team assignment, one-`in_progress`-task-per-employee constraint). New shared `src/services/credentialEncryption.service.js` (AES-256-GCM). `CREDENTIALS_ENCRYPTION_KEY` is now a required env var. `Invoice` is a minimal placeholder model only — `GET /customers/:id/invoices`/`/ledger` deliberately not built, deferred to Phase 7. `POST /leads/:id/convert`'s 501 stub resolved as part of this work. |
 | 3 | Attendance (camera+geo capture) + Leave | ✅ **Fully built and verified 2026-07-13.** `attendance` module: 32 automated tests — check-in/check-out with photo capture (Cloudinary, **mandatory server-side**, not just a client-side constraint), a new `POST /attendance/heartbeat` for connectivity-gap detection (deliberately separate from Location's GPS ping), `workingHours` computed as gross duration minus gap duration, `GET /attendance/team`/`/report` (PDF via new `pdfkit` dependency, Excel via existing `exceljs`, both generated through a new shared `src/services/report.service.js`). `leave` module: 18 automated tests — request/approve/mark-unapproved-absence, one-paid-leave-per-month quota (§11.7, resolved this task: no carry-over, a deliberate stated assumption; **confirmed enforced at approval time, not request time** — a request is never blocked, only a second approval in the same month is). ✅ **Live Location Tracking (§7.4b) built, verified, 20 automated tests** — done ahead of the rest of this phase, and now proven to work together with Attendance end-to-end through real HTTP endpoints (updated to supply a photo, since check-in/check-out now require one). `CLOUDINARY_CLOUD_NAME`/`CLOUDINARY_API_KEY`/`CLOUDINARY_API_SECRET` are now required env vars. Map UI is a frontend follow-up. |
 | 4 | Payroll | ✅ **Built and verified 2026-07-13.** `payroll` module: 26 automated tests (20 in `payroll.test.js` — including a Phase 8 regression test confirming `GET /payroll/:id/payslip` still streams a direct PDF and was deliberately excluded from the report dispatcher migration — 6 in `src/cron/payrollCron.test.js`) — `POST /payroll/run?month=&year=&employeeId=&regenerate=` (single-employee or bulk for all active employees with a `baseSalary` set), `GET /payroll?scope=own\|all&month=` (no `team` tier — Manager gets no payroll grant at all, unlike every other workforce module), `GET /payroll/:id/payslip?format=pdf` (self or admin, 404 not 403 out-of-scope, PDF only, generated via the existing shared `report.service.js`, not new PDF code). `grossAmount`/`netAmount` computed from Attendance present days, approved paid/unpaid/double-deducted Leave, and **approved-only** TravelLog mileage × new `MILEAGE_RATE_PER_KM` env var (placeholder default). Two prerequisites closed first: `User.baseSalary` (admin-only privileged field) and TravelLog's approval workflow (§11.4, resolved — see Phase 6 below). New `src/cron/payrollCron.js` runs the bulk job at 00:05 on the 1st of every month for the previous month — its own test suite mocks `node-cron`'s `schedule` and calls the job body directly with a fixed reference date, never waiting on real time. **§11.5 resolved: record-keeping only for v1, no disbursement/payment-gateway integration.** **Correction (follow-up, 2026-07-13):** `sales_associate`'s default `payroll` permission was fixed — §5 marks it "–" (no access), same as Manager, not "own payslip only" like Employee; `permission.service.js`'s seed defaults no longer grant `sales_associate` a `payroll` key at all. 2 tests added confirming a `sales_associate` gets 403 on `GET /payroll` and 404 on their own `GET /payroll/:id/payslip`. |
@@ -144,7 +179,9 @@ is prioritized next.
 | 6 | Transport/Travel (Google Maps integration) | ✅ **Built and verified 2026-07-13.** `transport` module: 28 automated tests — `TravelLog` auto-generated from Attendance checkout (`attendance.service.js#checkOut` calls directly into `travelLog.service.js`, never fails checkout), manual entry (coords → Google Maps distance, or a direct `distanceKm` override), `GET /travel-logs?scope=own\|team\|all` (mirrors Leave's shape, with a dedicated side-by-side test proving admin/manager/employee scoping simultaneously), `GET /travel-logs/report` (reuses `src/services/report.service.js`). New `src/services/googleMaps.service.js` — no SDK dependency, calls the REST API via `fetch`. `GOOGLE_MAPS_API_KEY` is now a required env var. **Retrofitted 2026-07-13 with a `pending`/`approved`/`rejected` approval workflow and `PATCH /travel-logs/:id/approve\|reject`, resolving §11.4** ("does this feed payroll?" — yes, but only approved entries) as a Payroll prerequisite. |
 | 7 | Payments + AMC | ✅ **Built and verified.** `payment` module: 16 automated tests — `GET`/`POST /payments` (admin-only, no ownership scoping at all — §5's matrix marks every other role "–"). **§11.3 resolved: partial reconciliation, not a standalone log and not full invoicing** — a `Payment` linked to both a `customerId` and a new `invoiceId` field reduces that `Invoice`'s balance and updates its status (`paid` at 0, the newly-added `partially_paid` otherwise, clamped rather than negative on overpayment); a manual-only or customerId-without-invoiceId payment is just logged, expected not a gap. `amc` module: 20 automated tests — `GET`/`POST`/`PATCH /amc` with a two-flow creation (`new_customer` reuses `customer.service.js#createCustomer` directly; `existing_customer` requires an in-scope `customerId`), matching smartrays.md's "ask which create client or convert client". "Own team"/"own" scoping resolved via a new `customer.service.js#getVisibleCustomerIds` export, since AMC has no `ownerId` field of its own — Manager's "own team" tier is the "PM" role smartrays.md describes elsewhere. No automation on renewal for v1 (stated simplification, locked in by a regression test). |
 | 8 | Reports (cross-module PDF/Excel) | ✅ **Built and verified.** `report` module: 24 automated tests — single `POST /reports/generate` `{module, filters, format}` dispatching to `attendance`/`leave`/`payroll`/`transport`/`leads`/`customers`, each via that module's own existing, already-scoped data-fetcher (`generateAttendanceReport`/`generateTravelLogReport` reused unmodified; `listLeaves`/`listPayroll`/`listLeads`/`listCustomers` reused with new column/row rendering added in `report.service.js` itself). No new `reports.generate` permission — a coarse per-module `can()` check, then the module's own fetcher enforces the real scope. Per-module `filters` shape is validated by reusing each target module's own existing query validator (`attendance`/`transport`'s `validateReportQuery`, `leave`'s `validateScopeQuery`, `payroll`'s `validateListQuery`; `leads`/`customers` have none of their own to reuse, so their `status` filter is checked against each model's own status enum instead) — every one of the six modules' success path is proven with the same real magic-number file-signature check ("PK" for xlsx / "%PDF-" for pdf) already established for Attendance/TravelLog, not just some. **Breaking change (intentional, no frontend yet to break):** `GET /attendance/report`/`GET /travel-logs/report` now internally call this dispatcher and return `{ downloadUrl }` (Cloudinary) instead of streaming — existing tests rewritten to assert against the real buffer the mocked upload was called with. `GET /leads/export` and `GET /payroll/:id/payslip` both deliberately excluded (pre-existing separate export; single-document artifact) — the payslip exclusion now has a dedicated regression test in `payroll.test.js` proving it still streams directly. |
-| 9 | Dashboard polish + push notifications end-to-end | Not started |
+| Frontend 0 | Scaffold + Auth flow + Routing shell (mirrors backend Phase 0) | ✅ **Built and verified 2026-07-16.** Vite + Tailwind CSS + Ant Design + React Router DOM (`createBrowserRouter`/`createRoutesFromElements`) + Zustand + Axios, exactly per §3. Shared `apiClient.js` (httpOnly-cookie auth, 401 interceptor), `sessionStore.js` (Zustand — the only global store; identity from a real `GET /auth/me`, never a decoded token), route guards (`ProtectedRoute`, `PermissionGate`/`usePermission` — UI convenience only, not a real security boundary, stated in the code itself), `MainLayout` (shared dashboard shell, §7.13) + `PortalLayout` (separate, no nav, for `role: customer`). Every route in §8's map is wired; only `/login` (fully functional) and `/` (real by-role redirect) are built beyond a shared placeholder page — every other route is filled in module-by-module in later frontend tasks. 15 automated tests (`vitest` + React Testing Library + `@testing-library/user-event`), all passing — Login page, `ProtectedRoute`, `PermissionGate`, `RootRedirect`, no real network calls (API mocked at the module boundary). One interop bug found and fixed: the scaffold's originally-pinned `vitest@2` silently broke JSX's automatic runtime under tests (bundled its own internal Vite 5.x, mismatched with this project's Vite 8) — fixed by upgrading to `vitest@4`, which also resolved the transitive `esbuild`/`vite` audit advisory. One deliberate cleanup: removed the pre-existing scaffold's experimental `@rolldown/plugin-babel` + React Compiler preset (neither is part of the fixed §3 stack) in favor of the standard `@vitejs/plugin-react`. |
+| Frontend 1 | Leads frontend module (Table/Board/Detail/Import/Export) | ✅ **Built and verified 2026-07-16.** `frontend/src/modules/lead/` — the reference implementation for every later frontend module (see `frontend/README.md`'s "Adding a new module" section). Table View (search/owner/follow-up filters via URL params, inline status dropdown, overdue-red follow-ups, quick hot-toggle/owner-reassign) and Board View (kanban, new `@dnd-kit/core`+`@dnd-kit/sortable`+`@dnd-kit/utilities` dependency for drag-between-stages) share one page shell (`LeadsListPage`). `useLeadStatusChangeFlow` centralizes the two special-case transitions across all three UI surfaces (table dropdown/board drag/detail buttons): `lost` collects `lostReason` via modal before the API call, `won` opens Convert-to-Customer (pre-filled, editable, `projectManagerId` picked from the shared `/users/dropdown` list) then marks `won` on success. Lead Detail (`/leads/:id`) is a real, linkable route rendered as a slide-over — Log Call, Hot toggle, Won, Lost, Convert to Customer (a separate action from Won, doesn't force status), Edit, Delete. **Real backend gap found and handled:** no lead-specific activity-log endpoint exists (`backend/src/modules/lead/` has no `leadActivity.model.js`, unlike `customer`'s `customerActivity.model.js`) — the Activity Timeline is assembled client-side from call history + lead fields (`buildActivityTimeline.js`), documented as such rather than silently faked or skipped. Import wizard (Upload → Preview & Mapping → Result) honestly reflects that the backend has no interactive column-remapping endpoint — the mapping step is a read-only preview of the backend's fixed alias-matching, not an editable remap the API couldn't act on. Filtered Excel export downloads via a blob + synthetic link click. Every action permission-gated to the exact backend `leads` registry action its endpoint requires (create/edit/delete/view), plus a role-based gate on owner reassignment mirroring the backend's own extra restriction. 40 tests total (25 new — `vitest` + React Testing Library + `@testing-library/user-event`), all passing, no real network calls. **Deliberate testing-strategy decision:** the kanban drag interaction is tested via a pure drop-resolution-logic unit test + the status-change flow hook's unit tests + a plain rendering test, not a simulated real pointer-drag sequence (brittle under jsdom with `@dnd-kit`) — documented in `frontend/README.md` as the pattern to follow for any future drag-and-drop UI. `dayjs` added as an explicit direct dependency (previously only transitively resolvable through `antd`). |
+| 9 | Dashboard polish + push notifications end-to-end | ✅ **Backend half built and verified 2026-07-16 — see `.context/final-plan.md` §7.16.** `notification` module: 17 tests (`notification.test.js`) — `Notification`/`PushSubscription` models exactly per §6.7, self-scoped subscribe (upsert-by-`endpoint`)/unsubscribe/list/mark-read/mark-all-read, no `PERMISSION_REGISTRY` entry needed (every action is inherently self-scoped, same reasoning as `users.*`/`attendance.*`'s always-reachable own-data endpoints). `src/services/webPush.service.js` wraps `web-push`, configured from new **required** `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` env vars (optional `VAPID_SUBJECT`) — real keypair generated via `web-push`'s own `generateVAPIDKeys()`, no safe placeholder exists for a crypto keypair. `createNotification` creates the DB record and attempts a push to every active subscription independently; a push failure is logged and swallowed per-subscription, never blocking the notification record; a 404/410 response deactivates that subscription. Wired into **Leads** (assignment on create/reassign, skipped when self-assigning — exactly the spec's own requirement) and, **a deliberate small addition beyond the Leads-only spec**, **Ticket assignment** (stated explicitly as scope added on top of what was asked, not silent). New `src/cron/leadFollowUpReminderCron.js` (9 tests) runs every 5 minutes — far finer-grained than the monthly payroll cron, since "24h before"/"15min before" are precise moments, not a once-a-day batch; checks a "due within window, not yet reminded" condition (robust to cron downtime) rather than an exact-time match; `won`/`lost` leads excluded; already-passed follow-ups never remind (the existing `followUp=overdue` filter covers that). New `Lead.followUpReminder24hSentAt`/`followUpReminder15mSentAt` (`Date`, nullable) — necessary idempotency-guard schema addition, same treatment as Attendance's `lastHeartbeatAt`; both reset to `null` when `followUpDate` changes so a reschedule re-arms both reminders. No application bugs found. **Remaining, frontend-only:** Dashboard polish, permission-driven widget composition, PWA service worker wiring so a browser can actually receive/display a push. |
 
 ---
 
@@ -698,3 +735,106 @@ resolved while Phase 0 is underway.
   `report.test.js` (18 → 24), 1 new test in `payroll.test.js` (19 → 20). No application bugs
   found — this was a test/validation-completeness pass, not a behavior change. Full suite:
   **365 tests, all passing.**
+- **2026-07-16** — Built Frontend Phase 0 (scaffold + auth flow + routing shell, §7.14),
+  mirroring what backend Phase 0 established: the foundation everything else builds on, not
+  full-featured pages. Vite + Tailwind CSS + Ant Design + React Router DOM
+  (`createBrowserRouter`/`createRoutesFromElements` only) + Zustand (session store is the
+  only global store) + Axios — exactly per §3, no deviation. **One cleanup on top of the
+  pre-existing `frontend/` scaffold:** removed an experimental `@rolldown/plugin-babel` +
+  React Compiler preset the default Vite template had wired in — neither is part of the
+  fixed stack, and both add real interop risk for zero required benefit at Phase 0; replaced
+  with the standard `@vitejs/plugin-react`. New `src/services/apiClient.js` (one shared Axios
+  instance, `withCredentials: true`, 401 interceptor that clears session state and redirects
+  to `/login` except on a failed login itself), `src/store/sessionStore.js` (Zustand —
+  resolves identity from a real `GET /auth/me` call on app load, never a decoded token,
+  mirroring §4.1 on the client), route guards in `src/routes/` (`ProtectedRoute`,
+  `PermissionGate`/`usePermission` mirroring backend's `can()` — **UI convenience only, not a
+  real security boundary, stated as a comment in the code itself**, `RootRedirect` for `/`'s
+  real by-role logic), `MainLayout` (shared dashboard shell per §7.13) and `PortalLayout`
+  (separate, no internal nav, for `role: customer`) in `src/layouts/`. Every route in §8's
+  route map is wired in `src/routes/router.jsx` today; `/login` and `/` are fully functional,
+  every other route renders a shared `PlaceholderPage` component, to be filled in
+  module-by-module in later frontend tasks. 15 new tests (`vitest` + React Testing Library +
+  `@testing-library/user-event`, jsdom environment) — Login page (render/submit/error/
+  redirect), `ProtectedRoute` (loading/redirect/authenticated), `PermissionGate` (hide/
+  fallback/show/admin-bypass), `RootRedirect` (customer vs. every staff role) — all passing,
+  no real network calls (every API call mocked at the module boundary, matching backend's
+  Cloudinary/Google Maps mocking discipline). **One real interop bug found and fixed:** the
+  scaffold's originally-pinned `vitest@2` bundles its own internal Vite 5.x (`vite-node`,
+  `@vitest/mocker`), which didn't correctly apply this project's Vite-8-targeted
+  `@vitejs/plugin-react` — JSX silently fell back to the classic runtime under tests
+  (`ReferenceError: React is not defined`) even though the real dev/build pipeline was
+  completely unaffected. Fixed by upgrading to `vitest@4`, which also resolved the
+  transitive `esbuild`/`vite` audit advisory `vitest@2` carried (the same fix `npm audit`
+  itself suggested — not a forced/breaking workaround). A second, smaller fix: jsdom has no
+  `window.matchMedia`, which Ant Design's responsive components call unconditionally on
+  mount — stubbed in `src/test/setup.js`. Confirmed `npm run dev` and `npm run build` both
+  boot/complete cleanly. New `frontend/README.md` (setup, folder conventions, the
+  api.js/components/hooks-per-module pattern for adding a new module, how to run tests);
+  root `README.md` updated with frontend setup + a "running both together" section.
+- **2026-07-16** — Built the Leads frontend module (`frontend/src/modules/lead/`, §7.15) —
+  the first real feature module on the Phase 0 scaffold, and the reference implementation
+  every later frontend module follows. New dependencies: `@dnd-kit/core`+`@dnd-kit/sortable`+
+  `@dnd-kit/utilities` (kanban drag-between-stages) and `dayjs` (now explicit, previously
+  only transitive via `antd`). Table View + Board View share one page shell
+  (`LeadsListPage`) with URL-persisted filters; `useLeadStatusChangeFlow` centralizes the
+  `lost`-needs-reason and `won`-triggers-convert special cases across the table dropdown,
+  board drag, and detail-page buttons so there's exactly one implementation of each rule,
+  not three. Lead Detail (`/leads/:id`) is a real route rendered as a slide-over. **Found a
+  real backend gap and handled it explicitly rather than silently working around it:** no
+  lead-specific activity-log endpoint exists, so the Activity Timeline is assembled
+  client-side from call history + lead fields, documented in the code as exactly that. The
+  Import wizard's "mapping" step is similarly an honest read-only preview of the backend's
+  fixed column-alias matching, not an editable remap the API has no way to act on. 40 tests
+  total (25 new), all passing, no real network calls — drag-and-drop tested via pure-logic
+  + flow-hook + rendering tests rather than simulating real `@dnd-kit` pointer sequences
+  under jsdom (documented as the pattern to follow for future drag-and-drop UI).
+  `npm run dev`/`npm run build` both confirmed clean. `frontend/README.md`,
+  `.context/final-plan.md` (§7.15 + roadmap), and this file all updated to mark it built.
+- **2026-07-16** — Built the Notification module, Web Push (VAPID) delivery, and the lead
+  follow-up reminder cron (§6.7/§7.16) — **the last unbuilt backend piece; this closes out
+  every backend phase in the roadmap.** New `backend/src/modules/notification/`
+  (`Notification`/`PushSubscription` models exactly per §6.7, `notification.service.js`,
+  controller, routes, validation). New required env vars `VAPID_PUBLIC_KEY`/
+  `VAPID_PRIVATE_KEY` (a real keypair generated once via `web-push`'s own
+  `generateVAPIDKeys()` utility — no safe placeholder exists for a public-key-cryptography
+  pair, unlike e.g. a Cloudinary cloud name) and optional `VAPID_SUBJECT`. New
+  `src/services/webPush.service.js` wraps the `web-push` package (now a real dependency, was
+  previously only a planned §3 entry). `notification.service.js#createNotification` creates
+  the DB record and attempts a push to every active `PushSubscription` independently — a push
+  failure is logged and swallowed per-subscription, never blocking the notification record or
+  suppressing delivery to the user's other devices; a 404/410 response deactivates that
+  subscription rather than deleting it. `subscribe` upserts by `endpoint` (not `userId`) since
+  that's the Push API's own natural unique key, re-associating a shared device's endpoint to a
+  new user rather than erroring on a duplicate key. No `PERMISSION_REGISTRY` entry — every
+  action (subscribe/unsubscribe/list/mark-read) is inherently self-scoped, the same
+  "self-data-needs-no-grant" reasoning `users.*`/`attendance.*` already established. **Wired
+  into Leads** (`lead.service.js#notifyLeadAssignment`, shared by `createLead`/`updateLead` —
+  fires whenever a lead's `ownerId` ends up set to someone other than whoever made the
+  change) **and, as a deliberate small addition beyond the Leads-only spec, Ticket assignment**
+  (`ticket.service.js#assignTicket`) — stated explicitly here and in `final-plan.md` as scope
+  added on top of what this task was asked to build, not a silent expansion. New
+  `src/cron/leadFollowUpReminderCron.js` runs every 5 minutes (far finer-grained than the
+  monthly payroll cron — both reminder windows are precise-ish moments, not a once-a-day
+  batch); `lead.service.js#sendDueFollowUpReminders` checks a "due within the next 24h/15m and
+  not yet reminded" condition per tick — deliberately not an exact-time match, so a cron
+  restart or delayed tick can never silently skip a reminder. `won`/`lost` leads excluded; a
+  follow-up that's already fully passed never gets a reminder (a "before it's due" nudge, not
+  after-the-fact — the existing `followUp=overdue` filter covers that). New `Lead` fields, a
+  necessary schema addition (same treatment as Attendance's `lastHeartbeatAt`):
+  `followUpReminder24hSentAt`/`followUpReminder15mSentAt` (`Date`, nullable) — idempotency
+  guards, both reset to `null` whenever `followUpDate` changes so a reschedule re-arms both
+  reminders. New `User.pushSubscriptions` field (§6.1/§6.7), kept in sync by
+  subscribe/unsubscribe though `PushSubscription.isActive` is the actual authority
+  `createNotification` checks. 34 new tests (17 `notification.test.js`, 9
+  `leadFollowUpReminderCron.test.js`, 6 new in `lead.test.js`, 2 new in `ticket.test.js`) — all
+  passing, no application bugs found, a clean net-new build. `web-push` mocked at the module
+  boundary everywhere it's touched, same pattern as Cloudinary/Google Maps mocking; one real
+  interop constraint found and worked around: `web-push`'s `setVapidDetails()` validates the
+  public key format and throws synchronously at import time, and since nearly every test file
+  transitively imports it, `tests/helpers/testDb.js`'s dummy env-var defaults needed a real
+  (though non-secret, fixture-only) VAPID keypair rather than an arbitrary placeholder string
+  — otherwise the entire suite would have failed at import time, not just
+  `notification.test.js`. Full suite: **399 tests, all passing.** `backend/README.md` (new
+  Notifications section + dependencies-added entry), `.context/final-plan.md` (§7.16 + §6.7 +
+  roadmap + tech-stack table), and this file all updated to mark it built.

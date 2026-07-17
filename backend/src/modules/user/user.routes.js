@@ -1,8 +1,21 @@
 import { Router } from "express";
 import authenticate from "../../middlewares/authenticate.middleware.js";
 import { requireAdmin } from "../../middlewares/authorize.middleware.js";
-import { list, dropdown, getOne, update, deactivate, reactivate, changeManager } from "./user.controller.js";
-import { validateUpdateUserInput, validateAssignManagerInput } from "./user.validation.js";
+import {
+  list,
+  dropdown,
+  getOne,
+  update,
+  deactivate,
+  reactivate,
+  changeManager,
+  resetPassword,
+} from "./user.controller.js";
+import {
+  validateUpdateUserInput,
+  validateAssignManagerInput,
+  validateAdminResetPasswordInput,
+} from "./user.validation.js";
 
 const userRouter = Router();
 
@@ -28,5 +41,12 @@ userRouter.patch("/:id", authenticate, validateUpdateUserInput, update);
 userRouter.patch("/:id/deactivate", authenticate, requireAdmin, deactivate);
 userRouter.patch("/:id/reactivate", authenticate, requireAdmin, reactivate);
 userRouter.patch("/:id/manager", authenticate, requireAdmin, validateAssignManagerInput, changeManager);
+userRouter.patch(
+  "/:id/reset-password",
+  authenticate,
+  requireAdmin,
+  validateAdminResetPasswordInput,
+  resetPassword
+);
 
 export default userRouter;

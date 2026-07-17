@@ -1,10 +1,20 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import request from "supertest";
 import { startTestDatabase, stopTestDatabase, clearAllCollections } from "../../../tests/helpers/testDb.js";
 import { getTestApp } from "../../../tests/helpers/testApp.js";
 import { createUserDirectly, loginAsAgent } from "../../../tests/helpers/authHelpers.js";
 import Customer from "../customer/customer.model.js";
 import Contact from "../customer/contact.model.js";
+import User from "../user/user.model.js";
+
+// No test here ever sends a real email — mocked at the module boundary, same
+// pattern as Cloudinary/Google Maps/web-push mocking elsewhere in this
+// codebase. Captured so forgot-password tests can assert the reset link's
+// shape without a real SMTP connection.
+const sendPasswordResetEmailMock = vi.fn(async () => {});
+vi.mock("../../services/email.service.js", () => ({
+  sendPasswordResetEmail: (...args) => sendPasswordResetEmailMock(...args),
+}));
 
 let app;
 let admin;
@@ -26,6 +36,7 @@ afterAll(async () => {
 // isolating per-test avoids one test's account state leaking into another.
 beforeEach(async () => {
   await clearAllCollections();
+  sendPasswordResetEmailMock.mockClear();
   admin = await createUserDirectly({
     name: "Admin",
     email: ADMIN_EMAIL,
@@ -310,5 +321,128 @@ describe("POST /auth/logout", () => {
 
     expect(setCookieHeader).toMatch(/Expires=Thu, 01 Jan 1970/);
     expect(setCookieHeader).not.toMatch(/Max-Age/i);
+  });
+});
+
+describe("POST /auth/forgot-password", () => {
+  it("returns the same generic response for a matching account and sends the reset email", async () => {
+    const response = await request(app)
+      .post("/api/v1/auth/forgot-password")
+      .send({ email: ADMIN_EMAIL });
+
+    expect(response.status).toBe(200);
+    expect(response.body.message).toMatch(/if an account with that email exists/i);
+    expect(sendPasswordResetEmailMock).toHaveBeenCalledTimes(1);
+    expect(sendPasswordResetEmailMock.mock.calls[0][0].to).toBe(ADMIN_EMAIL);
+    expect(sendPasswordResetEmailMock.mock.calls[0][0].resetUrl).toMatch(/\/reset-password\?token=/);
+  });
+
+  it("returns the exact same generic response for a non-existent account, and sends no email", async () => {
+    const response = await request(app)
+      .post("/api/v1/auth/forgot-password")
+      .send({ email: "nobody@test.local" });
+
+    expect(response.status).toBe(200);
+    expect(response.body.message).toMatch(/if an account with that email exists/i);
+    expect(sendPasswordResetEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("sends no email for a deactivated account either, without leaking that distinction", async () => {
+    const deactivated = await createUserDirectly({
+      name: "Deactivated",
+      email: "deactivated@test.local",
+      password: "Password123",
+      role: "employee",
+    });
+    deactivated.isActive = false;
+    await deactivated.save();
+
+    const response = await request(app)
+      .post("/api/v1/auth/forgot-password")
+      .send({ email: "deactivated@test.local" });
+
+    expect(response.status).toBe(200);
+    expect(sendPasswordResetEmailMock).not.toHaveBeenCalled();
+  });
+
+  it("is rejected for an invalid email", async () => {
+    const response = await request(app)
+      .post("/api/v1/auth/forgot-password")
+      .send({ email: "not-an-email" });
+
+    expect(response.status).toBe(400);
+  });
+});
+
+describe("POST /auth/reset-password", () => {
+  async function requestResetToken(email) {
+    await request(app).post("/api/v1/auth/forgot-password").send({ email });
+    return sendPasswordResetEmailMock.mock.calls.at(-1)[0].resetUrl.split("token=")[1];
+  }
+
+  it("resets the password with a valid token and lets the user log in with the new password", async () => {
+    const token = await requestResetToken(ADMIN_EMAIL);
+
+    const resetResponse = await request(app)
+      .post("/api/v1/auth/reset-password")
+      .send({ token, newPassword: "NewPassword123" });
+
+    expect(resetResponse.status).toBe(200);
+
+    const loginResponse = await request(app)
+      .post("/api/v1/auth/login")
+      .send({ email: ADMIN_EMAIL, password: "NewPassword123" });
+
+    expect(loginResponse.status).toBe(200);
+
+    const oldPasswordLogin = await request(app)
+      .post("/api/v1/auth/login")
+      .send({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
+
+    expect(oldPasswordLogin.status).toBe(401);
+  });
+
+  it("rejects an invalid token", async () => {
+    const response = await request(app)
+      .post("/api/v1/auth/reset-password")
+      .send({ token: "not-a-real-token", newPassword: "NewPassword123" });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects a token that has already been used once", async () => {
+    const token = await requestResetToken(ADMIN_EMAIL);
+
+    await request(app).post("/api/v1/auth/reset-password").send({ token, newPassword: "NewPassword123" });
+
+    const secondAttempt = await request(app)
+      .post("/api/v1/auth/reset-password")
+      .send({ token, newPassword: "AnotherPassword123" });
+
+    expect(secondAttempt.status).toBe(400);
+  });
+
+  it("rejects an expired token", async () => {
+    const token = await requestResetToken(ADMIN_EMAIL);
+
+    const user = await User.findOne({ email: ADMIN_EMAIL }).select("+passwordResetExpiresAt");
+    user.passwordResetExpiresAt = new Date(Date.now() - 1000);
+    await user.save();
+
+    const response = await request(app)
+      .post("/api/v1/auth/reset-password")
+      .send({ token, newPassword: "NewPassword123" });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("is rejected when the new password is too short", async () => {
+    const token = await requestResetToken(ADMIN_EMAIL);
+
+    const response = await request(app)
+      .post("/api/v1/auth/reset-password")
+      .send({ token, newPassword: "short" });
+
+    expect(response.status).toBe(400);
   });
 });

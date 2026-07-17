@@ -7,6 +7,7 @@ import {
   updateUser,
   setUserActiveStatus,
   assignManager,
+  adminResetPassword,
 } from "./user.service.js";
 
 export const list = asyncWrapper(async (req, res) => {
@@ -49,4 +50,12 @@ export const changeManager = asyncWrapper(async (req, res) => {
   const user = await assignManager(req.params.id, req.body.managerId);
 
   res.status(200).json(new ApiResponse(200, user, "Manager assigned successfully"));
+});
+
+export const resetPassword = asyncWrapper(async (req, res) => {
+  const { user, tempPassword } = await adminResetPassword(req.params.id, req.body.newPassword);
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, { user, tempPassword }, "Password reset successfully"));
 });

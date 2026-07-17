@@ -21,9 +21,10 @@ Fill in `.env`:
 - `MONGODB_URI` — a running MongoDB instance (local install, Docker, or Atlas)
 - `JWT_SECRET` — any long random string for local dev
 - `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` — used once by the admin seed script below
-
-Cloudinary and `CREDENTIALS_ENCRYPTION_KEY` are not required yet — they're only used once the
-Attendance and Customer-credentials modules are built (Phase 2/3).
+- `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET`, `CREDENTIALS_ENCRYPTION_KEY`,
+  `GOOGLE_MAPS_API_KEY`, `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` — all required at boot now (every
+  phase through Phase 9 is built); see the Environment Variables section below for what each is for
+  and how to generate it.
 
 ### Bootstrapping the first admin
 
@@ -117,7 +118,7 @@ production / `lax` in dev. The token is never present in any response body.
 | `payment` | ✅ Built (Phase 7) — admin-only manual payment log, with optional partial reconciliation against an existing `Invoice` (see below). |
 | `amc` | ✅ Built (Phase 7) — two-flow creation (new-or-existing customer), "own team"/"own" scoped via the underlying Customer's ownership (see below). |
 | `report` | ✅ Built (Phase 8) — unified `POST /reports/generate` dispatcher (attendance/leave/payroll/transport/leads/customers), no new permission, uploads to Cloudinary and returns a download URL (see below). **`GET /attendance/report`/`GET /travel-logs/report` now internally reuse this dispatcher — breaking response-shape change, see those sections.** |
-| `notification` | Scaffolded (empty), see roadmap in `.context/final-plan.md` §10 |
+| `notification` | ✅ Built (Phase 9, 2026-07-16) — `Notification` + `PushSubscription` models, Web Push (VAPID) delivery via `web-push`, self-scoped subscribe/unsubscribe/list/mark-read endpoints (see below). Wired into Leads (assignment + a follow-up-reminder cron) and, as a deliberate small addition beyond the Leads-only spec, Ticket assignment. |
 
 ### Auth (`/api/v1/auth`)
 
@@ -958,6 +959,94 @@ exists specifically to uphold. There's deliberately no `tasks.update_own` regist
 
 ---
 
+### Notifications (`/api/v1/notifications`) — Phase 9
+
+See `.context/final-plan.md` §6.7/Platform. Closes out the last planned backend piece —
+push notifications (Web Push/VAPID) and the lead follow-up reminder cron, per §3's originally
+planned (not yet built) infrastructure.
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| POST | `/notifications/subscribe` | Authenticated, no module permission | Body `{ endpoint, keys: { p256dh, auth } }` — the browser's Push API subscription object, verbatim. Upserts by `endpoint` (not `userId`) — re-subscribing an already-known endpoint (e.g. a shared device logged in as a different user) re-associates it rather than erroring on a duplicate key. Links the subscription's id onto `User.pushSubscriptions`. |
+| POST | `/notifications/unsubscribe` | Authenticated, no module permission | Body `{ endpoint }`. Deactivates (`isActive: false`) rather than deleting — the same row can be re-activated by a later re-subscribe. A silent no-op for an endpoint that doesn't belong to the caller (or doesn't exist), since "make sure this isn't subscribed anymore" is the actual intent regardless. POST, not DELETE — this codebase avoids REST-purist endpoints where a body is more convenient (see `PATCH /leads/:id/hot`), and DELETE-with-a-body is friction for no benefit here. |
+| GET | `/notifications?unreadOnly=true` | Authenticated, no module permission | Always scoped to the caller — there is no cross-user access anywhere in this module, the same "self data needs no grant" shape as `GET /auth/me`/`GET /attendance/me`. |
+| PATCH | `/notifications/:id/read` | Authenticated, no module permission | 404 (not 403) for a notification that isn't the caller's — matching the Leads/Location/User/Payroll out-of-scope precedent. |
+| PATCH | `/notifications/read-all` | Authenticated, no module permission | Marks every one of the caller's own unread notifications read; doesn't touch anyone else's. |
+
+**No `PERMISSION_REGISTRY` entry at all** — every action here is inherently self-scoped (your
+own subscriptions, your own notifications), so a permission grant would be redundant, the same
+reasoning `users.*`/`attendance.*` already establish for "always-reachable own data."
+
+**`src/services/webPush.service.js`** wraps the `web-push` package: `setVapidDetails()` runs once
+at import time from `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY`/`VAPID_SUBJECT` (now **required** env
+vars — see below), and `sendPush(subscription, payload)` is a thin thing wrapper with no
+try/catch of its own — a failed send is `notification.service.js`'s concern, not this wrapper's.
+Mocked at the module boundary in every test that touches it, same pattern as Cloudinary/Google
+Maps — no test ever makes a real push network call.
+
+**`notification.service.js#createNotification(userId, type, message, relatedEntity?)`** creates
+the DB record (the real source of truth — `GET /notifications` returns it whether or not any
+push actually got delivered) AND attempts a push to every one of the user's **active**
+`PushSubscription`s, each attempted independently. A push failure is logged and swallowed
+per-subscription — it **never** throws out of `createNotification`, so one bad subscription
+can't suppress delivery to the user's other devices, and a notification always gets its DB
+record regardless of push outcome. A `404`/`410` response from the push service (the
+subscription is gone — uninstalled PWA, cleared site data, etc.) deactivates that subscription
+row rather than deleting it, so a later re-subscribe of the same endpoint is a straightforward
+re-activate.
+
+**Wired into two existing modules:**
+- **Leads** (`lead.service.js`) — `createLead`/`updateLead` both call a shared
+  `notifyLeadAssignment` whenever a lead's `ownerId` ends up set to someone other than whoever
+  made the change (assigning a lead to yourself needs no notification telling you what you just
+  did). This is exactly leads-customer-functional-spec.md's "push notification when a lead is
+  assigned to you."
+- **Tickets** (`ticket.service.js#assignTicket`) — **a deliberate small addition beyond §7.8's
+  literal scope**, not part of the Leads-specific spec. Made because the Notification
+  infrastructure is fully generic and Ticket already has an `assign` action ready to hang a
+  notification off of; stated here (and in `.context/final-plan.md`) explicitly as scope added
+  on top of what this task was asked to build, not a silent expansion. Skipped when an
+  admin/manager assigns a ticket to themselves.
+
+**`src/cron/leadFollowUpReminderCron.js`** — the other literal Leads requirement ("push 24h and
+15min before follow-up, via cron"). Runs every 5 minutes (`*/5 * * * *`, much finer-grained than
+the monthly payroll cron, since both reminder windows are precise-ish moments in time, not a
+once-a-day batch). `lead.service.js#sendDueFollowUpReminders(referenceDate)` — the job body,
+exported separately for direct testing with a fixed date, the same pattern
+`payrollCron.js#runMonthlyPayrollJob` already established — checks two independent windows (24h,
+15m) per tick: "`followUpDate` falls inside the next N and hasn't been reminded for yet." This
+is deliberately a "due within the window" check, not an exact-time match, so a cron restart or a
+delayed tick can never cause a reminder to be silently skipped — once a lead's follow-up enters
+a window it keeps matching every tick until the guard is set. `won`/`lost` leads are excluded
+(nothing left to follow up on); a follow-up that's already fully passed (e.g. the server was
+down through the whole window) never gets a reminder at all — this is a "before it's due" nudge,
+the existing `followUp=overdue` filter already covers the after-the-fact case.
+
+**New `Lead` fields, a necessary schema addition (§6.7/§7.1), the same treatment as
+Attendance's `lastHeartbeatAt`:** `followUpReminder24hSentAt`/`followUpReminder15mSentAt`
+(`Date`, nullable) — idempotency guards so the cron never double-sends. Both reset to `null`
+whenever `followUpDate` actually changes (`updateLead`), so rescheduling a follow-up "re-arms"
+both reminders instead of them silently staying suppressed for the new date.
+
+**New `User.pushSubscriptions`** (`[ObjectId → PushSubscription]`, §6.1/§6.7) — kept in sync by
+`subscribe`/`unsubscribe`, though `PushSubscription.isActive` (not this array's membership) is
+what `createNotification` actually checks before sending.
+
+**This closes out every backend phase in `.context/final-plan.md` §10** — Phase 9's backend half
+(Notification module, Web Push, the follow-up cron) was the last unbuilt backend piece; only
+Phase 9's frontend half (Dashboard polish, service worker/PWA wiring) remains.
+
+34 new tests: 17 in `notification.test.js` (subscribe/unsubscribe upsert-by-endpoint semantics,
+self-scoped list/read/read-all, push-delivery behavior including the 404/410
+deactivate-vs-transient-failure distinction), 9 in `leadFollowUpReminderCron.test.js` (both
+reminder windows independently, no double-send, excluded won/lost, already-passed follow-ups
+never remind, never throws), 6 new in `lead.test.js` (assignment notification on
+create/reassign, no self-notify, follow-up reminder reset on reschedule), 2 new in
+`ticket.test.js` (assignment notification, no self-notify). No application bugs found — this
+was a clean net-new build. Full suite: **399 tests, all passing.**
+
+---
+
 ## Environment Variables
 
 See `.env.example` for the full annotated list. Summary:
@@ -978,6 +1067,8 @@ See `.env.example` for the full annotated list. Summary:
 | `ATTENDANCE_GAP_THRESHOLD_MINUTES` | No — defaults to `10` if unset | Minutes of heartbeat silence before a `connectivityGaps[]` entry is recorded (§6.5/§7.4) |
 | `GOOGLE_MAPS_API_KEY` | **Yes, as of Phase 6** | Google Maps Distance Matrix API key (§6.5/§7.6) — required for both auto-generated and coords-based manual `TravelLog` entries; `env.js` fails fast at boot if it's missing. |
 | `MILEAGE_RATE_PER_KM` | No — defaults to `10` if unset | Currency units per approved-`TravelLog`-km, Payroll's mileage reimbursement (§6.5/§7.7). **Placeholder value** — a deliberately simple v1 (one single global rate, not per-role/per-project); the client must confirm the real rate. |
+| `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | **Yes, as of Phase 9** | Web Push VAPID keypair (§6.7) — `webPush.service.js#setVapidDetails` fails immediately at import time if either is missing or not a real key. Generate a real pair with `node -e "console.log(require('web-push').generateVAPIDKeys())"` — there's no safe placeholder for a public-key-cryptography pair the way there is for e.g. a Cloudinary cloud name. |
+| `VAPID_SUBJECT` | No — defaults to `mailto:support@smartrayssolutions.com` if unset | The `mailto:`/`https:` contact URL the Web Push spec asks a VAPID sender to supply. |
 
 ---
 
@@ -1334,6 +1425,14 @@ plain distance lookups.
 - `node-cron` — already a listed §3 tech-stack dependency, installed for real with this task.
   Drives `src/cron/payrollCron.js` (see the Payroll section above). `npm audit` after installing:
   no new advisories beyond the pre-existing `uuid`/`exceljs` one documented above.
+
+## Dependencies added for Notifications (Phase 9)
+
+- `web-push` — already a listed §3 tech-stack dependency, installed for real with this task.
+  `src/services/webPush.service.js` wraps it (see the Notifications section above); also used
+  directly, once, via its `generateVAPIDKeys()` utility to produce the `VAPID_PUBLIC_KEY`/
+  `VAPID_PRIVATE_KEY` pair. `npm audit` after installing: no new advisories beyond the
+  pre-existing `uuid`/`exceljs` one documented above.
 
 ---
 

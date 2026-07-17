@@ -2,7 +2,13 @@ import asyncWrapper from "../../utils/asyncWrapper.js";
 import ApiResponse from "../../utils/ApiResponse.js";
 import { env } from "../../config/env.js";
 import { createUser, createCustomerSelfSignupUser } from "../user/user.service.js";
-import { loginUser, getAuthCookieOptions, getAuthCookieMaxAgeMs } from "./auth.service.js";
+import {
+  loginUser,
+  getAuthCookieOptions,
+  getAuthCookieMaxAgeMs,
+  requestPasswordReset,
+  resetPassword,
+} from "./auth.service.js";
 
 export const register = asyncWrapper(async (req, res) => {
   const { name, email, phone, password, role, managerId, customerId } = req.body;
@@ -45,4 +51,25 @@ export const logout = asyncWrapper(async (req, res) => {
 
 export const getCurrentUser = asyncWrapper(async (req, res) => {
   res.status(200).json(new ApiResponse(200, req.user, "Current user fetched successfully"));
+});
+
+// Always the same generic response, whether or not the email matches an
+// account — see auth.service.js#requestPasswordReset's account-enumeration
+// note. The controller never sees which branch the service took.
+export const forgotPassword = asyncWrapper(async (req, res) => {
+  const { email } = req.body;
+
+  await requestPasswordReset(email);
+
+  res
+    .status(200)
+    .json(new ApiResponse(200, null, "If an account with that email exists, a reset link has been sent"));
+});
+
+export const resetPasswordWithToken = asyncWrapper(async (req, res) => {
+  const { token, newPassword } = req.body;
+
+  await resetPassword(token, newPassword);
+
+  res.status(200).json(new ApiResponse(200, null, "Password reset successfully"));
 });

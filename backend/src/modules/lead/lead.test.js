@@ -6,6 +6,7 @@ import { bufferParser } from "../../../tests/helpers/binaryResponse.js";
 import Lead from "./lead.model.js";
 import LeadCall from "./leadCall.model.js";
 import LeadSource from "./leadSource.model.js";
+import Notification from "../notification/notification.model.js";
 
 const FULL_LEADS_PERMISSIONS = { leads: { view: true, create: true, edit: true, delete: true } };
 
@@ -28,6 +29,7 @@ async function clearLeadData() {
   await Lead.deleteMany({});
   await LeadCall.deleteMany({});
   await LeadSource.deleteMany({});
+  await Notification.deleteMany({});
 }
 
 beforeAll(async () => {
@@ -545,5 +547,94 @@ describe("Lead sources", () => {
     expect(response.status).toBe(200);
     expect(response.body.data).toHaveLength(10);
     expect(response.body.data.map((source) => source.name)).toContain("Website");
+  });
+});
+
+describe("Assignment notifications (§6.7/§7.1, Phase 9)", () => {
+  it("notifies the new owner when a lead is created assigned to someone else", async () => {
+    const response = await managerAgent
+      .post("/api/v1/leads")
+      .send(buildLeadPayload({ ownerId: sales1._id }));
+
+    expect(response.status).toBe(201);
+
+    const notification = await Notification.findOne({ userId: sales1._id, type: "lead_assigned" });
+    expect(notification).not.toBeNull();
+    expect(notification.message).toContain(response.body.data.name);
+    expect(String(notification.relatedEntity.id)).toBe(String(response.body.data._id));
+    expect(notification.relatedEntity.module).toBe("leads");
+  });
+
+  it("does not notify when a sales_associate creates their own lead", async () => {
+    await sales1Agent.post("/api/v1/leads").send(buildLeadPayload());
+
+    expect(await Notification.countDocuments({ userId: sales1._id, type: "lead_assigned" })).toBe(0);
+  });
+
+  it("notifies the new owner when a lead is reassigned via PATCH", async () => {
+    const createResponse = await managerAgent
+      .post("/api/v1/leads")
+      .send(buildLeadPayload({ ownerId: sales1._id }));
+    const leadId = createResponse.body.data._id;
+
+    const response = await managerAgent
+      .patch(`/api/v1/leads/${leadId}`)
+      .send({ ownerId: sales2._id });
+
+    expect(response.status).toBe(200);
+
+    const notification = await Notification.findOne({ userId: sales2._id, type: "lead_assigned" });
+    expect(notification).not.toBeNull();
+  });
+
+  it("does not notify when an update leaves ownerId unchanged", async () => {
+    const createResponse = await managerAgent
+      .post("/api/v1/leads")
+      .send(buildLeadPayload({ ownerId: sales1._id }));
+    const leadId = createResponse.body.data._id;
+    await Notification.deleteMany({});
+
+    await managerAgent.patch(`/api/v1/leads/${leadId}`).send({ ownerId: sales1._id, notes: "unchanged owner" });
+
+    expect(await Notification.countDocuments({ type: "lead_assigned" })).toBe(0);
+  });
+
+  it("resets both follow-up reminder SentAt fields when followUpDate changes", async () => {
+    const createResponse = await sales1Agent.post("/api/v1/leads").send(
+      buildLeadPayload({ followUpDate: new Date(Date.now() + 60 * 60 * 1000).toISOString() })
+    );
+    const leadId = createResponse.body.data._id;
+
+    await Lead.findByIdAndUpdate(leadId, {
+      followUpReminder24hSentAt: new Date(),
+      followUpReminder15mSentAt: new Date(),
+    });
+
+    await sales1Agent
+      .patch(`/api/v1/leads/${leadId}`)
+      .send({ followUpDate: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString() });
+
+    const updatedLead = await Lead.findById(leadId);
+    expect(updatedLead.followUpReminder24hSentAt).toBeNull();
+    expect(updatedLead.followUpReminder15mSentAt).toBeNull();
+  });
+
+  it("leaves the reminder SentAt fields untouched when followUpDate is not part of the update", async () => {
+    const createResponse = await sales1Agent.post("/api/v1/leads").send(
+      buildLeadPayload({ followUpDate: new Date(Date.now() + 60 * 60 * 1000).toISOString() })
+    );
+    const leadId = createResponse.body.data._id;
+    const sentAt = new Date();
+
+    await Lead.findByIdAndUpdate(leadId, {
+      followUpReminder24hSentAt: sentAt,
+      followUpReminder15mSentAt: sentAt,
+    });
+
+    await sales1Agent.patch(`/api/v1/leads/${leadId}`).send({ notes: "no date change here" });
+
+    const updatedLead = await Lead.findById(leadId);
+    expect(updatedLead.followUpReminder24hSentAt).not.toBeNull();
+    expect(updatedLead.followUpReminder15mSentAt).not.toBeNull();
   });
 });

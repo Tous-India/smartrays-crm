@@ -33,6 +33,40 @@ export async function startTestDatabase() {
   // travelLog.test.js (and any test that exercises Attendance checkout)
   // mocks src/services/googleMaps.service.js instead.
   process.env.GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || "test-google-maps-key";
+  // env.js requires these at boot now that the Notification module exists
+  // (§6.7/Phase 9) — and `webPush.service.js` calls `web-push`'s
+  // `setVapidDetails()` at import time, which validates the public key is a
+  // real 65-byte VAPID key and throws synchronously otherwise. Since nearly
+  // every test file transitively imports it (app.js -> route.js ->
+  // lead/ticket routes -> their services -> notification.service.js), an
+  // arbitrary placeholder string here would break the ENTIRE suite at
+  // import time, not just notification.test.js. This is a real, validly-
+  // shaped keypair generated once for this fixture only (`web-push`'s own
+  // `generateVAPIDKeys()`) — not a production secret, the same treatment
+  // CREDENTIALS_ENCRYPTION_KEY's fixed test key already gets. No test ever
+  // sends a real push regardless: `src/services/webPush.service.js` is
+  // mocked at the module boundary in notification.test.js (and anywhere
+  // else a real PushSubscription is seeded), and with no subscriptions
+  // seeded, `createNotification` never calls it at all.
+  process.env.VAPID_PUBLIC_KEY =
+    process.env.VAPID_PUBLIC_KEY ||
+    "BMI_K3EwF0pYWhlolXL8edqnU4fBhH-7jHpPEASE8HPnl1O_dQKkKBI2sl6D_0PRhwo73nh2lvYM6u7WJlUXCMY";
+  process.env.VAPID_PRIVATE_KEY =
+    process.env.VAPID_PRIVATE_KEY || "0UB1ZNxgN8VehJpReYGTEsjlNsDuXyiZAKcWw9QAbmM";
+
+  // env.js requires these at boot now that the self-service password reset
+  // flow exists (§7.13) — src/services/email.service.js's
+  // `nodemailer.createTransport()` doesn't validate synchronously at import
+  // (unlike `web-push`'s `setVapidDetails()`), so these dummy values are only
+  // here to satisfy env.js's required-var check, not because a real SMTP
+  // connection is ever attempted. Every test that exercises forgot/reset-
+  // password mocks src/services/email.service.js at the module boundary —
+  // no test ever sends a real email.
+  process.env.SMTP_HOST = process.env.SMTP_HOST || "smtp.test.local";
+  process.env.SMTP_PORT = process.env.SMTP_PORT || "587";
+  process.env.SMTP_USER = process.env.SMTP_USER || "test@smartrayssolutions.com";
+  process.env.SMTP_PASSWORD = process.env.SMTP_PASSWORD || "test-smtp-password";
+  process.env.SMTP_FROM = process.env.SMTP_FROM || "Smartrays CMS <no-reply@smartrayssolutions.com>";
 
   mongoServer = await MongoMemoryServer.create();
   process.env.MONGODB_URI = mongoServer.getUri();

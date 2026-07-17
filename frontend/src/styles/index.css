@@ -1,0 +1,81 @@
+@import "tailwindcss";
+
+/*
+ * Smartrays Solutions brand colors, extracted directly from the official
+ * logo file (frontend/src/assets/logo.png) — not guessed. Tailwind v4 has no
+ * JS config file; `@theme` is how named utility colors (bg-brand-navy,
+ * text-brand-green, border-brand-navy/20, etc.) are registered instead.
+ * Keep this in sync with the AntD theme tokens in App.jsx (colorPrimary),
+ * which drive the same navy across AntD components Tailwind classes don't
+ * reach (buttons, focus rings, selected menu items, links).
+ */
+@theme {
+  --color-brand-navy: #163b78;
+  --color-brand-green: #1d8343;
+}
+
+/*
+ * Auth screen background — v2. The light wash below read flat/washed-out
+ * ("almost white") once a real glass card sat on top of it, so this is a
+ * genuinely deep navy base (not a tint) with a soft, off-center green glow
+ * layered over it via radial-gradient, plus a darker vignette pulling the
+ * far corners down further so the eye lands on the card rather than the
+ * edges. All three layers are on one element so they composite as a single
+ * background (later `background-image` entries paint on TOP, so the darkest
+ * vignette is listed first and the glow last, closest to the base).
+ */
+.auth-gradient-bg {
+  background-color: #0e2a55;
+  background-image:
+    radial-gradient(120% 120% at 15% 15%, rgba(0, 0, 0, 0) 45%, rgba(2, 8, 20, 0.55) 100%),
+    radial-gradient(60% 55% at 78% 12%, rgba(29, 131, 67, 0.32) 0%, rgba(29, 131, 67, 0) 70%),
+    linear-gradient(160deg, #0e2a55 0%, #163b78 55%, #0d2145 100%);
+}
+
+/*
+ * Fixes browsers forcing an opaque yellow/white background on autofilled
+ * inputs (`-webkit-autofill`) — invisible on an ordinary opaque input, but
+ * breaks any translucent/glass surface (e.g. the login card's frosted-dark
+ * inputs) by punching an opaque rectangle through it. Global, not scoped to
+ * Login, since every form in the app will hit this eventually once a
+ * browser has saved credentials for it. The huge transition delay is the
+ * standard trick to prevent the browser's own yellow flash from appearing
+ * even for a single frame before this rule takes over.
+ *
+ * Retuned for the dark frosted-glass card (v2): a translucent dark navy
+ * inset (not white) so an autofilled field still reads as part of the same
+ * dark glass surface, with light text-fill-color to match the card's
+ * white/light input text instead of the v1 navy-on-white pairing.
+ */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px rgba(13, 33, 69, 0.85) inset !important;
+  -webkit-text-fill-color: #f5f7fb !important;
+  caret-color: #f5f7fb;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/*
+ * The login card's frosted-dark inputs (`FROSTED_INPUT_STYLE` in
+ * LoginPage.jsx) set text color via inline style, but AntD's placeholder
+ * and the Input.Password eye-toggle icon aren't reachable that way — both
+ * default to a mid-gray tuned for light backgrounds, which is nearly
+ * invisible on this dark glass card. Scoped to `.auth-frosted-input` rather
+ * than global so it doesn't affect the rest of the app's ordinary light
+ * inputs.
+ */
+.auth-frosted-input::placeholder {
+  color: rgba(245, 247, 251, 0.45);
+}
+
+.auth-frosted-input .ant-input,
+.auth-frosted-input.ant-input {
+  background: transparent;
+  color: #f5f7fb;
+}
+
+.auth-frosted-input .ant-input-suffix .anticon,
+.auth-frosted-input .ant-input-prefix .anticon {
+  color: rgba(245, 247, 251, 0.6);
+}

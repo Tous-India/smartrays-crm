@@ -1,6 +1,7 @@
 import ApiError from "../../utils/ApiError.js";
 import { can } from "../../helpers/permission.helper.js";
 import { uploadTicketAttachment } from "../../services/cloudinary.service.js";
+import { createNotification } from "../notification/notification.service.js";
 import Ticket from "./ticket.model.js";
 import Customer from "../customer/customer.model.js";
 import User from "../user/user.model.js";
@@ -141,6 +142,16 @@ function buildScopeFilter(scope, requestingUser) {
  * Admin/manager only (`tickets.assign`, checked at the route) — no
  * structural check needed on top of that, the same shape as
  * `PATCH /leave/:id/approve`'s plain `requireAdmin` gate.
+ *
+ * Notification on assignment — a deliberate small addition beyond §7.8's
+ * literal scope (that section never mentions push notifications), made
+ * because the Notification module (§6.7/Phase 9) is generic infrastructure
+ * and Ticket already has this exact assign action ready to hang it off of.
+ * Not part of the Leads-specific push spec — see final-plan.md's Platform
+ * section for this noted as an addition, not a silently expanded scope.
+ * Skipped if an admin/manager assigns a ticket to themselves, same
+ * "don't notify someone about what they just did" reasoning as Leads'
+ * assignment notification.
  */
 export async function assignTicket(ticketId, assignedToId, requestingUser) {
   const ticket = await Ticket.findById(ticketId);
@@ -153,6 +164,15 @@ export async function assignTicket(ticketId, assignedToId, requestingUser) {
 
   ticket.assignedToId = assignedToId;
   await ticket.save();
+
+  if (String(assignedToId) !== String(requestingUser._id)) {
+    await createNotification(
+      assignedToId,
+      "ticket_assigned",
+      `You've been assigned a ticket: ${ticket.subject}`,
+      { module: "tickets", id: ticket._id }
+    );
+  }
 
   return ticket;
 }

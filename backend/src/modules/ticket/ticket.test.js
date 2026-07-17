@@ -5,6 +5,7 @@ import { loginAsAgent } from "../../../tests/helpers/authHelpers.js";
 import Ticket from "./ticket.model.js";
 import Customer from "../customer/customer.model.js";
 import Contact from "../customer/contact.model.js";
+import Notification from "../notification/notification.model.js";
 
 const FAKE_ATTACHMENT_URL = "https://fake.cloudinary.test/attachment.pdf";
 
@@ -99,6 +100,7 @@ beforeAll(async () => {
 
 afterEach(async () => {
   await Ticket.deleteMany({});
+  await Notification.deleteMany({});
 });
 
 afterAll(async () => {
@@ -343,6 +345,32 @@ describe("PATCH /tickets/:id/assign", () => {
       .send({ assignedToId: String(employee1._id) });
 
     expect(response.status).toBe(404);
+  });
+
+  // A deliberate small addition beyond §7.8's literal scope — see
+  // ticket.service.js#assignTicket and final-plan.md's Platform section.
+  it("notifies the assigned employee", async () => {
+    const ticket = await Ticket.create({ subject: "Needs help", customerId: customer1._id });
+
+    await managerAgent
+      .patch(`/api/v1/tickets/${ticket._id}/assign`)
+      .send({ assignedToId: String(employee2._id) });
+
+    const notification = await Notification.findOne({ userId: employee2._id, type: "ticket_assigned" });
+    expect(notification).not.toBeNull();
+    expect(notification.message).toContain("Needs help");
+    expect(String(notification.relatedEntity.id)).toBe(String(ticket._id));
+    expect(notification.relatedEntity.module).toBe("tickets");
+  });
+
+  it("does not notify when an admin/manager assigns a ticket to themselves", async () => {
+    const ticket = await Ticket.create({ subject: "Self-assign", customerId: customer1._id });
+
+    await managerAgent
+      .patch(`/api/v1/tickets/${ticket._id}/assign`)
+      .send({ assignedToId: String(manager1._id) });
+
+    expect(await Notification.countDocuments({ type: "ticket_assigned" })).toBe(0);
   });
 });
 
