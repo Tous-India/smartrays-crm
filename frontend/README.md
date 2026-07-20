@@ -194,9 +194,10 @@ after a permission edit takes effect), and `clearSession()` (wired to the API cl
 
 **Routing (`src/routes/router.jsx`)** — `createBrowserRouter` +
 `createRoutesFromElements` only, per smartrays.md's fixed routing rule. Every route in
-§8's route map exists today; `/login` and `/` (redirect logic) are fully built, every
-other route is a placeholder page (heading + "coming soon") to be filled in module-by-
-module in later frontend tasks — mirroring how the backend was built phase-by-phase.
+§8's route map exists today; `/login`, `/forgot-password`, `/reset-password`, `/` (redirect
+logic), `/leads`/`/leads/board`/`/leads/:id`, and `/customers`/`/customers/:id` are fully
+built, every other route is a placeholder page (heading + "coming soon") to be filled in
+module-by-module in later frontend tasks — mirroring how the backend was built phase-by-phase.
 
 ---
 
@@ -206,7 +207,8 @@ module in later frontend tasks — mirroring how the backend was built phase-by-
 |---|---|
 | `auth` (login, session) | ✅ Built (Phase 0) — `POST /auth/login`, `GET /auth/me`, `POST /auth/logout` wired through `sessionStore`. Register/Customer-signup pages not built yet (no admin UI exists yet to reach them from). |
 | `lead` (Leads) | ✅ **Built — the reference implementation for every module below.** Table View (search/owner/follow-up filters, inline status dropdown, hot toggle, owner reassignment) and Board View (kanban, `@dnd-kit` drag-between-stages) share one page shell (`LeadsListPage`) behind `/leads` and `/leads/board`; Lead Detail (`/leads/:id`) is a real, linkable route rendered as a slide-over (Log Call, Hot toggle, Won, Lost, Convert to Customer, Edit, Delete); an Import wizard (upload → automatic column-matching preview → per-row results) and a filtered Excel export. See `.context/final-plan.md` §7.14's Leads frontend entry for the full write-up, including the one real backend gap found (no lead-specific activity log — the Activity Timeline is assembled client-side from call history + lead fields instead). |
-| Every other module (`customers`, `attendance`, `leave`, `payroll`, `travel-logs`, `tickets`, `payments`, `amc`, `reports`, `permissions`) | Routing skeleton + placeholder page only — real components/api/hooks not built yet, see `docs/project-status.md` for what's next. |
+| `customer` (Customers) | ✅ **Built.** List View (`CustomersListPage`, behind `/customers`) — search/owner/status filters (defaults to active-only, an explicit "Show Inactive" checkbox), sortable columns, row-select + bulk activate/deactivate/delete, and an `Add Customer` wizard (`CustomerFormWizard`) that walks Company Info → Billing → Contracts → Contacts → Project Manager, creating the customer then each staged contract/contact in turn and surfacing the backend's contract automation explicitly in the success toast ("Project + draft Invoice auto-created for: ...") rather than leaving it invisible. Customer Detail (`/customers/:id`, a real full page per leads-customer-functional-spec.md, not a slide-over) renders `CustomerHeaderSection`/`CustomerBillingCard`/`CustomerContactsSection`/`CustomerContractsSection`/`CustomerCredentialsSection`/`CustomerActivityLog` from one `useCustomerDetail` hook. The Credentials Vault is masked by default (`••••••••`) — revealing a password requires an explicit confirm-click (`Popconfirm`, "This action is logged to the customer's activity log") per row, never automatic on page load, and re-masks on a second click; the whole section is hidden (not just disabled) behind a `PermissionGate` for `credentials.view`. Every mutating action is gated to the exact backend `customers`/`credentials` permission its endpoint requires. 13 tests (`CustomersListPage.test.jsx`, `CustomerDetailPage.test.jsx`), all passing, no real network calls. |
+| Every other module (`attendance`, `leave`, `payroll`, `travel-logs`, `tickets`, `payments`, `amc`, `reports`, `permissions`) | Routing skeleton + placeholder page only — real components/api/hooks not built yet, see `docs/project-status.md` for what's next. |
 
 ---
 

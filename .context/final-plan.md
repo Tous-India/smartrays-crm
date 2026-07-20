@@ -128,6 +128,7 @@ Source of Truth rule made concrete, and to mark what's real vs. planned in the d
 | Dashboards | ⬜ Planned (§7.13, Phase 9) | Frontend widget shell composed by role + permissions — no dedicated backend module |
 | `frontend` (scaffold) | ✅ **Built (Frontend Phase 0, 2026-07-16)** | Vite + Tailwind + Ant Design scaffold, API client, session store, route guards, dashboard/portal layout shells, full §8 route map wired (every route exists; only `/login` and `/` are functionally complete, the rest are placeholders) — see the Frontend Phase 0 LLD entry below and `frontend/README.md` |
 | `lead` (frontend) | ✅ **Built (2026-07-16) — the reference implementation for every later frontend module** | Table View + Board View (`@dnd-kit` kanban) behind one shared page shell, Lead Detail slide-over (real route), Import wizard, filtered export — see §7.15 |
+| `customer` (frontend) | ✅ **Built** | List View (search/owner/status filters, bulk activate/deactivate/delete) + Add Customer wizard (surfaces the backend's contract automation explicitly) + a real Customer Detail full page (billing/contacts/contracts/credentials vault/activity log) — see §7.17 |
 
 #### Major Cross-Module Flows
 
@@ -2352,8 +2353,10 @@ immediately, no modal.
 `phone`/`source` from the lead but stays fully editable before submit, per the spec.
 `projectManagerId` has no lead-derived fallback (Lead has no equivalent field, and it's
 the one value `POST /leads/:id/convert` requires) — picked from the shared `/users/
-dropdown` list. On success, navigates to `/customers/:id` (still a placeholder page — that
-route already existed from Phase 0's routing skeleton, confirmed rather than assumed).
+dropdown` list. On success, navigates to `/customers/:id` — at the time this module was
+built, that route was still Phase 0's routing-skeleton placeholder (that route already
+existed, confirmed rather than assumed); §7.17 has since built out the real Customer Detail
+page it now lands on.
 Reachable two ways: the Detail page's dedicated "Convert to Customer" button (converts
 without forcing status to `won` — for converting before the lead is formally marked won),
 and the "Won" action/board-drop (converts **and** marks `won`) — a deliberate, stated
@@ -2399,9 +2402,9 @@ transition / lost-needs-reason / won-triggers-convert), and (3) a plain renderin
 cards land in the right columns — together covering every rule the drag enforces without a
 flaky DOM-drag simulation layered on top.
 
-**Known deviations:** none from this task's own scope. `/customers/:id` remains the Phase
-0 placeholder (confirmed to exist, not built out — that's Customers' own future frontend
-task).
+**Known deviations:** none from this task's own scope. `/customers/:id` was still the Phase
+0 placeholder at the time this task was built (confirmed to exist, not built out — that was
+Customers' own future frontend task, since done — see §7.17).
 
 ---
 
@@ -2491,6 +2494,72 @@ build.
 **Known deviations:** none from this task's own scope. The PWA service worker (browser-side
 push receipt/display/click-through) is explicitly a frontend concern, not built here — this
 task is the backend half only, per its own stated scope.
+
+---
+
+### 7.17 Customers Frontend Module
+
+✅ **Built** — the second real feature module built on the Phase 0 scaffold, following the
+shape §7.15's Leads module established (see `frontend/README.md`'s "Adding a new module"
+section). Built under `frontend/src/modules/customer/`, wired into the existing placeholder
+routes `/customers`, `/customers/:id`.
+
+**List View** (`CustomersListPage`) — search/owner/status filters live in the URL's search
+params, matching the Leads module's convention. `status` defaults to `"active"` via an
+explicit "Show Inactive" checkbox rather than an empty string, so "no status filter set yet"
+and "show all statuses" don't collapse to the same falsy value; the UI-only `"all"` sentinel
+is translated to "omit the filter" right at the API boundary (`GET /customers?status=`), not
+taught to the backend as a new concept. Sortable columns, row-select + bulk activate/
+deactivate/delete (`bulkUpdateCustomers`).
+
+**Add Customer wizard** (`CustomerFormWizard`) — Company Info → Billing → Contracts →
+Contacts → Project Manager. The backend has no single "customer with nested contracts/
+contacts" create endpoint, so the wizard creates the customer first, then each staged
+contract/contact in turn. Contract creation is what actually triggers the backend's
+project/invoice automation (`customer.service.js#applyContractCreatedAutomation`) —
+invisible unless called out, so the success toast explicitly names which contract types
+triggered it (e.g. *"Customer created — Project + draft Invoice auto-created for: Monthly"*)
+rather than a generic "Customer created" that would leave the automation silent.
+
+**Customer Detail** (`/customers/:id`) — a real, linkable **full page** (not a slide-over,
+unlike Lead Detail — per leads-customer-functional-spec.md's own distinction between the
+two), rendering `CustomerHeaderSection`/`CustomerBillingCard`/`CustomerContactsSection`/
+`CustomerContractsSection`/`CustomerCredentialsSection`/`CustomerActivityLog` from one
+`useCustomerDetail` hook.
+
+**Credentials Vault — masking and reveal exactly matches backend behavior, not just a UI
+convention:** passwords render as `••••••••` by default; revealing one requires an explicit
+per-row confirm-click (`Popconfirm`, *"This action is logged to the customer's activity
+log"*) — never automatic just because the page loaded — and re-masks on a second click. This
+mirrors `customer.service.js#revealCredential` actually writing an activity-log entry on
+every reveal server-side, so treating it as a deliberate, one-at-a-time action client-side
+matches what the backend does with it, not an arbitrary extra click added for its own sake.
+The whole section is wrapped in a `PermissionGate` for `credentials.view` **by the parent**
+(`CustomerDetailPage`) — hidden entirely for a role without that grant, not merely disabled,
+matching leads-customer-functional-spec.md's "only visible to users with credentials.view
+permission" literally.
+
+**Permission gating** (UI convenience only, real enforcement stays server-side, per §4.1
+applied to the frontend, same as Leads) — every mutating action gated to the exact backend
+`customers`/`credentials` `PERMISSION_REGISTRY` action its endpoint requires: Add Customer →
+`customers.create`; Edit/bulk actions/contract-contact-credential CRUD → `customers.edit`
+(credentials additionally require `credentials.view` to even see the section at all).
+
+**Testing:** 13 tests total (`CustomersListPage.test.jsx`: 7, `CustomerDetailPage.test.jsx`:
+6), all passing, no real network calls (every `customerApi`/`userDirectoryApi` call mocked
+at the module boundary). Coverage includes: default active-only fetch + search + "Show
+Inactive" toggle + column sort + bulk-action-calls-the-right-endpoint-with-the-right-ids (List
+View); the full wizard walk-through asserting both the created contract's payload **and**
+the automation-feedback toast text (Add Customer wizard); a role with no `customers.create`
+grant never sees the Add Customer button (permission gating); every detail section rendering
+real fetched data, a contract removal showing the completes-project warning before calling
+delete, the credential staying masked until an explicit reveal confirm (and the reveal
+endpoint genuinely not being called before that confirm completes), and the Credentials Vault
+section being present/absent based on `credentials.view` (Customer Detail).
+
+**Known deviations:** none from this task's own scope. `Invoice`-related UI
+(`CustomerInvoicePlaceholder.jsx`) stays a placeholder, matching the backend's own `Invoice`
+placeholder-model status (§6.4/§7.9) — real invoicing was never in scope for either side.
 
 ---
 
@@ -2593,7 +2662,7 @@ frontend/
 |---|---|---|
 | 0 | ✅ **Built:** Auth (register/login/logout/me, §7.0), User model + Permission helper (single `employee` role, `User.managerId` self-reference, no `Team` collection), `can()`/`authorize`/`requireAdmin` middleware, base scaffolding. Cloudinary SDK wiring deferred to Phase 2/3 (not needed until Attendance/Credentials). ✅ **Permissions module built and verified 2026-07-13** (§7.12 — `permission` module, `RolePermissionTemplate` + `PERMISSION_REGISTRY`, `authorizeAny` reused from §7.4b, 20 tests). Replaces the `location`-only hardcoded role defaults (§7.4b) and the register-time `permissions` override workaround (§7.0) with a real, admin-editable, non-retroactive template system. ✅ **User Management built and verified 2026-07-13** (§7.0b — `user` module completes the roster/CRUD layer on top of the shared `User` model, 33 tests as of the Payroll task's `baseSalary` addition, §7.7). Also deduplicated account-creation logic: `createUser` now lives only in `user.service.js`; `auth.service.js` no longer has a `registerUser` function. **Frontend Phase 0 (scaffold + auth flow + routing shell) also built 2026-07-16 — see §7.14** — Vite + Tailwind + Ant Design, API client, session store, route guards, dashboard/portal layout shells, full §8 route map wired (only `/login` and `/` functionally complete). | – |
 | 1 | ✅ **Backend built:** Leads — CRUD, scoping, calls, hot flag, CSV/Excel import/export, lead sources (§7.1). ✅ **Frontend built 2026-07-16 — see §7.15**, the reference implementation for later frontend modules: Table + Board (kanban, `@dnd-kit`) views, Lead Detail slide-over, Import wizard, filtered export. ✅ **Assignment/follow-up push notifications built 2026-07-16 — see §7.16** (Phase 9's Notification module). | Phase 0 |
-| 2 | ✅ **Built and verified 2026-07-13:** Customers + Contracts/Contacts/Credentials (incl. AES-256-GCM credential-encryption utility, `src/services/credentialEncryption.service.js`) + Project/Task automations (§7.2 — `customer` module, 21 tests; §7.3 — `project` module, 19 tests). Contract automation chain (monthly→recurring Project+draft Invoice, onetime→onetime Project+draft Invoice, delete→complete Project+cancel Invoice) and the deactivation cascade (active projects → completed) both implemented as real logic, not stubs. `Invoice` is a minimal placeholder model only (no service/controller/routes) — full invoicing is Phase 7, and `GET /customers/:id/invoices`/`/ledger` were deliberately not built. `POST /leads/:id/convert`'s 501 stub (§7.1) was resolved as part of this same task. `CREDENTIALS_ENCRYPTION_KEY` is now a **required** env var (`env.js` fails fast at boot without it). | Phase 1 |
+| 2 | ✅ **Built and verified 2026-07-13:** Customers + Contracts/Contacts/Credentials (incl. AES-256-GCM credential-encryption utility, `src/services/credentialEncryption.service.js`) + Project/Task automations (§7.2 — `customer` module, 21 tests; §7.3 — `project` module, 19 tests). Contract automation chain (monthly→recurring Project+draft Invoice, onetime→onetime Project+draft Invoice, delete→complete Project+cancel Invoice) and the deactivation cascade (active projects → completed) both implemented as real logic, not stubs. `Invoice` is a minimal placeholder model only (no service/controller/routes) — full invoicing is Phase 7, and `GET /customers/:id/invoices`/`/ledger` were deliberately not built. `POST /leads/:id/convert`'s 501 stub (§7.1) was resolved as part of this same task. `CREDENTIALS_ENCRYPTION_KEY` is now a **required** env var (`env.js` fails fast at boot without it). ✅ **Frontend built — see §7.17**: List View + Add Customer wizard (surfaces contract automation in its success toast) + a real Customer Detail full page (billing/contacts/contracts/credentials vault with explicit-reveal masking/permission-gating/activity log), 13 tests. | Phase 1 |
 | 3 | ✅ **Fully built and verified 2026-07-13:** Attendance (camera+geo capture, photos to Cloudinary, connectivity-gap detection, workingHours, team/org reports — §7.4, `attendance` module, 32 tests) + Leave (request/approve/mark-unapproved-absence, one-paid-leave-per-month quota resolved in §11.7 and confirmed enforced at approval time not request time — §7.5, `leave` module, 18 tests). ✅ **Live Location Tracking built and verified 2026-07-13** (§7.4b — `location` module, 19+1 tests), ahead of the rest of this phase. Attendance started as a minimal check-in/check-out slice built the same day as Location (13 tests) and was extended to the full spec in this task, reusing rather than replacing the placeholder model. New: `POST /attendance/heartbeat` (not in the original endpoint list — added because connectivity-gap detection needs a distinct "still alive" signal, deliberately not coupled to Location's GPS ping), new shared `src/services/cloudinary.service.js` and `src/services/report.service.js`, `pdfkit` dependency added for `GET /attendance/report?format=pdf`. `CLOUDINARY_CLOUD_NAME`/`CLOUDINARY_API_KEY`/`CLOUDINARY_API_SECRET` are now **required** env vars. **Follow-up fix the same day:** the photo requirement on check-in/check-out was moved from client-side-only to server-side-enforced (400 if missing) — `location.test.js`'s end-to-end test updated to supply one. Full suite: **208 tests, all passing.** | Phase 0 (independent of 1–2) |
 | 4 | ✅ **Built and verified 2026-07-13:** Payroll (§7.7, `payroll` module, 19 tests + 6 for `src/cron/payrollCron.test.js` = 25) — gross/net computed from Attendance + Leave + approved-only TravelLog mileage, `POST /payroll/run` (single-employee or bulk), `GET /payroll?scope=own\|all`, `GET /payroll/:id/payslip?format=pdf`, a monthly `node-cron` job (`src/cron/payrollCron.js`, new top-level directory). Two prerequisites closed first, in the same task: `User.baseSalary` (§6.1) and TravelLog's `pending`/`approved`/`rejected` approval workflow (§6.5/§7.6, resolving §11.4). `MILEAGE_RATE_PER_KM` is a new, optional env var (defaults to 10, a stated placeholder). **§11.5 resolved: record-keeping only for v1, no disbursement/payment-gateway integration.** **Correction (2026-07-13, follow-up):** `sales_associate`'s default `payroll` grant was fixed — §5 marks it "–" (no access), same as Manager, not "own payslip only" like Employee; an earlier build misread that "–" as blank and granted `sales_associate` the Employee default, now corrected in `permission.service.js`. Full suite: **263 tests, all passing** (verified via a real `npm test` run; the previously reported total also required correcting a miscount in the Transport/Travel approve/reject test count, 7 not 6). | Phase 3 |
 | 5 | ✅ **Built and verified:** Support/Tickets + Customer Portal (§7.0/§7.8, `ticket` module, 35 tests + 6 in `auth.test.js` for Customer Portal self-signup). Customer Portal accounts authenticate through the exact same auth system (`role: "customer"`) and are self-signed-up (not admin-created), verified by an email-domain match against `Contact`/`Customer` records rather than an admin grant. `Ticket` raise (internal admin/manager, or customer portal self-raise)/list (`scope=all\|assigned\|own`)/assign/status-change/comments/attachments (Cloudinary, reusing `uploadAttendancePhoto`'s shared client) all built per §7.8. New `tickets` `PERMISSION_REGISTRY` entry and a `customer` `RolePermissionTemplate`. §11.2 (category/status split) resolved as part of this build. Full suite: **304 tests, all passing** (verified via a real `npm test` run — a follow-up added 2 more tests: manager's `scope=all` checked explicitly alongside admin's, and history-ordering across a mixed comment/status-change sequence). | Phase 2 (needs Customer) |
