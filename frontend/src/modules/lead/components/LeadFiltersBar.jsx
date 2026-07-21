@@ -28,40 +28,50 @@ function LeadFiltersBar({
   ];
 
   return (
-    <div className="mb-4 flex flex-wrap items-center gap-3">
+    // Below `lg` (~1024px): wrap/stack freely, no attempt at one row — fine
+    // for mobile/tablet per this task's own scope. At `lg`+: force a single
+    // row (`flex-nowrap`) with tightened control widths so the whole
+    // toolbar actually fits at 1024/1280/1440 desktop widths, plus
+    // `overflow-x-auto` as a safety net rather than letting a genuinely
+    // too-narrow desktop width silently clip a control.
+    <div className="mb-4 flex flex-wrap items-center gap-2 lg:flex-nowrap lg:gap-2 lg:overflow-x-auto">
       <Input.Search
         allowClear
         placeholder="Search name, company, email, phone"
         defaultValue={filters.search}
         onSearch={(value) => onFilterChange({ search: value })}
-        style={{ width: 280 }}
+        style={{ width: 185 }}
+        className="shrink-0"
       />
 
       <Select
         value={filters.owner || ""}
         options={ownerOptions}
-        style={{ width: 180 }}
+        style={{ width: 140 }}
+        className="shrink-0"
         onChange={(value) => onFilterChange({ owner: value })}
       />
 
       <Select
         value={filters.followUp || ""}
         options={FOLLOW_UP_FILTER_OPTIONS}
-        style={{ width: 170 }}
+        style={{ width: 130 }}
+        className="shrink-0"
         onChange={(value) => onFilterChange({ followUp: value })}
       />
 
       <Segmented
         value={view}
         onChange={onViewChange}
+        className="shrink-0"
         options={[
           { value: "table", label: "Table" },
           { value: "board", label: "Board" },
         ]}
       />
 
-      <div className="ml-auto">
-        <Space>
+      <div className="shrink-0 lg:ml-auto">
+        <Space size="small">
           <PermissionGate module="leads" action="view">
             <Button icon={<DownloadOutlined />} onClick={onExport} loading={isExporting}>
               Export
