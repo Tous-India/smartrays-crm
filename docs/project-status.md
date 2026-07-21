@@ -38,9 +38,11 @@ too, §7.18**), Phase 4 (Payroll), Phase 5 (Support/Tickets + Customer Portal), 
 Travel), Phase 7 (Payments + AMC), Phase 8 (unified Reports), and Phase 9's backend half
 (Notifications + Web Push + lead follow-up reminder cron, §6.7/§7.16) are built and covered
 by an automated test suite (399 backend tests, all passing — verified via a real `npm test`
-run). **This closes out every backend phase in the roadmap.** The Dashboard (§7.13/§7.20) is
-now also built — Phase 9's frontend half is down to just PWA service worker wiring, and the
-rest of the frontend module-by-module build-out remains anywhere in the plan. Location Tracking and
+run). **This closes out every backend phase in the roadmap.** The User Management frontend
+screen (`/settings/users`) plus self-service/admin password reset (§7.19), and the Dashboard
+(§7.13/§7.20), are now also built — Phase 9's frontend half is down to just PWA service worker
+wiring, and the rest of the frontend module-by-module build-out remains anywhere in the plan.
+Location Tracking and
 Attendance are proven to work together end-to-end through real HTTP endpoints, not just against
 directly-seeded test data — see the changelog. Photo capture on check-in/check-out is now
 **mandatory, enforced server-side** (a follow-up fix — see the changelog). Attendance checkout
