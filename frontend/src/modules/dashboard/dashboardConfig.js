@@ -3,6 +3,12 @@ import LeadsFollowUpWidget from "./widgets/LeadsFollowUpWidget";
 import LeadsHotWidget from "./widgets/LeadsHotWidget";
 import CustomersOverviewWidget from "./widgets/CustomersOverviewWidget";
 import CustomersRecentWidget from "./widgets/CustomersRecentWidget";
+import AttendancePresentTodayWidget from "./widgets/AttendancePresentTodayWidget";
+import LeavePendingRequestsWidget from "./widgets/LeavePendingRequestsWidget";
+import TicketsOpenWidget from "./widgets/TicketsOpenWidget";
+import AmcRenewalsDueWidget from "./widgets/AmcRenewalsDueWidget";
+import PaymentsThisMonthWidget from "./widgets/PaymentsThisMonthWidget";
+import PayrollStatusWidget from "./widgets/PayrollStatusWidget";
 
 /**
  * Declarative widget catalog — a role → ordered widget-component list, not a
@@ -42,18 +48,34 @@ export const DASHBOARD_WIDGETS_BY_ROLE = {
     LeadsHotWidget,
     CustomersOverviewWidget,
     CustomersRecentWidget,
+    AttendancePresentTodayWidget,
+    LeavePendingRequestsWidget,
+    TicketsOpenWidget,
+    AmcRenewalsDueWidget,
+    PaymentsThisMonthWidget,
+    PayrollStatusWidget,
   ],
+  // Manager gets the 3 operational widgets that match their narrower grants
+  // (attendance.view_team, tickets.view_all, amc.view "own team") — NOT
+  // Leave/Payments/Payroll, which are deliberately admin-only per §5's
+  // matrix (only admin approves leave, and Payments/Payroll have no manager
+  // tier at all, unlike every other workforce module).
   manager: [
     LeadsPipelineWidget,
     LeadsFollowUpWidget,
     LeadsHotWidget,
     CustomersOverviewWidget,
     CustomersRecentWidget,
+    AttendancePresentTodayWidget,
+    TicketsOpenWidget,
+    AmcRenewalsDueWidget,
   ],
   // Sales Associates hold full "own" CRUD on both Leads and Customers by
   // default (§5's permission matrix) — their dashboard candidate list
   // mirrors that, own-scoped automatically since every widget above reuses
-  // each module's own server-side-scoped fetch.
+  // each module's own server-side-scoped fetch. All 6 operational widgets
+  // (Attendance/Leave/Tickets/AMC/Payments/Payroll) are admin/manager-only
+  // by nature, so sales_associate gets none of them as candidates.
   sales_associate: [
     LeadsPipelineWidget,
     LeadsFollowUpWidget,
@@ -62,9 +84,11 @@ export const DASHBOARD_WIDGETS_BY_ROLE = {
     CustomersRecentWidget,
   ],
   // Employee has no `leads`/`customers` grant at all by default (§5: "–" for
-  // both) — no Leads/Customers widget candidates yet. Gets its own widgets
-  // once an Attendance/Leave/Payroll dashboard widget is built (not in this
-  // task's scope, see `.context/final-plan.md` §7.13/§7.20).
+  // both), and the 6 operational widgets above are all admin/manager-level
+  // glance metrics by design (own-attendance/own-payslip aren't what those
+  // widgets show) — no candidates for Employee yet. An own-scoped widget
+  // (e.g. "my hours this month") is a future incremental addition using the
+  // same pattern, not a gap — see `.context/final-plan.md` §7.13/§7.20/§7.21.
   employee: [],
   // The Customer Portal role never renders this page at all (`PortalLayout`
   // + `PortalHomePage` instead, see `RootRedirect`) — kept here for

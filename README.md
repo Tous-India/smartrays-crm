@@ -136,10 +136,12 @@ including the client-side loop that actually submits `POST /attendance/heartbeat
 `POST /location/pings` on an interval while checked in (`useCheckedInHeartbeatLoop`); User
 Management (`/settings/users` — roster list/edit/deactivate/reactivate/admin-password-reset/
 create) plus self-service + admin-override password reset (§7.19); and the Dashboard
-(`/dashboard`, §7.20 — a declarative widget catalog composing Leads + Customers widgets by
-role, each independently permission-gated and independently fetching/failing) — see
+(`/dashboard`, §7.20/§7.21 — a declarative widget catalog composing Leads + Customers widgets
+plus 6 operational glance widgets for Attendance/Leave/Tickets/AMC/Payments/Payroll, each
+independently permission-gated and independently fetching/failing) — see
 [`docs/project-status.md`](docs/project-status.md) for current progress and
-[`.context/final-plan.md`](.context/final-plan.md) §10 for the phased roadmap. Every other
-module's frontend (Payroll, Transport, Tickets, ...) is still routing-skeleton + placeholder
+[`.context/final-plan.md`](.context/final-plan.md) §10 for the phased roadmap. Attendance/
+Leave/Tickets/AMC/Payments/Payroll now have a glance-only Dashboard widget each, but their own
+full module pages (Payroll, Transport, Tickets, ...) are still routing-skeleton + placeholder
 pages only, filled in module-by-module in later frontend tasks; Phase 9's frontend half is now
 down to just the PWA service worker for push receipt/display.

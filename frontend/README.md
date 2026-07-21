@@ -351,7 +351,7 @@ in later frontend tasks — mirroring how the backend was built phase-by-phase.
 | `leave` (Leave) | ✅ **Built.** `LeaveListPage` (`/leave`) — scope tabs built from whichever `leave.view*` grants the user actually holds (own/team/all), a Request Leave modal (`paid`/`unpaid` only — `unapproved_absence` is never requestable, admin-only via a separate action), and — admin-only, per §7.5's "manager can view but not approve" — Approve/Mark Unapproved Absence actions. The mark-unapproved-absence confirmation shows its 2x-deduction consequence **directly in the `Popconfirm`'s description text**, not a tooltip, since burying it there would fail the whole point of confirming before an irreversible-feeling action. Report download via the same shared `ReportDownloadButton` (`module: "leave"`, `filters: { scope }`). |
 | `location` (Live Map) | ✅ **Built — a new route, `/location`** (§7.4b had no frontend before this task). Live view (`LiveMapView`) re-polls `GET /location/live` every ~12s and plots one marker per visible, currently-checked-in employee; History view (`HistoryMapView`) — an employee + date picker rendering that day's `GET /location/history` ping trail as a polyline. Gated by the existing `location` `PERMISSION_REGISTRY` set (any of `view`/`view_team`/`view_all`), same 403-`Result` pattern as Team Attendance. Uses `GoogleMapView` (`src/components/`) + `useGoogleMapsScript` (`src/hooks/`) — see "Maps & camera dependency decisions" below. Now actually receives pings — see "Heartbeat & location-ping loop" below. |
 | `user` (User Management) | ✅ **Built (§7.19, 2026-07-17)** — a new `/settings/users` route (added since §8's original route map didn't list one; gated on `users.view_all`/`users.view_team`, same as the backend scoping). Roster list (admin sees everyone, manager sees their own team — entirely server-side scoping, no client-side filtering), per-user Edit (name/email/phone/role/managerId/baseSalary via the existing `PATCH /users/:id`), Deactivate/Reactivate, an admin password-reset action (supports both an admin-typed exact password and a backend-generated one-time temp password, shown once), a link to the Permissions module (still a placeholder screen), and Create User (admin only, via the existing `POST /auth/register` — no new backend endpoint). |
-| `dashboard` (Dashboard) | ✅ **Built (§7.20)** — the `/dashboard` shell, composing widgets by role via a declarative catalog rather than four separate per-role dashboards. Leads + Customers widgets only, per this task's scope — see "Dashboard widget catalog" below for the pattern and how to extend it. |
+| `dashboard` (Dashboard) | ✅ **Built (§7.20/§7.21)** — the `/dashboard` shell, composing widgets by role via a declarative catalog rather than four separate per-role dashboards. Leads + Customers widgets (§7.20), plus 6 operational glance widgets — Attendance/Leave/Tickets/AMC/Payments/Payroll (§7.21) — see "Dashboard widget catalog" below for the full list and how to extend it. |
 | Every other module (`payroll`, `travel-logs`, `tickets`, `payments`, `amc`, `reports`, `permissions`) | Routing skeleton + placeholder page only — real components/api/hooks not built yet, see `docs/project-status.md` for what's next. |
 
 ### Maps & camera dependency decisions
@@ -465,7 +465,7 @@ scoped list-fetching function its module's own list page already calls (`listLea
 caller's role (`lead.service.js`/`customer.service.js`), so a `sales_associate`'s widgets
 automatically show only their own data with zero client-side scoping logic duplicated here.
 
-**Widgets built so far (Leads + Customers only, per this task's scope):**
+**Widgets built (Leads + Customers, §7.20):**
 - `LeadsPipelineWidget` — count of leads per `LEAD_STATUSES` status.
 - `LeadsFollowUpWidget` — today + overdue follow-up counts, with a short linked list.
 - `LeadsHotWidget` — currently-flagged-hot leads. `GET /leads` has no server-side `isHot`
@@ -478,9 +478,57 @@ automatically show only their own data with zero client-side scoping logic dupli
 - `CustomersRecentWidget` — last few customers created. `listCustomers` already sorts by
   `createdAt` descending server-side, so no client-side re-sort is needed.
 
-**Adding a future module's widget (Attendance, Payroll, Leave, ...) later:**
+**Widgets built (operational glance metrics — Attendance/Leave/Tickets/AMC/Payments/Payroll,
+§7.21):** none of these six modules has a real frontend page yet (still routing-skeleton
+placeholders) — that's fine, these are glance-only summaries reusing each module's existing,
+already-tested backend list endpoint, not a substitute for that module's eventual full CRUD
+page. A "view all" link, where included, points at the existing placeholder route.
+- `AttendancePresentTodayWidget` — count of employees `present`/`half_day` **today**.
+  Admin/manager only (not shown to employee/sales_associate — a manager/admin-level glance
+  metric by design, not a permission gap). `GET /attendance/team` takes a `month`, not a single
+  day, so this fetches the current month via `getTeamAttendance` — the exact call
+  `TeamAttendanceView` already makes — and filters client-side to today's date, the same
+  precedent `LeadsHotWidget` already set for a filter the backend doesn't expose.
+- `LeavePendingRequestsWidget` — count of leave requests awaiting approval, **admin-only**
+  (§5: "manager can view but not approve"). There's no `leave.approve` action in
+  `PERMISSION_REGISTRY` at all (approval is a structural `requireAdmin` route check, not a
+  per-user grant) — `usePermission("leave", "approve")` still gates this correctly, since the
+  frontend `can()` helper's admin bypass returns `true` regardless of the module/action pair,
+  and no non-admin's `permissions` object can ever contain an `approve` key that isn't in the
+  registry. Reuses `listLeave("all")` (the same call a future all-scope Leave view would make)
+  and `useUserDirectory` (the same shared hook Leads' owner filter already uses) to resolve
+  each pending request's employee name — no new backend endpoint.
+- `TicketsOpenWidget` — total open tickets + open-and-unassigned, admin/manager per
+  `tickets.view_all`. Reuses `listTickets("all")`, deriving both counts client-side (`GET
+  /tickets` has no status/assignment aggregation of its own).
+- `AmcRenewalsDueWidget` — count of AMC records renewing within 30 days. Reuses `listAmc()`
+  with no filter params — `amc.service.js#listAMC` already scopes server-side by the caller
+  (admin all, manager "own team", sales_associate "own") exactly per §5's `amc.view` pattern;
+  the 30-day window is derived client-side. **Not a candidate for sales_associate**, even
+  though they hold `amc.view` "own" by default — this widget is grouped with the other five
+  admin/manager-only operational widgets by explicit design, not by what the data-scoping alone
+  would allow.
+- `PaymentsThisMonthWidget` — sum of payment amounts recorded in the current calendar month,
+  **admin-only** (§5: `payments.view`/`create` are "–" for every other role, no ownership
+  scoping exists at all for this module). Reuses `listPayments()` (takes no params) and sums
+  client-side over the current month.
+- `PayrollStatusWidget` — whether payroll has been run for the current month, and if so how
+  many employees were processed, **admin-only** (Payroll has no `team` tier at all — Manager
+  gets no grant whatsoever, unlike every other workforce module). Reuses
+  `listPayroll({ scope: "all", month })`; both "has it run" and "how many" are derived from
+  that response's length, not a new backend endpoint.
+
+New minimal `api/*Api.js` files were added for the four modules with no frontend module folder
+yet (`ticket`, `amc`, `payment`, `payroll`) — just the one `list*` function each widget needs,
+matching the established one-function-per-endpoint convention; more functions belong there once
+each module's own real frontend task is built. `attendance`/`leave` already had `api/` files
+(their own frontend modules exist), reused as-is.
+
+**Adding a future module's widget (Payroll's own payslip view, an Employee-facing "my hours this
+month," ...) later:**
 1. Write the widget component under `widgets/` — self-contained, reuses that module's existing
-   scoped API function, uses `WidgetCard` for loading/error/empty, gates itself internally with
+   scoped API function (or a minimal new `api/*Api.js` wrapper if that module has no frontend
+   module yet), uses `WidgetCard` for loading/error/empty, gates itself internally with
    `usePermission`.
 2. Import it in `dashboardConfig.js`.
 3. Add it to whichever role arrays should see it as a candidate.
@@ -489,8 +537,10 @@ No other file needs to change — `DashboardPage.jsx` just renders whatever
 `getDashboardWidgetsForRole` returns for the current user's role.
 
 **Testing:** each widget has its own test file (mocked API data renders correctly, empty state,
-inline error instead of a crash on a rejected mock). `DashboardPage.test.jsx` covers the
-composition layer: the right widget set per mocked session role, the empty-candidate-list
+inline error instead of a crash on a rejected mock, permission-gating hiding the widget for a
+mocked user lacking the specific grant even when their role's config would normally include
+it). `DashboardPage.test.jsx` covers the composition layer: the right widget set per mocked
+session role (including manager's narrower 3-of-6 operational set), the empty-candidate-list
 message for a role with none, permission-gating hiding a widget even when the role's config
 would normally include it (a mocked user with an empty `permissions` object), and one widget's
 mocked API rejection not affecting any other widget on the same page.
