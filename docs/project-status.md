@@ -37,7 +37,7 @@ was already built ahead of the rest of this phase and **now has a frontend live-
 too, §7.18**), Phase 4 (Payroll), Phase 5 (Support/Tickets + Customer Portal), Phase 6 (Transport/
 Travel), Phase 7 (Payments + AMC), Phase 8 (unified Reports), and Phase 9's backend half
 (Notifications + Web Push + lead follow-up reminder cron, §6.7/§7.16) are built and covered
-by an automated test suite (399 backend tests, all passing — verified via a real `npm test`
+by an automated test suite (412 backend tests, all passing — verified via a real `npm test`
 run). **This closes out every backend phase in the roadmap.** The User Management frontend
 screen (`/settings/users`) plus self-service/admin password reset (§7.19), and the Dashboard
 (§7.13/§7.20), are now also built — Phase 9's frontend half is down to just PWA service worker
@@ -83,7 +83,10 @@ streaming the file directly.
   a fully working `ticket` module (raise/list/assign/status/comments/attachments,
   Customer Portal-scoped access, see §7.8) plus Customer Portal self-signup bolted onto `auth`
   (`POST /auth/customer/signup`, verified by an email-domain match against `Contact`/`Customer`
-  records — see §7.0), a fully working `payment` module (admin-only log, optional
+  records — see §7.0), self-service password reset (`POST /auth/forgot-password` — always the
+  same generic, account-enumeration-safe response — and `POST /auth/reset-password`) plus an
+  admin-override `PATCH /users/:id/reset-password` (admin-supplied exact password, or a
+  backend-generated one-time temp password when omitted, see §7.19), a fully working `payment` module (admin-only log, optional
   partial reconciliation against an `Invoice`, see §7.9) plus a fully working `amc` module
   (two-flow creation, "own team"/"own" scoping via the underlying Customer's ownership, see
   §7.10), and (new) a fully working `report` module — one unified `POST /reports/generate`
@@ -100,17 +103,19 @@ streaming the file directly.
   Originally verified by booting the server against a real MongoDB instance and exercising
   every endpoint with curl; that manual pass has since been superseded by a real automated
   suite (`vitest` + `supertest` + `mongodb-memory-server`, `npm test` — no real MongoDB or
-  running server required): 19 tests for auth, 40 for leads (34 + 6 new for assignment
+  running server required): 28 tests for auth (19 + 9 new for forgot/reset-password, §7.19),
+  40 for leads (34 + 6 new for assignment
   notifications/follow-up reminder reset, §7.16), 20 for location, 20 for
-  permissions, 33 for user, 32 for attendance, 21 for customer, 19 for project, 18 for leave,
+  permissions, 37 for user (33 + 4 new for the admin password-reset override, §7.19), 32 for
+  attendance, 21 for customer, 19 for project, 18 for leave,
   28 for transport, 26 for payroll (20 in `payroll.test.js` + 6 in
   `src/cron/payrollCron.test.js`), 37 for ticket (35 + 2 new for assignment notifications,
   §7.16), 16 for payment, 20 for amc, 24 for report, 17 for notification, and 9 for
   `src/cron/leadFollowUpReminderCron.test.js` — covering
   CRUD, validation, filters, and — most importantly — permission scoping in depth. Total
   verified via a real `npm test` run:
-  19 + 40 + 20 + 20 + 33 + 32 + 21 + 19 + 18 + 28 + 26 + 37 + 16 + 20 + 24 + 17 + 9 =
-  **399 tests**. The Location and Permission suites' fixtures
+  28 + 40 + 20 + 20 + 37 + 32 + 21 + 19 + 18 + 28 + 26 + 37 + 16 + 20 + 24 + 17 + 9 =
+  **412 tests**. The Location and Permission suites' fixtures
   register through the real `/auth/register` endpoint (not a direct DB insert) specifically to
   exercise the default-permission logic; the Customer, Project, Attendance, Leave, Transport,
   Payroll, Ticket, and AMC suites do the same, to exercise their own new template defaults.
@@ -193,6 +198,18 @@ streaming the file directly.
   10-minute-default gap threshold); the ping interval is read fresh from
   `GET /location/config` every time the loop (re)starts. A small "Tracking active" badge
   makes it visible. 7 more tests (fake timers), 32 total for this task.
+  **User Management + password reset frontend built 2026-07-17** (see `.context/final-plan.md`
+  §7.19) — a new `/settings/users` route (roster list scoped the same as the backend,
+  per-user Edit, Deactivate/Reactivate, an admin password-reset action supporting both an
+  admin-typed exact password and a backend-generated one-time temp password, Create User),
+  plus a "Forgot password?" link on the login page, a `/forgot-password` request-email page,
+  and a `/reset-password?token=` page, all three (plus login) sharing a new `AuthLayout`
+  component. Bundled with a login page visual redesign in the same task. **Dashboard built**
+  (see `.context/final-plan.md` §7.20) — the `/dashboard` shell, a declarative widget catalog
+  (`dashboardConfig.js` maps role → ordered widget list) composing Leads + Customers widgets,
+  each independently permission-gated (`usePermission`, real defense in depth on top of the
+  role-level config) and independently fetching/failing so one widget's API error never blanks
+  the rest of the page. 21 tests, all passing.
 - `docs/` — this status file
 - See `backend/README.md` for backend setup/patterns/endpoints, `frontend/README.md` for
   frontend setup/folder conventions/module pattern, and both files for how to run tests.
