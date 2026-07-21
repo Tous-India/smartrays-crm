@@ -2914,6 +2914,22 @@ failures — `LeadDetailPage`/`CustomersListPage` — unchanged from every prior
 
 ---
 
+**App shell UI/UX pass (2026-07-21)** — a visual/UX polish pass over `MainLayout.jsx` and the
+Dashboard widgets, not new architectural scope: `<Sider>` restructured into three fixed
+regions (pinned logo/scrollable nav/pinned footer — see `frontend/README.md`'s "App shell
+UI/UX pass" section for the AntD `Sider`-wrapper flex gotcha this surfaced and how it was
+fixed and actually verified via a real short-viewport scroll test, not just visual
+inspection), sidebar recolored to brand-navy with a brand-green active/hover nav state,
+`User Management`/`Permission Settings` regrouped under a collapsible `Settings` submenu,
+the top bar shortened with a live clock, self-service profile editing added (`EditProfileModal`
+reusing the existing `PATCH /users/:id`, no new backend work), and all 11 Dashboard widget
+cards visually tightened (`WidgetCard` size/typography/empty-state). `BrandLogo` gained a
+`layout` prop (`stacked`/`horizontal`) for the sidebar's new wide-format logo — see
+`frontend/README.md` for the generated-white-asset detail. No new modules, permissions, or
+backend endpoints.
+
+---
+
 ## 8. Frontend Route Map (indicative)
 
 ```

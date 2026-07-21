@@ -77,13 +77,13 @@ function LeavePendingRequestsWidget() {
       isEmpty={!isLoading && !error && pendingLeaves.length === 0}
       emptyDescription="No pending leave requests"
     >
-      <div className="mb-3">
+      <div className="mb-2 text-sm">
         Pending: <strong>{pendingLeaves.length}</strong>
       </div>
       <List size="small" dataSource={pendingLeaves.slice(0, 5)} renderItem={(leave) => <List.Item>{employeeName(leave.employeeId)}</List.Item>} />
       {/* No per-leave detail route exists (unlike Leads/Customers), so this
           links to the Leave list as a whole rather than fabricating one. */}
-      <div className="mt-3 text-right">
+      <div className="mt-2 text-right text-sm">
         <Link to={ROUTE_PATHS.LEAVE}>View all leave requests →</Link>
       </div>
     </WidgetCard>

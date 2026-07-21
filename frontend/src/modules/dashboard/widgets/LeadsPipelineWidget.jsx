@@ -80,7 +80,7 @@ function LeadsPipelineWidget() {
           </Tag>
         ))}
       </div>
-      <div className="mt-3 text-right">
+      <div className="mt-2 text-right text-sm">
         <Link to={ROUTE_PATHS.LEADS}>View all leads →</Link>
       </div>
     </WidgetCard>

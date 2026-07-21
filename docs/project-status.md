@@ -1018,3 +1018,21 @@ resolved while Phase 0 is underway.
   `npm run build` verified successful. `frontend/README.md` (widget catalog list extended),
   `.context/final-plan.md` (new §7.21, Modules-at-a-Glance/roadmap/§7.20's own text updated),
   and this file all updated to mark it built.
+- **2026-07-21** — App shell UI/UX pass (`MainLayout.jsx` + Dashboard widgets) — a visual/UX
+  polish task, not new architectural scope, no new modules/permissions/backend endpoints.
+  Sidebar restructured into three fixed regions (pinned logo, scrollable-only nav, pinned
+  footer); recolored to brand-navy with a brand-green active/hover nav state (previously no
+  visual indication of the current page at all); `User Management`/`Permission Settings`
+  regrouped under a collapsible `Settings` submenu; top bar shortened with a live clock;
+  self-service "Edit Profile" added to the sidebar footer's profile menu (reuses the existing
+  `PATCH /users/:id`, no new backend work — the self-vs-admin field restriction already lived
+  server-side); all 11 Dashboard widget cards visually tightened. `BrandLogo` gained a
+  `layout` prop (`stacked`/`horizontal`) for a new wide sidebar logo, including a generated
+  white silhouette asset since only the color version existed. **Real bug caught during
+  verification, not just eyeballed:** AntD's `<Sider>` wraps its children in its own
+  `display: block` div, silently breaking the intended flex-column sizing — confirmed via a
+  real short-viewport Playwright scroll test before and after the CSS fix, not assumed
+  correct from static inspection. Full frontend suite: 142 tests (2 pre-existing flaky
+  failures unchanged). `npm run build` verified successful. `frontend/README.md` (new "App
+  shell UI/UX pass" section), `.context/final-plan.md` (brief note after §7.21), and this file
+  all updated.

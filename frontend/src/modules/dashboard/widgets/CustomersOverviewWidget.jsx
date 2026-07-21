@@ -81,17 +81,21 @@ function CustomersOverviewWidget() {
     <WidgetCard title="Customers Overview" isLoading={isLoading} error={error} isEmpty={false}>
       <Row gutter={16}>
         <Col span={12}>
-          <Statistic title="Active Customers" value={activeCount} />
+          <Statistic
+            title={<span className="text-xs text-gray-500">Active Customers</span>}
+            value={activeCount}
+            valueStyle={{ fontSize: 20 }}
+          />
         </Col>
       </Row>
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-2 flex flex-wrap gap-2">
         {CONTRACT_TYPES.map((type) => (
           <Tag key={type} color={CONTRACT_TYPE_COLORS[type]}>
             {CONTRACT_TYPE_LABELS[type]}: {contractCounts[type] || 0}
           </Tag>
         ))}
       </div>
-      <div className="mt-3 text-right">
+      <div className="mt-2 text-right text-sm">
         <Link to={ROUTE_PATHS.CUSTOMERS}>View all customers →</Link>
       </div>
     </WidgetCard>

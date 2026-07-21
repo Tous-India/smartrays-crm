@@ -68,8 +68,12 @@ function AmcRenewalsDueWidget() {
 
   return (
     <WidgetCard title="AMC Renewals Due" isLoading={isLoading} error={error} isEmpty={false}>
-      <Statistic title="Due within 30 days" value={dueCount} />
-      <div className="mt-3 text-right">
+      <Statistic
+        title={<span className="text-xs text-gray-500">Due within 30 days</span>}
+        value={dueCount}
+        valueStyle={{ fontSize: 20 }}
+      />
+      <div className="mt-2 text-right text-sm">
         <Link to={ROUTE_PATHS.AMC}>View all AMC records →</Link>
       </div>
     </WidgetCard>

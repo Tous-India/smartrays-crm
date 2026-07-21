@@ -71,7 +71,7 @@ function LeadsFollowUpWidget() {
       isEmpty={!isLoading && !error && combined.length === 0}
       emptyDescription="No follow-ups due"
     >
-      <div className="mb-3 flex gap-4">
+      <div className="mb-2 flex gap-4 text-sm">
         <span>
           Today: <strong>{todayLeads.length}</strong>
         </span>

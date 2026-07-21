@@ -65,8 +65,13 @@ function PaymentsThisMonthWidget() {
 
   return (
     <WidgetCard title="Payments This Month" isLoading={isLoading} error={error} isEmpty={false}>
-      <Statistic title="Total recorded" value={totalAmount} prefix="₹" />
-      <div className="mt-3 text-right">
+      <Statistic
+        title={<span className="text-xs text-gray-500">Total recorded</span>}
+        value={totalAmount}
+        prefix="₹"
+        valueStyle={{ fontSize: 20 }}
+      />
+      <div className="mt-2 text-right text-sm">
         <Link to={ROUTE_PATHS.PAYMENTS}>View all payments →</Link>
       </div>
     </WidgetCard>

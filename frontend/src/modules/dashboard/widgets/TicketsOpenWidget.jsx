@@ -62,13 +62,21 @@ function TicketsOpenWidget() {
     <WidgetCard title="Open Tickets" isLoading={isLoading} error={error} isEmpty={false}>
       <Row gutter={16}>
         <Col span={12}>
-          <Statistic title="Open" value={openCount} />
+          <Statistic
+            title={<span className="text-xs text-gray-500">Open</span>}
+            value={openCount}
+            valueStyle={{ fontSize: 20 }}
+          />
         </Col>
         <Col span={12}>
-          <Statistic title="Unassigned" value={unassignedCount} />
+          <Statistic
+            title={<span className="text-xs text-gray-500">Unassigned</span>}
+            value={unassignedCount}
+            valueStyle={{ fontSize: 20 }}
+          />
         </Col>
       </Row>
-      <div className="mt-3 text-right">
+      <div className="mt-2 text-right text-sm">
         <Link to={ROUTE_PATHS.TICKETS}>View all tickets →</Link>
       </div>
     </WidgetCard>

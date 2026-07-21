@@ -64,16 +64,16 @@ function PayrollStatusWidget() {
 
   return (
     <WidgetCard title="Payroll Status (This Month)" isLoading={isLoading} error={error} isEmpty={false}>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 text-sm">
         <span>Run this month:</span>
         <Tag color={hasRun ? "green" : "default"}>{hasRun ? "Yes" : "Not yet"}</Tag>
       </div>
       {hasRun && (
-        <div className="mt-2">
+        <div className="mt-2 text-sm">
           Employees processed: <strong>{processedCount}</strong>
         </div>
       )}
-      <div className="mt-3 text-right">
+      <div className="mt-2 text-right text-sm">
         <Link to={ROUTE_PATHS.PAYROLL}>View payroll →</Link>
       </div>
     </WidgetCard>

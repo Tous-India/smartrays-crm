@@ -73,8 +73,12 @@ function AttendancePresentTodayWidget() {
 
   return (
     <WidgetCard title="Present Today" isLoading={isLoading} error={error} isEmpty={false}>
-      <Statistic title="Employees present/half-day today" value={presentCount} />
-      <div className="mt-3 text-right">
+      <Statistic
+        title={<span className="text-xs text-gray-500">Employees present/half-day today</span>}
+        value={presentCount}
+        valueStyle={{ fontSize: 20 }}
+      />
+      <div className="mt-2 text-right text-sm">
         <Link to={ROUTE_PATHS.ATTENDANCE_TEAM}>View team attendance →</Link>
       </div>
     </WidgetCard>

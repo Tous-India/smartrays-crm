@@ -146,3 +146,64 @@ input:-webkit-autofill:focus {
 .auth-frosted-input .ant-input-prefix .anticon {
   color: rgba(245, 247, 251, 0.6);
 }
+
+/*
+ * MainLayout's sidebar nav (`.app-sidebar-menu`) — AntD's built-in `dark`
+ * Menu theme gives light text for free, but its own selected/hover colors
+ * are generic (a translucent white), not the brand. Overridden here so the
+ * active page is obviously current-location via a real brand-green accent
+ * (both a tinted background and a left bar), not just a slightly-different
+ * gray — the exact gap flagged in the UI/UX pass this was added for.
+ */
+.app-sidebar-menu.ant-menu-dark {
+  background: transparent;
+}
+
+.app-sidebar-menu .ant-menu-item,
+.app-sidebar-menu .ant-menu-submenu-title {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.app-sidebar-menu .ant-menu-item:hover,
+.app-sidebar-menu .ant-menu-submenu-title:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08) !important;
+}
+
+.app-sidebar-menu .ant-menu-item-selected {
+  background: rgba(29, 131, 67, 0.28) !important;
+  color: #ffffff !important;
+  border-inline-start: 3px solid var(--color-brand-green);
+  /* Offsets the 3px accent bar's own width so selected/unselected item text
+     still lines up with each other instead of visibly shifting right. */
+  padding-inline-start: calc(1rem - 3px) !important;
+}
+
+.app-sidebar-menu .ant-menu-item-selected:hover {
+  background: rgba(29, 131, 67, 0.34) !important;
+}
+
+.app-sidebar-menu .ant-menu-submenu-open > .ant-menu-submenu-title {
+  color: #ffffff;
+}
+
+.app-sidebar-menu .ant-menu-sub.ant-menu-inline {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+/*
+ * MainLayout's `<Sider>` (`.app-sider`) sets `display: flex; flex-direction:
+ * column` on itself so its three regions (logo/nav/footer) size correctly —
+ * but AntD's `Sider` always wraps its actual children in its own internal
+ * `.ant-layout-sider-children` div, which defaults to `display: block`. That
+ * wrapper, not the `<aside>` itself, is the real parent of the three region
+ * divs, so without this override `flex-1`/`shrink-0` on them are inert (their
+ * parent isn't a flex container at all) and the nav region silently renders
+ * at its full content height instead of scrolling within the space left for
+ * it — confirmed via a real short-viewport scroll test before this fix.
+ */
+.app-sider > .ant-layout-sider-children {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}

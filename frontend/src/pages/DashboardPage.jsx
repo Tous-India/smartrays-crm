@@ -31,7 +31,10 @@ function DashboardPage() {
   return (
     <div>
       <Title level={3}>Dashboard</Title>
-      <Row gutter={[16, 16]}>
+      {/* Tighter gutter (was [16, 16]) per the UI/UX pass — these are
+          glance-summary cards now, a looser grid reads as more empty
+          padding rather than more content. */}
+      <Row gutter={[12, 12]}>
         {widgets.map((Widget, index) => (
           // eslint-disable-next-line react/no-array-index-key
           <Col key={index} xs={24} md={12} xl={8}>

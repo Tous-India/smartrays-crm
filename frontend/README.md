@@ -247,8 +247,87 @@ after a permission edit takes effect), and `clearSession()` (wired to the API cl
 **Layouts (`src/layouts/`)**:
 - `MainLayout` — the one dashboard shell every staff role shares (admin/manager/
   sales_associate/employee), composing its nav items by role + permission
-  (`PermissionGate`-filtered) rather than four separate per-role layouts, per §7.13.
+  (`can()`-filtered) rather than four separate per-role layouts, per §7.13. See "App shell
+  UI/UX pass" below for its fixed-sidebar structure, color scheme, and profile-editing flow.
 - `PortalLayout` — separate, no internal nav, for `role: customer` accounts, per §8.
+
+### App shell UI/UX pass (`MainLayout.jsx`, `LiveClock.jsx`, `EditProfileModal.jsx`)
+
+**Sidebar — three fixed regions, only the nav list scrolls.** The `<Sider>` is
+`position: fixed`, full `100vh`, split into three independently-behaving regions: a pinned
+logo header (top), the nav `<Menu>` (middle — the ONLY region that scrolls, and only if the
+list is actually taller than the space left for it), and a pinned footer (bottom, the profile
+menu — see below). **Real gotcha hit and fixed here, not just eyeballed:** AntD's `<Sider>`
+always wraps its children in its own internal `.ant-layout-sider-children` div
+(`display: block` by default) — setting `display: flex; flex-direction: column` on the
+`<Sider>` itself does nothing useful, since that wrapper (not the `<aside>`) is the real
+parent of the three region divs, so `flex-1`/`shrink-0` on them are inert against a
+non-flex parent. Fixed via a scoped override in `styles/index.css`:
+`.app-sider > .ant-layout-sider-children { display: flex; flex-direction: column; height:
+100%; }`. **Verified with a real short-viewport Playwright scroll test** (not just visual
+inspection) — scrolling the nav region's own `overflow-y-auto` container moves the visible
+nav items while the logo and footer stay pixel-identical between before/after screenshots.
+The right-hand column (top bar + page content) is NOT fixed — it scrolls normally with the
+page; only the sidebar's own internal regions are fixed/independently-scrolling.
+
+**Sidebar logo — a new `layout` prop on `BrandLogo`** (`src/components/BrandLogo.jsx`):
+`layout="stacked"` (default, unchanged — Login page still uses this) or
+`layout="horizontal"` (icon-and-text side-by-side, ~4.8:1 aspect ratio, for the sidebar's
+short header). `logo-horizontal.png` only ever existed as the full navy/green gradient mark
+— there was no pre-made white version the way the stacked mark has `logo-white-shadow.png`.
+`logo-horizontal-white.png` is a **generated** white silhouette (every opaque pixel forced to
+solid white via a one-off Jimp script, alpha/shape untouched — not new art) rather than
+something a designer produced, needed once the sidebar went dark navy and the gradient's navy
+portions would otherwise blend straight into it. Verified at actual rendered size (~32px
+tall) via a composited screenshot before wiring it in — the source PNG's edge stippling from
+background removal is imperceptible at that scale even though it's visible zoomed in.
+
+**Color scheme** — sidebar background is the brand-navy token (`var(--color-brand-navy)`,
+not a new/generic black), `<Menu theme="dark">` for light nav text by default, with the
+active-item state and hover state overridden in `styles/index.css` (`.app-sidebar-menu`) to
+brand-green rather than AntD dark theme's generic translucent-white selected state: a
+`rgba(29, 131, 67, 0.28)` tinted background plus a solid `var(--color-brand-green)`
+left accent bar, so the current page is obvious at a glance (this was flagged as
+specifically missing before this pass — no `selectedKeys` was ever computed).
+`resolveSelectedKey()` in `MainLayout.jsx` matches the current route to a nav key via
+longest-prefix match (so `/leads/:id` still highlights the `Leads` item), including into the
+new Settings submenu (below).
+
+**Settings nav section** — `User Management` and `Permission Settings` (previously two flat
+top-level nav items) are now grouped under one collapsible `Settings` submenu (AntD Menu's
+native `children` array, not a new component), shown only if the user holds `users.view_all`/
+`users.view_team` OR `permissions.manage` — the exact same `can()` calls each item already
+used individually, just gating the group as a whole now.
+
+**Top bar** — shortened from AntD's default ~64px to 48px (`!h-12`, forced with `!important`
+since AntD's own header height comes from a CSS class, not inline style, the same reasoning
+the pre-existing `!bg-brand-navy` override already needed). Shows a `LiveClock` (ticks every
+real second via `setInterval`, per smartrays.md's "prefer React state" rule — same pattern
+`useCheckedInHeartbeatLoop`/the Location live-map poll already follow) formatted as
+`"Mon, 21 Jul 2026 · 3:45 PM"`.
+
+**Profile editing — ONE location, not two.** The Edit Profile/Logout menu lives ONLY in the
+sidebar footer (pinned, always visible regardless of scroll position or page content height)
+— deliberately NOT also duplicated in the top bar, which now shows just the live clock and
+nothing user-related. "Edit Profile" opens `EditProfileModal`
+(`src/modules/user/components/`), a smaller, separate component from the admin-facing
+`UserFormModal` — reuses the existing `PATCH /users/:id` (`updateUser` in
+`modules/user/api/userApi.js`), no new backend endpoint, and only renders the
+name/email/phone fields (`user.service.js#updateUser`'s self-edit path already restricts a
+self-edit to exactly these three server-side — role/managerId/isActive/baseSalary stay
+admin-only regardless of what the UI shows). On success, calls the session store's
+`refetchSession()` so the sidebar footer's displayed name updates immediately, no re-login
+needed — the same "single DB source of truth, no cache to bust" reasoning §4.1 relies on
+everywhere else.
+
+**Dashboard widget cards, tightened** — `WidgetCard` (`modules/dashboard/widgets/`) now uses
+`Card size="small"`, a `text-sm` title instead of Card's default ~16px bold, and drops the
+empty state's illustrated image entirely (`image={false}`) rather than just shrinking it —
+at this card's scale, an icon read as more prominent than the actual "No leads yet"-style
+text next to it. Every widget's `Statistic` values now set `valueStyle={{ fontSize: 20 }}`
+(was AntD's much larger default) and use a smaller `text-xs` label; `DashboardPage`'s grid
+gutter tightened from `[16, 16]` to `[12, 12]`. Applied to all 11 widgets (the 5 original +
+6 operational), not just some.
 
 **Auth screens (`src/components/AuthLayout.jsx`)** — the shared shell behind `/login`,
 `/forgot-password`, and `/reset-password`: a floating dark glass card (`bg-white/12` +
