@@ -125,13 +125,15 @@ Source of Truth rule made concrete, and to mark what's real vs. planned in the d
 | `report` | ✅ Built (§7.11, Phase 8) | Unified `POST /reports/generate` dispatcher (attendance/leave/payroll/transport/leads/customers) — uploads to Cloudinary, returns a download URL. `GET /attendance/report`/`GET /travel-logs/report` now internally reuse it (breaking response-shape change) |
 | `notification` | ✅ **Built (§6.7/§7.11-Platform, Phase 9, 2026-07-16)** | `Notification`/`PushSubscription` models, Web Push (VAPID) delivery via `web-push`, self-scoped subscribe/list/mark-read endpoints. Wired into Leads (assignment + a 24h/15m follow-up-reminder cron) and Ticket assignment (a deliberate small addition beyond the Leads-only spec) — see §7.16 |
 | `transport` | ✅ Built (§7.6, Phase 6, 2026-07-13) | Distance-per-shift (auto from Attendance checkout, or manual entry) via Google Maps, separate from `location`'s raw GPS stream. Approval workflow (`pending`/`approved`/`rejected`) added 2026-07-13; only `approved` entries feed Payroll mileage reimbursement (§11.4, resolved) |
-| Dashboards | ⬜ Planned (§7.13, Phase 9) | Frontend widget shell composed by role + permissions — no dedicated backend module |
+| Dashboards | ✅ **Built (§7.13/§7.20, Phase 9)** | Frontend widget shell composed by role + permissions, declarative widget catalog (`dashboardConfig.js`) — no dedicated backend module. Leads + Customers widgets only for now; Attendance/Payroll/etc. widgets are a future incremental addition using the same pattern |
 | `frontend` (scaffold) | ✅ **Built (Frontend Phase 0, 2026-07-16)** | Vite + Tailwind + Ant Design scaffold, API client, session store, route guards, dashboard/portal layout shells, full §8 route map wired (every route exists; only `/login` and `/` are functionally complete, the rest are placeholders) — see the Frontend Phase 0 LLD entry below and `frontend/README.md` |
 | `lead` (frontend) | ✅ **Built (2026-07-16) — the reference implementation for every later frontend module** | Table View + Board View (`@dnd-kit` kanban) behind one shared page shell, Lead Detail slide-over (real route), Import wizard, filtered export — see §7.15 |
 | `customer` (frontend) | ✅ **Built** | List View (search/owner/status filters, bulk activate/deactivate/delete) + Add Customer wizard (surfaces the backend's contract automation explicitly) + a real Customer Detail full page (billing/contacts/contracts/credentials vault/activity log) — see §7.17 |
 | `attendance` (frontend) | ✅ **Built** | Check-in/out widget (native `getUserMedia`+`<canvas>` camera capture, native `Geolocation`, both mandatory before submit) + Personal/Team timeline views with connectivity gaps rendered as red bar segments + report download via the unified dispatcher — see §7.18 |
 | `leave` (frontend) | ✅ **Built** | Request modal + scope-tabbed list (own/team/all, built from whichever grants the user holds) + admin-only Approve/Mark Unapproved Absence, the latter's 2x-deduction consequence shown directly in the confirm prompt — see §7.18 |
 | `location` (frontend) | ✅ **Built — a new route, `/location`, with no prior frontend at all** | Live map (auto-polling `GET /location/live`) + History map (employee+date picker, `GET /location/history` as a polyline) via a generic `GoogleMapView` (native Maps JS SDK, no wrapper library) — see §7.18 |
+| `user` (frontend) | ✅ **Built (§7.19, 2026-07-17)** | `/settings/users` roster list/edit/deactivate/reactivate/admin-password-reset/create, plus self-service + admin-override password reset (`/forgot-password`, `/reset-password`) — see §7.19 |
+| `dashboard` (frontend) | ✅ **Built (§7.20)** | `/dashboard` shell composing Leads + Customers widgets by role via a declarative catalog, each widget independently permission-gated and independently fetching/failing — see §7.20 |
 
 #### Major Cross-Module Flows
 
@@ -564,11 +566,15 @@ genuinely compact enough to be useful at a glance.
   dedicated regression test).
 - **Test coverage:** 24 tests, no application bugs found; see §7.11 for the complete writeup.
 
-##### Dashboards (§7.13, Phase 9)
+##### Dashboards (§7.13/§7.20, Phase 9)
 - **Data model:** none — a frontend composition concept.
 - **Key invariants:** one dashboard shell composing widgets by role + permissions, not four
-  separate per-role codebases.
-- **Known deviations:** none yet — not built, and no frontend work has started at all.
+  separate per-role codebases. Permission-gating happens twice, deliberately: `dashboardConfig.js`
+  picks per-role candidates, and each widget independently re-checks its own real permission
+  before rendering (a per-user override can diverge from the role's template default).
+- **Known deviations:** none from this task's own scope. Built for Leads + Customers widgets
+  only, per §7.20 — Attendance/Payroll/etc. widgets are a stated future incremental addition
+  using the same pattern (write the widget, add one line to `dashboardConfig.js`), not a gap.
 
 ---
 
@@ -2415,8 +2421,8 @@ Customers' own future frontend task, since done — see §7.17).
 
 ✅ **Built 2026-07-16** — the Notification module (§6.7), Web Push (VAPID) delivery, and the
 lead follow-up reminder cron. **This closes out every backend phase in §10** — the last
-unbuilt backend piece was Phase 9's backend half; only Phase 9's frontend half (Dashboard
-polish, PWA service worker wiring) remains anywhere in the plan.
+unbuilt backend piece was Phase 9's backend half. Phase 9's frontend half is now also built —
+the Dashboard, §7.20 — leaving only PWA service worker wiring for push receipt/display.
 
 **Module folder:** `backend/src/modules/notification/` — `notification.model.js`,
 `pushSubscription.model.js`, `notification.service.js`, `notification.controller.js`,
@@ -2773,13 +2779,71 @@ the gradient's lightness range and glow opacity. Verified with real Playwright s
 
 ---
 
+### 7.20 Dashboard (Leads + Customers widgets)
+
+✅ **Built** — the last major placeholder page, and the final piece of Phase 9's frontend half
+(§7.13's principle). Built under `frontend/src/modules/dashboard/`, replacing the shared
+`PlaceholderPage` `/dashboard` had rendered since Frontend Phase 0.
+
+**Declarative widget catalog, not a runtime plugin/registry** — deliberately, since nothing
+else in this codebase registers behavior at runtime (`PERMISSION_REGISTRY` is a static
+constants object, not a registration mechanism) and a full registry would be real complexity
+for 2 modules' worth of widgets. Three pieces: (1) `widgets/*.jsx` — small, self-contained
+components, each fetching its own data and handling its own loading/error/empty state via a
+shared `WidgetCard` presentational shell, so one widget's fetch failing never breaks any other
+widget on the page; (2) `dashboardConfig.js` — a single `role → ordered widget list` map,
+`DASHBOARD_WIDGETS_BY_ROLE`; (3) `DashboardPage.jsx` — reads the current user's role from
+`sessionStore`, looks up their candidate list, renders it in a responsive `Row`/`Col` grid.
+
+**Permission-gating is real defense in depth, not just the config:** the config only decides
+candidates per role. Every widget additionally calls `usePermission(module, action)` itself and
+renders nothing if it fails — a per-user permission override away from the role's template
+default (§7.12) must still hide the widget, not just the role-level config, mirroring
+`PermissionGate`/`MainLayout`'s own nav-filtering precedent.
+
+**Scoping reused, never reinvented:** every widget calls the exact same scoped fetch function
+its module's own list page already calls (`listLeads()`, `listCustomers()`) — `lead.service.js`/
+`customer.service.js` scope server-side by the caller's role, so a `sales_associate`'s widgets
+automatically reflect only their own data with zero new client-side scoping logic.
+
+**Widgets built (Leads + Customers only, per this task's scope):** `LeadsPipelineWidget`
+(count per status), `LeadsFollowUpWidget` (today/overdue counts + short linked list),
+`LeadsHotWidget` (currently-flagged-hot leads — `GET /leads` has no server-side `isHot` filter,
+so this filters client-side over the same scoped list, the same precedent
+`TeamAttendanceView`'s employee selector already set for a filter the backend doesn't expose),
+`CustomersOverviewWidget` (active count + contract-type counts, derived by fetching every
+visible customer's contracts in parallel — no aggregation endpoint exists, mirroring
+`useCustomers.js`'s own precedent), `CustomersRecentWidget` (last few customers created,
+already sorted server-side by `createdAt` descending).
+
+**Role composition:** admin/manager/sales_associate get all 5 widgets as candidates (Sales
+Associates hold full "own" CRUD on both Leads and Customers by default per §5, so their
+dashboard is meaningful too, automatically own-scoped); `employee`/`customer` get an empty
+candidate list for now (neither role holds a `leads`/`customers` grant by default) — **explicitly
+a future incremental addition, not a gap**: an Attendance/Leave/Payroll widget for Employee
+follows the exact same pattern (write the widget, add one line to `dashboardConfig.js`) whenever
+that module's dashboard widget is prioritized.
+
+**Testing:** 21 tests (`vitest` + React Testing Library) — one test file per widget (mocked-data
+rendering, empty state, an inline error instead of a crash on a rejected mock) plus
+`DashboardPage.test.jsx` covering the composition layer: the right widget set per mocked
+session role, the "no widgets for this role" message for an empty candidate list, permission-
+gating hiding every widget for a mocked user with an empty `permissions` object even though
+their role's config includes all of them, and one widget's mocked API rejection not affecting
+any other widget rendered on the same page.
+
+**Known deviations:** none from this task's own stated scope. Attendance/Payroll/Leave/etc.
+widgets are explicitly out of scope here (see "Role composition" above), not an oversight.
+
+---
+
 ## 8. Frontend Route Map (indicative)
 
 ```
 /                        → redirect by role
 /login
-/forgot-password          (§7.17, added 2026-07-17 — not in the original route map)
-/reset-password           (§7.17, added 2026-07-17 — not in the original route map)
+/forgot-password          (§7.19, added 2026-07-17 — not in the original route map)
+/reset-password           (§7.19, added 2026-07-17 — not in the original route map)
 /leads                   (table)      /leads/board
 /leads/:id
 /customers               /customers/:id
@@ -2794,7 +2858,7 @@ the gradient's lightness range and glow opacity. Verified with real Playwright s
 /amc
 /reports
 /settings/permissions      (admin)
-/settings/users            (admin/manager, §7.17, added 2026-07-17 — not in the original route map)
+/settings/users            (admin/manager, §7.19, added 2026-07-17 — not in the original route map)
 /portal                   (customer — separate layout, no internal nav)
 ```
 
@@ -2882,8 +2946,8 @@ frontend/
 | 6 | ✅ **Built and verified 2026-07-13:** Transport/Travel (Google Maps Distance Matrix integration — §7.6, `transport` module, 28 tests). Auto-generates a `TravelLog` from Attendance checkout coords (direct call into `attendance.service.js#checkOut`, never fails checkout); manual entry with coords or a direct `distanceKm` override; `GET /travel-logs?scope=own\|team\|all` (mirrors Leave's shape) + `PATCH /travel-logs/:id/approve\|reject` (added 2026-07-13, resolves §11.4) + `GET /travel-logs/report` (reuses `src/services/report.service.js`). `GOOGLE_MAPS_API_KEY` is now a required env var. §11.4 (feeds payroll?) resolved 2026-07-13 — only `status: "approved"` entries feed Payroll mileage reimbursement. | Phase 3 |
 | 7 | ✅ **Built and verified:** Payments + AMC (§7.9/§7.10, `payment`/`amc` modules, 16 + 20 tests). `Payment` (admin-only, no ownership scoping at all per §5) can optionally attach to a real `Invoice` via a new `invoiceId` field — applying it reduces `Invoice.balance` and updates `Invoice.status` (`paid` at 0, the newly-added `partially_paid` otherwise) — **§11.3 resolved: partial reconciliation, not a standalone log and not full invoicing**. `AMC`'s two-flow creation (`new_customer` reuses `customer.service.js#createCustomer` directly; `existing_customer` requires an in-scope `customerId`) matches smartrays.md's "ask which create client or convert client"; `view`/`edit` scoping ("own team"/"own") is resolved via the underlying Customer's ownership (new `customer.service.js#getVisibleCustomerIds` export), since AMC has no `ownerId` field of its own — Manager's "own team" tier is the "PM" role smartrays.md describes elsewhere. No automation on renewal for v1 (stated simplification). Full suite: **340 tests, all passing.** | Phase 2 |
 | 8 | ✅ **Built and verified:** Reports (§7.11, `report` module, 24 tests). Single `POST /reports/generate` `{module, filters, format}` dispatching to `attendance`/`leave`/`payroll`/`transport`/`leads`/`customers` — each via that module's own existing, already-scoped data-fetcher (`generateAttendanceReport`/`generateTravelLogReport` reused unmodified; `listLeaves`/`listPayroll`/`listLeads`/`listCustomers` reused with new column/row rendering added in `report.service.js` itself). No new `reports.generate` permission — gated per-module by reusing `can()` against that module's own actions. Per-module `filters` shape validated by reusing each target module's own existing query validator (`validateReportQuery`/`validateScopeQuery`/`validateListQuery`) rather than duplicating checks; `leads`/`customers` fall back to their model's own status enum since neither has a dedicated query validator to reuse. **Breaking change (intentional):** `GET /attendance/report`/`GET /travel-logs/report` now internally call this dispatcher and return `{ downloadUrl }` instead of streaming the file — existing tests rewritten to assert against the real buffer the mocked upload was called with. `GET /leads/export` and `GET /payroll/:id/payslip` both deliberately excluded (pre-existing separate export; single-document artifact, respectively) — the payslip exclusion now has a dedicated regression test proving it still streams directly. Full suite: **365 tests, all passing.** | All prior phases have data to report on |
-| 9 | ✅ **Backend half built 2026-07-16 — see §7.16:** Notification module (§6.7), Web Push (VAPID) delivery, lead follow-up reminder cron — wired into Leads (assignment + reminders) and Ticket assignment. **This closes out every backend phase.** Remaining, frontend-only: Dashboards polish, permission-driven widget composition, PWA service worker wiring for push receipt/display. | All |
-| — | ✅ **Built 2026-07-17 — see §7.17:** password reset (self-service email flow + admin override) and the User Management frontend screen (`/settings/users`, closing a gap that existed since Phase 0 — the backend `user` module had endpoints with no frontend consumer). Bundled login page visual redesign in the same task. Not a numbered roadmap phase — a cross-cutting fix/gap-closure task, not new module scope. **Also: first production deployment, to Vercel — see the Deployment section below.** | Phase 0 (`user` module) |
+| 9 | ✅ **Backend half built 2026-07-16 — see §7.16:** Notification module (§6.7), Web Push (VAPID) delivery, lead follow-up reminder cron — wired into Leads (assignment + reminders) and Ticket assignment. **This closes out every backend phase.** ✅ **Frontend half — Dashboard — built, see §7.20:** the `/dashboard` shell composing Leads + Customers widgets by role via a declarative catalog (`dashboardConfig.js`), permission-gated per-widget on top of the role-level config. Attendance/Payroll/etc. widgets are a future incremental addition using the same pattern, not a gap. Remaining: PWA service worker wiring for push receipt/display (no dashboard-side work left). | All |
+| — | ✅ **Built 2026-07-17 — see §7.19:** password reset (self-service email flow + admin override) and the User Management frontend screen (`/settings/users`, closing a gap that existed since Phase 0 — the backend `user` module had endpoints with no frontend consumer). Bundled login page visual redesign in the same task. Not a numbered roadmap phase — a cross-cutting fix/gap-closure task, not new module scope. **Also: first production deployment, to Vercel — see the Deployment section below.** | Phase 0 (`user` module) |
 
 Phases 1–2 and 3 can be built in parallel by two developers since they don't share models
 until Phase 4/5.

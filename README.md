@@ -133,9 +133,11 @@ Attendance + Leave + a new Location live-map view (built together — check-in/o
 native camera/geolocation capture, connectivity-gap timeline, Leave request/approval, and a
 `/location` live-map + history-trail view via the native Google Maps JS SDK) are all built,
 including the client-side loop that actually submits `POST /attendance/heartbeat`/
-`POST /location/pings` on an interval while checked in (`useCheckedInHeartbeatLoop`) — see
+`POST /location/pings` on an interval while checked in (`useCheckedInHeartbeatLoop`), and the
+Dashboard (`/dashboard`, §7.20 — a declarative widget catalog composing Leads + Customers
+widgets by role, each independently permission-gated and independently fetching/failing) — see
 [`docs/project-status.md`](docs/project-status.md) for current progress and
 [`.context/final-plan.md`](.context/final-plan.md) §10 for the phased roadmap. Every other
 module's frontend (Payroll, Transport, Tickets, ...) is still routing-skeleton + placeholder
-pages only, filled in module-by-module in later frontend tasks; Phase 9's frontend half
-(Dashboard polish, PWA service worker for push receipt/display) is also still open.
+pages only, filled in module-by-module in later frontend tasks; Phase 9's frontend half is now
+down to just the PWA service worker for push receipt/display.
