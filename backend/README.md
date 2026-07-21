@@ -176,6 +176,21 @@ duplicated creation *logic*, not duplicated routes. `seedAdmin.js` was updated t
 `user.service.js#createUser` too, so there is exactly one code path that creates a `User` document
 anywhere in the codebase.
 
+**Self-service password reset (`POST /auth/forgot-password`, `POST /auth/reset-password`, §7.17):**
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| POST | `/auth/forgot-password` | Public | Body `{ email }`. **Always** returns the same generic 200 response regardless of whether the email matches an account, an active one, or nothing at all — deliberate, to prevent account enumeration. Only when a matching **active** account exists does it actually generate a token and send an email; `requestPasswordReset` in `auth.service.js` returns silently otherwise. |
+| POST | `/auth/reset-password` | Public | Body `{ token, newPassword }`. `token` is the raw value from the emailed link; the DB only ever stores its SHA-256 hash (`User.passwordResetToken`), the same one-way-hash reasoning as `passwordHash` itself — a database leak alone can't be used to complete a reset. Rejects (400) an invalid, already-used, or expired (>1 hour) token. Clears the token fields on success so the same link can't be replayed. |
+
+`User.passwordResetToken`/`passwordResetExpiresAt` are both `select: false`, same
+defense-in-depth pattern as `passwordHash`/`baseSalary` — never returned by an ordinary
+query. `src/services/email.service.js` wraps Nodemailer/SMTP for the actual send; mocked at
+the module boundary in every test (`auth.test.js`) — no test sends a real email.
+
+**Admin override (`PATCH /users/:id/reset-password`, §7.17)** — see the User Management
+section below.
+
 ### Leads (`/api/v1/leads`, `/api/v1/lead-sources`)
 
 | Method | Path | Permission | Notes |
@@ -302,6 +317,7 @@ that was missing until now — `User` was previously a shared model only, import
 | PATCH | `/users/:id/deactivate` | Admin only | |
 | PATCH | `/users/:id/reactivate` | Admin only | |
 | PATCH | `/users/:id/manager` | Admin only | Sets or clears (`managerId: null`) a user's manager. A non-null `managerId` must belong to a `manager` or `admin` — same rule enforced at creation time (see below). |
+| PATCH | `/users/:id/reset-password` | Admin only | Admin override for password reset (§7.17), separate from the token-based self-service flow above. Body `{ newPassword? }`. If `newPassword` is supplied, it's set directly and the response's `tempPassword` is `null`. If omitted, the backend **generates a random one-time temp password** and returns it in `data.tempPassword` — the only time it's ever visible in plaintext, nothing persists it anywhere else. Chosen as the default path (a single-click "reset this locked-out user's password" action from the User Management screen) over forcing the admin to invent one every time; an admin who wants an exact password can still supply one. |
 
 **Permissions** — deliberately **two** tiers (`view_team`, `view_all`), not three like `location`.
 There's no plain `users.view` grant in `PERMISSION_REGISTRY` because a user's own record is
@@ -1069,6 +1085,36 @@ See `.env.example` for the full annotated list. Summary:
 | `MILEAGE_RATE_PER_KM` | No — defaults to `10` if unset | Currency units per approved-`TravelLog`-km, Payroll's mileage reimbursement (§6.5/§7.7). **Placeholder value** — a deliberately simple v1 (one single global rate, not per-role/per-project); the client must confirm the real rate. |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | **Yes, as of Phase 9** | Web Push VAPID keypair (§6.7) — `webPush.service.js#setVapidDetails` fails immediately at import time if either is missing or not a real key. Generate a real pair with `node -e "console.log(require('web-push').generateVAPIDKeys())"` — there's no safe placeholder for a public-key-cryptography pair the way there is for e.g. a Cloudinary cloud name. |
 | `VAPID_SUBJECT` | No — defaults to `mailto:support@smartrayssolutions.com` if unset | The `mailto:`/`https:` contact URL the Web Push spec asks a VAPID sender to supply. |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM` | **Yes, as of §7.17 (password reset)** | SMTP config for `src/services/email.service.js`'s password-reset email. Any standard SMTP provider works. `env.js` fails fast at boot if any is missing, matching every other required-integration var above — but note `nodemailer.createTransport()` itself (unlike `web-push`'s `setVapidDetails()`) does NOT validate host/credentials synchronously at import, so a bad-but-present value won't crash the boot, only a real send attempt. |
+
+---
+
+## Deployment
+
+Deployed to Vercel as `smartrays-crm-backend` (Root Directory: `backend`) — see the root
+[`README.md`](../README.md)'s Deployment section for the full CLI redeploy steps, env var
+push process, and the cron-jobs-don't-run-on-serverless limitation. Summary of what's
+backend-specific:
+
+- `api/index.js` — the actual Vercel entry point (not `server.js`/`app.listen()`). Wraps the
+  existing `app.js` Express app in a handler that ensures a cached DB connection first.
+  `app.js` itself is untouched, so local dev via `server.js` is unaffected.
+- `vercel.json` — rewrites every request path to `api/index.js`.
+- `src/database/connection.js#connectDatabase` caches its connection promise across
+  invocations instead of opening a fresh one every call — required so serverless cold starts
+  don't exhaust Atlas's connection limit. Throws (rather than `process.exit`-ing) on failure now,
+  since exiting the process mid-request makes no sense in a serverless function; `server.js`
+  itself still exits on a failed initial connect for local/traditional hosting.
+- `server.js` skips `registerPayrollCron()`/`registerLeadFollowUpReminderCron()` when
+  `process.env.VERCEL === '1'` — node-cron needs a long-lived process to fire on schedule,
+  which a Vercel serverless function is not. **Neither cron fires in production today** — a
+  known gap, not silently swallowed; see the root README and `docs/project-status.md` for the
+  planned real fix (Vercel Cron for payroll; a different, always-on answer for the 15-minute
+  lead follow-up reminders).
+- `getAuthCookieOptions()` (`auth.service.js`) uses `sameSite: 'none'` + `secure: true` in
+  production, not `'strict'` — the deployed frontend and backend are on different Vercel
+  domains, making the auth cookie genuinely cross-site; `'strict'`/`'lax'` would simply never
+  be sent back to the backend at all in that case.
 
 ---
 

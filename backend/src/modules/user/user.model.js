@@ -85,7 +85,7 @@ const userSchema = new mongoose.Schema(
       type: [{ type: mongoose.Schema.Types.ObjectId, ref: "PushSubscription" }],
       default: [],
     },
-    // Added for the self-service forgot/reset-password flow (§7.13). Only
+    // Added for the self-service forgot/reset-password flow (§7.17). Only
     // ever the SHA-256 hash of the token emailed to the user, never the raw
     // token itself — same "never store the real secret" reasoning as
     // `passwordHash`, so a database leak alone can't be used to reset a

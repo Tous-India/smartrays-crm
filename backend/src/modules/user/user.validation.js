@@ -60,7 +60,7 @@ export function validateUpdateUserInput(req, res, next) {
 }
 
 /**
- * Validates the body of PATCH /users/:id/reset-password (§7.13, admin
+ * Validates the body of PATCH /users/:id/reset-password (§7.17, admin
  * override). `newPassword` is optional — see user.service.js#adminResetPassword
  * for the "supplied vs. generated temp password" behavior; when supplied, it
  * must meet the same minimum-length rule as every other password in the app.

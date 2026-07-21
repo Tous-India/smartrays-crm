@@ -7,7 +7,7 @@ import { sendPasswordResetEmail } from "../../services/email.service.js";
 import User from "../user/user.model.js";
 
 const SALT_ROUNDS = 10;
-const PASSWORD_RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour, per §7.13
+const PASSWORD_RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour, per §7.17
 
 // Account creation ("register a user") lives entirely in
 // user.service.js#createUser now — auth.controller.js calls it directly.
@@ -102,7 +102,7 @@ function parseDurationToMs(duration) {
 }
 
 /**
- * Self-service "forgot password" (§7.13). ALWAYS resolves with the same
+ * Self-service "forgot password" (§7.17). ALWAYS resolves with the same
  * generic outcome regardless of whether the email matches an account —
  * callers must never be able to distinguish "no such account" from "email
  * sent" (account enumeration). The real work (generating/storing the token,

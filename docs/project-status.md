@@ -880,3 +880,51 @@ resolved while Phase 0 is underway.
   `notification.test.js`. Full suite: **399 tests, all passing.** `backend/README.md` (new
   Notifications section + dependencies-added entry), `.context/final-plan.md` (§7.16 + §6.7 +
   roadmap + tech-stack table), and this file all updated to mark it built.
+- **2026-07-17** — Login page visual redesign (v2/v3), self-service + admin password reset
+  (§7.17), and the first Vercel deployment, all in one task. **Login redesign:** the first pass
+  read "flat and almost-white" once reviewed against a reference design — replaced
+  `.auth-gradient-bg` with a genuinely deep, directional 3-stop navy gradient (near-black corner
+  through brand-navy mid to a lighter navy far corner) plus a real off-center green (`#1d8343`)
+  radial glow and a dark vignette, and rebuilt the glass card as a much darker/more-translucent
+  `bg-white/12` + `backdrop-blur-xl` + `border-white/20` surface with frosted-dark inputs
+  (light text/placeholder, retuned `-webkit-autofill` override to match). A follow-up round of
+  live-site feedback caught two more problems: the hero-side logo (color version) was blending
+  into the dark background, and the gradient still read as one flat navy at a glance — fixed by
+  adding a `variant` prop to `BrandLogo` (`color`/`white`, using the pre-existing
+  `logo-white.png` asset) and pushing the gradient's lightness range and glow opacity further
+  apart for real visible depth. Verified with real Playwright screenshots (desktop + mobile,
+  local and the live deployment) at every iteration, not just by inspecting CSS values.
+  **Password reset, both flows (§7.17):** self-service via new `src/services/email.service.js`
+  (Nodemailer/SMTP, new required `SMTP_*` env vars), `User.passwordResetToken` (SHA-256 hash
+  only, never the raw token) / `passwordResetExpiresAt` (~1h), `POST /auth/forgot-password`
+  (always the same generic response, account-enumeration-safe) and `POST /auth/reset-password`;
+  frontend "Forgot password?" link, request-email page, and a new `/reset-password?token=` page,
+  all sharing a new `AuthLayout` component factored out of the login page once a third screen
+  needed the identical dark-glass treatment. Admin override:
+  `PATCH /users/:id/reset-password` — a judgment call to support both an admin-supplied exact
+  password and (when omitted) a backend-generated one-time temp password returned once in the
+  response, rather than forcing the admin to invent one every time. New backend tests cover
+  forgot/reset token validity/expiry/reuse, the non-leaking response for both missing and
+  deactivated accounts, and both admin-override modes; new frontend tests cover both new pages.
+  Full suites re-run and passing throughout (412 backend tests; 61+ frontend tests).
+  **First deployment, to Vercel** (two pre-existing empty projects, monorepo, CLI-only — no
+  GitHub auto-deploy since the Vercel account and the `Tous-India` GitHub org are on different
+  emails): `smartrays-crm-backend` (Root Directory `backend`) and `smartrays-crm` (Root
+  Directory `frontend`). Backend adapted for serverless without touching `app.js`/`server.js`'s
+  local-dev behavior: new `backend/api/index.js` entry point + `backend/vercel.json` rewrite,
+  `src/database/connection.js` now caches its connection promise across invocations (required so
+  cold starts don't exhaust Atlas's connection cap), and `server.js` skips cron registration
+  when `process.env.VERCEL === '1'`. **Known, accepted production gap:** neither `payrollCron`
+  nor `leadFollowUpReminderCron` fires in production — node-cron needs a long-lived process,
+  which Vercel's serverless functions are not; see the root README's Deployment section for the
+  planned real fix (Vercel Cron for the monthly payroll job; a different always-on answer for
+  the 5-minute-granularity follow-up reminders, since Vercel Cron's free tier can't go that
+  frequent). `getAuthCookieOptions()` now uses `sameSite: 'none'` in production (was `'strict'`)
+  since the deployed frontend/backend are on different Vercel domains, making the cookie
+  genuinely cross-site — verified working end-to-end (login → `Set-Cookie` → authenticated
+  `/auth/me`) with both a raw `curl` session and a real headless-browser run against the live
+  deployment, not assumed. Real Atlas MongoDB (already seeded with the bootstrap admin and
+  permission templates from earlier local work); Cloudinary/Google Maps/SMTP are placeholder
+  values in production for now (`env.js` only checks presence, not validity); VAPID is a real
+  generated keypair, not a placeholder, since `web-push` validates key format at import and
+  crashes the whole app otherwise.

@@ -53,6 +53,11 @@ function MainLayout() {
         label: "Permission Settings",
         show: can(user, "permissions", "manage"),
       },
+      {
+        key: ROUTE_PATHS.SETTINGS_USERS,
+        label: "User Management",
+        show: can(user, "users", "view_all") || can(user, "users", "view_team"),
+      },
     ];
 
     return allItems

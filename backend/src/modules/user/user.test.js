@@ -389,7 +389,7 @@ describe("PATCH /users/:id/manager", () => {
   });
 });
 
-describe("PATCH /users/:id/reset-password (admin override, §7.13)", () => {
+describe("PATCH /users/:id/reset-password (admin override, §7.17)", () => {
   it("admin can set an exact new password, and it is never echoed back", async () => {
     const response = await adminAgent
       .patch(`/api/v1/users/${sales1._id}/reset-password`)

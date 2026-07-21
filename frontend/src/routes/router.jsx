@@ -27,6 +27,7 @@ import PaymentsPage from "../pages/PaymentsPage";
 import AmcPage from "../pages/AmcPage";
 import ReportsPage from "../pages/ReportsPage";
 import PermissionSettingsPage from "../pages/PermissionSettingsPage";
+import UserManagementPage from "../pages/UserManagementPage";
 import PortalHomePage from "../pages/PortalHomePage";
 import NotFoundPage from "../pages/NotFoundPage";
 
@@ -73,6 +74,7 @@ export const router = createBrowserRouter(
           <Route path="amc" element={<AmcPage />} />
           <Route path="reports" element={<ReportsPage />} />
           <Route path="settings/permissions" element={<PermissionSettingsPage />} />
+          <Route path="settings/users" element={<UserManagementPage />} />
         </Route>
 
         <Route element={<PortalLayout />}>

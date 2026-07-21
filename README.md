@@ -65,6 +65,66 @@ cd backend && npm run dev     # http://localhost:5000
 cd frontend && npm run dev    # http://localhost:5173
 ```
 
+## Deployment
+
+Live on Vercel as two separate projects (monorepo, each deployed from its own subdirectory
+via the Vercel CLI — no GitHub auto-deploy, since the Vercel account and the `Tous-India`
+GitHub org are on different emails):
+
+| Project | Root Directory | URL |
+|---|---|---|
+| `smartrays-crm-backend` | `backend` | https://smartrays-crm-backend.vercel.app |
+| `smartrays-crm` | `frontend` | https://smartrays-crm.vercel.app |
+
+**Redeploying** (from the repo root — each project's Root Directory setting handles the
+subfolder automatically; running `vercel` from inside `backend/`/`frontend/` directly causes
+a "path does not exist" error because the Root Directory then gets applied twice):
+
+```bash
+cd /path/to/smartrays          # repo root, not backend/ or frontend/
+vercel link --yes --project smartrays-crm-backend --scope smartrays
+vercel deploy --prod --yes     # redeploy backend
+
+vercel link --yes --project smartrays-crm --scope smartrays
+vercel deploy --prod --yes     # redeploy frontend
+```
+
+**Backend serverless adaptation** — Vercel is serverless, but `app.js`/`server.js` stay
+exactly as they are for local dev:
+- `backend/api/index.js` imports the existing Express `app` and wraps it in a handler function
+  (ensuring a DB connection first) — this is Vercel's entry point, not `server.js`.
+- `backend/vercel.json` rewrites every request to that handler.
+- `src/database/connection.js` caches the Mongo connection promise across invocations —
+  required so serverless cold starts don't each open a new connection and exhaust Atlas's
+  free-tier connection cap.
+
+**Known production gap — cron jobs don't run.** `payrollCron` (monthly) and
+`leadFollowUpReminderCron` (every 5 min) both rely on `node-cron`, which needs a long-lived
+process to fire on schedule. Vercel's serverless functions have no such process — nothing
+stays alive between requests. `server.js` guards their registration behind
+`process.env.VERCEL !== '1'` so this doesn't crash the deploy; it just means neither cron
+fires in production today. Real fix needed later: Vercel Cron Jobs hitting a dedicated
+endpoint for payroll (its monthly cadence fits Vercel Cron's free-tier daily-minimum-interval
+fine), and a different answer entirely for the 15-minute-granularity lead follow-up reminders
+(Vercel Cron's free tier can't go that frequent) — likely a separate always-on process
+(a small VM, or a scheduler service) rather than trying to force it onto Vercel.
+
+**Env vars** — same required set as local dev (see `backend/.env.example`), pushed to the
+backend Vercel project via `vercel env add <NAME> production`. Cloudinary/Google Maps/SMTP
+are placeholder values in production for now (env.js only checks presence, not validity — the
+app boots fine; only features touching those specific services fail at runtime, which is
+expected until real credentials are supplied). VAPID keys are a real generated keypair
+(`web-push`'s `generateVAPIDKeys()`), not placeholders — `web-push` validates key format at
+import time and crashes the whole app on a fake one. `CLIENT_ORIGIN` is set to the deployed
+frontend's URL (required for CORS); the frontend's `VITE_API_BASE_URL` is set to the deployed
+backend's URL + `/api/v1`.
+
+**Cross-origin cookies** — since frontend and backend are on different Vercel domains, the
+auth cookie is genuinely cross-site. `auth.service.js#getAuthCookieOptions` sets
+`sameSite: 'none'` + `secure: true` in production (still `lax`/non-secure for local dev) —
+verified working end-to-end (login → Set-Cookie → authenticated `/auth/me`) against the live
+deployment, not just assumed.
+
 **Every backend phase is now built** (Phase 9's backend half — Notification module, Web Push,
 lead follow-up reminder cron — closed it out). On the frontend: Phase 0 (scaffold, auth flow,
 routing shell), Leads (Table/Board/Detail/Import/Export — the reference implementation for

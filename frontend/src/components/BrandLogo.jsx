@@ -22,9 +22,8 @@ const LOGO_SOURCES = {
  * `variant="color"` (default) is the original navy/green mark — used
  * everywhere except where explicitly overridden, so the sidebar (on a
  * white background) is untouched by this prop's addition. `variant="white"`
- * is for AuthLayout's photo background (§ frontend/README.md's Login
- * background section) where the color icon's dark strokes can blend into a
- * busy/dark photo.
+ * is for AuthLayout's photo AND gradient backgrounds — the color mark's
+ * dark strokes blend into both dark backgrounds, not just the photo one.
  */
 function BrandLogo({ className = "w-40", variant = "color" }) {
   return <img src={LOGO_SOURCES[variant]} alt="Smartrays Solutions" className={`h-auto ${className}`} />;

@@ -15,21 +15,28 @@
 }
 
 /*
- * Auth screen background — v2. The light wash below read flat/washed-out
- * ("almost white") once a real glass card sat on top of it, so this is a
- * genuinely deep navy base (not a tint) with a soft, off-center green glow
- * layered over it via radial-gradient, plus a darker vignette pulling the
- * far corners down further so the eye lands on the card rather than the
- * edges. All three layers are on one element so they composite as a single
- * background (later `background-image` entries paint on TOP, so the darkest
- * vignette is listed first and the glow last, closest to the base).
+ * Auth screen background — v3. v2's diagonal read as one flat navy at a
+ * glance because its three linear-gradient stops were too close in
+ * lightness and the green glow (12% opacity, near a corner) was too faint
+ * to register as a real accent. Fixed with:
+ *   - A genuine 3-stop diagonal with real lightness range: a near-black
+ *     corner (#081527), a mid-navy band at the brand color's own strength
+ *     (#163b78), and a distinctly lighter navy toward the far corner
+ *     (#2a4f8f) — enough spread to read as directional light, not a flat
+ *     fill.
+ *   - A much more present green glow (~22% opacity vs. v2's 12%), sized
+ *     larger and positioned lower-right, behind/near where the card sits,
+ *     so it's an obvious color accent breaking up the navy instead of a
+ *     barely-there tint.
+ *   - The dark vignette kept, but pulled to the opposite (top-left) corner
+ *     from the glow so the two don't cancel each other into flatness.
  */
 .auth-gradient-bg {
-  background-color: #0e2a55;
+  background-color: #163b78;
   background-image:
-    radial-gradient(120% 120% at 15% 15%, rgba(0, 0, 0, 0) 45%, rgba(2, 8, 20, 0.55) 100%),
-    radial-gradient(60% 55% at 78% 12%, rgba(29, 131, 67, 0.32) 0%, rgba(29, 131, 67, 0) 70%),
-    linear-gradient(160deg, #0e2a55 0%, #163b78 55%, #0d2145 100%);
+    radial-gradient(130% 130% at 8% 8%, rgba(2, 6, 16, 0.6) 0%, rgba(2, 6, 16, 0) 42%),
+    radial-gradient(65% 60% at 82% 78%, rgba(29, 131, 67, 0.45) 0%, rgba(29, 131, 67, 0) 72%),
+    linear-gradient(135deg, #081527 0%, #163b78 52%, #2a4f8f 100%);
 }
 
 /*

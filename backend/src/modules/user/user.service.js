@@ -272,7 +272,7 @@ export async function setUserActiveStatus(targetId, isActive) {
 }
 
 /**
- * Admin override for a user's password (§7.13) — route-level `requireAdmin`
+ * Admin override for a user's password (§7.17) — route-level `requireAdmin`
  * is the only permission gate, same as deactivate/reactivate above. Two
  * modes, both admin-initiated (unlike the self-service forgot/reset-password
  * flow in auth.service.js, which is token-based and never touches this

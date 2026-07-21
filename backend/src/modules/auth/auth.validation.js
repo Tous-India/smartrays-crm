@@ -46,7 +46,7 @@ export function validateLoginInput(req, res, next) {
 }
 
 /**
- * Validates the body of POST /auth/forgot-password (§7.13). Deliberately
+ * Validates the body of POST /auth/forgot-password (§7.17). Deliberately
  * accepts any syntactically valid email without checking whether it matches
  * an account — that check (and its non-leaking generic response either way)
  * lives entirely in auth.service.js#requestPasswordReset.
@@ -62,7 +62,7 @@ export function validateForgotPasswordInput(req, res, next) {
 }
 
 /**
- * Validates the body of POST /auth/reset-password (§7.13).
+ * Validates the body of POST /auth/reset-password (§7.17).
  */
 export function validateResetPasswordInput(req, res, next) {
   const { token, newPassword } = req.body;

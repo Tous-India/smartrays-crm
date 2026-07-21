@@ -2700,11 +2700,86 @@ its first interval exists, which plain synchronous timer advancement doesn't flu
 
 ---
 
+### 7.19 Password Reset & User Management Frontend (2026-07-17)
+
+✅ **Built 2026-07-17** — two previously-open gaps closed in the same task: real password reset
+(both self-service and admin-override), and the User Management admin screen on the frontend,
+which had never been built despite the backend `user` module (§7.0b) existing since Phase 0.
+
+**Self-service password reset:**
+- New `backend/src/services/email.service.js` wraps Nodemailer/SMTP — new required
+  `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASSWORD`/`SMTP_FROM` env vars. Unlike `web-push`'s
+  `setVapidDetails()`, `nodemailer.createTransport()` does not validate synchronously at
+  import, so a bad-but-present value won't crash the boot, only a real send attempt — still
+  treated as required (not optional-with-a-default) since password reset genuinely can't work
+  without it.
+- `User.passwordResetToken` (SHA-256 hash of the emailed token, never the raw value —
+  `select: false`, same defense-in-depth as `passwordHash`) and `passwordResetExpiresAt`
+  (~1 hour).
+- `POST /auth/forgot-password` — **always** the same generic response, whether or not the
+  email matches an account (or matches a deactivated one) — account-enumeration-safe by
+  design, verified with dedicated tests for all three cases (match / no match / deactivated
+  match).
+- `POST /auth/reset-password` — validates the token's hash + expiry, sets the new password,
+  clears the token fields so the link can't be replayed.
+- Frontend: a "Forgot password?" link on the login page, a `/forgot-password` request-email
+  page, and a `/reset-password?token=` page — all three new auth screens (plus login) share a
+  new `AuthLayout` component (`frontend/src/components/AuthLayout.jsx`), factored out once a
+  third screen needed the identical dark-glass background/card treatment.
+
+**Admin override — `PATCH /users/:id/reset-password` (admin only):** a judgment call, stated
+explicitly rather than silently picked: supports **both** an admin-supplied exact
+`newPassword` **and**, when omitted, a backend-generated one-time temp password returned once
+in the response (`data.tempPassword`, never persisted anywhere else). Chosen over forcing
+every reset to be admin-typed, since "reset this locked-out user's password" is the common
+case and shouldn't require the admin to invent a password on the spot; an admin who wants an
+exact value can still supply one.
+
+**User Management frontend screen (`frontend/src/modules/user/`) — the actual gap being
+closed:** the backend `user` module (§7.0b) has had full roster CRUD, deactivate/reactivate,
+and manager-assignment endpoints since Phase 0, but no frontend screen ever consumed them.
+Built now: a list (admin sees everyone, manager sees their own team, both via the existing
+`resolveVisibleUserFilter` scoping — no new backend logic needed), per-user Edit (name/email/
+phone/role/managerId/baseSalary via the existing `PATCH /users/:id`), Deactivate/Reactivate
+actions, the new admin password-reset action, a link to the Permissions module (still a
+placeholder screen — `PermissionSettingsPage` — noted as such rather than silently ignored),
+and Create User (admin only, via the existing `POST /auth/register`).
+
+**New route: `/settings/users`** — added to `ROUTE_PATHS`/`router.jsx` and wired into
+`MainLayout`'s nav (gated on `users.view_all`/`users.view_team`, matching the same scoping the
+backend already enforces) since §8's route map didn't list one — stated explicitly here as an
+addition, not silently introduced.
+
+**Testing:** new backend tests cover forgot/reset token validity/expiry/reuse, the
+non-leaking forgot-password response (matching / non-matching / deactivated account), and
+both admin-override modes (supplied password, generated temp password) — full backend suite:
+**412 tests, all passing.** New frontend tests cover the Forgot Password and Reset Password
+pages and the User Management list/edit/deactivate/reactivate/admin-reset flows (API mocked
+at the module boundary, no real network calls) — full frontend suite passing throughout.
+
+**Login page visual redesign (bundled into the same task):** the first redesign pass read
+"flat and almost-white" against a reference design — reworked into a genuinely deep,
+directional navy gradient (3 stops: near-black corner → brand-navy mid → lighter navy far
+corner) with a real off-center green (`#1d8343`) radial glow and a dark vignette, and a much
+darker/more-translucent glass card (`bg-white/12` + `backdrop-blur-xl` + `border-white/20`)
+with frosted-dark inputs. A follow-up round against the **live deployment** caught two more
+problems the first pass missed: the hero-side logo (color version) was blending into the dark
+background, and the gradient still read as flat at a glance — fixed with a `variant` prop on
+`BrandLogo` (`color`/`white`, using the `logo-white-shadow.png` asset) and by widening
+the gradient's lightness range and glow opacity. Verified with real Playwright screenshots
+(desktop + mobile) against both local and the live production deployment at every iteration.
+
+**Known deviations:** none from this task's own stated scope.
+
+---
+
 ## 8. Frontend Route Map (indicative)
 
 ```
 /                        → redirect by role
 /login
+/forgot-password          (§7.17, added 2026-07-17 — not in the original route map)
+/reset-password           (§7.17, added 2026-07-17 — not in the original route map)
 /leads                   (table)      /leads/board
 /leads/:id
 /customers               /customers/:id
@@ -2719,6 +2794,7 @@ its first interval exists, which plain synchronous timer advancement doesn't flu
 /amc
 /reports
 /settings/permissions      (admin)
+/settings/users            (admin/manager, §7.17, added 2026-07-17 — not in the original route map)
 /portal                   (customer — separate layout, no internal nav)
 ```
 
@@ -2807,9 +2883,37 @@ frontend/
 | 7 | ✅ **Built and verified:** Payments + AMC (§7.9/§7.10, `payment`/`amc` modules, 16 + 20 tests). `Payment` (admin-only, no ownership scoping at all per §5) can optionally attach to a real `Invoice` via a new `invoiceId` field — applying it reduces `Invoice.balance` and updates `Invoice.status` (`paid` at 0, the newly-added `partially_paid` otherwise) — **§11.3 resolved: partial reconciliation, not a standalone log and not full invoicing**. `AMC`'s two-flow creation (`new_customer` reuses `customer.service.js#createCustomer` directly; `existing_customer` requires an in-scope `customerId`) matches smartrays.md's "ask which create client or convert client"; `view`/`edit` scoping ("own team"/"own") is resolved via the underlying Customer's ownership (new `customer.service.js#getVisibleCustomerIds` export), since AMC has no `ownerId` field of its own — Manager's "own team" tier is the "PM" role smartrays.md describes elsewhere. No automation on renewal for v1 (stated simplification). Full suite: **340 tests, all passing.** | Phase 2 |
 | 8 | ✅ **Built and verified:** Reports (§7.11, `report` module, 24 tests). Single `POST /reports/generate` `{module, filters, format}` dispatching to `attendance`/`leave`/`payroll`/`transport`/`leads`/`customers` — each via that module's own existing, already-scoped data-fetcher (`generateAttendanceReport`/`generateTravelLogReport` reused unmodified; `listLeaves`/`listPayroll`/`listLeads`/`listCustomers` reused with new column/row rendering added in `report.service.js` itself). No new `reports.generate` permission — gated per-module by reusing `can()` against that module's own actions. Per-module `filters` shape validated by reusing each target module's own existing query validator (`validateReportQuery`/`validateScopeQuery`/`validateListQuery`) rather than duplicating checks; `leads`/`customers` fall back to their model's own status enum since neither has a dedicated query validator to reuse. **Breaking change (intentional):** `GET /attendance/report`/`GET /travel-logs/report` now internally call this dispatcher and return `{ downloadUrl }` instead of streaming the file — existing tests rewritten to assert against the real buffer the mocked upload was called with. `GET /leads/export` and `GET /payroll/:id/payslip` both deliberately excluded (pre-existing separate export; single-document artifact, respectively) — the payslip exclusion now has a dedicated regression test proving it still streams directly. Full suite: **365 tests, all passing.** | All prior phases have data to report on |
 | 9 | ✅ **Backend half built 2026-07-16 — see §7.16:** Notification module (§6.7), Web Push (VAPID) delivery, lead follow-up reminder cron — wired into Leads (assignment + reminders) and Ticket assignment. **This closes out every backend phase.** Remaining, frontend-only: Dashboards polish, permission-driven widget composition, PWA service worker wiring for push receipt/display. | All |
+| — | ✅ **Built 2026-07-17 — see §7.17:** password reset (self-service email flow + admin override) and the User Management frontend screen (`/settings/users`, closing a gap that existed since Phase 0 — the backend `user` module had endpoints with no frontend consumer). Bundled login page visual redesign in the same task. Not a numbered roadmap phase — a cross-cutting fix/gap-closure task, not new module scope. **Also: first production deployment, to Vercel — see the Deployment section below.** | Phase 0 (`user` module) |
 
 Phases 1–2 and 3 can be built in parallel by two developers since they don't share models
 until Phase 4/5.
+
+---
+
+## Deployment (added 2026-07-17)
+
+✅ **First deployment, live on Vercel** — full details (redeploy steps, env vars, the
+cross-origin cookie fix, backend serverless adaptation) live in the root `README.md`'s
+Deployment section, not duplicated here. Summary:
+
+- Two Vercel projects, monorepo, CLI-only deploys (no GitHub auto-deploy — the Vercel account
+  and the `Tous-India` GitHub org are on different emails): `smartrays-crm-backend`
+  (`backend/`) and `smartrays-crm` (`frontend/`).
+- Backend adapted for serverless (`backend/api/index.js`, connection-caching in
+  `src/database/connection.js`) without changing `app.js`/`server.js`'s local-dev behavior.
+- **Known production gap, not silently accepted as fine:** `payrollCron` and
+  `leadFollowUpReminderCron` (§7.7/§7.16) do not fire in production — node-cron requires a
+  long-lived process, which Vercel's serverless functions are not. `server.js` guards their
+  registration behind `process.env.VERCEL !== '1'` so this doesn't crash the deploy, but it
+  means the monthly payroll run and the 5-minute lead follow-up reminders currently need a
+  manual trigger (or a real fix) in production. **Planned real fix, not yet built:** Vercel
+  Cron Jobs hitting a dedicated endpoint for the monthly payroll job (its cadence fits Vercel
+  Cron's free-tier daily-minimum interval fine); the follow-up reminder cron needs a different,
+  always-on answer entirely (a small VM or scheduler service), since Vercel Cron's free tier
+  can't go as frequent as every 5 minutes.
+- Cross-origin auth cookie (frontend/backend on different Vercel domains) verified working
+  end-to-end — `sameSite: 'none'` + `secure: true` in production, confirmed via both a raw
+  `curl` session and a real headless-browser login against the live deployment.
 
 ---
 

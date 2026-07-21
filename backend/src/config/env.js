@@ -106,7 +106,7 @@ export const env = {
   // reach the sender about abuse) — has a sensible default, no reason to force
   // every environment to set it explicitly.
   vapidSubject: process.env.VAPID_SUBJECT || "mailto:support@smartrayssolutions.com",
-  // SMTP config for the self-service forgot/reset-password email flow (§7.13)
+  // SMTP config for the self-service forgot/reset-password email flow (§7.17)
   // — see src/services/email.service.js. Required at boot like the other
   // real third-party integrations above (Cloudinary, Google Maps, VAPID):
   // password reset genuinely cannot work without a working mail transport.

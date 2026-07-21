@@ -36,7 +36,7 @@ authRouter.post("/login", validateLoginInput, login);
 authRouter.post("/logout", authenticate, logout);
 authRouter.get("/me", authenticate, getCurrentUser);
 
-// Self-service password reset (§7.13) — both public, no authenticate: a
+// Self-service password reset (§7.17) — both public, no authenticate: a
 // user who forgot their password is by definition not logged in, and the
 // reset token itself (not a session) is what authorizes /reset-password.
 authRouter.post("/forgot-password", validateForgotPasswordInput, forgotPassword);
