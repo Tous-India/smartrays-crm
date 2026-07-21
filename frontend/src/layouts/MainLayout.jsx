@@ -31,6 +31,14 @@ function MainLayout() {
       { key: ROUTE_PATHS.ATTENDANCE, label: "Attendance", show: true },
       { key: ROUTE_PATHS.LEAVE, label: "Leave", show: true },
       {
+        key: ROUTE_PATHS.LOCATION,
+        label: "Location",
+        show:
+          can(user, "location", "view") ||
+          can(user, "location", "view_team") ||
+          can(user, "location", "view_all"),
+      },
+      {
         key: ROUTE_PATHS.PAYROLL,
         label: "Payroll",
         show: can(user, "payroll", "view") || can(user, "payroll", "run"),

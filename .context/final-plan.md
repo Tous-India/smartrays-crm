@@ -129,6 +129,9 @@ Source of Truth rule made concrete, and to mark what's real vs. planned in the d
 | `frontend` (scaffold) | ✅ **Built (Frontend Phase 0, 2026-07-16)** | Vite + Tailwind + Ant Design scaffold, API client, session store, route guards, dashboard/portal layout shells, full §8 route map wired (every route exists; only `/login` and `/` are functionally complete, the rest are placeholders) — see the Frontend Phase 0 LLD entry below and `frontend/README.md` |
 | `lead` (frontend) | ✅ **Built (2026-07-16) — the reference implementation for every later frontend module** | Table View + Board View (`@dnd-kit` kanban) behind one shared page shell, Lead Detail slide-over (real route), Import wizard, filtered export — see §7.15 |
 | `customer` (frontend) | ✅ **Built** | List View (search/owner/status filters, bulk activate/deactivate/delete) + Add Customer wizard (surfaces the backend's contract automation explicitly) + a real Customer Detail full page (billing/contacts/contracts/credentials vault/activity log) — see §7.17 |
+| `attendance` (frontend) | ✅ **Built** | Check-in/out widget (native `getUserMedia`+`<canvas>` camera capture, native `Geolocation`, both mandatory before submit) + Personal/Team timeline views with connectivity gaps rendered as red bar segments + report download via the unified dispatcher — see §7.18 |
+| `leave` (frontend) | ✅ **Built** | Request modal + scope-tabbed list (own/team/all, built from whichever grants the user holds) + admin-only Approve/Mark Unapproved Absence, the latter's 2x-deduction consequence shown directly in the confirm prompt — see §7.18 |
+| `location` (frontend) | ✅ **Built — a new route, `/location`, with no prior frontend at all** | Live map (auto-polling `GET /location/live`) + History map (employee+date picker, `GET /location/history` as a polyline) via a generic `GoogleMapView` (native Maps JS SDK, no wrapper library) — see §7.18 |
 
 #### Major Cross-Module Flows
 
@@ -1440,8 +1443,8 @@ returned `downloadUrl`.
 ### 7.4b Live Location Tracking
 
 ✅ **Built and verified 2026-07-13** (19 tests, `npm test`, see `backend/README.md` →
-Testing). Backend only — the frontend map UI (live marker rendering, path polyline) is a
-follow-up once `frontend/` work starts; the API shape below (an ordered `{coords,
+Testing). Backend only at the time this section was written — **the frontend map UI is now
+built too, see §7.18**. The API shape below (an ordered `{coords,
 capturedAt}[]` for history, `{employeeId, coords, capturedAt}[]` for live) was deliberately
 designed so that UI can be added later with no API changes.
 
@@ -2563,6 +2566,140 @@ placeholder-model status (§6.4/§7.9) — real invoicing was never in scope for
 
 ---
 
+### 7.18 Attendance, Leave & Location Frontend
+
+✅ **Built** — three related pieces sharing the same check-in/checkout state, built
+together: the Attendance check-in/out widget + personal/team timeline views (§7.4), the
+Leave request/approve list (§7.5), and a new Location live-map view (§7.4b, which had no
+frontend at all before this task). Structured as **three separate module folders**
+(`src/modules/attendance/`, `src/modules/leave/`, `src/modules/location/`) rather than one
+combined module — they map 1:1 onto the three separate backend modules they each talk to,
+matching this project's own "one module folder per feature" convention exactly.
+
+**New dependencies: none.** Both new browser-API surfaces this task needed were deliberately
+built on native APIs instead of adding a library:
+- **Camera capture** — `navigator.mediaDevices.getUserMedia` + a `<canvas>` snapshot
+  (`useCamera.js`). A camera library (e.g. `react-webcam`) earns its weight when you need
+  front/back camera switching or other UX the native API makes painful — neither was asked
+  for here ("live preview, capture on a button press"), so the native API was simple enough
+  not to need one.
+- **Google Maps** — the JS SDK loaded via a plain `<script>` tag
+  (`useGoogleMapsScript.js`), talking to `window.google.maps` directly
+  (`GoogleMapView.jsx`) rather than through a wrapper library (e.g.
+  `@react-google-maps/api`). §7.4b's own stated scope for this view is deliberately basic
+  (markers + a polyline, no clustering/info windows/autocomplete), so a wrapper's
+  abstraction wouldn't earn its dependency weight here either. New env var
+  `VITE_GOOGLE_MAPS_API_KEY` — **deliberately separate from the backend's own
+  `GOOGLE_MAPS_API_KEY`**, since this one is loaded into the browser (visible in devtools)
+  and must be HTTP-referrer-restricted, not server-IP-restricted the way the backend's key
+  is; see `frontend/.env.example`.
+
+**Check-In/Out Widget (`attendance/components/CheckInOutWidget.jsx`)** — fetches current
+status on mount (`GET /attendance/me` for the current month, deriving the open record —
+the one with no `checkOut.time` yet) rather than assuming "not checked in," so a page reload
+mid-shift correctly shows Checked In + a live elapsed-time counter, not a stale default.
+Both camera photo and geolocation coords are mandatory before Confirm enables — mirroring
+the backend's own server-side-enforced photo requirement (§7.4) rather than a client-only
+convenience; a denied geolocation permission surfaces a real, visible error message, never
+a silently-stuck spinner. The photo is captured only on an explicit button press (never
+automatic) and sent as a base64 data URI in the JSON body — the simplest of the two
+transports `attendance.validation.js` already accepts, needing no `FormData` plumbing since
+`canvas.toDataURL()` already produces a data URI.
+
+**Personal/Team Attendance (`PersonalAttendanceView`/`TeamAttendanceView`)** — a
+selectable month (Personal) or month + client-side employee filter (Team — the backend's
+`GET /attendance/team` has no per-employee filter of its own, so the already-fetched
+month's records are filtered in the browser rather than re-fetched per employee) feeding
+one shared `AttendanceTimeline` table. Connectivity gaps (`connectivityGaps[]`, §6.5) are
+rendered as visually distinct red segments on a proportional bar (`ConnectivityGapBar`) —
+positioned and sized by actual gap-start/gap-end times relative to the shift's total
+duration, a specific, real requirement (§7.4's "mark red"), not decoration. Team Attendance
+is gated by `attendance.view_team`/`view_all` — checked inline with `can()` in
+`AttendanceTeamPage.jsx` (an OR of two actions `PermissionGate`/`usePermission` can't
+express in one call, since both only take a single module+action pair) rendering a 403
+`Result` for anyone without either grant, the same pattern `LocationPage.jsx` reuses below.
+
+**Leave (`leave/components/LeaveListPage.jsx`)** — scope tabs (own/team/all) are built from
+whichever `leave.view*` grants the current user actually holds, mirroring the backend's own
+"check each scope's own permission separately" design (`listLeaves`) rather than assuming a
+hierarchy; defaults to `"own"` when available, matching the backend's own default when no
+`?scope=` is given. The Request modal only offers `paid`/`unpaid` — `unapproved_absence` is
+never requestable, matching `leave.validation.js`'s own exclusion. Approve and Mark
+Unapproved Absence are rendered only for `role === "admin"` (§7.5: "manager can view but
+not approve" — a manager viewing `scope=team` sees no Actions column at all, not a disabled
+one). **The mark-unapproved-absence confirmation shows its 2x-deduction consequence
+directly in the `Popconfirm`'s description text** ("This counts as a DOUBLE (2x) deduction
+against this employee's leave balance..."), not a tooltip — burying an irreversible-feeling
+action's consequence behind a hover would defeat the point of confirming at all.
+
+**Location (`location/components/LiveMapView.jsx`/`HistoryMapView.jsx`, `pages/
+LocationPage.jsx`)** — a genuinely new route, `/location`, gated the same 403-`Result` way
+as Team Attendance by any of `location`'s existing `view`/`view_team`/`view_all` grants
+(no new permission invented). Live view re-polls `GET /location/live` every ~12 seconds
+(within this task's stated "~10-15 seconds" range — a UI re-poll cadence, deliberately not
+read from the backend's own `LOCATION_PING_INTERVAL_MINUTES`, since that config is for how
+often a client *submits* a ping, a different cadence than how often this view re-fetches to
+display them) and plots one marker per visible, currently-checked-in employee, with a plain
+list beneath doubling as a legend/fallback while the map script loads. History view is an
+employee + date picker rendering `GET /location/history`'s ping trail as a polyline; an
+out-of-scope `employeeId` surfaces the backend's 404 (§7.1's precedent) as a real error
+message, not a silent blank map.
+
+**Report downloads (Attendance + Leave)** — a new shared `frontend/src/components/
+ReportDownloadButton.jsx` + `src/services/reportApi.js`, used by both modules (and meant
+for every later module with a report) rather than duplicating the "pick a format, call
+`POST /reports/generate`, get `{ downloadUrl }`, trigger a real download" flow per module.
+`triggerFileDownload` opens the already-hosted Cloudinary URL via a synthetic `<a download>`
+click — no blob/object-URL handling needed, unlike Leads' export, since this URL is already
+real and hosted, not a same-origin blob this app created.
+
+**Known gap from this task — resolved in a same-phase follow-up (`useCheckedInHeartbeatLoop`,
+`attendance/hooks/`):** this task originally shipped with neither `POST
+/attendance/heartbeat` nor `POST /location/pings` having a client-side submission loop,
+flagged explicitly rather than silently skipped. The follow-up closed it with one hook
+driving both loops for as long as the caller is checked in — a cross-module import
+(`attendance/` importing `location`'s API), the same precedent the backend itself already
+set with `attendance.service.js#checkOut` calling straight into
+`transport/travelLog.service.js`. Driven by the same `isCheckedIn` boolean
+`CheckInOutWidget.jsx` already computes (not a separate `start()`/`stop()` pair), which is
+what makes "resume the loop on page reload mid-shift" free — the effect body is identical
+whether `isCheckedIn` starts `true` or transitions to it. Heartbeat fires every 3 minutes
+(inside the backend's own stated "~2-5 minute client cadence" assumption for its
+10-minute-default gap threshold, per `env.js`'s comment); the ping interval is read fresh
+from `GET /location/config` every time the loop (re)starts, never hardcoded. Both intervals
+pause on `visibilitychange: hidden` and resume on visible (no `beforeunload` handler needed
+— a real tab close destroys the intervals with the JS engine itself). A single failed
+heartbeat/ping is logged and swallowed, never thrown, matching the backend's own
+"never block the primary action" principle for this exact feature. A small pulsing-dot
+"Tracking active" badge next to the Checked In tag makes the otherwise-invisible loop
+visible. 7 additional tests (`useCheckedInHeartbeatLoop.test.js`, fake timers via
+`vi.useFakeTimers()`/`vi.advanceTimersByTimeAsync()`), covering fresh-start, resume-on-mount,
+stop-on-checkout, cleanup-on-unmount (no leaked intervals), and failure-doesn't-throw —
+bringing this section's total to 31 (see Testing below).
+
+**Testing:** 32 tests (`vitest` + React Testing Library + `@testing-library/user-event`),
+all passing, no real network calls. Exercises browser APIs untouched by any earlier frontend
+task — `navigator.mediaDevices.getUserMedia`, `HTMLCanvasElement#getContext`/`#toDataURL`
+(jsdom implements neither), `navigator.geolocation.getCurrentPosition`, and the Google Maps
+JS SDK — each stubbed at the global/module boundary (see `frontend/README.md`'s Testing
+section for the exact pattern, written up there specifically so later modules touching
+these same APIs don't have to rediscover it). Covers: check-in/out blocked until both photo
+and location are captured, correct API call once both are present, and correct UI state
+before/after (including the "page loaded mid-shift" case); connectivity gaps rendered with
+a real, distinguishing class/style (`bg-red-500`), not just present in the data; Team
+Attendance's permission gate (403 for no grant, real content for `view_team`/admin);
+Leave's request flow, admin-only approve/mark-absence, and the mark-absence consequence
+text actually appearing before the API call fires; the report button's `{ downloadUrl }`
+response triggering a real download call; both map views rendering real markers/a real
+polyline from mocked live/history data; and (the same-phase follow-up) the heartbeat/ping
+loop starting on fresh check-in, resuming identically on an already-checked-in mount,
+stopping on check-out, cleaning up on unmount with no leaked intervals, and a failed
+heartbeat/ping call never throwing — all via fake timers (`vi.useFakeTimers()` +
+`vi.advanceTimersByTimeAsync()`, needed because the loop resolves a real `Promise` before
+its first interval exists, which plain synchronous timer advancement doesn't flush).
+
+---
+
 ## 8. Frontend Route Map (indicative)
 
 ```
@@ -2663,7 +2800,7 @@ frontend/
 | 0 | ✅ **Built:** Auth (register/login/logout/me, §7.0), User model + Permission helper (single `employee` role, `User.managerId` self-reference, no `Team` collection), `can()`/`authorize`/`requireAdmin` middleware, base scaffolding. Cloudinary SDK wiring deferred to Phase 2/3 (not needed until Attendance/Credentials). ✅ **Permissions module built and verified 2026-07-13** (§7.12 — `permission` module, `RolePermissionTemplate` + `PERMISSION_REGISTRY`, `authorizeAny` reused from §7.4b, 20 tests). Replaces the `location`-only hardcoded role defaults (§7.4b) and the register-time `permissions` override workaround (§7.0) with a real, admin-editable, non-retroactive template system. ✅ **User Management built and verified 2026-07-13** (§7.0b — `user` module completes the roster/CRUD layer on top of the shared `User` model, 33 tests as of the Payroll task's `baseSalary` addition, §7.7). Also deduplicated account-creation logic: `createUser` now lives only in `user.service.js`; `auth.service.js` no longer has a `registerUser` function. **Frontend Phase 0 (scaffold + auth flow + routing shell) also built 2026-07-16 — see §7.14** — Vite + Tailwind + Ant Design, API client, session store, route guards, dashboard/portal layout shells, full §8 route map wired (only `/login` and `/` functionally complete). | – |
 | 1 | ✅ **Backend built:** Leads — CRUD, scoping, calls, hot flag, CSV/Excel import/export, lead sources (§7.1). ✅ **Frontend built 2026-07-16 — see §7.15**, the reference implementation for later frontend modules: Table + Board (kanban, `@dnd-kit`) views, Lead Detail slide-over, Import wizard, filtered export. ✅ **Assignment/follow-up push notifications built 2026-07-16 — see §7.16** (Phase 9's Notification module). | Phase 0 |
 | 2 | ✅ **Built and verified 2026-07-13:** Customers + Contracts/Contacts/Credentials (incl. AES-256-GCM credential-encryption utility, `src/services/credentialEncryption.service.js`) + Project/Task automations (§7.2 — `customer` module, 21 tests; §7.3 — `project` module, 19 tests). Contract automation chain (monthly→recurring Project+draft Invoice, onetime→onetime Project+draft Invoice, delete→complete Project+cancel Invoice) and the deactivation cascade (active projects → completed) both implemented as real logic, not stubs. `Invoice` is a minimal placeholder model only (no service/controller/routes) — full invoicing is Phase 7, and `GET /customers/:id/invoices`/`/ledger` were deliberately not built. `POST /leads/:id/convert`'s 501 stub (§7.1) was resolved as part of this same task. `CREDENTIALS_ENCRYPTION_KEY` is now a **required** env var (`env.js` fails fast at boot without it). ✅ **Frontend built — see §7.17**: List View + Add Customer wizard (surfaces contract automation in its success toast) + a real Customer Detail full page (billing/contacts/contracts/credentials vault with explicit-reveal masking/permission-gating/activity log), 13 tests. | Phase 1 |
-| 3 | ✅ **Fully built and verified 2026-07-13:** Attendance (camera+geo capture, photos to Cloudinary, connectivity-gap detection, workingHours, team/org reports — §7.4, `attendance` module, 32 tests) + Leave (request/approve/mark-unapproved-absence, one-paid-leave-per-month quota resolved in §11.7 and confirmed enforced at approval time not request time — §7.5, `leave` module, 18 tests). ✅ **Live Location Tracking built and verified 2026-07-13** (§7.4b — `location` module, 19+1 tests), ahead of the rest of this phase. Attendance started as a minimal check-in/check-out slice built the same day as Location (13 tests) and was extended to the full spec in this task, reusing rather than replacing the placeholder model. New: `POST /attendance/heartbeat` (not in the original endpoint list — added because connectivity-gap detection needs a distinct "still alive" signal, deliberately not coupled to Location's GPS ping), new shared `src/services/cloudinary.service.js` and `src/services/report.service.js`, `pdfkit` dependency added for `GET /attendance/report?format=pdf`. `CLOUDINARY_CLOUD_NAME`/`CLOUDINARY_API_KEY`/`CLOUDINARY_API_SECRET` are now **required** env vars. **Follow-up fix the same day:** the photo requirement on check-in/check-out was moved from client-side-only to server-side-enforced (400 if missing) — `location.test.js`'s end-to-end test updated to supply one. Full suite: **208 tests, all passing.** | Phase 0 (independent of 1–2) |
+| 3 | ✅ **Fully built and verified 2026-07-13:** Attendance (camera+geo capture, photos to Cloudinary, connectivity-gap detection, workingHours, team/org reports — §7.4, `attendance` module, 32 tests) + Leave (request/approve/mark-unapproved-absence, one-paid-leave-per-month quota resolved in §11.7 and confirmed enforced at approval time not request time — §7.5, `leave` module, 18 tests). ✅ **Live Location Tracking built and verified 2026-07-13** (§7.4b — `location` module, 19+1 tests), ahead of the rest of this phase. Attendance started as a minimal check-in/check-out slice built the same day as Location (13 tests) and was extended to the full spec in this task, reusing rather than replacing the placeholder model. New: `POST /attendance/heartbeat` (not in the original endpoint list — added because connectivity-gap detection needs a distinct "still alive" signal, deliberately not coupled to Location's GPS ping), new shared `src/services/cloudinary.service.js` and `src/services/report.service.js`, `pdfkit` dependency added for `GET /attendance/report?format=pdf`. `CLOUDINARY_CLOUD_NAME`/`CLOUDINARY_API_KEY`/`CLOUDINARY_API_SECRET` are now **required** env vars. **Follow-up fix the same day:** the photo requirement on check-in/check-out was moved from client-side-only to server-side-enforced (400 if missing) — `location.test.js`'s end-to-end test updated to supply one. Full suite: **208 tests, all passing.** ✅ **Frontend built — see §7.18**: Attendance/Leave/Location built together as three module folders sharing the same check-in/checkout state — check-in/out widget (native camera+geolocation, no new dependency), personal/team timeline with connectivity gaps as red bar segments, Leave request/scope-tabbed-list/admin-only-approve, and a new `/location` live-map + history-trail view (native Google Maps JS SDK, no wrapper library). **Same-phase follow-up:** `useCheckedInHeartbeatLoop` closed the loop gap flagged above — heartbeat every 3 minutes, location pings on whatever `GET /location/config` currently says, both starting on fresh check-in AND resuming identically on an already-checked-in mount, pausing on a hidden tab, and never throwing on a failed call. 32 tests total (25 + 7). | Phase 0 (independent of 1–2) |
 | 4 | ✅ **Built and verified 2026-07-13:** Payroll (§7.7, `payroll` module, 19 tests + 6 for `src/cron/payrollCron.test.js` = 25) — gross/net computed from Attendance + Leave + approved-only TravelLog mileage, `POST /payroll/run` (single-employee or bulk), `GET /payroll?scope=own\|all`, `GET /payroll/:id/payslip?format=pdf`, a monthly `node-cron` job (`src/cron/payrollCron.js`, new top-level directory). Two prerequisites closed first, in the same task: `User.baseSalary` (§6.1) and TravelLog's `pending`/`approved`/`rejected` approval workflow (§6.5/§7.6, resolving §11.4). `MILEAGE_RATE_PER_KM` is a new, optional env var (defaults to 10, a stated placeholder). **§11.5 resolved: record-keeping only for v1, no disbursement/payment-gateway integration.** **Correction (2026-07-13, follow-up):** `sales_associate`'s default `payroll` grant was fixed — §5 marks it "–" (no access), same as Manager, not "own payslip only" like Employee; an earlier build misread that "–" as blank and granted `sales_associate` the Employee default, now corrected in `permission.service.js`. Full suite: **263 tests, all passing** (verified via a real `npm test` run; the previously reported total also required correcting a miscount in the Transport/Travel approve/reject test count, 7 not 6). | Phase 3 |
 | 5 | ✅ **Built and verified:** Support/Tickets + Customer Portal (§7.0/§7.8, `ticket` module, 35 tests + 6 in `auth.test.js` for Customer Portal self-signup). Customer Portal accounts authenticate through the exact same auth system (`role: "customer"`) and are self-signed-up (not admin-created), verified by an email-domain match against `Contact`/`Customer` records rather than an admin grant. `Ticket` raise (internal admin/manager, or customer portal self-raise)/list (`scope=all\|assigned\|own`)/assign/status-change/comments/attachments (Cloudinary, reusing `uploadAttendancePhoto`'s shared client) all built per §7.8. New `tickets` `PERMISSION_REGISTRY` entry and a `customer` `RolePermissionTemplate`. §11.2 (category/status split) resolved as part of this build. Full suite: **304 tests, all passing** (verified via a real `npm test` run — a follow-up added 2 more tests: manager's `scope=all` checked explicitly alongside admin's, and history-ordering across a mixed comment/status-change sequence). | Phase 2 (needs Customer) |
 | 6 | ✅ **Built and verified 2026-07-13:** Transport/Travel (Google Maps Distance Matrix integration — §7.6, `transport` module, 28 tests). Auto-generates a `TravelLog` from Attendance checkout coords (direct call into `attendance.service.js#checkOut`, never fails checkout); manual entry with coords or a direct `distanceKm` override; `GET /travel-logs?scope=own\|team\|all` (mirrors Leave's shape) + `PATCH /travel-logs/:id/approve\|reject` (added 2026-07-13, resolves §11.4) + `GET /travel-logs/report` (reuses `src/services/report.service.js`). `GOOGLE_MAPS_API_KEY` is now a required env var. §11.4 (feeds payroll?) resolved 2026-07-13 — only `status: "approved"` entries feed Payroll mileage reimbursement. | Phase 3 |

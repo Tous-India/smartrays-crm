@@ -17,6 +17,7 @@ import TasksPage from "../pages/TasksPage";
 import AttendancePage from "../pages/AttendancePage";
 import AttendanceTeamPage from "../pages/AttendanceTeamPage";
 import LeavePage from "../pages/LeavePage";
+import LocationPage from "../pages/LocationPage";
 import PayrollPage from "../pages/PayrollPage";
 import PayslipDetailPage from "../pages/PayslipDetailPage";
 import TravelLogsPage from "../pages/TravelLogsPage";
@@ -62,6 +63,7 @@ export const router = createBrowserRouter(
           <Route path="attendance" element={<AttendancePage />} />
           <Route path="attendance/team" element={<AttendanceTeamPage />} />
           <Route path="leave" element={<LeavePage />} />
+          <Route path="location" element={<LocationPage />} />
           <Route path="payroll" element={<PayrollPage />} />
           <Route path="payroll/:id/payslip" element={<PayslipDetailPage />} />
           <Route path="travel-logs" element={<TravelLogsPage />} />

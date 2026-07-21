@@ -33,6 +33,66 @@
 }
 
 /*
+ * Login page background — a real outdoor solar-field photo
+ * (assets/login-bg.webp, sourced from smartrayssolutions.com) instead of
+ * the CSS gradient above, per the task that added this. Split across two
+ * absolutely-positioned layers (both painted by AuthLayout.jsx, behind the
+ * actual z-10 content) rather than one element, because the photo needs a
+ * blur that the scrim and the real content on top must NOT inherit:
+ *
+ * `.auth-photo-layer` — the photo itself, blurred. This photo has its own
+ * marketing text baked into the image ("GO SOLAR WITH SMARTRAYS SOLUTIONS")
+ * that a dark overlay alone cannot reliably hide: an overlay dims a photo's
+ * pixels *proportionally*, so it darkens the (already dark navy) baked text
+ * and the (very bright) sky behind it together, preserving most of their
+ * relative contrast — confirmed by testing an overlay as strong as 88%
+ * opacity in an earlier pass, which still left the text legible. A blur,
+ * unlike opacity, attacks legibility directly regardless of color/contrast.
+ * `scale(1.1)` compensates for the blur's edge-fringing (a Gaussian blur
+ * samples past the element's own edge for real image data; with nothing
+ * there it fades toward transparent) by pushing those fringed edges outside
+ * the visible viewport, so they're cropped away by the parent's
+ * `overflow-hidden` instead of ever being visible.
+ *
+ * `.auth-photo-scrim` — the exact same two-gradient dark scrim from the
+ * first version of this feature, unchanged, layered on top of (not mixed
+ * into) the blurred photo. Still doing real work on its own: the raw
+ * photo's brightness varies a lot (bright sky vs. dark panels) even once
+ * blurred, so without this neither the white logo/text on the left nor the
+ * glass card's contents would have reliable contrast everywhere. Stronger
+ * on the left (logo/tagline sit directly on the photo, no glass card behind
+ * them) than the right (the card's own `bg-white/12` + `backdrop-blur-xl`
+ * already does most of the contrast work there); the vertical component is
+ * for the stacked mobile layout, where the logo sits at the top of the
+ * photo rather than literally on its left.
+ */
+.auth-photo-layer {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  filter: blur(8px);
+  transform: scale(1.1);
+}
+
+.auth-photo-scrim {
+  background-image:
+    linear-gradient(
+      100deg,
+      rgba(6, 13, 26, 0.58) 0%,
+      rgba(6, 13, 26, 0.44) 35%,
+      rgba(6, 13, 26, 0.32) 65%,
+      rgba(6, 13, 26, 0.26) 100%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(4, 9, 20, 0.5) 0%,
+      rgba(4, 9, 20, 0.22) 30%,
+      rgba(4, 9, 20, 0.2) 68%,
+      rgba(4, 9, 20, 0.36) 100%
+    );
+}
+
+/*
  * Fixes browsers forcing an opaque yellow/white background on autofilled
  * inputs (`-webkit-autofill`) — invisible on an ordinary opaque input, but
  * breaks any translucent/glass surface (e.g. the login card's frosted-dark

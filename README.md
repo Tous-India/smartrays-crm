@@ -43,7 +43,9 @@ Full setup details, module list, and API reference: [`backend/README.md`](backen
 ```bash
 cd frontend
 npm install
-cp .env.example .env      # VITE_API_BASE_URL, default http://localhost:5000/api/v1
+cp .env.example .env      # VITE_API_BASE_URL (default http://localhost:5000/api/v1) and
+                          # VITE_GOOGLE_MAPS_API_KEY (powers the Location live-map view —
+                          # a separate, browser-exposed key from the backend's own)
 npm run dev
 ```
 
@@ -64,11 +66,16 @@ cd frontend && npm run dev    # http://localhost:5173
 ```
 
 **Every backend phase is now built** (Phase 9's backend half — Notification module, Web Push,
-lead follow-up reminder cron — closed it out). Frontend Phase 0 (scaffold, auth flow, routing
-shell) and the Leads frontend module (Table/Board/Detail/Import/Export — the reference
-implementation for later modules) are built — see
+lead follow-up reminder cron — closed it out). On the frontend: Phase 0 (scaffold, auth flow,
+routing shell), Leads (Table/Board/Detail/Import/Export — the reference implementation for
+later modules), Customers (List/Detail/Contracts/Contacts/Credentials/Activity), and
+Attendance + Leave + a new Location live-map view (built together — check-in/out widget with
+native camera/geolocation capture, connectivity-gap timeline, Leave request/approval, and a
+`/location` live-map + history-trail view via the native Google Maps JS SDK) are all built,
+including the client-side loop that actually submits `POST /attendance/heartbeat`/
+`POST /location/pings` on an interval while checked in (`useCheckedInHeartbeatLoop`) — see
 [`docs/project-status.md`](docs/project-status.md) for current progress and
 [`.context/final-plan.md`](.context/final-plan.md) §10 for the phased roadmap. Every other
-module's frontend (Customers, Attendance, ...) is still routing-skeleton + placeholder
+module's frontend (Payroll, Transport, Tickets, ...) is still routing-skeleton + placeholder
 pages only, filled in module-by-module in later frontend tasks; Phase 9's frontend half
 (Dashboard polish, PWA service worker for push receipt/display) is also still open.

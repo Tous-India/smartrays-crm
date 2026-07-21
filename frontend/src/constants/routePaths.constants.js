@@ -19,6 +19,7 @@ export const ROUTE_PATHS = {
   ATTENDANCE: "/attendance",
   ATTENDANCE_TEAM: "/attendance/team",
   LEAVE: "/leave",
+  LOCATION: "/location",
   PAYROLL: "/payroll",
   PAYSLIP_DETAIL: "/payroll/:id/payslip",
   TRAVEL_LOGS: "/travel-logs",

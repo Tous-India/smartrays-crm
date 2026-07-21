@@ -1,7 +1,7 @@
-import PlaceholderPage from "../components/PlaceholderPage";
+import LeaveListPage from "../modules/leave/components/LeaveListPage";
 
 function LeavePage() {
-  return <PlaceholderPage title="Leave" />;
+  return <LeaveListPage />;
 }
 
 export default LeavePage;

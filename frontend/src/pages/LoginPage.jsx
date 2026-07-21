@@ -30,7 +30,7 @@ function LoginPage() {
   }
 
   return (
-    <AuthLayout>
+    <AuthLayout background="photo">
       <Title level={3} className="!mb-1 !text-white !tracking-tight">
         Welcome back
       </Title>

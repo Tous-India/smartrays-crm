@@ -1,7 +1,7 @@
-import PlaceholderPage from "../components/PlaceholderPage";
+import PersonalAttendanceView from "../modules/attendance/components/PersonalAttendanceView";
 
 function AttendancePage() {
-  return <PlaceholderPage title="Attendance" />;
+  return <PersonalAttendanceView />;
 }
 
 export default AttendancePage;
