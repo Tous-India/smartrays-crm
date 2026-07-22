@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Modal, Form, Input, Select, InputNumber, DatePicker } from "antd";
+import { Modal, Form, Input, Select, InputNumber, DatePicker, Row, Col } from "antd";
 import dayjs from "dayjs";
 import useLeadSources from "../hooks/useLeadSources";
 import useUserDirectory from "../../../hooks/useUserDirectory";
@@ -61,51 +61,86 @@ function LeadFormModal({ open, mode, initialLead, onCancel, onSubmit, isSubmitti
       onCancel={handleCancel}
       confirmLoading={isSubmitting}
       destroyOnHidden
+      width={640}
     >
+      {/*
+        Compact multi-column grid (was one field per row, wasting horizontal
+        space on short fields like Name/Email) — `Row`/`Col` with `xs={24}`
+        collapses every group back to one-per-row on narrow widths (mobile/
+        tablet), rather than forcing a cramped 3-column layout there.
+        Grouping is by field length/expected-input-length, not a mechanical
+        "3 per row regardless of fit": short fields pair 2–3 per row, but
+        Follow-up Note and Notes (the only free-text fields here) each keep
+        their own full-width row even though Follow-up Note is a plain
+        single-line `Input`, not a `TextArea` — a short label can still want
+        a longer answer than a half-width column comfortably fits.
+      */}
       <Form form={form} layout="vertical">
-        <Form.Item label="Name" name="name" rules={[{ required: true, message: "Name is required" }]}>
-          <Input />
-        </Form.Item>
+        <Row gutter={16}>
+          <Col xs={24} sm={12}>
+            <Form.Item label="Name" name="name" rules={[{ required: true, message: "Name is required" }]}>
+              <Input />
+            </Form.Item>
+          </Col>
+          <Col xs={24} sm={12}>
+            <Form.Item label="Email" name="email">
+              <Input type="email" />
+            </Form.Item>
+          </Col>
+        </Row>
 
-        <Form.Item label="Email" name="email">
-          <Input type="email" />
-        </Form.Item>
+        <Row gutter={16}>
+          <Col xs={24} sm={12}>
+            <Form.Item label="Phone" name="phone">
+              <Input />
+            </Form.Item>
+          </Col>
+          <Col xs={24} sm={12}>
+            <Form.Item label="Company Name" name="companyName">
+              <Input />
+            </Form.Item>
+          </Col>
+        </Row>
 
-        <Form.Item label="Phone" name="phone">
-          <Input />
-        </Form.Item>
+        <Row gutter={16}>
+          {/* Source alone takes the full row when Owner isn't shown at all
+              (sales_associate) rather than leaving an empty half-row gap. */}
+          <Col xs={24} sm={canAssignOwner ? 12 : 24}>
+            <Form.Item label="Source" name="source">
+              <Select
+                allowClear
+                placeholder="Select a source"
+                options={sources.map((source) => ({ value: source.name, label: source.name }))}
+              />
+            </Form.Item>
+          </Col>
+          {canAssignOwner && (
+            <Col xs={24} sm={12}>
+              <Form.Item label="Owner" name="ownerId">
+                <Select
+                  allowClear
+                  placeholder="Defaults to you"
+                  options={users.map((user) => ({ value: user._id, label: user.name }))}
+                  showSearch
+                  optionFilterProp="label"
+                />
+              </Form.Item>
+            </Col>
+          )}
+        </Row>
 
-        <Form.Item label="Company Name" name="companyName">
-          <Input />
-        </Form.Item>
-
-        <Form.Item label="Source" name="source">
-          <Select
-            allowClear
-            placeholder="Select a source"
-            options={sources.map((source) => ({ value: source.name, label: source.name }))}
-          />
-        </Form.Item>
-
-        {canAssignOwner && (
-          <Form.Item label="Owner" name="ownerId">
-            <Select
-              allowClear
-              placeholder="Defaults to you"
-              options={users.map((user) => ({ value: user._id, label: user.name }))}
-              showSearch
-              optionFilterProp="label"
-            />
-          </Form.Item>
-        )}
-
-        <Form.Item label="Budget" name="budget">
-          <InputNumber min={0} style={{ width: "100%" }} />
-        </Form.Item>
-
-        <Form.Item label="Follow-up Date" name="followUpDate">
-          <DatePicker showTime style={{ width: "100%" }} />
-        </Form.Item>
+        <Row gutter={16}>
+          <Col xs={24} sm={12}>
+            <Form.Item label="Budget" name="budget">
+              <InputNumber min={0} style={{ width: "100%" }} />
+            </Form.Item>
+          </Col>
+          <Col xs={24} sm={12}>
+            <Form.Item label="Follow-up Date" name="followUpDate">
+              <DatePicker showTime style={{ width: "100%" }} />
+            </Form.Item>
+          </Col>
+        </Row>
 
         <Form.Item label="Follow-up Note" name="followUpNote">
           <Input />
