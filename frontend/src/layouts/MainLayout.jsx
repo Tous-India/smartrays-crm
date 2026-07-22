@@ -1,7 +1,24 @@
 import { useMemo, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { Layout, Menu, Avatar, Dropdown } from "antd";
-import { UserOutlined, LogoutOutlined, EditOutlined, SettingOutlined } from "@ant-design/icons";
+import { Layout, Menu, Avatar, Button } from "antd";
+import {
+  UserOutlined,
+  LogoutOutlined,
+  SettingOutlined,
+  DashboardOutlined,
+  RiseOutlined,
+  TeamOutlined,
+  CheckSquareOutlined,
+  CalendarOutlined,
+  FileDoneOutlined,
+  EnvironmentOutlined,
+  WalletOutlined,
+  CarOutlined,
+  CustomerServiceOutlined,
+  CreditCardOutlined,
+  SafetyCertificateOutlined,
+  BarChartOutlined,
+} from "@ant-design/icons";
 import useSessionStore from "../store/sessionStore";
 import { can } from "../utils/permission.utils";
 import { ROUTE_PATHS } from "../constants/routePaths.constants";
@@ -40,14 +57,42 @@ function resolveSelectedKey(pathname, candidateKeys) {
  * never shows a link the user has no grant for (UI convenience only — the
  * backend still enforces the real access check on every request).
  *
- * **Layout (UI/UX pass):** the sidebar is a fixed, full-viewport-height
- * column with three independent regions — logo (pinned), nav list (the
- * ONLY part that scrolls, via its own `overflow-y-auto`, if it's taller
- * than the viewport), and a footer (pinned) holding the current user's
- * identity + the single Edit Profile/Logout menu for the whole app (see
- * below). The right-hand column (top bar + page content) scrolls normally
- * with the page — only the sidebar's own internal regions are fixed/
- * independently-scrolling, not the whole app shell.
+ * **Layout:** the sidebar is a fixed, full-viewport-height column with
+ * three independent regions — logo (pinned), nav list (the ONLY part that
+ * scrolls, via its own `overflow-y-auto`, and only if genuinely taller than
+ * the viewport — invisible scrollbar even then, see `styles/index.css`),
+ * and a footer (pinned) holding the current user's identity + Sign out. The
+ * right-hand column (top bar + page content) scrolls normally with the
+ * page — only the sidebar's own internal regions are fixed/independently-
+ * scrolling, not the whole app shell.
+ *
+ * **Visual design — matched to a reference CRM's sidebar** (a screenshot
+ * supplied for this task, not a project asset, deleted after use), with
+ * ONE deliberate exception: the logo header stays WHITE (the established
+ * color-logo-on-white decision from the immediately preceding tasks),
+ * where the reference shows it dark. Everything else follows the
+ * reference as closely as reasonably possible — see the inline comments at
+ * each piece for what was matched exactly vs. adapted:
+ * - Nav section background: near-black (matched).
+ * - Icon + label per item (matched — the reference's own pattern; specific
+ *   icon choices are this project's own, mapped per module by convention).
+ * - Active item: a solid left accent bar + rounded-rect background tint
+ *   (matched shape/structure) — in this project's OWN brand green rather
+ *   than the reference's purple/violet accent (color substituted
+ *   deliberately, to stay consistent with the brand-green used everywhere
+ *   else in this app; the gradient-left-border tried in an earlier pass is
+ *   dropped entirely, since the reference shows a solid accent, not a
+ *   gradient).
+ * - Footer: avatar + name + gear icon, on the SAME dark background as the
+ *   nav list (a continuous dark region below the white header) — matches
+ *   the reference's own continuous-dark-below-header structure. Role text
+ *   under the name is an intentional ADDITION beyond the reference (which
+ *   only showed a name) — kept for the extra clarity, doesn't conflict
+ *   with anything the reference actually shows.
+ * - Sign out: a distinct, always-visible button below the avatar row
+ *   (matched — the reference shows this as its own element, not tucked
+ *   inside a click-to-open menu). Edit Profile, no longer sharing a
+ *   dropdown with Sign out, opens directly from clicking the avatar/name.
  */
 function MainLayout() {
   const user = useSessionStore((state) => state.user);
@@ -64,15 +109,31 @@ function MainLayout() {
 
   const menuItems = useMemo(() => {
     const allItems = [
-      { key: ROUTE_PATHS.DASHBOARD, label: "Dashboard", show: true },
-      { key: ROUTE_PATHS.LEADS, label: "Leads", show: can(user, "leads", "view") },
-      { key: ROUTE_PATHS.CUSTOMERS, label: "Customers", show: can(user, "customers", "view") },
-      { key: ROUTE_PATHS.TASKS, label: "Tasks", show: can(user, "tasks", "view") },
-      { key: ROUTE_PATHS.ATTENDANCE, label: "Attendance", show: true },
-      { key: ROUTE_PATHS.LEAVE, label: "Leave", show: true },
+      { key: ROUTE_PATHS.DASHBOARD, label: "Dashboard", icon: <DashboardOutlined />, show: true },
+      {
+        key: ROUTE_PATHS.LEADS,
+        label: "Leads",
+        icon: <RiseOutlined />,
+        show: can(user, "leads", "view"),
+      },
+      {
+        key: ROUTE_PATHS.CUSTOMERS,
+        label: "Customers",
+        icon: <TeamOutlined />,
+        show: can(user, "customers", "view"),
+      },
+      {
+        key: ROUTE_PATHS.TASKS,
+        label: "Tasks",
+        icon: <CheckSquareOutlined />,
+        show: can(user, "tasks", "view"),
+      },
+      { key: ROUTE_PATHS.ATTENDANCE, label: "Attendance", icon: <CalendarOutlined />, show: true },
+      { key: ROUTE_PATHS.LEAVE, label: "Leave", icon: <FileDoneOutlined />, show: true },
       {
         key: ROUTE_PATHS.LOCATION,
         label: "Location",
+        icon: <EnvironmentOutlined />,
         show:
           can(user, "location", "view") ||
           can(user, "location", "view_team") ||
@@ -81,26 +142,37 @@ function MainLayout() {
       {
         key: ROUTE_PATHS.PAYROLL,
         label: "Payroll",
+        icon: <WalletOutlined />,
         show: can(user, "payroll", "view") || can(user, "payroll", "run"),
       },
-      { key: ROUTE_PATHS.TRAVEL_LOGS, label: "Travel Logs", show: true },
+      { key: ROUTE_PATHS.TRAVEL_LOGS, label: "Travel Logs", icon: <CarOutlined />, show: true },
       {
         key: ROUTE_PATHS.TICKETS,
         label: "Tickets",
+        icon: <CustomerServiceOutlined />,
         show: can(user, "tickets", "view_assigned") || can(user, "tickets", "view_all"),
       },
-      { key: ROUTE_PATHS.PAYMENTS, label: "Payments", show: user?.role === "admin" },
-      { key: ROUTE_PATHS.AMC, label: "AMC", show: can(user, "amc", "view") },
-      { key: ROUTE_PATHS.REPORTS, label: "Reports", show: true },
+      {
+        key: ROUTE_PATHS.PAYMENTS,
+        label: "Payments",
+        icon: <CreditCardOutlined />,
+        show: user?.role === "admin",
+      },
+      {
+        key: ROUTE_PATHS.AMC,
+        label: "AMC",
+        icon: <SafetyCertificateOutlined />,
+        show: can(user, "amc", "view"),
+      },
+      { key: ROUTE_PATHS.REPORTS, label: "Reports", icon: <BarChartOutlined />, show: true },
     ];
 
     const items = allItems
       .filter((item) => item.show)
-      .map((item) => ({ key: item.key, label: <Link to={item.key}>{item.label}</Link> }));
+      .map((item) => ({ key: item.key, icon: item.icon, label: <Link to={item.key}>{item.label}</Link> }));
 
-    // Settings — a single flat nav item (no submenu/dropdown — see the
-    // sidebar redesign this replaced the collapsible-submenu approach
-    // with), linking straight to the Users tab of the combined SettingsPage
+    // Settings — a single flat nav item (no submenu/dropdown), linking
+    // straight to the Users tab of the combined SettingsPage
     // (`ROUTE_PATHS.SETTINGS_USERS` — `resolveSelectedKey`'s prefix match
     // still highlights this item while on `/settings/permissions` too,
     // since both live under `/settings`).
@@ -129,30 +201,16 @@ function MainLayout() {
     navigate(ROUTE_PATHS.LOGIN);
   }
 
-  const profileMenuItems = [
-    {
-      key: "edit-profile",
-      label: "Edit Profile",
-      icon: <EditOutlined />,
-      onClick: () => setIsEditProfileOpen(true),
-    },
-    {
-      key: "logout",
-      label: "Log out",
-      icon: <LogoutOutlined />,
-      onClick: handleLogout,
-    },
-  ];
-
   return (
     <Layout className="min-h-screen">
       {/*
-        Fixed full-viewport sidebar — cool off-white/light-grey background
-        (§ sidebar redesign, reversing the earlier dark-navy decision), three
-        independent regions, see the component comment above.
-        `insetInlineStart`/`insetInlineEnd` are the logical-property
-        equivalents of left/right, matching AntD's own RTL-aware convention
-        rather than hardcoding a direction.
+        Fixed full-viewport sidebar. `insetInlineStart`/`insetInlineEnd` are
+        the logical-property equivalents of left/right, matching AntD's own
+        RTL-aware convention rather than hardcoding a direction. Background
+        is set per-region below (white header, near-black nav+footer) —
+        this outer element carries no background of its own so there's no
+        flash of a third color between the two regions while the app
+        mounts.
       */}
       <Sider
         width={SIDER_WIDTH}
@@ -165,17 +223,14 @@ function MainLayout() {
           top: 0,
           bottom: 0,
           height: "100vh",
-          // Cool light grey (slight blue undertone), not a warm/cream
-          // off-white — picked and checked visually against that specific
-          // failure mode.
-          background: "#F4F6F9",
         }}
       >
-        {/* Top — pinned, never scrolls. Color (not white) horizontal logo —
-            the light background gives it real contrast again. Slightly
-            shorter than before (was h-16/64px) — every bit of fixed-region
-            height matters for the nav list fitting without scroll. */}
-        <div className="flex h-14 shrink-0 items-center justify-center border-b border-gray-200 px-4">
+        {/* Top — pinned, never scrolls. WHITE background (the one
+            deliberate exception to the reference, which shows this
+            section dark) — the color horizontal logo needs a light
+            background for real contrast, an already-established decision
+            from the immediately preceding tasks. */}
+        <div className="flex h-14 shrink-0 items-center justify-center border-b border-gray-200 bg-white px-4">
           <BrandLogo className="w-36" variant="color" layout="horizontal" />
         </div>
 
@@ -184,47 +239,59 @@ function MainLayout() {
             (styles/index.css) hides the scrollbar completely — still
             scrollable via wheel/trackpad/keyboard, just no visible bar —
             for the rare genuinely-short-viewport case, see that class's
-            own comment for the full history/reasoning. */}
-        <div className="app-sidebar-scroll min-h-0 flex-1 overflow-y-auto">
+            own comment for the full history/reasoning. Near-black
+            background matches the reference. */}
+        <div className="app-sidebar-scroll app-sidebar-dark min-h-0 flex-1 overflow-y-auto">
           <Menu
             mode="inline"
-            theme="light"
+            theme="dark"
             className="app-sidebar-menu !border-e-0"
             items={menuItems}
             selectedKeys={selectedKeys}
           />
         </div>
 
-        {/* Bottom — pinned, never scrolls. The single Edit Profile/Logout
-            menu for the whole app lives here (not duplicated in the top
-            bar) since this footer is always visible regardless of nav
-            scroll position or page content height. A small gear icon next
-            to the name is a second, always-visible entry point straight to
-            Settings (on top of the nav-list item above), per the sidebar
-            redesign. */}
-        <div className="shrink-0 border-t border-gray-200 p-2">
+        {/* Bottom — pinned, never scrolls. Same near-black background as
+            the nav list (a continuous dark region below the white header,
+            matching the reference). Clicking the avatar/name opens Edit
+            Profile directly; the gear icon is a second, always-visible
+            entry point straight to Settings; "Sign out" is its own
+            distinct, always-visible button below — matching the
+            reference's own separate sign-out element rather than burying
+            it in a click-to-open menu. */}
+        <div className="app-sidebar-dark shrink-0 border-t border-white/10 p-2">
           <div className="flex items-center gap-2">
-            <Dropdown menu={{ items: profileMenuItems }} placement="topLeft" trigger={["click"]}>
-              <div className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md p-1.5 hover:bg-black/5">
-                <Avatar icon={<UserOutlined />} size="small" />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium text-gray-800">{user?.name}</div>
-                  <div className="truncate text-xs text-gray-500">
-                    {USER_ROLE_LABELS[user?.role] || user?.role}
-                  </div>
+            <button
+              type="button"
+              onClick={() => setIsEditProfileOpen(true)}
+              className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md p-1.5 text-start hover:bg-white/10"
+            >
+              <Avatar icon={<UserOutlined />} size="small" className="!bg-brand-green" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium text-white">{user?.name}</div>
+                <div className="truncate text-xs text-white/50">
+                  {USER_ROLE_LABELS[user?.role] || user?.role}
                 </div>
               </div>
-            </Dropdown>
+            </button>
             {canViewSettings && (
               <Link
                 to={ROUTE_PATHS.SETTINGS_USERS}
                 title="Settings"
-                className="flex shrink-0 items-center justify-center rounded-md p-2 text-gray-500 hover:bg-black/5 hover:text-gray-800"
+                className="flex shrink-0 items-center justify-center rounded-md p-2 text-white/60 hover:bg-white/10 hover:text-white"
               >
                 <SettingOutlined />
               </Link>
             )}
           </div>
+          <Button
+            block
+            icon={<LogoutOutlined />}
+            onClick={handleLogout}
+            className="!mt-2 !border-white/15 !bg-transparent !text-white hover:!border-white/30 hover:!bg-white/10 hover:!text-white"
+          >
+            Sign out
+          </Button>
         </div>
       </Sider>
 

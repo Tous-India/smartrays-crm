@@ -66,10 +66,10 @@ describe("MainLayout — nav composition and Settings gating", () => {
   it("marks the current page's nav item as selected", async () => {
     renderLayout("/leads");
 
-    const leadsLink = await screen.findByRole("menuitem", { name: "Leads" });
+    const leadsLink = await screen.findByRole("menuitem", { name: /Leads/ });
     expect(leadsLink.className).toContain("ant-menu-item-selected");
 
-    const dashboardLink = screen.getByRole("menuitem", { name: "Dashboard" });
+    const dashboardLink = screen.getByRole("menuitem", { name: /Dashboard/ });
     expect(dashboardLink.className).not.toContain("ant-menu-item-selected");
   });
 });
@@ -87,13 +87,15 @@ describe("MainLayout — sidebar footer profile menu", () => {
     expect(screen.getByText("Admin")).toBeInTheDocument();
   });
 
-  it("opens the Edit Profile modal from the sidebar footer dropdown and submits via PATCH /users/:id", async () => {
+  it("opens the Edit Profile modal directly from clicking the sidebar footer's name/avatar and submits via PATCH /users/:id", async () => {
     userApi.updateUser.mockResolvedValue({ data: { data: {} } });
 
     renderLayout();
 
+    // No intermediate dropdown click — the avatar/name area opens Edit
+    // Profile directly now, since "Sign out" moved to its own distinct
+    // always-visible button (§ sidebar redesign, matching the reference).
     await userEvent.click(await screen.findByText("Priya Admin"));
-    await userEvent.click(await screen.findByText("Edit Profile"));
 
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     const nameInput = screen.getByLabelText("Name");
@@ -139,5 +141,31 @@ describe("MainLayout — sidebar footer profile menu", () => {
 
     await screen.findByText("Sam Sales");
     expect(screen.queryByTitle("Settings")).not.toBeInTheDocument();
+  });
+
+  it("renders a distinct, always-visible 'Sign out' button (not tucked inside a menu) that logs out and redirects to /login", async () => {
+    useSessionStore.setState({
+      user: ADMIN_USER,
+      isAuthenticated: true,
+      isLoading: false,
+      logout: vi.fn().mockResolvedValue(undefined),
+    });
+
+    render(
+      <MemoryRouter initialEntries={["/dashboard"]}>
+        <Routes>
+          <Route element={<MainLayout />}>
+            <Route path="/dashboard" element={<div>Dashboard Content</div>} />
+          </Route>
+          <Route path="/login" element={<div>Login Page</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    const signOutButton = await screen.findByRole("button", { name: /Sign out/ });
+    await userEvent.click(signOutButton);
+
+    expect(useSessionStore.getState().logout).toHaveBeenCalled();
+    expect(await screen.findByText("Login Page")).toBeInTheDocument();
   });
 });

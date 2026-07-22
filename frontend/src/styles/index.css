@@ -148,28 +148,33 @@ input:-webkit-autofill:focus {
 }
 
 /*
- * MainLayout's sidebar nav (`.app-sidebar-menu`) — recolored for the light
- * (cool off-white, `#F4F6F9`) sidebar background (§ sidebar redesign,
- * reversing the earlier dark-navy version, hence AntD's `light` Menu theme
- * now instead of `dark`). Selected/hover are still overridden rather than
- * left at AntD's own defaults: a brand-green-tinted background fill is the
- * ONLY signal for the active item (no left accent bar this time — a
- * deliberate reversal from the dark-sidebar version, which used one) so the
- * current page reads as current via the fill alone.
+ * MainLayout's sidebar — near-black nav + footer (`.app-sidebar-dark`),
+ * matched to a reference CRM's sidebar design (screenshot supplied for
+ * that task, not kept in the repo), with the logo header staying WHITE as
+ * the one deliberate exception — see `MainLayout.jsx`'s own comment for the
+ * full rationale. This reverses the immediately preceding task's light
+ * (`#F4F6F9`) sidebar background back to dark — two sidebar-background
+ * reversals in close succession, both deliberate, driven by the two tasks'
+ * own explicit instructions, not indecision.
  */
-.app-sidebar-menu.ant-menu-light {
+.app-sidebar-dark {
+  background: #14171f;
+}
+
+.app-sidebar-menu.ant-menu-dark {
   background: transparent;
 }
 
 .app-sidebar-menu .ant-menu-item,
 .app-sidebar-menu .ant-menu-submenu-title {
-  color: #4b5563; /* gray-600 */
+  color: rgba(255, 255, 255, 0.65);
   /* Tightened twice now: 40px (AntD default) → 32px (first pass) → 28px
      (this pass, after the first pass's scrollbar turned out to still show
      up in some environments — see the scrollbar-investigation task's
-     findings below). */
+     findings). */
   height: 28px !important;
   line-height: 28px !important;
+  border-radius: 8px;
 }
 
 .app-sidebar-menu .ant-menu-item,
@@ -184,20 +189,41 @@ input:-webkit-autofill:focus {
   padding-block: 4px !important;
 }
 
-.app-sidebar-menu .ant-menu-item:hover,
-.app-sidebar-menu .ant-menu-submenu-title:hover {
-  color: #1f2937; /* gray-800 */
-  background: rgba(0, 0, 0, 0.04) !important;
+.app-sidebar-menu .ant-menu-item .anticon,
+.app-sidebar-menu .ant-menu-submenu-title .anticon {
+  color: rgba(255, 255, 255, 0.45);
 }
 
+.app-sidebar-menu .ant-menu-item:hover,
+.app-sidebar-menu .ant-menu-submenu-title:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+.app-sidebar-menu .ant-menu-item:hover .anticon {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/*
+ * Active item — a rounded-rect background tint + a solid left accent bar,
+ * matching the reference's own "Tasks" active-state treatment structurally
+ * (shape/positioning), in this project's brand green rather than the
+ * reference's purple/violet (a deliberate color substitution — see
+ * `MainLayout.jsx`'s comment). A solid bar, not the gradient tried in an
+ * earlier pass — the reference itself shows a solid accent, not a gradient.
+ */
 .app-sidebar-menu .ant-menu-item-selected {
-  background: rgba(29, 131, 67, 0.1) !important;
-  color: var(--color-brand-green) !important;
+  background: rgba(29, 131, 67, 0.22) !important;
+  color: #ffffff !important;
   font-weight: 600;
-  /* No left accent bar (unlike the dark-sidebar version) — the background
-     fill alone is the active-state signal now, and AntD's own light-theme
-     selected-state indicator (a colored bar) is suppressed to match. */
-  border-inline-start: none !important;
+  border-inline-start: 3px solid var(--color-brand-green);
+  /* Offsets the 3px accent bar's own width so selected/unselected item text
+     still lines up with each other instead of visibly shifting right. */
+  padding-inline-start: calc(1rem - 3px) !important;
+}
+
+.app-sidebar-menu .ant-menu-item-selected .anticon {
+  color: #ffffff;
 }
 
 .app-sidebar-menu .ant-menu-item-selected::after {
@@ -205,7 +231,7 @@ input:-webkit-autofill:focus {
 }
 
 .app-sidebar-menu .ant-menu-item-selected:hover {
-  background: rgba(29, 131, 67, 0.16) !important;
+  background: rgba(29, 131, 67, 0.28) !important;
 }
 
 /*
