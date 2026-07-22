@@ -164,11 +164,24 @@ input:-webkit-autofill:focus {
 .app-sidebar-menu .ant-menu-item,
 .app-sidebar-menu .ant-menu-submenu-title {
   color: #4b5563; /* gray-600 */
-  /* ~20% shorter than AntD's own 40px default inline-item height (§ sidebar
-     redesign #8) — enough for the full nav list to fit within a typical
-     desktop viewport height without the list ever needing to scroll. */
-  height: 32px !important;
-  line-height: 32px !important;
+  /* Tightened twice now: 40px (AntD default) → 32px (first pass) → 28px
+     (this pass, after the first pass's scrollbar turned out to still show
+     up in some environments — see the scrollbar-investigation task's
+     findings below). */
+  height: 28px !important;
+  line-height: 28px !important;
+}
+
+.app-sidebar-menu .ant-menu-item,
+.app-sidebar-menu .ant-menu-submenu {
+  /* AntD's own inline-menu default puts ~4px vertical margin between
+     items — halved here, the same "every pixel counts" reasoning as the
+     item height reduction above. */
+  margin-block: 2px !important;
+}
+
+.app-sidebar-menu.ant-menu-root.ant-menu-inline {
+  padding-block: 4px !important;
 }
 
 .app-sidebar-menu .ant-menu-item:hover,
@@ -196,38 +209,34 @@ input:-webkit-autofill:focus {
 }
 
 /*
- * Slim, custom-styled scrollbar for the sidebar's nav-list scroll region
- * (`.app-sidebar-scroll`) — replaces the browser's default thick
- * grey-track-plus-arrow-buttons scrollbar, which reads as visibly out of
- * place against the rest of this app's design. `scrollbar-width: thin` is
- * Firefox's own equivalent of the `::-webkit-scrollbar` rules below (no
- * single standard property covers both engines). Combined with the shorter
- * item height above (§8), the nav list fits without scrolling in the
- * common case — this only ever becomes visible on a genuinely short
- * viewport, and even then reads as a subtle line, not a heavy UI control.
+ * Sidebar nav-list scroll region (`.app-sidebar-scroll`) — FULLY invisible
+ * scrollbar, not just a slim styled one. History: the first pass here used
+ * a thin custom `::-webkit-scrollbar` (visible track + thumb), reasoned to
+ * only matter below a short-viewport threshold since the shortened item
+ * height made the list fit without scrolling in the ordinary case. Kept
+ * showing up anyway in some environments (OS-level "always show
+ * scrollbars," non-Chromium engines not fully honoring the
+ * `::-webkit-scrollbar-button{display:none}` suppression, browser zoom/DPI
+ * scaling producing a few px of genuine overflow that a 100%-zoom headless
+ * check doesn't reproduce) — a real, reported gap this task's investigation
+ * couldn't reproduce exactly, but the fix doesn't need to be conditional on
+ * reproducing it: since there is normally nothing to scroll at all (content
+ * fits down to ~450px of available nav-list height — see the class comment
+ * on `.app-sidebar-menu`'s item height above), a scrollbar only ever
+ * renders in the rare case a viewport genuinely is that short. Per this
+ * task's own explicit instruction: hide it completely in that case (still
+ * fully scrollable via wheel/trackpad/keyboard, just no visible bar at
+ * all) rather than trying to make an always-invisible-until-needed thin
+ * bar behave consistently across every engine/OS combination.
  */
 .app-sidebar-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+  scrollbar-width: none; /* Firefox */
 }
 
 .app-sidebar-scroll::-webkit-scrollbar {
-  width: 6px;
-}
-
-.app-sidebar-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.app-sidebar-scroll::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0.2);
-  border-radius: 3px;
-}
-
-.app-sidebar-scroll::-webkit-scrollbar-button {
-  display: none;
-  height: 0;
+  display: none; /* Chromium/WebKit (Chrome, Edge, Safari) */
   width: 0;
+  height: 0;
 }
 
 /*

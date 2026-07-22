@@ -172,15 +172,19 @@ function MainLayout() {
         }}
       >
         {/* Top — pinned, never scrolls. Color (not white) horizontal logo —
-            the light background gives it real contrast again. */}
-        <div className="flex h-16 shrink-0 items-center justify-center border-b border-gray-200 px-4">
-          <BrandLogo className="w-40" variant="color" layout="horizontal" />
+            the light background gives it real contrast again. Slightly
+            shorter than before (was h-16/64px) — every bit of fixed-region
+            height matters for the nav list fitting without scroll. */}
+        <div className="flex h-14 shrink-0 items-center justify-center border-b border-gray-200 px-4">
+          <BrandLogo className="w-36" variant="color" layout="horizontal" />
         </div>
 
         {/* Middle — the ONLY scrollable region, and only if the list is
             actually taller than the space left for it. `app-sidebar-scroll`
-            gives it a slim custom scrollbar (styles/index.css) instead of
-            the native OS one, for the rare case it's actually needed. */}
+            (styles/index.css) hides the scrollbar completely — still
+            scrollable via wheel/trackpad/keyboard, just no visible bar —
+            for the rare genuinely-short-viewport case, see that class's
+            own comment for the full history/reasoning. */}
         <div className="app-sidebar-scroll min-h-0 flex-1 overflow-y-auto">
           <Menu
             mode="inline"
@@ -198,10 +202,10 @@ function MainLayout() {
             to the name is a second, always-visible entry point straight to
             Settings (on top of the nav-list item above), per the sidebar
             redesign. */}
-        <div className="shrink-0 border-t border-gray-200 p-3">
+        <div className="shrink-0 border-t border-gray-200 p-2">
           <div className="flex items-center gap-2">
             <Dropdown menu={{ items: profileMenuItems }} placement="topLeft" trigger={["click"]}>
-              <div className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md p-2 hover:bg-black/5">
+              <div className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md p-1.5 hover:bg-black/5">
                 <Avatar icon={<UserOutlined />} size="small" />
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-medium text-gray-800">{user?.name}</div>
