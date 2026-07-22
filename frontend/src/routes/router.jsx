@@ -1,4 +1,4 @@
-import { createBrowserRouter, createRoutesFromElements, Route } from "react-router-dom";
+import { createBrowserRouter, createRoutesFromElements, Route, Navigate } from "react-router-dom";
 import ProtectedRoute from "./ProtectedRoute";
 import RootRedirect from "./RootRedirect";
 import MainLayout from "../layouts/MainLayout";
@@ -26,8 +26,7 @@ import TicketDetailPage from "../pages/TicketDetailPage";
 import PaymentsPage from "../pages/PaymentsPage";
 import AmcPage from "../pages/AmcPage";
 import ReportsPage from "../pages/ReportsPage";
-import PermissionSettingsPage from "../pages/PermissionSettingsPage";
-import UserManagementPage from "../pages/UserManagementPage";
+import SettingsPage from "../pages/SettingsPage";
 import PortalHomePage from "../pages/PortalHomePage";
 import NotFoundPage from "../pages/NotFoundPage";
 
@@ -73,8 +72,13 @@ export const router = createBrowserRouter(
           <Route path="payments" element={<PaymentsPage />} />
           <Route path="amc" element={<AmcPage />} />
           <Route path="reports" element={<ReportsPage />} />
-          <Route path="settings/permissions" element={<PermissionSettingsPage />} />
-          <Route path="settings/users" element={<UserManagementPage />} />
+          {/* Bare /settings redirects to the Users tab — the sidebar's one
+              flat "Settings" nav item links here. Both concrete routes
+              render the same SettingsPage, which picks the active tab from
+              the current path (§ sidebar redesign). */}
+          <Route path="settings" element={<Navigate to="settings/users" replace />} />
+          <Route path="settings/permissions" element={<SettingsPage />} />
+          <Route path="settings/users" element={<SettingsPage />} />
         </Route>
 
         <Route element={<PortalLayout />}>

@@ -56,10 +56,13 @@ function MainLayout() {
   const location = useLocation();
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
 
-  const menuItems = useMemo(() => {
-    const canViewUsers = can(user, "users", "view_all") || can(user, "users", "view_team");
-    const canManagePermissions = can(user, "permissions", "manage");
+  const canViewSettings = useMemo(() => {
+    return (
+      can(user, "users", "view_all") || can(user, "users", "view_team") || can(user, "permissions", "manage")
+    );
+  }, [user]);
 
+  const menuItems = useMemo(() => {
     const allItems = [
       { key: ROUTE_PATHS.DASHBOARD, label: "Dashboard", show: true },
       { key: ROUTE_PATHS.LEADS, label: "Leads", show: can(user, "leads", "view") },
@@ -95,38 +98,31 @@ function MainLayout() {
       .filter((item) => item.show)
       .map((item) => ({ key: item.key, label: <Link to={item.key}>{item.label}</Link> }));
 
-    // Settings — User Management + Permissions grouped under one collapsible
-    // submenu rather than flat top-level items (§ UI/UX pass), shown only if
-    // at least one child would actually be visible to this user.
-    if (canViewUsers || canManagePermissions) {
+    // Settings — a single flat nav item (no submenu/dropdown — see the
+    // sidebar redesign this replaced the collapsible-submenu approach
+    // with), linking straight to the Users tab of the combined SettingsPage
+    // (`ROUTE_PATHS.SETTINGS_USERS` — `resolveSelectedKey`'s prefix match
+    // still highlights this item while on `/settings/permissions` too,
+    // since both live under `/settings`).
+    if (canViewSettings) {
       items.push({
-        key: "settings",
-        label: "Settings",
+        // Keyed to the bare `/settings` prefix (not `SETTINGS_USERS`
+        // specifically) so `resolveSelectedKey`'s prefix match still
+        // highlights this item while on `/settings/permissions` too — both
+        // concrete routes live under this same prefix.
+        key: ROUTE_PATHS.SETTINGS,
         icon: <SettingOutlined />,
-        children: [
-          canViewUsers && {
-            key: ROUTE_PATHS.SETTINGS_USERS,
-            label: <Link to={ROUTE_PATHS.SETTINGS_USERS}>User Management</Link>,
-          },
-          canManagePermissions && {
-            key: ROUTE_PATHS.SETTINGS_PERMISSIONS,
-            label: <Link to={ROUTE_PATHS.SETTINGS_PERMISSIONS}>Permission Settings</Link>,
-          },
-        ].filter(Boolean),
+        label: <Link to={ROUTE_PATHS.SETTINGS_USERS}>Settings</Link>,
       });
     }
 
     return items;
-  }, [user]);
+  }, [user, canViewSettings]);
 
-  const allKnownKeys = useMemo(
-    () => menuItems.flatMap((item) => (item.children ? item.children.map((child) => child.key) : [item.key])),
-    [menuItems]
-  );
+  const allKnownKeys = useMemo(() => menuItems.map((item) => item.key), [menuItems]);
 
   const selectedKey = resolveSelectedKey(location.pathname, allKnownKeys);
   const selectedKeys = selectedKey ? [selectedKey] : [];
-  const defaultOpenKeys = selectedKey?.startsWith("/settings") ? ["settings"] : [];
 
   async function handleLogout() {
     await logout();
@@ -151,11 +147,12 @@ function MainLayout() {
   return (
     <Layout className="min-h-screen">
       {/*
-        Fixed full-viewport sidebar (dark navy, per the brand token — not a
-        generic black) — three independent regions, see the component
-        comment above. `insetInlineStart`/`insetInlineEnd` are the
-        logical-property equivalents of left/right, matching AntD's own
-        RTL-aware convention rather than hardcoding a direction.
+        Fixed full-viewport sidebar — cool off-white/light-grey background
+        (§ sidebar redesign, reversing the earlier dark-navy decision), three
+        independent regions, see the component comment above.
+        `insetInlineStart`/`insetInlineEnd` are the logical-property
+        equivalents of left/right, matching AntD's own RTL-aware convention
+        rather than hardcoding a direction.
       */}
       <Sider
         width={SIDER_WIDTH}
@@ -168,43 +165,62 @@ function MainLayout() {
           top: 0,
           bottom: 0,
           height: "100vh",
-          background: "var(--color-brand-navy)",
+          // Cool light grey (slight blue undertone), not a warm/cream
+          // off-white — picked and checked visually against that specific
+          // failure mode.
+          background: "#F4F6F9",
         }}
       >
-        {/* Top — pinned, never scrolls. */}
-        <div className="flex h-16 shrink-0 items-center justify-center border-b border-white/10 px-4">
-          <BrandLogo className="w-40" variant="white" layout="horizontal" />
+        {/* Top — pinned, never scrolls. Color (not white) horizontal logo —
+            the light background gives it real contrast again. */}
+        <div className="flex h-16 shrink-0 items-center justify-center border-b border-gray-200 px-4">
+          <BrandLogo className="w-40" variant="color" layout="horizontal" />
         </div>
 
         {/* Middle — the ONLY scrollable region, and only if the list is
-            actually taller than the space left for it. */}
-        <div className="min-h-0 flex-1 overflow-y-auto">
+            actually taller than the space left for it. `app-sidebar-scroll`
+            gives it a slim custom scrollbar (styles/index.css) instead of
+            the native OS one, for the rare case it's actually needed. */}
+        <div className="app-sidebar-scroll min-h-0 flex-1 overflow-y-auto">
           <Menu
             mode="inline"
-            theme="dark"
+            theme="light"
             className="app-sidebar-menu !border-e-0"
             items={menuItems}
             selectedKeys={selectedKeys}
-            defaultOpenKeys={defaultOpenKeys}
           />
         </div>
 
         {/* Bottom — pinned, never scrolls. The single Edit Profile/Logout
             menu for the whole app lives here (not duplicated in the top
             bar) since this footer is always visible regardless of nav
-            scroll position or page content height. */}
-        <div className="shrink-0 border-t border-white/10 p-3">
-          <Dropdown menu={{ items: profileMenuItems }} placement="topLeft" trigger={["click"]}>
-            <div className="flex cursor-pointer items-center gap-2 rounded-md p-2 hover:bg-white/10">
-              <Avatar icon={<UserOutlined />} size="small" />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium text-white">{user?.name}</div>
-                <div className="truncate text-xs text-white/60">
-                  {USER_ROLE_LABELS[user?.role] || user?.role}
+            scroll position or page content height. A small gear icon next
+            to the name is a second, always-visible entry point straight to
+            Settings (on top of the nav-list item above), per the sidebar
+            redesign. */}
+        <div className="shrink-0 border-t border-gray-200 p-3">
+          <div className="flex items-center gap-2">
+            <Dropdown menu={{ items: profileMenuItems }} placement="topLeft" trigger={["click"]}>
+              <div className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md p-2 hover:bg-black/5">
+                <Avatar icon={<UserOutlined />} size="small" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-medium text-gray-800">{user?.name}</div>
+                  <div className="truncate text-xs text-gray-500">
+                    {USER_ROLE_LABELS[user?.role] || user?.role}
+                  </div>
                 </div>
               </div>
-            </div>
-          </Dropdown>
+            </Dropdown>
+            {canViewSettings && (
+              <Link
+                to={ROUTE_PATHS.SETTINGS_USERS}
+                title="Settings"
+                className="flex shrink-0 items-center justify-center rounded-md p-2 text-gray-500 hover:bg-black/5 hover:text-gray-800"
+              >
+                <SettingOutlined />
+              </Link>
+            )}
+          </div>
         </div>
       </Sider>
 

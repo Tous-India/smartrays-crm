@@ -28,6 +28,10 @@ export const ROUTE_PATHS = {
   PAYMENTS: "/payments",
   AMC: "/amc",
   REPORTS: "/reports",
+  // Bare `/settings` redirects to `SETTINGS_USERS` — the sidebar's single
+  // flat "Settings" nav item links here; the two concrete routes below are
+  // rendered as tabs on the same `SettingsPage`, not separate pages.
+  SETTINGS: "/settings",
   SETTINGS_PERMISSIONS: "/settings/permissions",
   SETTINGS_USERS: "/settings/users",
   PORTAL: "/portal",

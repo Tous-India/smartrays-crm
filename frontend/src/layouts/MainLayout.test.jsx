@@ -38,14 +38,16 @@ describe("MainLayout — nav composition and Settings gating", () => {
     useSessionStore.setState({ user: ADMIN_USER, isAuthenticated: true, isLoading: false });
   });
 
-  it("shows a Settings group (User Management + Permission Settings) for an admin", async () => {
+  it("shows a single flat Settings nav item (no submenu) linking to the Users tab, for an admin", async () => {
     renderLayout();
 
-    const settingsGroup = await screen.findByText("Settings");
-    await userEvent.click(settingsGroup);
-
-    expect(await screen.findByText("User Management")).toBeInTheDocument();
-    expect(screen.getByText("Permission Settings")).toBeInTheDocument();
+    const settingsItem = await screen.findByRole("menuitem", { name: /Settings/ });
+    // A flat link straight to /settings/users — not an expandable submenu,
+    // so there should be no separate "User Management"/"Permission
+    // Settings" child items rendered inline in the sidebar itself.
+    expect(settingsItem.querySelector("a")).toHaveAttribute("href", "/settings/users");
+    expect(screen.queryByText("User Management")).not.toBeInTheDocument();
+    expect(screen.queryByText("Permission Settings")).not.toBeInTheDocument();
   });
 
   it("hides the Settings group entirely for a user with neither users.* nor permissions.manage", async () => {
@@ -116,5 +118,26 @@ describe("MainLayout — sidebar footer profile menu", () => {
     // not also the top bar (§ UI/UX pass: one location for this menu, not
     // duplicated in both places).
     expect(screen.getAllByText("Priya Admin")).toHaveLength(1);
+  });
+
+  it("renders a Settings gear icon next to the name, linking straight to /settings/users", async () => {
+    renderLayout();
+
+    await screen.findByText("Priya Admin");
+    const settingsLink = screen.getByTitle("Settings");
+    expect(settingsLink).toHaveAttribute("href", "/settings/users");
+  });
+
+  it("hides the footer's Settings gear icon for a user with no Settings access", async () => {
+    useSessionStore.setState({
+      user: { _id: "sales-1", name: "Sam Sales", role: "sales_associate", permissions: {} },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    renderLayout();
+
+    await screen.findByText("Sam Sales");
+    expect(screen.queryByTitle("Settings")).not.toBeInTheDocument();
   });
 });

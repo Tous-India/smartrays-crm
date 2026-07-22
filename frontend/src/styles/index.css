@@ -148,47 +148,86 @@ input:-webkit-autofill:focus {
 }
 
 /*
- * MainLayout's sidebar nav (`.app-sidebar-menu`) — AntD's built-in `dark`
- * Menu theme gives light text for free, but its own selected/hover colors
- * are generic (a translucent white), not the brand. Overridden here so the
- * active page is obviously current-location via a real brand-green accent
- * (both a tinted background and a left bar), not just a slightly-different
- * gray — the exact gap flagged in the UI/UX pass this was added for.
+ * MainLayout's sidebar nav (`.app-sidebar-menu`) — recolored for the light
+ * (cool off-white, `#F4F6F9`) sidebar background (§ sidebar redesign,
+ * reversing the earlier dark-navy version, hence AntD's `light` Menu theme
+ * now instead of `dark`). Selected/hover are still overridden rather than
+ * left at AntD's own defaults: a brand-green-tinted background fill is the
+ * ONLY signal for the active item (no left accent bar this time — a
+ * deliberate reversal from the dark-sidebar version, which used one) so the
+ * current page reads as current via the fill alone.
  */
-.app-sidebar-menu.ant-menu-dark {
+.app-sidebar-menu.ant-menu-light {
   background: transparent;
 }
 
 .app-sidebar-menu .ant-menu-item,
 .app-sidebar-menu .ant-menu-submenu-title {
-  color: rgba(255, 255, 255, 0.75);
+  color: #4b5563; /* gray-600 */
+  /* ~20% shorter than AntD's own 40px default inline-item height (§ sidebar
+     redesign #8) — enough for the full nav list to fit within a typical
+     desktop viewport height without the list ever needing to scroll. */
+  height: 32px !important;
+  line-height: 32px !important;
 }
 
 .app-sidebar-menu .ant-menu-item:hover,
 .app-sidebar-menu .ant-menu-submenu-title:hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.08) !important;
+  color: #1f2937; /* gray-800 */
+  background: rgba(0, 0, 0, 0.04) !important;
 }
 
 .app-sidebar-menu .ant-menu-item-selected {
-  background: rgba(29, 131, 67, 0.28) !important;
-  color: #ffffff !important;
-  border-inline-start: 3px solid var(--color-brand-green);
-  /* Offsets the 3px accent bar's own width so selected/unselected item text
-     still lines up with each other instead of visibly shifting right. */
-  padding-inline-start: calc(1rem - 3px) !important;
+  background: rgba(29, 131, 67, 0.1) !important;
+  color: var(--color-brand-green) !important;
+  font-weight: 600;
+  /* No left accent bar (unlike the dark-sidebar version) — the background
+     fill alone is the active-state signal now, and AntD's own light-theme
+     selected-state indicator (a colored bar) is suppressed to match. */
+  border-inline-start: none !important;
+}
+
+.app-sidebar-menu .ant-menu-item-selected::after {
+  border-inline-end: none !important;
 }
 
 .app-sidebar-menu .ant-menu-item-selected:hover {
-  background: rgba(29, 131, 67, 0.34) !important;
+  background: rgba(29, 131, 67, 0.16) !important;
 }
 
-.app-sidebar-menu .ant-menu-submenu-open > .ant-menu-submenu-title {
-  color: #ffffff;
+/*
+ * Slim, custom-styled scrollbar for the sidebar's nav-list scroll region
+ * (`.app-sidebar-scroll`) — replaces the browser's default thick
+ * grey-track-plus-arrow-buttons scrollbar, which reads as visibly out of
+ * place against the rest of this app's design. `scrollbar-width: thin` is
+ * Firefox's own equivalent of the `::-webkit-scrollbar` rules below (no
+ * single standard property covers both engines). Combined with the shorter
+ * item height above (§8), the nav list fits without scrolling in the
+ * common case — this only ever becomes visible on a genuinely short
+ * viewport, and even then reads as a subtle line, not a heavy UI control.
+ */
+.app-sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
 }
 
-.app-sidebar-menu .ant-menu-sub.ant-menu-inline {
-  background: rgba(0, 0, 0, 0.12);
+.app-sidebar-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.app-sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-sidebar-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.app-sidebar-scroll::-webkit-scrollbar-button {
+  display: none;
+  height: 0;
+  width: 0;
 }
 
 /*
