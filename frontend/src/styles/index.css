@@ -164,21 +164,25 @@ input:-webkit-autofill:focus {
 }
 
 /*
- * MainLayout's sidebar — brand-navy nav + footer (`.app-sidebar-dark`,
+ * MainLayout's sidebar — darker navy nav + footer (`.app-sidebar-dark`,
  * name kept even though the color is no longer literally black — it still
  * means "the dark region," as opposed to the white logo header), with the
  * logo header staying WHITE as the one deliberate exception — see
- * `MainLayout.jsx`'s own comment for the full rationale. History: this
- * region was near-black (`#14171f`) to match a reference CRM's sidebar,
- * then changed to `var(--color-brand-navy)` (the same token already used
- * for the top bar and AntD's `colorPrimary`) so the whole app shares one
- * consistent dark brand color instead of introducing a second, unrelated
- * dark tone. Nav text/icon opacities and the active-item treatment below
- * were re-checked against this navy, not just carried over assuming the
- * near-black contrast math still held.
+ * `MainLayout.jsx`'s own comment for the full rationale. History: near-black
+ * (`#14171f`, matching a reference CRM's sidebar) → `var(--color-brand-navy)`
+ * (`#163b78`, the same token as the top bar/AntD `colorPrimary`) → this
+ * darker `#072049`, HARDCODED here rather than pushed into the
+ * `--color-brand-navy` token itself — this task's own scope is explicitly
+ * the nav section only, same as the previous navy change, and the token is
+ * shared with the top bar, buttons, and every other `colorPrimary`-driven
+ * AntD element app-wide; changing the token would have darkened all of
+ * those too, well outside what was asked. Nav text/icon opacities and the
+ * active-item gradient below were re-checked against this darker shade
+ * (see each rule's own note on what changed), not just carried over
+ * assuming the `#163b78` contrast math still held at `#072049`.
  */
 .app-sidebar-dark {
-  background: var(--color-brand-navy);
+  background: #072049;
 }
 
 .app-sidebar-menu.ant-menu-dark {
@@ -207,7 +211,7 @@ input:-webkit-autofill:focus {
   /* AntD's own inline-menu default puts ~4px vertical margin between
      items — halved here, the same "every pixel counts" reasoning as the
      item height reduction above. */
-  margin-block: 2px !important;
+  margin-block: 10px !important;
 }
 
 .app-sidebar-menu.ant-menu-root.ant-menu-inline {
