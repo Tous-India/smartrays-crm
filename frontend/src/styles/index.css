@@ -164,17 +164,21 @@ input:-webkit-autofill:focus {
 }
 
 /*
- * MainLayout's sidebar — near-black nav + footer (`.app-sidebar-dark`),
- * matched to a reference CRM's sidebar design (screenshot supplied for
- * that task, not kept in the repo), with the logo header staying WHITE as
- * the one deliberate exception — see `MainLayout.jsx`'s own comment for the
- * full rationale. This reverses the immediately preceding task's light
- * (`#F4F6F9`) sidebar background back to dark — two sidebar-background
- * reversals in close succession, both deliberate, driven by the two tasks'
- * own explicit instructions, not indecision.
+ * MainLayout's sidebar — brand-navy nav + footer (`.app-sidebar-dark`,
+ * name kept even though the color is no longer literally black — it still
+ * means "the dark region," as opposed to the white logo header), with the
+ * logo header staying WHITE as the one deliberate exception — see
+ * `MainLayout.jsx`'s own comment for the full rationale. History: this
+ * region was near-black (`#14171f`) to match a reference CRM's sidebar,
+ * then changed to `var(--color-brand-navy)` (the same token already used
+ * for the top bar and AntD's `colorPrimary`) so the whole app shares one
+ * consistent dark brand color instead of introducing a second, unrelated
+ * dark tone. Nav text/icon opacities and the active-item treatment below
+ * were re-checked against this navy, not just carried over assuming the
+ * near-black contrast math still held.
  */
 .app-sidebar-dark {
-  background: #14171f;
+  background: var(--color-brand-navy);
 }
 
 .app-sidebar-menu.ant-menu-dark {
