@@ -2,10 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import useLeadStatusChangeFlow from "./useLeadStatusChangeFlow";
 import { changeLeadStatus, convertLeadToCustomer } from "../api/leadApi";
+import { createContract } from "../../customer/api/customerApi";
 
 vi.mock("../api/leadApi", () => ({
   changeLeadStatus: vi.fn(),
   convertLeadToCustomer: vi.fn(),
+}));
+
+vi.mock("../../customer/api/customerApi", () => ({
+  createContract: vi.fn(),
 }));
 
 const lead = { _id: "lead-1", name: "Acme Co" };
@@ -69,6 +74,7 @@ describe("useLeadStatusChangeFlow", () => {
 
   it("moving to won opens the convert flow instead of changing status directly", async () => {
     convertLeadToCustomer.mockResolvedValue({ data: { data: { _id: "customer-1" } } });
+    createContract.mockResolvedValue({});
     changeLeadStatus.mockResolvedValue({});
     const onChanged = vi.fn();
     const { result } = renderHook(() => useLeadStatusChangeFlow({ onChanged }));
@@ -82,10 +88,11 @@ describe("useLeadStatusChangeFlow", () => {
 
     let returnedCustomer;
     await act(async () => {
-      returnedCustomer = await result.current.confirmWon({ projectManagerId: "pm-1" });
+      returnedCustomer = await result.current.confirmWon({ projectManagerId: "pm-1", contractAmount: 250000 });
     });
 
     expect(convertLeadToCustomer).toHaveBeenCalledWith("lead-1", { projectManagerId: "pm-1" });
+    expect(createContract).toHaveBeenCalledWith("customer-1", { type: "onetime", amount: 250000 });
     expect(changeLeadStatus).toHaveBeenCalledWith("lead-1", { status: "won" });
     expect(returnedCustomer).toEqual({ _id: "customer-1" });
     expect(onChanged).toHaveBeenCalled();

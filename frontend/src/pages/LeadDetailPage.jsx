@@ -10,6 +10,7 @@ import LeadFormModal from "../modules/lead/components/LeadFormModal";
 import LostReasonModal from "../modules/lead/components/LostReasonModal";
 import ConvertToCustomerModal from "../modules/lead/components/ConvertToCustomerModal";
 import { logLeadCall, updateLead, deleteLead, convertLeadToCustomer } from "../modules/lead/api/leadApi";
+import { createContract } from "../modules/customer/api/customerApi";
 import { ROUTE_PATHS } from "../constants/routePaths.constants";
 
 /**
@@ -100,13 +101,15 @@ function LeadDetailPage() {
     navigate(`/customers/${customer._id}`);
   }
 
-  async function handleConfirmConvertOnly(convertPayload) {
+  async function handleConfirmConvertOnly({ contractAmount, ...customerPayload }) {
     setIsSubmitting(true);
     try {
-      const response = await convertLeadToCustomer(id, convertPayload);
+      const response = await convertLeadToCustomer(id, customerPayload);
+      const customer = response.data.data;
+      await createContract(customer._id, { type: "onetime", amount: contractAmount });
       message.success("Lead converted to customer");
       setIsConvertOnlyOpen(false);
-      navigate(`/customers/${response.data.data._id}`);
+      navigate(`/customers/${customer._id}`);
     } finally {
       setIsSubmitting(false);
     }

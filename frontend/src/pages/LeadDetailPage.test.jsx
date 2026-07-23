@@ -26,6 +26,10 @@ vi.mock("../services/userDirectoryApi", () => ({
   }),
 }));
 
+vi.mock("../modules/customer/api/customerApi", () => ({
+  createContract: vi.fn().mockResolvedValue({}),
+}));
+
 const SAMPLE_LEAD = {
   _id: "lead-1",
   name: "Jane Doe",
@@ -147,6 +151,7 @@ describe("LeadDetailPage", () => {
 
     await userEvent.click(screen.getByLabelText("Project Manager"));
     await userEvent.click(await screen.findByTitle("Priya PM (manager)"));
+    await userEvent.type(screen.getByLabelText("Contract Amount"), "250000");
 
     await userEvent.click(screen.getByRole("button", { name: "Convert" }));
 
