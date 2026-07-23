@@ -195,6 +195,11 @@ input:-webkit-autofill:focus {
   height: 28px !important;
   line-height: 28px !important;
   border-radius: 8px;
+  /* Small horizontal inset so every item (active or not) reads as a
+     rounded "pill" sitting within the panel rather than a bar spanning
+     edge-to-edge — applied to all items, not just the active one, so the
+     shape is consistent regardless of state. */
+  margin-inline: 6px !important;
 }
 
 .app-sidebar-menu .ant-menu-item,
@@ -225,21 +230,24 @@ input:-webkit-autofill:focus {
 }
 
 /*
- * Active item — a rounded-rect background tint + a solid left accent bar,
- * matching the reference's own "Tasks" active-state treatment structurally
- * (shape/positioning), in this project's brand green rather than the
- * reference's purple/violet (a deliberate color substitution — see
- * `MainLayout.jsx`'s comment). A solid bar, not the gradient tried in an
- * earlier pass — the reference itself shows a solid accent, not a gradient.
+ * Active item — background-only treatment now, NO left border/accent bar
+ * (that approach, tried in two earlier passes — first a flat tint + solid
+ * bar, then a gradient bar — is retired here in favor of a background-only
+ * highlight against the navy panel). A diagonal gradient (a faint white
+ * sheen blending into brand-green, not a flat single color) + a soft
+ * shadow for depth + bolder text/icon reads as a deliberately-designed
+ * "premium" highlight rather than a minimal color swap — the rounded-pill
+ * shape/inset margin is shared with every item (see the rule above), so
+ * only the fill, weight, and shadow change here.
  */
 .app-sidebar-menu .ant-menu-item-selected {
-  background: rgba(29, 131, 67, 0.22) !important;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.14) 0%, rgba(29, 131, 67, 0.32) 100%) !important;
   color: #ffffff !important;
-  font-weight: 600;
-  border-inline-start: 3px solid var(--color-brand-green);
-  /* Offsets the 3px accent bar's own width so selected/unselected item text
-     still lines up with each other instead of visibly shifting right. */
-  padding-inline-start: calc(1rem - 3px) !important;
+  font-weight: 700;
+  border-inline-start: none !important;
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.28),
+    0 0 0 1px rgba(29, 131, 67, 0.35);
 }
 
 .app-sidebar-menu .ant-menu-item-selected .anticon {
@@ -251,7 +259,7 @@ input:-webkit-autofill:focus {
 }
 
 .app-sidebar-menu .ant-menu-item-selected:hover {
-  background: rgba(29, 131, 67, 0.28) !important;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.18) 0%, rgba(29, 131, 67, 0.4) 100%) !important;
 }
 
 /*
