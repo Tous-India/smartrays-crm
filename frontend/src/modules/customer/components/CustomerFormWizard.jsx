@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Modal, Steps, Form, Input, Select, InputNumber, DatePicker, Checkbox, Button, Space } from "antd";
+import { Modal, Steps, Form, Input, Select, InputNumber, DatePicker, Checkbox, Button, Space, Row, Col } from "antd";
 import { PlusOutlined, MinusCircleOutlined } from "@ant-design/icons";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import useSessionStore from "../../../store/sessionStore";
@@ -123,26 +123,53 @@ function CustomerFormWizard({ open, onCancel, onSubmit, isSubmitting }) {
           >
             <Input />
           </Form.Item>
-          <Form.Item label="Email" name="email">
-            <Input type="email" />
-          </Form.Item>
-          <Form.Item label="Phone" name="phone">
-            <Input />
-          </Form.Item>
-          <Form.Item label="Website" name="website">
-            <Input />
-          </Form.Item>
-          <Form.Item label="Industry" name="industry">
-            <Input />
-          </Form.Item>
-          <Form.Item label="Source" name="source">
-            <Input />
-          </Form.Item>
-          {canAssignOwner && (
-            <Form.Item label="Owner" name="ownerId">
-              <Select allowClear placeholder="Defaults to you" options={userOptions} showSearch optionFilterProp="label" />
-            </Form.Item>
-          )}
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item label="Email" name="email">
+                <Input type="email" />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="Phone" name="phone">
+                <Input />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item label="Website" name="website">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item label="Industry" name="industry">
+                <Input />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            <Col span={canAssignOwner ? 12 : 24}>
+              <Form.Item label="Source" name="source">
+                <Input />
+              </Form.Item>
+            </Col>
+            {canAssignOwner && (
+              <Col span={12}>
+                <Form.Item label="Owner" name="ownerId">
+                  <Select
+                    allowClear
+                    placeholder="Defaults to you"
+                    options={userOptions}
+                    showSearch
+                    optionFilterProp="label"
+                  />
+                </Form.Item>
+              </Col>
+            )}
+          </Row>
         </div>
 
         <div style={{ display: currentStep === 1 ? "block" : "none" }}>
