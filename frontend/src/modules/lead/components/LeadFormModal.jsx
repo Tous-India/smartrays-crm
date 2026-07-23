@@ -138,7 +138,10 @@ function LeadFormModal({ open, mode, initialLead, onCancel, onSubmit, isSubmitti
           </Col>
           <Col xs={24} sm={12}>
             <Form.Item label="Follow-up Date" name="followUpDate">
-              <DatePicker showTime style={{ width: "100%" }} />
+              {/* Hours:minutes only — the default `showTime` also asks for
+                  seconds, precision nobody scheduling a follow-up call
+                  actually needs. */}
+              <DatePicker showTime={{ format: "HH:mm" }} format="YYYY-MM-DD HH:mm" style={{ width: "100%" }} />
             </Form.Item>
           </Col>
         </Row>

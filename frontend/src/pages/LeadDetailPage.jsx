@@ -51,7 +51,13 @@ function LeadDetailPage() {
     );
   }
 
-  const ownerName = users.find((user) => user._id === lead.ownerId)?.name;
+  // `useUserDirectory()` only returns active users (`GET /users/dropdown`,
+  // `isActive: true`) — a lead owned by a since-deactivated user won't be
+  // found here. Falling through to `undefined` would render as "—" via
+  // `LeadDetailContent`'s own `ownerName || "—"`, indistinguishable from
+  // "no owner set at all" — "Unknown user" is more honest when an owner
+  // genuinely exists but can't be resolved to a name right now.
+  const ownerName = users.find((user) => user._id === lead.ownerId)?.name || (lead.ownerId ? "Unknown user" : null);
 
   async function handleLogCall(values) {
     setIsSubmitting(true);

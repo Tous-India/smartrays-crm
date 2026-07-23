@@ -47,19 +47,45 @@ function LeadsTable({ leads, isLoading, users, canEdit, canReassignOwner, onRequ
     {
       title: "Owner",
       dataIndex: "ownerId",
-      render: (ownerId, lead) =>
-        canReassignOwner ? (
+      render: (ownerId, lead) => {
+        // `GET /users/dropdown` only returns active users
+        // (`user.service.js#listUsersForDropdown`, `isActive: true`) — a
+        // lead owned by a since-deactivated user has no matching entry
+        // here. Left alone, AntD's `<Select>` falls back to rendering the
+        // raw `value` (the owner's ObjectId) when it can't find a matching
+        // option's label — the exact bug this guards against. A synthetic
+        // "Unknown user" option keeps the Select always showing real text,
+        // never a raw id, while `disabled` prevents actually assigning
+        // ownership back onto a placeholder.
+        const knownOwnerOptions = users.map((user) => ({ value: user._id, label: user.name }));
+        const ownerIsKnown = !ownerId || userNameById.has(ownerId);
+        const options = ownerIsKnown
+          ? knownOwnerOptions
+          : [...knownOwnerOptions, { value: ownerId, label: "Unknown user", disabled: true }];
+
+        if (!canReassignOwner) {
+          return userNameById.get(ownerId) || (ownerId ? "Unknown user" : "—");
+        }
+
+        // While the directory is still loading, `users` is `[]` — every
+        // owner would otherwise look "unknown" for a moment. A plain
+        // loading placeholder avoids ever rendering the Select (and its
+        // raw-value fallback) before there's real data to resolve against.
+        if (users.length === 0) {
+          return <span className="text-gray-400">Loading…</span>;
+        }
+
+        return (
           <Select
             size="small"
             value={ownerId}
             style={{ minWidth: 140 }}
-            options={users.map((user) => ({ value: user._id, label: user.name }))}
+            options={options}
             onClick={(event) => event.stopPropagation()}
             onChange={(newOwnerId) => onAssignOwner(lead, newOwnerId)}
           />
-        ) : (
-          userNameById.get(ownerId) || "—"
-        ),
+        );
+      },
     },
     {
       title: "Follow-up",
