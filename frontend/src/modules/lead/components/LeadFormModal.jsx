@@ -61,51 +61,52 @@ function LeadFormModal({ open, mode, initialLead, onCancel, onSubmit, isSubmitti
       onCancel={handleCancel}
       confirmLoading={isSubmitting}
       destroyOnHidden
-      width={640}
+      width={680}
+      styles={{ body: { paddingTop: 8, paddingBottom: 0 } }}
     >
       {/*
-        Compact multi-column grid (was one field per row, wasting horizontal
-        space on short fields like Name/Email) — `Row`/`Col` with `xs={24}`
-        collapses every group back to one-per-row on narrow widths (mobile/
-        tablet), rather than forcing a cramped 3-column layout there.
-        Grouping is by field length/expected-input-length, not a mechanical
-        "3 per row regardless of fit": short fields pair 2–3 per row, but
-        Follow-up Note and Notes (the only free-text fields here) each keep
-        their own full-width row even though Follow-up Note is a plain
-        single-line `Input`, not a `TextArea` — a short label can still want
-        a longer answer than a half-width column comfortably fits.
+        Compact multi-column grid — `Row`/`Col` with `xs={24}` collapses
+        every group back to one-per-row on narrow widths (mobile/tablet),
+        rather than forcing a cramped 3-column layout there. Grouping is by
+        field length/expected-input-length, not a mechanical "3 per row
+        regardless of fit": short fields go 3-per-row where the modal width
+        comfortably allows it (tightened from an earlier 2-per-row pass,
+        which still needed internal scroll), but Follow-up Note and Notes
+        (the only free-text fields here) each keep their own full-width row
+        even though Follow-up Note is a plain single-line `Input`, not a
+        `TextArea` — a short label can still want a longer answer than a
+        column comfortably fits. `compact-lead-form` (below) halves AntD's
+        default 24px `Form.Item` margin-bottom — the other half of what
+        eliminated the modal's internal scroll, alongside the 3-column
+        regrouping (fewer rows) and the Modal body's own reduced top/bottom
+        padding above.
       */}
-      <Form form={form} layout="vertical">
+      <Form form={form} layout="vertical" className="compact-lead-form">
         <Row gutter={16}>
-          <Col xs={24} sm={12}>
+          <Col xs={24} sm={8}>
             <Form.Item label="Name" name="name" rules={[{ required: true, message: "Name is required" }]}>
               <Input />
             </Form.Item>
           </Col>
-          <Col xs={24} sm={12}>
+          <Col xs={24} sm={8}>
             <Form.Item label="Email" name="email">
               <Input type="email" />
             </Form.Item>
           </Col>
-        </Row>
-
-        <Row gutter={16}>
-          <Col xs={24} sm={12}>
+          <Col xs={24} sm={8}>
             <Form.Item label="Phone" name="phone">
               <Input />
             </Form.Item>
           </Col>
-          <Col xs={24} sm={12}>
+        </Row>
+
+        <Row gutter={16}>
+          <Col xs={24} sm={canAssignOwner ? 8 : 12}>
             <Form.Item label="Company Name" name="companyName">
               <Input />
             </Form.Item>
           </Col>
-        </Row>
-
-        <Row gutter={16}>
-          {/* Source alone takes the full row when Owner isn't shown at all
-              (sales_associate) rather than leaving an empty half-row gap. */}
-          <Col xs={24} sm={canAssignOwner ? 12 : 24}>
+          <Col xs={24} sm={canAssignOwner ? 8 : 12}>
             <Form.Item label="Source" name="source">
               <Select
                 allowClear
@@ -115,7 +116,7 @@ function LeadFormModal({ open, mode, initialLead, onCancel, onSubmit, isSubmitti
             </Form.Item>
           </Col>
           {canAssignOwner && (
-            <Col xs={24} sm={12}>
+            <Col xs={24} sm={8}>
               <Form.Item label="Owner" name="ownerId">
                 <Select
                   allowClear
@@ -146,8 +147,8 @@ function LeadFormModal({ open, mode, initialLead, onCancel, onSubmit, isSubmitti
           <Input />
         </Form.Item>
 
-        <Form.Item label="Notes" name="notes">
-          <Input.TextArea rows={3} />
+        <Form.Item label="Notes" name="notes" className="!mb-0">
+          <Input.TextArea rows={2} />
         </Form.Item>
       </Form>
     </Modal>

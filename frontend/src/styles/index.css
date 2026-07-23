@@ -15,6 +15,20 @@
 }
 
 /*
+ * LeadFormModal's compact layout (`compact-lead-form`) — halves AntD's
+ * default 24px `Form.Item` margin-bottom to 12px. Combined with the 3-per-
+ * row regrouping of short fields and the Modal body's own reduced top/
+ * bottom padding (both in `LeadFormModal.jsx` itself), this is what
+ * eliminated the modal's internal scroll at normal desktop heights —
+ * tightening only the row count or only the spacing wasn't enough on its
+ * own, verified via a real screenshot at ~800px viewport height before
+ * calling it done.
+ */
+.compact-lead-form .ant-form-item {
+  margin-bottom: 12px;
+}
+
+/*
  * Single source of truth for the two top-of-layout boxes' height
  * (MainLayout.jsx's white logo box + the blue top-bar strip) — they sit
  * side by side and must be pixel-equal, but were previously set with two
