@@ -344,8 +344,20 @@ describe("module: payroll", () => {
 
 describe("module: leads", () => {
   it("scopes to a sales_associate's own leads only, matching listLeads' own ownership rule", async () => {
-    await Lead.create({ name: "Own Lead", companyName: "Acme", ownerId: sales1._id, source: "Website" });
-    await Lead.create({ name: "Other Lead", companyName: "Beta", ownerId: sales3._id, source: "Website" });
+    await Lead.create({
+      name: "Own Lead",
+      companyName: "Acme",
+      ownerId: sales1._id,
+      source: "Website",
+      clientType: "residential",
+    });
+    await Lead.create({
+      name: "Other Lead",
+      companyName: "Beta",
+      ownerId: sales3._id,
+      source: "Website",
+      clientType: "residential",
+    });
 
     const { uploadReportFile } = await import("../../services/cloudinary.service.js");
     uploadReportFile.mockClear();

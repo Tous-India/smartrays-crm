@@ -10,7 +10,15 @@ import {
   SwapOutlined,
 } from "@ant-design/icons";
 import PermissionGate from "../../../routes/PermissionGate";
-import { LEAD_STATUS_COLORS, LEAD_STATUS_LABELS, CALL_OUTCOME_LABELS } from "../constants/lead.constants";
+import {
+  LEAD_STATUS_COLORS,
+  LEAD_STATUS_LABELS,
+  CALL_OUTCOME_LABELS,
+  CLIENT_TYPE_LABELS,
+  ROOF_TYPE_LABELS,
+  CONNECTION_TYPE_LABELS,
+  SITE_SURVEY_STATUS_LABELS,
+} from "../constants/lead.constants";
 import { buildActivityTimeline } from "../utils/buildActivityTimeline";
 
 /**
@@ -103,6 +111,48 @@ function LeadDetailContent({
           {lead.notes || "—"}
         </Descriptions.Item>
       </Descriptions>
+
+      {/* Only rendered once a lead actually has solar fields — older test
+          fixtures / any not-yet-migrated data has `clientType` undefined. */}
+      {lead.clientType && (
+        <>
+          <h4 className="mb-2 font-medium">Site Details</h4>
+          <Descriptions bordered column={2} size="small" className="!mb-6">
+            <Descriptions.Item label="Client Type">
+              {CLIENT_TYPE_LABELS[lead.clientType] || "—"}
+            </Descriptions.Item>
+            <Descriptions.Item label="Roof Type">{ROOF_TYPE_LABELS[lead.roofType] || "—"}</Descriptions.Item>
+            <Descriptions.Item label="Site Address" span={2}>
+              {lead.siteAddress || "—"}
+            </Descriptions.Item>
+            <Descriptions.Item label="Monthly Electricity Bill">
+              {lead.monthlyElectricityBill != null ? lead.monthlyElectricityBill.toLocaleString() : "—"}
+            </Descriptions.Item>
+            <Descriptions.Item label="Estimated Units Consumed">
+              {lead.estimatedUnitsConsumed != null ? lead.estimatedUnitsConsumed.toLocaleString() : "—"}
+            </Descriptions.Item>
+            <Descriptions.Item label="Estimated Capacity (kW)">
+              {lead.estimatedCapacityKw != null ? lead.estimatedCapacityKw : "—"}
+            </Descriptions.Item>
+            <Descriptions.Item label="Connection Type">
+              {CONNECTION_TYPE_LABELS[lead.connectionType] || "—"}
+            </Descriptions.Item>
+            {lead.clientType === "residential" && (
+              <Descriptions.Item label="Subsidy Applicable">
+                {lead.subsidyApplicable ? "Yes" : "No"}
+              </Descriptions.Item>
+            )}
+            <Descriptions.Item label="Site Survey Status">
+              {SITE_SURVEY_STATUS_LABELS[lead.siteSurveyStatus] || "—"}
+            </Descriptions.Item>
+            {lead.siteSurveyStatus && lead.siteSurveyStatus !== "not_scheduled" && (
+              <Descriptions.Item label="Site Survey Date">
+                {lead.siteSurveyDate ? new Date(lead.siteSurveyDate).toLocaleDateString() : "—"}
+              </Descriptions.Item>
+            )}
+          </Descriptions>
+        </>
+      )}
 
       <h4 className="mb-2 font-medium">Call History</h4>
       <List

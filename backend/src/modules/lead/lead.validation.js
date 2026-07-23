@@ -1,14 +1,72 @@
 import ApiError from "../../utils/ApiError.js";
-import { LEAD_STATUSES, BUSINESS_STAGES } from "./lead.model.js";
+import {
+  LEAD_STATUSES,
+  BUSINESS_STAGES,
+  CLIENT_TYPES,
+  ROOF_TYPES,
+  CONNECTION_TYPES,
+  SITE_SURVEY_STATUSES,
+} from "./lead.model.js";
 import { CALL_OUTCOMES } from "./leadCall.model.js";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
+ * Shared solar-field checks for both create and update — every field here is
+ * optional on its own (only `clientType` is unconditionally required, and
+ * only on create, enforced separately by each caller below), but any of them
+ * that IS present must be a valid value/range.
+ */
+function validateSolarFields(body) {
+  const {
+    clientType,
+    monthlyElectricityBill,
+    estimatedUnitsConsumed,
+    estimatedCapacityKw,
+    roofType,
+    connectionType,
+    siteSurveyStatus,
+    siteSurveyDate,
+  } = body;
+
+  if (clientType !== undefined && !CLIENT_TYPES.includes(clientType)) {
+    throw new ApiError(400, `clientType must be one of: ${CLIENT_TYPES.join(", ")}`);
+  }
+
+  if (monthlyElectricityBill !== undefined && monthlyElectricityBill !== null && Number(monthlyElectricityBill) < 0) {
+    throw new ApiError(400, "monthlyElectricityBill cannot be negative");
+  }
+
+  if (estimatedUnitsConsumed !== undefined && estimatedUnitsConsumed !== null && Number(estimatedUnitsConsumed) < 0) {
+    throw new ApiError(400, "estimatedUnitsConsumed cannot be negative");
+  }
+
+  if (estimatedCapacityKw !== undefined && estimatedCapacityKw !== null && Number(estimatedCapacityKw) < 0) {
+    throw new ApiError(400, "estimatedCapacityKw cannot be negative");
+  }
+
+  if (roofType && !ROOF_TYPES.includes(roofType)) {
+    throw new ApiError(400, `roofType must be one of: ${ROOF_TYPES.join(", ")}`);
+  }
+
+  if (connectionType && !CONNECTION_TYPES.includes(connectionType)) {
+    throw new ApiError(400, `connectionType must be one of: ${CONNECTION_TYPES.join(", ")}`);
+  }
+
+  if (siteSurveyStatus && !SITE_SURVEY_STATUSES.includes(siteSurveyStatus)) {
+    throw new ApiError(400, `siteSurveyStatus must be one of: ${SITE_SURVEY_STATUSES.join(", ")}`);
+  }
+
+  if (siteSurveyDate && Number.isNaN(Date.parse(siteSurveyDate))) {
+    throw new ApiError(400, "siteSurveyDate must be a valid date");
+  }
+}
+
+/**
  * Validates the body of POST /leads before the controller runs.
  */
 export function validateCreateLeadInput(req, res, next) {
-  const { name, email, status, businessStage, budget, lostReason } = req.body;
+  const { name, email, status, businessStage, budget, lostReason, clientType } = req.body;
 
   if (!name || !name.trim()) {
     throw new ApiError(400, "Name is required");
@@ -33,6 +91,12 @@ export function validateCreateLeadInput(req, res, next) {
   if (budget !== undefined && budget !== null && Number(budget) < 0) {
     throw new ApiError(400, "Budget cannot be negative");
   }
+
+  if (!clientType) {
+    throw new ApiError(400, "clientType is required");
+  }
+
+  validateSolarFields(req.body);
 
   next();
 }
@@ -67,6 +131,12 @@ export function validateUpdateLeadInput(req, res, next) {
   if (budget !== undefined && budget !== null && Number(budget) < 0) {
     throw new ApiError(400, "Budget cannot be negative");
   }
+
+  if (req.body.clientType !== undefined && !req.body.clientType) {
+    throw new ApiError(400, "clientType cannot be cleared — it is required");
+  }
+
+  validateSolarFields(req.body);
 
   next();
 }

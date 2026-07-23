@@ -53,6 +53,55 @@ export const FOLLOW_UP_FILTER_OPTIONS = [
   { value: "none", label: "No Follow-up" },
 ];
 
+// Mirrors backend/src/modules/lead/lead.model.js#CLIENT_TYPES.
+export const CLIENT_TYPE_LABELS = {
+  residential: "Residential",
+  commercial: "Commercial",
+  industrial: "Industrial",
+};
+
+export const CLIENT_TYPE_OPTIONS = Object.entries(CLIENT_TYPE_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}));
+
+// Mirrors backend/src/modules/lead/lead.model.js#ROOF_TYPES.
+export const ROOF_TYPE_LABELS = {
+  rcc: "RCC",
+  tin_shed: "Tin Shed",
+  tile: "Tile",
+  ground_mount: "Ground Mount",
+  other: "Other",
+};
+
+export const ROOF_TYPE_OPTIONS = Object.entries(ROOF_TYPE_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}));
+
+// Mirrors backend/src/modules/lead/lead.model.js#CONNECTION_TYPES.
+export const CONNECTION_TYPE_LABELS = {
+  single_phase: "Single Phase",
+  three_phase: "Three Phase",
+};
+
+export const CONNECTION_TYPE_OPTIONS = Object.entries(CONNECTION_TYPE_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}));
+
+// Mirrors backend/src/modules/lead/lead.model.js#SITE_SURVEY_STATUSES.
+export const SITE_SURVEY_STATUS_LABELS = {
+  not_scheduled: "Not Scheduled",
+  scheduled: "Scheduled",
+  completed: "Completed",
+};
+
+export const SITE_SURVEY_STATUS_OPTIONS = Object.entries(SITE_SURVEY_STATUS_LABELS).map(([value, label]) => ({
+  value,
+  label,
+}));
+
 /**
  * Informational mirror of backend/src/modules/lead/lead.service.js#COLUMN_ALIASES
  * — the backend matches import columns case-insensitively against this exact

@@ -35,6 +35,7 @@ function LeadsListPage({ view }) {
     search: searchParams.get("search") || "",
     owner: searchParams.get("owner") || "",
     followUp: searchParams.get("followUp") || "",
+    clientType: searchParams.get("clientType") || "",
   };
 
   const { leads, isLoading, refetch } = useLeads(filters);

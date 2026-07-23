@@ -40,7 +40,13 @@ afterAll(async () => {
 });
 
 function makeLead(overrides = {}) {
-  return Lead.create({ name: "Test Lead", ownerId: owner._id, status: "new", ...overrides });
+  return Lead.create({
+    name: "Test Lead",
+    ownerId: owner._id,
+    status: "new",
+    clientType: "residential",
+    ...overrides,
+  });
 }
 
 const REFERENCE_DATE = new Date(2026, 6, 15, 12, 0, 0);

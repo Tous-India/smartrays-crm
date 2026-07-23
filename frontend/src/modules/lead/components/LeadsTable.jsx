@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import LeadStatusSelect from "./LeadStatusSelect";
 import LeadFollowUpCell from "./LeadFollowUpCell";
 import PermissionGate from "../../../routes/PermissionGate";
-import { LEAD_STATUS_COLORS, LEAD_STATUS_LABELS } from "../constants/lead.constants";
+import { LEAD_STATUS_COLORS, LEAD_STATUS_LABELS, CLIENT_TYPE_LABELS } from "../constants/lead.constants";
 
 function isOverdue(followUpDate) {
   return followUpDate && new Date(followUpDate) < new Date();
@@ -55,6 +55,11 @@ function LeadsTable({
         ),
     },
     { title: "Source", dataIndex: "source", render: (value) => value || "—" },
+    {
+      title: "Client Type",
+      dataIndex: "clientType",
+      render: (value) => CLIENT_TYPE_LABELS[value] || "—",
+    },
     {
       title: "Owner",
       dataIndex: "ownerId",

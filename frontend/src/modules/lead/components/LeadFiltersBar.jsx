@@ -2,7 +2,7 @@ import { Input, Select, Segmented, Button, Space } from "antd";
 import { PlusOutlined, UploadOutlined, DownloadOutlined } from "@ant-design/icons";
 import PermissionGate from "../../../routes/PermissionGate";
 import useUserDirectory from "../../../hooks/useUserDirectory";
-import { FOLLOW_UP_FILTER_OPTIONS } from "../constants/lead.constants";
+import { FOLLOW_UP_FILTER_OPTIONS, CLIENT_TYPE_OPTIONS } from "../constants/lead.constants";
 
 /**
  * The full filter set from leads-customer-functional-spec.md's "Filters"
@@ -58,6 +58,14 @@ function LeadFiltersBar({
         style={{ width: 130 }}
         className="shrink-0"
         onChange={(value) => onFilterChange({ followUp: value })}
+      />
+
+      <Select
+        value={filters.clientType || ""}
+        options={[{ value: "", label: "All client types" }, ...CLIENT_TYPE_OPTIONS]}
+        style={{ width: 150 }}
+        className="shrink-0"
+        onChange={(value) => onFilterChange({ clientType: value })}
       />
 
       <Segmented

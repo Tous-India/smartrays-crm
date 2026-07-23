@@ -70,7 +70,7 @@ describe("LeadsListPage — Table view", () => {
 
     expect(await screen.findByText("Jane Doe")).toBeInTheDocument();
     expect(screen.getByText("Acme Corp")).toBeInTheDocument();
-    expect(leadApi.listLeads).toHaveBeenCalledWith({ search: "", owner: "", followUp: "" });
+    expect(leadApi.listLeads).toHaveBeenCalledWith({ search: "", owner: "", followUp: "", clientType: "" });
   });
 
   it("re-fetches with the search term when searching", async () => {

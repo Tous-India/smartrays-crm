@@ -1,9 +1,15 @@
 import { useEffect } from "react";
-import { Modal, Form, Input, Select, InputNumber, DatePicker, Row, Col } from "antd";
+import { Modal, Form, Input, Select, InputNumber, DatePicker, Checkbox, Row, Col, Tabs } from "antd";
 import dayjs from "dayjs";
 import useLeadSources from "../hooks/useLeadSources";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import useSessionStore from "../../../store/sessionStore";
+import {
+  CLIENT_TYPE_OPTIONS,
+  ROOF_TYPE_OPTIONS,
+  CONNECTION_TYPE_OPTIONS,
+  SITE_SURVEY_STATUS_OPTIONS,
+} from "../constants/lead.constants";
 
 /**
  * Shared create/edit form — Lead Detail's "Edit" action and the Table/Board
@@ -19,6 +25,8 @@ function LeadFormModal({ open, mode, initialLead, onCancel, onSubmit, isSubmitti
   const { sources } = useLeadSources();
   const { users } = useUserDirectory();
   const currentUser = useSessionStore((state) => state.user);
+  const clientType = Form.useWatch("clientType", form);
+  const siteSurveyStatus = Form.useWatch("siteSurveyStatus", form);
 
   // Backend forces ownerId to the creator for a sales_associate regardless
   // of what's sent (lead.service.js#resolveOwnerIdForCreate) and excludes it
@@ -33,8 +41,9 @@ function LeadFormModal({ open, mode, initialLead, onCancel, onSubmit, isSubmitti
           ? {
               ...initialLead,
               followUpDate: initialLead.followUpDate ? dayjs(initialLead.followUpDate) : null,
+              siteSurveyDate: initialLead.siteSurveyDate ? dayjs(initialLead.siteSurveyDate) : null,
             }
-          : { source: undefined }
+          : { source: undefined, siteSurveyStatus: "not_scheduled", subsidyApplicable: false }
       );
     }
   }, [open, mode, initialLead, form]);
@@ -45,6 +54,7 @@ function LeadFormModal({ open, mode, initialLead, onCancel, onSubmit, isSubmitti
     onSubmit({
       ...values,
       followUpDate: values.followUpDate ? values.followUpDate.toISOString() : null,
+      siteSurveyDate: values.siteSurveyDate ? values.siteSurveyDate.toISOString() : null,
     });
   }
 
@@ -80,79 +90,192 @@ function LeadFormModal({ open, mode, initialLead, onCancel, onSubmit, isSubmitti
         eliminated the modal's internal scroll, alongside the 3-column
         regrouping (fewer rows) and the Modal body's own reduced top/bottom
         padding above.
+
+        Adding the full solar field set (10 more fields) on top of this no
+        longer fits in one scroll-free screen even at this density — split
+        into two Tabs instead (both tabs live inside the same `Form`, so
+        validation/submission still treats it as one payload; only the
+        active tab's fields are mounted at a time thanks to AntD `Tabs`
+        `destroyInactiveTabPane`-equivalent default of keeping panes mounted
+        but hidden, which is fine here since no field is large/expensive).
       */}
       <Form form={form} layout="vertical" className="compact-lead-form">
-        <Row gutter={16}>
-          <Col xs={24} sm={8}>
-            <Form.Item label="Name" name="name" rules={[{ required: true, message: "Name is required" }]}>
-              <Input />
-            </Form.Item>
-          </Col>
-          <Col xs={24} sm={8}>
-            <Form.Item label="Email" name="email">
-              <Input type="email" />
-            </Form.Item>
-          </Col>
-          <Col xs={24} sm={8}>
-            <Form.Item label="Phone" name="phone">
-              <Input />
-            </Form.Item>
-          </Col>
-        </Row>
+        <Tabs
+          items={[
+            {
+              key: "info",
+              label: "Lead Info",
+              children: (
+                <>
+                  <Row gutter={16}>
+                    <Col xs={24} sm={8}>
+                      <Form.Item
+                        label="Name"
+                        name="name"
+                        rules={[{ required: true, message: "Name is required" }]}
+                      >
+                        <Input />
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} sm={8}>
+                      <Form.Item label="Email" name="email">
+                        <Input type="email" />
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} sm={8}>
+                      <Form.Item label="Phone" name="phone">
+                        <Input />
+                      </Form.Item>
+                    </Col>
+                  </Row>
 
-        <Row gutter={16}>
-          <Col xs={24} sm={canAssignOwner ? 8 : 12}>
-            <Form.Item label="Company Name" name="companyName">
-              <Input />
-            </Form.Item>
-          </Col>
-          <Col xs={24} sm={canAssignOwner ? 8 : 12}>
-            <Form.Item label="Source" name="source">
-              <Select
-                allowClear
-                placeholder="Select a source"
-                options={sources.map((source) => ({ value: source.name, label: source.name }))}
-              />
-            </Form.Item>
-          </Col>
-          {canAssignOwner && (
-            <Col xs={24} sm={8}>
-              <Form.Item label="Owner" name="ownerId">
-                <Select
-                  allowClear
-                  placeholder="Defaults to you"
-                  options={users.map((user) => ({ value: user._id, label: user.name }))}
-                  showSearch
-                  optionFilterProp="label"
-                />
-              </Form.Item>
-            </Col>
-          )}
-        </Row>
+                  <Row gutter={16}>
+                    <Col xs={24} sm={canAssignOwner ? 8 : 12}>
+                      <Form.Item label="Company Name" name="companyName">
+                        <Input />
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} sm={canAssignOwner ? 8 : 12}>
+                      <Form.Item label="Source" name="source">
+                        <Select
+                          allowClear
+                          placeholder="Select a source"
+                          options={sources.map((source) => ({ value: source.name, label: source.name }))}
+                        />
+                      </Form.Item>
+                    </Col>
+                    {canAssignOwner && (
+                      <Col xs={24} sm={8}>
+                        <Form.Item label="Owner" name="ownerId">
+                          <Select
+                            allowClear
+                            placeholder="Defaults to you"
+                            options={users.map((user) => ({ value: user._id, label: user.name }))}
+                            showSearch
+                            optionFilterProp="label"
+                          />
+                        </Form.Item>
+                      </Col>
+                    )}
+                  </Row>
 
-        <Row gutter={16}>
-          <Col xs={24} sm={12}>
-            <Form.Item label="Budget" name="budget">
-              <InputNumber min={0} style={{ width: "100%" }} />
-            </Form.Item>
-          </Col>
-          <Col xs={24} sm={12}>
-            <Form.Item label="Follow-up Date" name="followUpDate">
-              {/* Hours:minutes only — the default `showTime` also asks for
-                  seconds, precision nobody scheduling a follow-up call
-                  actually needs. */}
-              <DatePicker showTime={{ format: "HH:mm" }} format="YYYY-MM-DD HH:mm" style={{ width: "100%" }} />
-            </Form.Item>
-          </Col>
-        </Row>
+                  <Row gutter={16}>
+                    <Col xs={24} sm={12}>
+                      <Form.Item label="Budget" name="budget">
+                        <InputNumber min={0} style={{ width: "100%" }} />
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} sm={12}>
+                      <Form.Item label="Follow-up Date" name="followUpDate">
+                        {/* Hours:minutes only — the default `showTime` also asks for
+                            seconds, precision nobody scheduling a follow-up call
+                            actually needs. */}
+                        <DatePicker
+                          showTime={{ format: "HH:mm" }}
+                          format="YYYY-MM-DD HH:mm"
+                          style={{ width: "100%" }}
+                        />
+                      </Form.Item>
+                    </Col>
+                  </Row>
 
-        <Form.Item label="Follow-up Note" name="followUpNote">
-          <Input />
-        </Form.Item>
+                  <Form.Item label="Follow-up Note" name="followUpNote">
+                    <Input />
+                  </Form.Item>
 
-        <Form.Item label="Notes" name="notes" className="!mb-0">
-          <Input.TextArea rows={2} />
-        </Form.Item>
+                  <Form.Item label="Notes" name="notes" className="!mb-0">
+                    <Input.TextArea rows={2} />
+                  </Form.Item>
+                </>
+              ),
+            },
+            {
+              key: "site",
+              label: "Site Details",
+              forceRender: true,
+              children: (
+                <>
+                  <Row gutter={16}>
+                    <Col xs={24} sm={12}>
+                      <Form.Item
+                        label="Client Type"
+                        name="clientType"
+                        rules={[{ required: true, message: "Client type is required" }]}
+                      >
+                        <Select placeholder="Select a client type" options={CLIENT_TYPE_OPTIONS} />
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} sm={12}>
+                      <Form.Item label="Roof Type" name="roofType">
+                        <Select allowClear placeholder="Optional" options={ROOF_TYPE_OPTIONS} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  <Form.Item label="Site Address" name="siteAddress">
+                    <Input.TextArea rows={2} />
+                  </Form.Item>
+
+                  <Row gutter={16}>
+                    <Col xs={24} sm={12}>
+                      <Form.Item label="Monthly Electricity Bill" name="monthlyElectricityBill">
+                        <InputNumber min={0} style={{ width: "100%" }} />
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} sm={12}>
+                      <Form.Item label="Estimated Units Consumed" name="estimatedUnitsConsumed">
+                        <InputNumber min={0} style={{ width: "100%" }} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  <Row gutter={16}>
+                    <Col xs={24} sm={12}>
+                      <Form.Item label="Estimated Capacity (kW)" name="estimatedCapacityKw">
+                        <InputNumber min={0} style={{ width: "100%" }} />
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} sm={12}>
+                      <Form.Item label="Connection Type" name="connectionType">
+                        <Select allowClear placeholder="Optional" options={CONNECTION_TYPE_OPTIONS} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  <Row gutter={16}>
+                    {/* Subsidy schemes only apply to residential clients — hidden
+                        rather than shown-then-ignored for commercial/industrial. */}
+                    {clientType === "residential" && (
+                      <Col xs={24} sm={12}>
+                        <Form.Item
+                          label=" "
+                          name="subsidyApplicable"
+                          valuePropName="checked"
+                          className="!mb-0"
+                        >
+                          <Checkbox>Subsidy Applicable</Checkbox>
+                        </Form.Item>
+                      </Col>
+                    )}
+                    <Col xs={24} sm={12}>
+                      <Form.Item label="Site Survey Status" name="siteSurveyStatus">
+                        <Select options={SITE_SURVEY_STATUS_OPTIONS} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+
+                  {/* A survey date only means something once one has actually
+                      been scheduled — "not_scheduled" has no date to show. */}
+                  {siteSurveyStatus && siteSurveyStatus !== "not_scheduled" && (
+                    <Form.Item label="Site Survey Date" name="siteSurveyDate" className="!mb-0">
+                      <DatePicker style={{ width: "100%" }} />
+                    </Form.Item>
+                  )}
+                </>
+              ),
+            },
+          ]}
+        />
       </Form>
     </Modal>
   );

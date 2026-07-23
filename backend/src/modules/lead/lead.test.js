@@ -21,6 +21,7 @@ function buildLeadPayload(overrides = {}) {
     phone: "1234567890",
     companyName: "Test Co",
     source: "Website",
+    clientType: "residential",
     ...overrides,
   };
 }
@@ -148,6 +149,142 @@ describe("Lead CRUD", () => {
 
     const getResponse = await sales1Agent.get(`/api/v1/leads/${created.body.data._id}`);
     expect(getResponse.status).toBe(404);
+  });
+});
+
+describe("Solar-specific fields", () => {
+  it("creates a lead with the full set of solar fields", async () => {
+    const response = await sales1Agent.post("/api/v1/leads").send(
+      buildLeadPayload({
+        clientType: "commercial",
+        siteAddress: "123 Solar Lane",
+        monthlyElectricityBill: 15000,
+        estimatedUnitsConsumed: 900,
+        estimatedCapacityKw: 10,
+        roofType: "rcc",
+        connectionType: "three_phase",
+        subsidyApplicable: false,
+        siteSurveyStatus: "scheduled",
+        siteSurveyDate: new Date().toISOString(),
+      })
+    );
+
+    expect(response.status).toBe(201);
+    expect(response.body.data).toMatchObject({
+      clientType: "commercial",
+      siteAddress: "123 Solar Lane",
+      monthlyElectricityBill: 15000,
+      estimatedUnitsConsumed: 900,
+      estimatedCapacityKw: 10,
+      roofType: "rcc",
+      connectionType: "three_phase",
+      subsidyApplicable: false,
+      siteSurveyStatus: "scheduled",
+    });
+  });
+
+  it("rejects creating a lead with no clientType", async () => {
+    const payload = buildLeadPayload();
+    delete payload.clientType;
+
+    const response = await sales1Agent.post("/api/v1/leads").send(payload);
+
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects an invalid clientType", async () => {
+    const response = await sales1Agent
+      .post("/api/v1/leads")
+      .send(buildLeadPayload({ clientType: "not_a_real_type" }));
+
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects an invalid roofType/connectionType/siteSurveyStatus", async () => {
+    const badRoof = await sales1Agent
+      .post("/api/v1/leads")
+      .send(buildLeadPayload({ roofType: "not_a_real_roof" }));
+    expect(badRoof.status).toBe(400);
+
+    const badConnection = await sales1Agent
+      .post("/api/v1/leads")
+      .send(buildLeadPayload({ connectionType: "not_a_real_connection" }));
+    expect(badConnection.status).toBe(400);
+
+    const badSurveyStatus = await sales1Agent
+      .post("/api/v1/leads")
+      .send(buildLeadPayload({ siteSurveyStatus: "not_a_real_status" }));
+    expect(badSurveyStatus.status).toBe(400);
+  });
+
+  it("defaults siteSurveyStatus to not_scheduled and subsidyApplicable to false when omitted", async () => {
+    const response = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload());
+
+    expect(response.body.data.siteSurveyStatus).toBe("not_scheduled");
+    expect(response.body.data.subsidyApplicable).toBe(false);
+  });
+
+  it("updates solar fields via PATCH", async () => {
+    const created = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload());
+
+    const response = await sales1Agent.patch(`/api/v1/leads/${created.body.data._id}`).send({
+      clientType: "industrial",
+      estimatedCapacityKw: 50,
+      siteSurveyStatus: "completed",
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.clientType).toBe("industrial");
+    expect(response.body.data.estimatedCapacityKw).toBe(50);
+    expect(response.body.data.siteSurveyStatus).toBe("completed");
+  });
+
+  it("rejects clearing clientType to an empty value via PATCH", async () => {
+    const created = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload());
+
+    const response = await sales1Agent
+      .patch(`/api/v1/leads/${created.body.data._id}`)
+      .send({ clientType: "" });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("filters leads by clientType", async () => {
+    await sales1Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "Residential Lead", clientType: "residential" }));
+    await sales1Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "Commercial Lead", clientType: "commercial" }));
+
+    const response = await sales1Agent.get("/api/v1/leads?clientType=commercial");
+
+    expect(response.body.data.map((lead) => lead.name)).toEqual(["Commercial Lead"]);
+  });
+
+  it("still exposes exactly the same 7-stage status enum after adding solar fields (regression)", async () => {
+    const created = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload());
+    const id = created.body.data._id;
+
+    const stages = ["contacted", "qualified", "proposal_sent", "negotiation"];
+    for (const stage of stages) {
+      const response = await sales1Agent.patch(`/api/v1/leads/${id}/status`).send({ status: stage });
+      expect(response.status).toBe(200);
+      expect(response.body.data.status).toBe(stage);
+    }
+
+    const wonResponse = await sales1Agent.patch(`/api/v1/leads/${id}/status`).send({ status: "won" });
+    expect(wonResponse.status).toBe(200);
+
+    const invalidResponse = await sales1Agent
+      .patch(`/api/v1/leads/${id}/status`)
+      .send({ status: "not_a_real_status" });
+    expect(invalidResponse.status).toBe(400);
+  });
+
+  it("listing/filtering still works with solar fields present (no regression)", async () => {
+    await sales1Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "Listed Lead" }));
+
+    const response = await sales1Agent.get("/api/v1/leads");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.map((lead) => lead.name)).toContain("Listed Lead");
   });
 });
 

@@ -14,6 +14,13 @@ const LEAD_STATUSES = [
 // sits in the sales pipeline. See .context/final-plan.md §6.2.
 const BUSINESS_STAGES = ["new", "old", "stable"];
 
+// --- Solar-specific fields --------------------------------------------
+
+const CLIENT_TYPES = ["residential", "commercial", "industrial"];
+const ROOF_TYPES = ["rcc", "tin_shed", "tile", "ground_mount", "other"];
+const CONNECTION_TYPES = ["single_phase", "three_phase"];
+const SITE_SURVEY_STATUSES = ["not_scheduled", "scheduled", "completed"];
+
 const leadSchema = new mongoose.Schema(
   {
     name: {
@@ -107,6 +114,59 @@ const leadSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // --- Solar-specific fields (.context/final-plan.md solar intake) ------
+    clientType: {
+      type: String,
+      enum: CLIENT_TYPES,
+      required: true,
+    },
+    siteAddress: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    monthlyElectricityBill: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+    estimatedUnitsConsumed: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+    estimatedCapacityKw: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+    roofType: {
+      type: String,
+      enum: ROOF_TYPES,
+      default: null,
+    },
+    connectionType: {
+      type: String,
+      enum: CONNECTION_TYPES,
+      default: null,
+    },
+    // Only meaningful for residential clients — see
+    // lead.validation.js#validateCreateLeadInput for the enforcement.
+    subsidyApplicable: {
+      type: Boolean,
+      default: false,
+    },
+    siteSurveyStatus: {
+      type: String,
+      enum: SITE_SURVEY_STATUSES,
+      default: "not_scheduled",
+    },
+    // Only meaningful once siteSurveyStatus has moved off "not_scheduled" —
+    // same enforcement location as subsidyApplicable above.
+    siteSurveyDate: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -116,4 +176,11 @@ const leadSchema = new mongoose.Schema(
 const Lead = mongoose.model("Lead", leadSchema);
 
 export default Lead;
-export { LEAD_STATUSES, BUSINESS_STAGES };
+export {
+  LEAD_STATUSES,
+  BUSINESS_STAGES,
+  CLIENT_TYPES,
+  ROOF_TYPES,
+  CONNECTION_TYPES,
+  SITE_SURVEY_STATUSES,
+};

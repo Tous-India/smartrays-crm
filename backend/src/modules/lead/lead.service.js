@@ -111,6 +111,16 @@ export async function createLead(payload, requestingUser) {
     followUpNote: payload.followUpNote || null,
     notes: payload.notes,
     lostReason: payload.status === "lost" ? payload.lostReason : null,
+    clientType: payload.clientType,
+    siteAddress: payload.siteAddress || null,
+    monthlyElectricityBill: payload.monthlyElectricityBill ?? null,
+    estimatedUnitsConsumed: payload.estimatedUnitsConsumed ?? null,
+    estimatedCapacityKw: payload.estimatedCapacityKw ?? null,
+    roofType: payload.roofType || null,
+    connectionType: payload.connectionType || null,
+    subsidyApplicable: payload.subsidyApplicable ?? false,
+    siteSurveyStatus: payload.siteSurveyStatus || "not_scheduled",
+    siteSurveyDate: payload.siteSurveyDate || null,
   });
 
   await notifyLeadAssignment(lead, requestingUser);
@@ -124,9 +134,10 @@ export async function listLeads(filters, requestingUser) {
   const followUpFilter = buildFollowUpFilter(filters.followUp);
   const statusFilter = filters.status ? { status: filters.status } : {};
   const ownerFilter = filters.owner ? { ownerId: filters.owner } : {};
+  const clientTypeFilter = filters.clientType ? { clientType: filters.clientType } : {};
 
   const combinedFilter = {
-    $and: [ownershipFilter, searchFilter, followUpFilter, statusFilter, ownerFilter],
+    $and: [ownershipFilter, searchFilter, followUpFilter, statusFilter, ownerFilter, clientTypeFilter],
   };
 
   const leads = await Lead.find(combinedFilter).sort({ createdAt: -1 });
@@ -214,6 +225,16 @@ export async function updateLead(leadId, payload, requestingUser) {
     "followUpNote",
     "notes",
     "lostReason",
+    "clientType",
+    "siteAddress",
+    "monthlyElectricityBill",
+    "estimatedUnitsConsumed",
+    "estimatedCapacityKw",
+    "roofType",
+    "connectionType",
+    "subsidyApplicable",
+    "siteSurveyStatus",
+    "siteSurveyDate",
   ];
 
   // Reassigning a lead's owner ("Assign owner") is a manager/admin action —
@@ -401,6 +422,11 @@ export async function importLeadsFromFile(fileBuffer, originalFileName, requesti
       status: row.status || "new",
       budget: row.budget ? Number(row.budget) : null,
       ownerId: requestingUser._id,
+      // The CSV/Excel column set (see COLUMN_ALIASES above) has no client-type
+      // column, but `clientType` is a required schema field — "residential"
+      // is the most common case for a bulk-imported lead with no other
+      // signal, and it's always editable afterward like any other field.
+      clientType: "residential",
     });
   });
 
