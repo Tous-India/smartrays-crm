@@ -280,10 +280,18 @@ function MainLayout() {
               </div>
             </button>
             {canViewSettings && (
+              // `!text-white/60` (not plain `text-white/60`) — AntD's global
+              // reset styles every bare `<a>` with `color: colorLink`
+              // (brand-navy, per App.jsx's ConfigProvider) at a specificity
+              // that otherwise wins over a plain Tailwind utility class, the
+              // same gotcha already worked around elsewhere on AntD-styled
+              // elements in this file (`!bg-brand-navy`, `!h-12`, etc.) —
+              // without the `!`, this icon silently renders navy-on-navy,
+              // exactly the low-contrast bug this fix addresses.
               <Link
                 to={ROUTE_PATHS.SETTINGS_USERS}
                 title="Settings"
-                className="flex shrink-0 items-center justify-center rounded-md p-2 text-white/60 hover:bg-white/10 hover:text-white"
+                className="flex shrink-0 items-center justify-center rounded-md p-2 !text-white/60 hover:bg-white/10 hover:!text-white"
               >
                 <SettingOutlined />
               </Link>
