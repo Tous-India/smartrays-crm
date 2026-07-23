@@ -8,7 +8,10 @@ import LeadFormModal from "./LeadFormModal";
 import LostReasonModal from "./LostReasonModal";
 import ConvertToCustomerModal from "./ConvertToCustomerModal";
 import ImportWizardModal from "./ImportWizardModal";
+import HotLeadsSection from "./HotLeadsSection";
+import UpcomingFollowUpsSection from "./UpcomingFollowUpsSection";
 import useLeads from "../hooks/useLeads";
+import { getHotLeads, getUpcomingFollowUps } from "../utils/upcomingFollowUps";
 import useLeadStatusChangeFlow from "../hooks/useLeadStatusChangeFlow";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import useSessionStore from "../../../store/sessionStore";
@@ -39,6 +42,14 @@ function LeadsListPage({ view }) {
   };
 
   const { leads, isLoading, refetch } = useLeads(filters);
+  // Pure frontend derivations from the already-fetched `leads` list — no new
+  // backend endpoint, per this task's own scope. Both are computed from
+  // whatever the current filters loaded rather than a separate always-
+  // unfiltered fetch (which would need its own API call): with the default
+  // (empty) filters this is the full leads list, matching "pinned, always
+  // visible" in practice without adding a second network round-trip.
+  const hotLeads = getHotLeads(leads);
+  const upcomingFollowUps = getUpcomingFollowUps(leads);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isSubmittingForm, setIsSubmittingForm] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
@@ -116,6 +127,9 @@ function LeadsListPage({ view }) {
 
   return (
     <div>
+      <HotLeadsSection hotLeads={hotLeads} />
+      <UpcomingFollowUpsSection upcomingFollowUps={upcomingFollowUps} />
+
       <LeadFiltersBar
         filters={filters}
         onFilterChange={handleFilterChange}
