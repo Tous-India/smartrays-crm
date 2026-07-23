@@ -229,9 +229,14 @@ function MainLayout() {
             deliberate exception to the reference, which shows this
             section dark) — the color horizontal logo needs a light
             background for real contrast, an already-established decision
-            from the immediately preceding tasks. */}
-        <div className="flex h-14 shrink-0 items-center justify-center border-b border-gray-200 bg-white px-4">
-          <BrandLogo className="w-36" variant="color" layout="horizontal" />
+            from the immediately preceding tasks. `app-topbar-height`
+            (styles/index.css) is the single shared height source with the
+            blue top-bar strip below — they sit side by side and must stay
+            pixel-equal; a previous mismatch (`h-14` vs `h-12`) came from
+            hardcoding the same intended height as two independent
+            Tailwind classes instead of one shared one. */}
+        <div className="app-topbar-height flex shrink-0 items-center justify-center border-b border-gray-200 bg-white px-4">
+          <BrandLogo className="w-32" variant="color" layout="horizontal" />
         </div>
 
         {/* Middle — the ONLY scrollable region, and only if the list is
@@ -300,7 +305,7 @@ function MainLayout() {
           breakpoint (992px), where the Sider auto-collapses to width 0 and
           reserving 220px of empty margin would otherwise leave a dead gap. */}
       <Layout className="ms-0 lg:ms-[220px]">
-        <Header className="!flex !h-12 items-center justify-between !bg-brand-navy px-6 !leading-none">
+        <Header className="app-topbar-height !flex items-center justify-between !bg-brand-navy px-6 !leading-none">
           <LiveClock />
         </Header>
         <Content className="m-4">

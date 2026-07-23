@@ -15,6 +15,22 @@
 }
 
 /*
+ * Single source of truth for the two top-of-layout boxes' height
+ * (MainLayout.jsx's white logo box + the blue top-bar strip) — they sit
+ * side by side and must be pixel-equal, but were previously set with two
+ * independent Tailwind classes (`h-14` vs `h-12`) that silently drifted
+ * apart. One shared class instead of hardcoding the same number twice, so
+ * they can't drift again — change the height here once, both boxes follow.
+ * `!important` because the top-bar strip is AntD's `<Header>`, whose own
+ * height comes from a CSS class (not inline style), needing the same
+ * override precedence the pre-existing `!bg-brand-navy` on that element
+ * already relies on.
+ */
+.app-topbar-height {
+  height: 48px !important;
+}
+
+/*
  * Auth screen background — v3. v2's diagonal read as one flat navy at a
  * glance because its three linear-gradient stops were too close in
  * lightness and the green glow (12% opacity, near a corner) was too faint
