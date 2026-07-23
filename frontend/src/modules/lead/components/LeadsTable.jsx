@@ -2,6 +2,7 @@ import { Table, Tag, Select, Button, Tooltip } from "antd";
 import { FireOutlined, FireFilled } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import LeadStatusSelect from "./LeadStatusSelect";
+import LeadFollowUpCell from "./LeadFollowUpCell";
 import PermissionGate from "../../../routes/PermissionGate";
 import { LEAD_STATUS_COLORS, LEAD_STATUS_LABELS } from "../constants/lead.constants";
 
@@ -16,7 +17,17 @@ function isOverdue(followUpDate) {
  * toggle, assign owner) are quick actions available without opening the
  * detail slide-over, per the spec's "Quick Actions (from list/board)".
  */
-function LeadsTable({ leads, isLoading, users, canEdit, canReassignOwner, onRequestStatusChange, onToggleHot, onAssignOwner }) {
+function LeadsTable({
+  leads,
+  isLoading,
+  users,
+  canEdit,
+  canReassignOwner,
+  onRequestStatusChange,
+  onToggleHot,
+  onAssignOwner,
+  onRescheduleFollowUp,
+}) {
   const navigate = useNavigate();
 
   const userNameById = new Map(users.map((user) => [user._id, user.name]));
@@ -90,8 +101,15 @@ function LeadsTable({ leads, isLoading, users, canEdit, canReassignOwner, onRequ
     {
       title: "Follow-up",
       dataIndex: "followUpDate",
-      render: (value) =>
-        value ? (
+      // Inline-editable when the caller holds `leads.edit` — same
+      // permission check already gating the Status dropdown, per this
+      // task's own instruction to reuse it rather than introducing a
+      // separate check. Read-only rendering (no grant) is unchanged from
+      // before.
+      render: (value, lead) =>
+        canEdit ? (
+          <LeadFollowUpCell lead={lead} onReschedule={onRescheduleFollowUp} />
+        ) : value ? (
           <span className={isOverdue(value) ? "font-medium text-red-600" : ""}>
             {new Date(value).toLocaleDateString()}
           </span>
@@ -136,7 +154,16 @@ function LeadsTable({ leads, isLoading, users, canEdit, canReassignOwner, onRequ
       dataSource={leads}
       columns={columns}
       onRow={(lead) => ({
-        onClick: () => navigate(`/leads/${lead._id}`),
+        onClick: (event) => {
+          // AntD portals dropdown/picker popups to <body>, outside the row's
+          // DOM — clicking an option or the DatePicker's "OK" button still
+          // bubbles here. Skip navigation when the click actually landed in
+          // one of those popups rather than on the row itself.
+          if (event.target.closest(".ant-select-dropdown, .ant-picker-dropdown, .ant-dropdown")) {
+            return;
+          }
+          navigate(`/leads/${lead._id}`);
+        },
         className: "cursor-pointer",
       })}
       pagination={{ pageSize: 20 }}

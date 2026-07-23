@@ -84,6 +84,11 @@ function LeadsListPage({ view }) {
     refetch();
   }
 
+  async function handleRescheduleFollowUp(lead, followUpDate) {
+    await updateLead(lead._id, { followUpDate });
+    refetch();
+  }
+
   async function handleExport() {
     setIsExporting(true);
 
@@ -131,6 +136,7 @@ function LeadsListPage({ view }) {
           onRequestStatusChange={statusFlow.requestStatusChange}
           onToggleHot={handleToggleHot}
           onAssignOwner={handleAssignOwner}
+          onRescheduleFollowUp={handleRescheduleFollowUp}
         />
       ) : (
         <LeadBoard leads={leads} canEdit={canEdit} onRequestStatusChange={statusFlow.requestStatusChange} />
