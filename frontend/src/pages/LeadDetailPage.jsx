@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Drawer, Spin, message } from "antd";
+import { Drawer, Spin, message, Space, Tag } from "antd";
+import { FireFilled } from "@ant-design/icons";
 import useLeadDetail from "../modules/lead/hooks/useLeadDetail";
 import useLeadStatusChangeFlow from "../modules/lead/hooks/useLeadStatusChangeFlow";
 import useUserDirectory from "../hooks/useUserDirectory";
@@ -12,6 +13,7 @@ import ConvertToCustomerModal from "../modules/lead/components/ConvertToCustomer
 import { logLeadCall, updateLead, deleteLead, convertLeadToCustomer } from "../modules/lead/api/leadApi";
 import { createContract } from "../modules/customer/api/customerApi";
 import { ROUTE_PATHS } from "../constants/routePaths.constants";
+import { LEAD_STATUS_COLORS, LEAD_STATUS_LABELS } from "../modules/lead/constants/lead.constants";
 
 /**
  * A real route (`/leads/:id`, linkable/refreshable) that renders as a
@@ -117,7 +119,18 @@ function LeadDetailPage() {
 
   return (
     <>
-      <Drawer open width={640} onClose={handleClose} title={lead.name}>
+      <Drawer
+        open
+        width={640}
+        onClose={handleClose}
+        title={
+          <Space>
+            {lead.name}
+            {lead.isHot && <FireFilled className="text-orange-500" title="Hot lead" />}
+            <Tag color={LEAD_STATUS_COLORS[lead.status]}>{LEAD_STATUS_LABELS[lead.status]}</Tag>
+          </Space>
+        }
+      >
         <LeadDetailContent
           lead={lead}
           callHistory={callHistory}

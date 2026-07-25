@@ -23,13 +23,14 @@ export const LEAD_STATUS_LABELS = {
   lost: "Lost",
 };
 
-// Ant Design Tag `color` prop values.
+// Ant Design Tag `color` prop values — the shared STATUS_COLOR_MAP used by
+// both the Leads table and the Lead Detail page's status badge.
 export const LEAD_STATUS_COLORS = {
   new: "default",
-  contacted: "blue",
-  qualified: "cyan",
-  proposal_sent: "gold",
-  negotiation: "orange",
+  contacted: "cyan",
+  qualified: "purple",
+  proposal_sent: "orange",
+  negotiation: "gold",
   won: "green",
   lost: "red",
 };

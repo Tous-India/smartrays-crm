@@ -1,5 +1,5 @@
-import { Table, Tag, Select, Button, Tooltip } from "antd";
-import { FireOutlined, FireFilled } from "@ant-design/icons";
+import { Table, Tag, Select, Button, Tooltip, Space, Popconfirm } from "antd";
+import { FireOutlined, FireFilled, PhoneOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import LeadStatusSelect from "./LeadStatusSelect";
 import LeadFollowUpCell from "./LeadFollowUpCell";
@@ -14,8 +14,11 @@ function isOverdue(followUpDate) {
  * Table View per leads-customer-functional-spec.md: Name, Company, Status,
  * Source, Owner, Follow-up, Budget, Created columns; status changes via an
  * inline dropdown; overdue follow-ups highlighted red. Row actions (hot
- * toggle, assign owner) are quick actions available without opening the
- * detail slide-over, per the spec's "Quick Actions (from list/board)".
+ * toggle, assign owner, quick call-log) are quick actions available without
+ * opening the detail slide-over, per the spec's "Quick Actions (from
+ * list/board)". Checkbox row selection + a bulk-action toolbar (shown once
+ * at least one row is selected) mirror the identical pattern already
+ * established in `CustomersTable.jsx`.
  */
 function LeadsTable({
   leads,
@@ -23,10 +26,17 @@ function LeadsTable({
   users,
   canEdit,
   canReassignOwner,
+  canDelete,
   onRequestStatusChange,
   onToggleHot,
   onAssignOwner,
   onRescheduleFollowUp,
+  onLogCall,
+  selectedRowKeys,
+  onSelectionChange,
+  onBulkAssignOwner,
+  onBulkDelete,
+  isBulkActing,
 }) {
   const navigate = useNavigate();
 
@@ -137,42 +147,92 @@ function LeadsTable({
       key: "actions",
       render: (_, lead) => (
         <PermissionGate module="leads" action="edit">
-          <Tooltip title={lead.isHot ? "Remove Hot" : "Mark as Hot"}>
-            <Button
-              type="text"
-              icon={lead.isHot ? <FireFilled className="text-orange-500" /> : <FireOutlined />}
-              onClick={(event) => {
-                event.stopPropagation();
-                onToggleHot(lead);
-              }}
-            />
-          </Tooltip>
+          <Space size={0}>
+            <Tooltip title="Log Call">
+              <Button
+                type="text"
+                icon={<PhoneOutlined />}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onLogCall(lead);
+                }}
+              />
+            </Tooltip>
+            <Tooltip title={lead.isHot ? "Remove Hot" : "Mark as Hot"}>
+              <Button
+                type="text"
+                icon={lead.isHot ? <FireFilled className="text-orange-500" /> : <FireOutlined />}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onToggleHot(lead);
+                }}
+              />
+            </Tooltip>
+          </Space>
         </PermissionGate>
       ),
     },
   ];
 
   return (
-    <Table
-      rowKey="_id"
-      loading={isLoading}
-      dataSource={leads}
-      columns={columns}
-      onRow={(lead) => ({
-        onClick: (event) => {
-          // AntD portals dropdown/picker popups to <body>, outside the row's
-          // DOM — clicking an option or the DatePicker's "OK" button still
-          // bubbles here. Skip navigation when the click actually landed in
-          // one of those popups rather than on the row itself.
-          if (event.target.closest(".ant-select-dropdown, .ant-picker-dropdown, .ant-dropdown")) {
-            return;
-          }
-          navigate(`/leads/${lead._id}`);
-        },
-        className: "cursor-pointer",
-      })}
-      pagination={{ pageSize: 20 }}
-    />
+    <div>
+      {selectedRowKeys.length > 0 && (
+        <div className="mb-3 flex items-center gap-3 rounded-md bg-brand-navy/5 px-4 py-2">
+          <span>{selectedRowKeys.length} selected</span>
+          {canReassignOwner && (
+            <Select
+              size="small"
+              placeholder="Assign owner…"
+              style={{ minWidth: 160 }}
+              options={users.map((user) => ({ value: user._id, label: user.name }))}
+              disabled={isBulkActing}
+              onChange={onBulkAssignOwner}
+            />
+          )}
+          {canDelete && (
+            <Popconfirm
+              title={`Delete ${selectedRowKeys.length} lead(s)?`}
+              okText="Delete"
+              okType="danger"
+              onConfirm={onBulkDelete}
+            >
+              <Button size="small" danger loading={isBulkActing}>
+                Delete
+              </Button>
+            </Popconfirm>
+          )}
+        </div>
+      )}
+
+      <Table
+        rowKey="_id"
+        loading={isLoading}
+        dataSource={leads}
+        columns={columns}
+        rowSelection={{
+          selectedRowKeys,
+          onChange: onSelectionChange,
+        }}
+        onRow={(lead) => ({
+          onClick: (event) => {
+            // AntD portals dropdown/picker popups to <body>, outside the row's
+            // DOM — clicking an option or the DatePicker's "OK" button still
+            // bubbles here. Skip navigation when the click actually landed in
+            // one of those popups rather than on the row itself.
+            if (
+              event.target.closest(
+                ".ant-select-dropdown, .ant-picker-dropdown, .ant-dropdown, .ant-popover"
+              )
+            ) {
+              return;
+            }
+            navigate(`/leads/${lead._id}`);
+          },
+          className: "cursor-pointer",
+        })}
+        pagination={{ pageSize: 20 }}
+      />
+    </div>
   );
 }
 

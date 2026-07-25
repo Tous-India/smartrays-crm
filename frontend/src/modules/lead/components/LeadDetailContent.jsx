@@ -1,4 +1,4 @@
-import { Descriptions, Tag, List, Button, Space, Popconfirm } from "antd";
+import { Descriptions, List, Button, Space, Popconfirm } from "antd";
 import {
   PhoneOutlined,
   FireOutlined,
@@ -11,8 +11,6 @@ import {
 } from "@ant-design/icons";
 import PermissionGate from "../../../routes/PermissionGate";
 import {
-  LEAD_STATUS_COLORS,
-  LEAD_STATUS_LABELS,
   CALL_OUTCOME_LABELS,
   CLIENT_TYPE_LABELS,
   ROOF_TYPE_LABELS,
@@ -44,12 +42,12 @@ function LeadDetailContent({
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
-        <Space>
-          {lead.isHot && <FireFilled className="text-orange-500" title="Hot lead" />}
-          <Tag color={LEAD_STATUS_COLORS[lead.status]}>{LEAD_STATUS_LABELS[lead.status]}</Tag>
-        </Space>
-
+      {/* The status badge + hot icon live in the Drawer's own title now
+          (see LeadDetailPage.jsx), inline next to the lead's name — moved
+          from here per this task's own instruction, since a Tag floating in
+          its own row above the action buttons read as disconnected from
+          what it was actually describing. */}
+      <div className="mb-4 flex items-center justify-end">
         <Space wrap>
           <PermissionGate module="leads" action="edit">
             <Button icon={<PhoneOutlined />} onClick={onLogCall}>
