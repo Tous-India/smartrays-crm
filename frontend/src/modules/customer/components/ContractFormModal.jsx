@@ -1,12 +1,7 @@
 import { useEffect } from "react";
 import { Modal, Form, Select, InputNumber, Input, DatePicker } from "antd";
 import dayjs from "dayjs";
-import { CONTRACT_TYPE_LABELS } from "../constants/customer.constants";
-
-const CONTRACT_TYPE_OPTIONS = Object.entries(CONTRACT_TYPE_LABELS).map(([value, label]) => ({
-  value,
-  label,
-}));
+import { CONTRACT_TYPE_UI_OPTIONS, CONTRACT_TYPE_LABELS } from "../constants/customer.constants";
 
 /**
  * Add/edit a single contract. Adding a `monthly`/`onetime` contract triggers
@@ -17,6 +12,14 @@ const CONTRACT_TYPE_OPTIONS = Object.entries(CONTRACT_TYPE_LABELS).map(([value, 
  */
 function ContractFormModal({ open, mode, initialContract, onCancel, onSubmit, isSubmitting }) {
   const [form] = Form.useForm();
+  // "monthly" is hidden from the picker (see CONTRACT_TYPE_UI_OPTIONS), but
+  // editing an existing monthly contract must still show it as the selected
+  // value — the Select is disabled in edit mode either way, so this option
+  // is never actually choosable, just displayable.
+  const typeOptions =
+    mode === "edit" && initialContract?.type === "monthly"
+      ? [{ value: "monthly", label: CONTRACT_TYPE_LABELS.monthly }, ...CONTRACT_TYPE_UI_OPTIONS]
+      : CONTRACT_TYPE_UI_OPTIONS;
 
   useEffect(() => {
     if (open) {
@@ -64,7 +67,7 @@ function ContractFormModal({ open, mode, initialContract, onCancel, onSubmit, is
               : undefined
           }
         >
-          <Select options={CONTRACT_TYPE_OPTIONS} disabled={mode === "edit"} />
+          <Select options={typeOptions} disabled={mode === "edit"} />
         </Form.Item>
         <Form.Item label="Amount" name="amount">
           <InputNumber min={0} style={{ width: "100%" }} />

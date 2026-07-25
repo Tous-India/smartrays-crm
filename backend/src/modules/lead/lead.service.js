@@ -337,6 +337,14 @@ export async function getLeadCallHistory(leadId, requestingUser) {
  * "archiving" it, since Lead has no separate archived flag and its status
  * enum is unchanged by conversion (the caller marks it "won" beforehand, as
  * its own explicit action, not something this function forces).
+ *
+ * `clientType`/`siteAddress`/`roofType`/`connectionType`/`estimatedCapacityKw`
+ * are always carried over from the lead itself (same fallback pattern as
+ * companyName/email/etc. above) — these are exactly the 5 fields this task
+ * specifies get copied at conversion time. Every other solar field on
+ * Customer (installedCapacityKw, warranty dates, netMeteringStatus, etc.) has
+ * no Lead-side equivalent and is deliberately left unset here, filled in
+ * later via a normal Customer edit.
  */
 export async function convertLeadToCustomer(leadId, payload, requestingUser) {
   const lead = await getLeadInScope(leadId, requestingUser);
@@ -357,6 +365,12 @@ export async function convertLeadToCustomer(leadId, payload, requestingUser) {
       website: payload.website,
       industry: payload.industry,
       notes: payload.notes,
+      clientType: payload.clientType !== undefined ? payload.clientType : lead.clientType,
+      siteAddress: payload.siteAddress !== undefined ? payload.siteAddress : lead.siteAddress,
+      roofType: payload.roofType !== undefined ? payload.roofType : lead.roofType,
+      connectionType: payload.connectionType !== undefined ? payload.connectionType : lead.connectionType,
+      estimatedCapacityKw:
+        payload.estimatedCapacityKw !== undefined ? payload.estimatedCapacityKw : lead.estimatedCapacityKw,
     },
     requestingUser
   );

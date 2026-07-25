@@ -1,7 +1,13 @@
 import mongoose from "mongoose";
+import { CLIENT_TYPES, ROOF_TYPES, CONNECTION_TYPES } from "../lead/lead.model.js";
 
 const BILLING_TYPES = ["registered", "non_gst", "overseas"];
 const CUSTOMER_STATUSES = ["active", "inactive"];
+
+// --- Solar-specific fields --------------------------------------------
+
+const NET_METERING_STATUSES = ["not_applied", "applied", "approved", "installed"];
+const SUBSIDY_CLAIM_STATUSES = ["not_applicable", "pending", "approved", "rejected", "disbursed"];
 
 const customerSchema = new mongoose.Schema(
   {
@@ -83,6 +89,93 @@ const customerSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    // --- Solar-specific fields (.context/final-plan.md solar intake) ------
+    // `clientType`/`siteAddress`/`roofType`/`connectionType`/
+    // `estimatedCapacityKw` are carried over from the Lead at conversion time
+    // (lead.service.js#convertLeadToCustomer) — deliberately NOT `required`
+    // here even though `clientType` is required on Lead: a customer created
+    // directly (not via conversion) has no Lead to carry these from, and
+    // making any of them required would repeat the exact bug the Lead-side
+    // backfill script had to fix (Mongoose enforces `required` on every
+    // `.save()`, not just creation — see backfillLeadClientType.js).
+    clientType: {
+      type: String,
+      enum: CLIENT_TYPES,
+      default: null,
+    },
+    siteAddress: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    roofType: {
+      type: String,
+      enum: ROOF_TYPES,
+      default: null,
+    },
+    connectionType: {
+      type: String,
+      enum: CONNECTION_TYPES,
+      default: null,
+    },
+    estimatedCapacityKw: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+    // The remaining solar fields are filled in later via normal edit, not at
+    // conversion time — there's no Lead-side equivalent to carry them from.
+    installedCapacityKw: {
+      type: Number,
+      min: 0,
+      default: null,
+    },
+    commissioningDate: {
+      type: Date,
+      default: null,
+    },
+    panelBrand: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    panelModel: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    inverterBrand: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    inverterModel: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    panelWarrantyExpiry: {
+      type: Date,
+      default: null,
+    },
+    inverterWarrantyExpiry: {
+      type: Date,
+      default: null,
+    },
+    workmanshipWarrantyExpiry: {
+      type: Date,
+      default: null,
+    },
+    netMeteringStatus: {
+      type: String,
+      enum: NET_METERING_STATUSES,
+      default: "not_applied",
+    },
+    subsidyClaimStatus: {
+      type: String,
+      enum: SUBSIDY_CLAIM_STATUSES,
+      default: "not_applicable",
+    },
   },
   {
     timestamps: true,
@@ -92,4 +185,4 @@ const customerSchema = new mongoose.Schema(
 const Customer = mongoose.model("Customer", customerSchema);
 
 export default Customer;
-export { BILLING_TYPES, CUSTOMER_STATUSES };
+export { BILLING_TYPES, CUSTOMER_STATUSES, NET_METERING_STATUSES, SUBSIDY_CLAIM_STATUSES };

@@ -615,6 +615,40 @@ describe("Convert to customer", () => {
 
     expect(leadAfter.body.data.convertedCustomerId).toBe(response.body.data._id);
   });
+
+  it("carries over exactly the 5 solar fields from the lead, and no others", async () => {
+    const created = await sales1Agent.post("/api/v1/leads").send(
+      buildLeadPayload({
+        clientType: "commercial",
+        siteAddress: "42 Solar Way",
+        roofType: "rcc",
+        connectionType: "three_phase",
+        estimatedCapacityKw: 25,
+        monthlyElectricityBill: 20000,
+        siteSurveyStatus: "completed",
+      })
+    );
+    const leadId = created.body.data._id;
+    await sales1Agent.patch(`/api/v1/leads/${leadId}/status`).send({ status: "won" });
+
+    const response = await sales1Agent
+      .post(`/api/v1/leads/${leadId}/convert`)
+      .send({ projectManagerId: String(manager1._id) });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data).toMatchObject({
+      clientType: "commercial",
+      siteAddress: "42 Solar Way",
+      roofType: "rcc",
+      connectionType: "three_phase",
+      estimatedCapacityKw: 25,
+    });
+    // Fields with no Lead-side equivalent, or that aren't part of the
+    // documented carry-over set, must NOT be silently copied over.
+    expect(response.body.data.installedCapacityKw).toBeNull();
+    expect(response.body.data.netMeteringStatus).toBe("not_applied");
+    expect(response.body.data.subsidyClaimStatus).toBe("not_applicable");
+  });
 });
 
 describe("CSV import", () => {

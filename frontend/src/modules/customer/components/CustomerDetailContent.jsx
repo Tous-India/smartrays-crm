@@ -4,6 +4,7 @@ import PermissionGate from "../../../routes/PermissionGate";
 import CustomerHeaderSection from "./CustomerHeaderSection";
 import CustomerEditModal from "./CustomerEditModal";
 import CustomerBillingCard from "./CustomerBillingCard";
+import CustomerSiteDetailsCard from "./CustomerSiteDetailsCard";
 import CustomerContractsSection from "./CustomerContractsSection";
 import CustomerContactsSection from "./CustomerContactsSection";
 import CustomerCredentialsSection from "./CustomerCredentialsSection";
@@ -51,6 +52,8 @@ function CustomerDetailContent({ customer, contacts, contracts, credentials, act
       <CustomerHeaderSection customer={customer} onEdit={() => setIsEditOpen(true)} onDelete={handleDelete} />
 
       <CustomerBillingCard customer={customer} onEdit={() => setIsEditOpen(true)} />
+
+      <CustomerSiteDetailsCard customer={customer} onEdit={() => setIsEditOpen(true)} />
 
       <CustomerContractsSection
         customerId={customer._id}

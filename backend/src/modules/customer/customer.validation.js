@@ -1,8 +1,54 @@
 import ApiError from "../../utils/ApiError.js";
-import { BILLING_TYPES, CUSTOMER_STATUSES } from "./customer.model.js";
+import { BILLING_TYPES, CUSTOMER_STATUSES, NET_METERING_STATUSES, SUBSIDY_CLAIM_STATUSES } from "./customer.model.js";
 import { CONTRACT_TYPES } from "./contract.model.js";
+import { CLIENT_TYPES, ROOF_TYPES, CONNECTION_TYPES } from "../lead/lead.model.js";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/**
+ * Shared solar-field checks for both create and update — unlike Lead,
+ * `clientType` is NOT required here (see customer.model.js's own comment on
+ * why), so every one of these is purely "if present, must be valid."
+ */
+function validateSolarFields(body) {
+  const {
+    clientType,
+    roofType,
+    connectionType,
+    estimatedCapacityKw,
+    installedCapacityKw,
+    netMeteringStatus,
+    subsidyClaimStatus,
+  } = body;
+
+  if (clientType && !CLIENT_TYPES.includes(clientType)) {
+    throw new ApiError(400, `clientType must be one of: ${CLIENT_TYPES.join(", ")}`);
+  }
+
+  if (roofType && !ROOF_TYPES.includes(roofType)) {
+    throw new ApiError(400, `roofType must be one of: ${ROOF_TYPES.join(", ")}`);
+  }
+
+  if (connectionType && !CONNECTION_TYPES.includes(connectionType)) {
+    throw new ApiError(400, `connectionType must be one of: ${CONNECTION_TYPES.join(", ")}`);
+  }
+
+  if (estimatedCapacityKw !== undefined && estimatedCapacityKw !== null && Number(estimatedCapacityKw) < 0) {
+    throw new ApiError(400, "estimatedCapacityKw cannot be negative");
+  }
+
+  if (installedCapacityKw !== undefined && installedCapacityKw !== null && Number(installedCapacityKw) < 0) {
+    throw new ApiError(400, "installedCapacityKw cannot be negative");
+  }
+
+  if (netMeteringStatus && !NET_METERING_STATUSES.includes(netMeteringStatus)) {
+    throw new ApiError(400, `netMeteringStatus must be one of: ${NET_METERING_STATUSES.join(", ")}`);
+  }
+
+  if (subsidyClaimStatus && !SUBSIDY_CLAIM_STATUSES.includes(subsidyClaimStatus)) {
+    throw new ApiError(400, `subsidyClaimStatus must be one of: ${SUBSIDY_CLAIM_STATUSES.join(", ")}`);
+  }
+}
 
 export function validateCreateCustomerInput(req, res, next) {
   const { companyName, projectManagerId, billingType, email, customerStatus } = req.body;
@@ -27,6 +73,8 @@ export function validateCreateCustomerInput(req, res, next) {
     throw new ApiError(400, `customerStatus must be one of: ${CUSTOMER_STATUSES.join(", ")}`);
   }
 
+  validateSolarFields(req.body);
+
   next();
 }
 
@@ -48,6 +96,8 @@ export function validateUpdateCustomerInput(req, res, next) {
   if (customerStatus && !CUSTOMER_STATUSES.includes(customerStatus)) {
     throw new ApiError(400, `customerStatus must be one of: ${CUSTOMER_STATUSES.join(", ")}`);
   }
+
+  validateSolarFields(req.body);
 
   next();
 }

@@ -3,13 +3,9 @@ import { Modal, Steps, Form, Input, Select, InputNumber, DatePicker, Checkbox, B
 import { PlusOutlined, MinusCircleOutlined } from "@ant-design/icons";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import useSessionStore from "../../../store/sessionStore";
-import { BILLING_TYPE_LABELS, CONTRACT_TYPE_LABELS } from "../constants/customer.constants";
+import { BILLING_TYPE_LABELS, CONTRACT_TYPE_UI_OPTIONS } from "../constants/customer.constants";
 
 const BILLING_TYPE_OPTIONS = Object.entries(BILLING_TYPE_LABELS).map(([value, label]) => ({
-  value,
-  label,
-}));
-const CONTRACT_TYPE_OPTIONS = Object.entries(CONTRACT_TYPE_LABELS).map(([value, label]) => ({
   value,
   label,
 }));
@@ -204,7 +200,7 @@ function CustomerFormWizard({ open, onCancel, onSubmit, isSubmitting }) {
                       <Select
                         aria-label="Contract type"
                         placeholder="Type"
-                        options={CONTRACT_TYPE_OPTIONS}
+                        options={CONTRACT_TYPE_UI_OPTIONS}
                         style={{ width: 120 }}
                       />
                     </Form.Item>

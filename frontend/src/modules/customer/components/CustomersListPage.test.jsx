@@ -192,10 +192,13 @@ describe("CustomersListPage — Add Customer wizard", () => {
     // Step 1: Billing — skip, just advance.
     await userEvent.click(await screen.findByRole("button", { name: "Next" }));
 
-    // Step 2: Contracts — add one monthly contract.
+    // Step 2: Contracts — add one one-time contract. ("Monthly" is
+    // intentionally hidden from this picker — see CONTRACT_TYPE_UI_OPTIONS —
+    // so this covers the automation path with a type that's actually
+    // selectable here.)
     await userEvent.click(await screen.findByRole("button", { name: /Add Contract/ }));
     await userEvent.click(screen.getByRole("combobox", { name: "Contract type" }));
-    await userEvent.click(await screen.findByTitle("Monthly"));
+    await userEvent.click(await screen.findByTitle("One-time"));
     await userEvent.click(screen.getByRole("button", { name: "Next" }));
 
     // Step 3: Contacts — skip.
@@ -216,7 +219,7 @@ describe("CustomersListPage — Add Customer wizard", () => {
     await waitFor(() => {
       expect(customerApi.createContract).toHaveBeenCalledWith(
         "new-cust",
-        expect.objectContaining({ type: "monthly" })
+        expect.objectContaining({ type: "onetime" })
       );
     });
 

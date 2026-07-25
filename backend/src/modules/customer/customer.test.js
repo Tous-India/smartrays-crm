@@ -182,6 +182,74 @@ describe("Customer CRUD + scoping", () => {
   });
 });
 
+describe("Solar-specific fields", () => {
+  it("creates a customer with no solar fields set (they're optional, not required)", async () => {
+    const response = await sales1Agent
+      .post("/api/v1/customers")
+      .send(buildCustomerPayload({ projectManagerId: manager1._id }));
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.clientType).toBeNull();
+    expect(response.body.data.netMeteringStatus).toBe("not_applied");
+    expect(response.body.data.subsidyClaimStatus).toBe("not_applicable");
+  });
+
+  it("rejects an invalid clientType/roofType/connectionType/netMeteringStatus/subsidyClaimStatus", async () => {
+    const badClientType = await sales1Agent
+      .post("/api/v1/customers")
+      .send(buildCustomerPayload({ projectManagerId: manager1._id, clientType: "not_a_real_type" }));
+    expect(badClientType.status).toBe(400);
+
+    const badRoof = await sales1Agent
+      .post("/api/v1/customers")
+      .send(buildCustomerPayload({ projectManagerId: manager1._id, roofType: "not_a_real_roof" }));
+    expect(badRoof.status).toBe(400);
+
+    const badConnection = await sales1Agent
+      .post("/api/v1/customers")
+      .send(buildCustomerPayload({ projectManagerId: manager1._id, connectionType: "not_a_real_connection" }));
+    expect(badConnection.status).toBe(400);
+
+    const badNetMetering = await sales1Agent
+      .post("/api/v1/customers")
+      .send(buildCustomerPayload({ projectManagerId: manager1._id, netMeteringStatus: "not_a_real_status" }));
+    expect(badNetMetering.status).toBe(400);
+
+    const badSubsidyStatus = await sales1Agent
+      .post("/api/v1/customers")
+      .send(buildCustomerPayload({ projectManagerId: manager1._id, subsidyClaimStatus: "not_a_real_status" }));
+    expect(badSubsidyStatus.status).toBe(400);
+  });
+
+  it("sets the remaining solar fields via a normal update, not at creation", async () => {
+    const created = await sales1Agent
+      .post("/api/v1/customers")
+      .send(buildCustomerPayload({ projectManagerId: manager1._id }));
+
+    const response = await sales1Agent.patch(`/api/v1/customers/${created.body.data._id}`).send({
+      installedCapacityKw: 12,
+      commissioningDate: new Date().toISOString(),
+      panelBrand: "Waaree",
+      panelModel: "WSM-540",
+      inverterBrand: "Growatt",
+      inverterModel: "MIN 5000TL-X",
+      netMeteringStatus: "approved",
+      subsidyClaimStatus: "pending",
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toMatchObject({
+      installedCapacityKw: 12,
+      panelBrand: "Waaree",
+      panelModel: "WSM-540",
+      inverterBrand: "Growatt",
+      inverterModel: "MIN 5000TL-X",
+      netMeteringStatus: "approved",
+      subsidyClaimStatus: "pending",
+    });
+  });
+});
+
 describe("Bulk actions", () => {
   it("bulk-deactivates within scope and requires customers.delete for the delete action", async () => {
     const created1 = await sales1Agent
