@@ -10,6 +10,12 @@ vi.mock("../modules/user/api/userApi", () => ({
   updateUser: vi.fn(),
 }));
 
+vi.mock("../modules/notification/api/notificationApi", () => ({
+  listNotifications: vi.fn().mockResolvedValue({ data: { data: [] } }),
+  markNotificationRead: vi.fn(),
+  markAllNotificationsRead: vi.fn(),
+}));
+
 function renderLayout(initialPath = "/dashboard") {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>

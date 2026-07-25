@@ -26,6 +26,7 @@ import { USER_ROLE_LABELS } from "../modules/user/constants/user.constants";
 import BrandLogo from "../components/BrandLogo";
 import EditProfileModal from "../modules/user/components/EditProfileModal";
 import LiveClock from "./LiveClock";
+import NotificationBell from "../modules/notification/components/NotificationBell";
 
 const { Header, Sider, Content } = Layout;
 
@@ -315,6 +316,7 @@ function MainLayout() {
       <Layout className="ms-0 lg:ms-[220px]">
         <Header className="app-topbar-height !flex items-center justify-between !bg-brand-navy px-6 !leading-none">
           <LiveClock />
+          <NotificationBell />
         </Header>
         <Content className="m-4">
           {/* 100vh minus the shortened 48px header minus this Content's own

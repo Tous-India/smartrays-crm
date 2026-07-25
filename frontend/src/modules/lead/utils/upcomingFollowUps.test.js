@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyFollowUpUrgency, getUpcomingFollowUps, getHotLeads } from "./upcomingFollowUps";
+import { classifyFollowUpUrgency, getUpcomingFollowUps, getHotLeads, getPriorityLeads } from "./upcomingFollowUps";
 
 function daysFromNow(days, hours = 12) {
   const date = new Date();
@@ -70,5 +70,43 @@ describe("getHotLeads", () => {
 
   it("returns an empty array when no leads are hot", () => {
     expect(getHotLeads([{ _id: "1", isHot: false }])).toEqual([]);
+  });
+});
+
+describe("getPriorityLeads", () => {
+  it("dedupes a lead that is both hot and has an upcoming follow-up, carrying both signals", () => {
+    const leads = [{ _id: "1", name: "Both", isHot: true, followUpDate: daysFromNow(0) }];
+
+    const result = getPriorityLeads(leads);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ name: "Both", isHot: true, followUpUrgency: "today" });
+  });
+
+  it("includes a hot-only lead (no follow-up) with followUpUrgency null", () => {
+    const leads = [{ _id: "1", name: "Hot only", isHot: true, followUpDate: null }];
+
+    const result = getPriorityLeads(leads);
+
+    expect(result[0]).toMatchObject({ name: "Hot only", isHot: true, followUpUrgency: null });
+  });
+
+  it("sorts overdue > today > upcoming > hot-only", () => {
+    const leads = [
+      { _id: "1", name: "Hot only", isHot: true, followUpDate: null },
+      { _id: "2", name: "Upcoming", isHot: false, followUpDate: daysFromNow(2) },
+      { _id: "3", name: "Overdue", isHot: false, followUpDate: daysFromNow(-1) },
+      { _id: "4", name: "Today", isHot: false, followUpDate: daysFromNow(0) },
+    ];
+
+    const result = getPriorityLeads(leads);
+
+    expect(result.map((lead) => lead.name)).toEqual(["Overdue", "Today", "Upcoming", "Hot only"]);
+  });
+
+  it("returns an empty array when nothing is hot or has a near-term follow-up", () => {
+    const leads = [{ _id: "1", isHot: false, followUpDate: null }];
+
+    expect(getPriorityLeads(leads)).toEqual([]);
   });
 });

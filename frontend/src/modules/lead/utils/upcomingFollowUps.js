@@ -40,3 +40,32 @@ export function getUpcomingFollowUps(leads) {
 export function getHotLeads(leads) {
   return leads.filter((lead) => lead.isHot);
 }
+
+// Overdue is the most urgent thing a "needs attention" row can flag — a
+// follow-up already missed beats one due today, which beats one due within
+// 3 days, which beats "just hot" with no near-term follow-up at all.
+const PRIORITY_ORDER = { overdue: 0, today: 1, upcoming: 2, hot: 3 };
+
+/**
+ * Merges Hot Leads + Upcoming Follow-ups into one deduped, priority-sorted
+ * list — a lead that's both hot AND has a near-term follow-up appears once,
+ * carrying both `isHot` and `followUpUrgency` so the card can show both
+ * signals rather than picking one arbitrarily.
+ */
+export function getPriorityLeads(leads) {
+  const hotLeads = getHotLeads(leads);
+  const upcoming = getUpcomingFollowUps(leads);
+
+  const byId = new Map();
+  hotLeads.forEach((lead) => byId.set(lead._id, { ...lead, followUpUrgency: null }));
+  upcoming.forEach((lead) => {
+    const existing = byId.get(lead._id);
+    byId.set(lead._id, existing ? { ...existing, followUpUrgency: lead.followUpUrgency } : lead);
+  });
+
+  return Array.from(byId.values()).sort((a, b) => {
+    const priorityA = PRIORITY_ORDER[a.followUpUrgency || "hot"];
+    const priorityB = PRIORITY_ORDER[b.followUpUrgency || "hot"];
+    return priorityA - priorityB;
+  });
+}
