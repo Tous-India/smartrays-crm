@@ -10,13 +10,18 @@ import useSessionStore from "./store/sessionStore";
 // directly with Tailwind's brand-navy/brand-green utility classes (see
 // src/styles/index.css's @theme block, kept in sync with this).
 //
-// `components.Select` overrides two tokens AntD derives from `colorPrimary`
-// by default (`optionSelectedBg`/`optionActiveBg`) — with this navy as the
-// seed, that derivation lands on a muddy, low-contrast grey-blue
-// (~rgb(173,179,184)) for a dropdown's selected/hovered option, found while
-// checking the Leads status dropdown and the Add Lead form's Select fields.
-// Restored to AntD's own stock light-theme values here so every Select
-// app-wide gets a readable option background instead.
+// `components.Select`/`components.Table` override tokens AntD derives from
+// `colorPrimary` by default (Select's `optionSelectedBg`/`optionActiveBg`,
+// Table's `rowSelectedBg`/`rowSelectedHoverBg` — both literally alias the
+// same underlying `controlItemBgActive`/`controlItemBgActiveHover` tokens)
+// — with this navy as the seed, that derivation lands on a muddy,
+// low-contrast grey-blue (~rgb(173,179,184)) for a dropdown's selected
+// option AND a table's selected row, found while checking the Leads status
+// dropdown/Add Lead form (Select) and the Leads table's checkbox row
+// selection (Table). Restored to AntD's own stock light-theme values here
+// so every Select and Table selection app-wide gets a readable background
+// instead — the same pale blue for both, since they're the same "selected"
+// affordance conceptually.
 const BRAND_THEME = {
   token: {
     colorPrimary: "#163b78",
@@ -27,6 +32,10 @@ const BRAND_THEME = {
     Select: {
       optionSelectedBg: "#e6f4ff",
       optionActiveBg: "rgba(0, 0, 0, 0.04)",
+    },
+    Table: {
+      rowSelectedBg: "#e6f4ff",
+      rowSelectedHoverBg: "#bae0ff",
     },
   },
 };
