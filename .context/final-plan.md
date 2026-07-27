@@ -1276,6 +1276,17 @@ GET    /lead-sources          config list, lazily seeded with the 10 defaults on
   skipped and reported with a reason + row number rather than failing the whole batch. Imported
   leads are always owned by the importing user — mapping an "Owner" column to a different user
   isn't supported yet.
+- **Duplicate detection on import** (added after the initial build) — a row is skipped
+  (never created, never used to update an existing record) if its `email` OR `phone`
+  (case/whitespace-normalized) matches an existing lead anywhere in the system, org-wide, not
+  scoped to the importer. Deliberately excludes `companyName` — distinct genuine contacts can
+  share a company. Checked against both already-saved leads and rows already accepted earlier
+  in the same file, so two rows in one upload sharing an email/phone don't both get created —
+  only the first is kept. Each skipped row is tagged `type: "invalid"` or `type: "duplicate"`;
+  duplicates also carry `matchedField` and, when they matched an already-saved lead rather than
+  an earlier row in the file, `existingLeadId`/`existingLeadName`. The import result reports
+  `importedCount`/`duplicateCount`/`failedCount` as three separate totals. See
+  `lead.service.js#importLeadsFromFile`.
 - **Assignment/follow-up push notifications** — ✅ **built 2026-07-16, §7.16** (Phase 9's
   Notification module). Previously deferred here pending that shared infrastructure; no longer
   a gap.
@@ -2392,6 +2403,15 @@ mirror of `COLUMN_ALIASES`, commented as such), not an editable remap that the A
 couldn't act on anyway. Row preview parsing is a small hand-rolled CSV split (good enough
 for a preview; the server does the real parsing via `exceljs`) — Excel files skip the row
 preview rather than pulling in a second heavy parsing dependency just for that.
+
+**Result step's duplicate breakdown** (added after the initial build, alongside the backend's
+duplicate-detection rule above) — the summary alert reports `importedCount` plus a
+`duplicateCount`/`failedCount` split rather than one flat skipped total, and the per-row table
+gets a new "Outcome" column tagging each skipped row `Duplicate` (orange) or `Invalid` (red) so
+an admin can tell "this row already exists" apart from "this row is malformed" at a glance —
+the `reason` text itself (already existing per-row, generic string rendering, no UI change
+needed there) names which field matched and, for a duplicate against an already-saved lead,
+that lead's name/id.
 
 **Permission gating** (UI convenience only, real enforcement stays server-side, per §4.1
 applied to the frontend) — every action gated against the exact `leads` `PERMISSION_REGISTRY`

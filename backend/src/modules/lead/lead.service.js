@@ -402,16 +402,10 @@ const COLUMN_ALIASES = {
   budget: ["budget"],
 };
 
-/**
- * Bulk-creates leads from an uploaded CSV or Excel file. The first row is
- * treated as a header row; column names are matched case-insensitively
- * against the aliases above. Every imported lead is owned by the importing
- * user — mapping an "Owner" column to a different user is not supported yet.
- */
 // Normalizes for comparison — case/whitespace shouldn't decide whether two
 // rows count as "the same" lead (an email typed in different case, or a
-// company name with trailing whitespace from a spreadsheet export, is still
-// a duplicate).
+// phone number with stray whitespace from a spreadsheet export, is still a
+// duplicate).
 function normalizeForDupeCheck(value) {
   return value ? value.trim().toLowerCase() : "";
 }
@@ -422,30 +416,34 @@ function normalizeForDupeCheck(value) {
  * against the aliases above. Every imported lead is owned by the importing
  * user — mapping an "Owner" column to a different user is not supported yet.
  *
- * Duplicate check: a row matching an existing lead's email, phone, OR
- * companyName (checked company-wide, not just the importer's own leads —
- * the point is avoiding duplicate CRM records regardless of who owns the
- * existing one) is skipped rather than imported. Checked against both
- * already-saved leads AND rows already accepted earlier in this same file,
- * so two identical rows in one upload don't both get created. Only non-empty
- * values are compared — two blank company names isn't a match.
+ * Duplicate check: a row matching an existing lead's email OR phone
+ * (checked org-wide, not just the importer's own leads — a duplicate could
+ * have been created by anyone) is skipped rather than imported.
+ * Deliberately NOT companyName — multiple genuine, distinct contacts can
+ * legitimately share the same company. Checked against both already-saved
+ * leads AND rows already accepted earlier in this same file, so two rows in
+ * one upload sharing an email/phone don't both get created — only the
+ * first is kept. Only non-empty values are compared.
+ *
+ * Each skipped row is tagged `type: "invalid"` (missing name / bad status)
+ * or `type: "duplicate"` (with `matchedField` and, when it matched an
+ * already-saved lead rather than an earlier row in this same file,
+ * `existingLeadId`/`existingLeadName` so the admin can look it up) — see
+ * backend/README.md's Leads Import section for the full contract.
  */
 export async function importLeadsFromFile(fileBuffer, originalFileName, requestingUser) {
   const rows = await parseLeadRows(fileBuffer, originalFileName);
 
-  const existingLeads = await Lead.find({}, "email phone companyName");
-  const seenEmails = new Set();
-  const seenPhones = new Set();
-  const seenCompanyNames = new Set();
+  const existingLeads = await Lead.find({}, "email phone name");
+  const leadByEmail = new Map();
+  const leadByPhone = new Map();
 
   existingLeads.forEach((lead) => {
     const email = normalizeForDupeCheck(lead.email);
     const phone = normalizeForDupeCheck(lead.phone);
-    const companyName = normalizeForDupeCheck(lead.companyName);
 
-    if (email) seenEmails.add(email);
-    if (phone) seenPhones.add(phone);
-    if (companyName) seenCompanyNames.add(companyName);
+    if (email) leadByEmail.set(email, lead);
+    if (phone) leadByPhone.set(phone, lead);
   });
 
   const validLeads = [];
@@ -455,37 +453,46 @@ export async function importLeadsFromFile(fileBuffer, originalFileName, requesti
     const rowNumber = index + 2; // +1 for the header row, +1 to make it 1-indexed
 
     if (!row.name || !row.name.trim()) {
-      skipped.push({ row: rowNumber, reason: "Missing name" });
+      skipped.push({ row: rowNumber, type: "invalid", reason: "Missing name" });
       return;
     }
 
     if (row.status && !LEAD_STATUSES.includes(row.status)) {
-      skipped.push({ row: rowNumber, reason: `Invalid status: ${row.status}` });
+      skipped.push({ row: rowNumber, type: "invalid", reason: `Invalid status: ${row.status}` });
       return;
     }
 
     const email = normalizeForDupeCheck(row.email);
     const phone = normalizeForDupeCheck(row.phone);
-    const companyName = normalizeForDupeCheck(row.companyName);
 
-    if (email && seenEmails.has(email)) {
-      skipped.push({ row: rowNumber, reason: `Duplicate: email "${row.email}" already exists` });
+    const emailMatch = email && leadByEmail.get(email);
+    const phoneMatch = !emailMatch && phone && leadByPhone.get(phone);
+    const match = emailMatch || phoneMatch;
+
+    if (match) {
+      const matchedField = emailMatch ? "email" : "phone";
+      const matchedValue = emailMatch ? row.email : row.phone;
+      // Rows already accepted earlier in this same file aren't saved yet (the
+      // real insert happens once, after every row is processed), so they
+      // have no Mongo _id to reference — point back at that row number
+      // instead of an existing-lead id/name in that case.
+      const reason = match.row
+        ? `Duplicate: ${matchedField} "${matchedValue}" matches row ${match.row} earlier in this file`
+        : `Duplicate: ${matchedField} "${matchedValue}" matches existing lead "${match.name}" (${match._id})`;
+
+      skipped.push({
+        row: rowNumber,
+        type: "duplicate",
+        reason,
+        matchedField,
+        ...(match.row ? {} : { existingLeadId: String(match._id), existingLeadName: match.name }),
+      });
       return;
     }
 
-    if (phone && seenPhones.has(phone)) {
-      skipped.push({ row: rowNumber, reason: `Duplicate: phone "${row.phone}" already exists` });
-      return;
-    }
-
-    if (companyName && seenCompanyNames.has(companyName)) {
-      skipped.push({ row: rowNumber, reason: `Duplicate: company "${row.companyName}" already exists` });
-      return;
-    }
-
-    if (email) seenEmails.add(email);
-    if (phone) seenPhones.add(phone);
-    if (companyName) seenCompanyNames.add(companyName);
+    const newLeadRef = { row: rowNumber, name: row.name };
+    if (email) leadByEmail.set(email, newLeadRef);
+    if (phone) leadByPhone.set(phone, newLeadRef);
 
     validLeads.push({
       name: row.name,
@@ -506,8 +513,13 @@ export async function importLeadsFromFile(fileBuffer, originalFileName, requesti
 
   const createdLeads = validLeads.length > 0 ? await Lead.insertMany(validLeads) : [];
 
+  const duplicateCount = skipped.filter((entry) => entry.type === "duplicate").length;
+  const failedCount = skipped.filter((entry) => entry.type === "invalid").length;
+
   return {
     importedCount: createdLeads.length,
+    duplicateCount,
+    failedCount,
     skippedCount: skipped.length,
     skipped,
   };

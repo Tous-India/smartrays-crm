@@ -667,11 +667,14 @@ describe("CSV import", () => {
 
     expect(response.status).toBe(201);
     expect(response.body.data.importedCount).toBe(2);
+    expect(response.body.data.duplicateCount).toBe(0);
+    expect(response.body.data.failedCount).toBe(2);
     expect(response.body.data.skippedCount).toBe(2);
     expect(response.body.data.skipped.map((row) => row.reason)).toEqual([
       "Missing name",
       "Invalid status: not_a_real_status",
     ]);
+    expect(response.body.data.skipped.every((row) => row.type === "invalid")).toBe(true);
 
     const list = await sales1Agent.get("/api/v1/leads");
     expect(list.body.data.map((lead) => lead.name).sort()).toEqual(["Dave Import", "Eve Import"]);
@@ -683,16 +686,17 @@ describe("CSV import", () => {
     expect(response.status).toBe(400);
   });
 
-  it("skips rows that duplicate an existing lead's email, phone, or company, and duplicates within the same file", async () => {
-    await sales1Agent.post("/api/v1/leads").send(
+  it("skips rows duplicating an existing lead's email or phone (not company alone), and duplicates within the same file", async () => {
+    const existing = await sales1Agent.post("/api/v1/leads").send(
       buildLeadPayload({ name: "Existing Lead", email: "existing@example.com", phone: "1111111111", companyName: "Existing Co" })
     );
+    const existingLeadId = existing.body.data._id;
 
     const csv = [
       "Name,Email,Phone,Company,Source,Status,Budget",
       "Same Email,existing@example.com,2222222222,Brand New Co,Referral,new,1000",
       "Same Phone,brandnew@example.com,1111111111,Brand New Co 2,Referral,new,1000",
-      "Same Company,another@example.com,3333333333,Existing Co,Referral,new,1000",
+      "Same Company Different Contact,another@example.com,3333333333,Existing Co,Referral,new,1000",
       "Genuinely New,fresh@example.com,4444444444,Fresh Co,Referral,new,1000",
       "Repeats Row Above,fresh@example.com,5555555555,Another Co,Referral,new,1000",
     ].join("\n");
@@ -702,17 +706,43 @@ describe("CSV import", () => {
       .attach("file", Buffer.from(csv), "leads.csv");
 
     expect(response.status).toBe(201);
-    expect(response.body.data.importedCount).toBe(1);
-    expect(response.body.data.skippedCount).toBe(4);
-    expect(response.body.data.skipped.map((row) => row.reason)).toEqual([
-      'Duplicate: email "existing@example.com" already exists',
-      'Duplicate: phone "1111111111" already exists',
-      'Duplicate: company "Existing Co" already exists',
-      'Duplicate: email "fresh@example.com" already exists',
+    // "Same Company Different Contact" is NOT skipped — company alone isn't
+    // a duplicate signal, per this feature's explicit scope.
+    expect(response.body.data.importedCount).toBe(2);
+    expect(response.body.data.duplicateCount).toBe(3);
+    expect(response.body.data.failedCount).toBe(0);
+    expect(response.body.data.skippedCount).toBe(3);
+    expect(response.body.data.skipped).toEqual([
+      {
+        row: 2,
+        type: "duplicate",
+        reason: `Duplicate: email "existing@example.com" matches existing lead "Existing Lead" (${existingLeadId})`,
+        matchedField: "email",
+        existingLeadId,
+        existingLeadName: "Existing Lead",
+      },
+      {
+        row: 3,
+        type: "duplicate",
+        reason: `Duplicate: phone "1111111111" matches existing lead "Existing Lead" (${existingLeadId})`,
+        matchedField: "phone",
+        existingLeadId,
+        existingLeadName: "Existing Lead",
+      },
+      {
+        row: 6,
+        type: "duplicate",
+        reason: 'Duplicate: email "fresh@example.com" matches row 5 earlier in this file',
+        matchedField: "email",
+      },
     ]);
 
     const list = await sales1Agent.get("/api/v1/leads");
-    expect(list.body.data.map((lead) => lead.name).sort()).toEqual(["Existing Lead", "Genuinely New"]);
+    expect(list.body.data.map((lead) => lead.name).sort()).toEqual([
+      "Existing Lead",
+      "Genuinely New",
+      "Same Company Different Contact",
+    ]);
   });
 });
 

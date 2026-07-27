@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Modal, Steps, Upload, Button, Table, Alert, Typography } from "antd";
+import { Modal, Steps, Upload, Button, Table, Alert, Typography, Tag } from "antd";
 import { InboxOutlined } from "@ant-design/icons";
 import { importLeads } from "../api/leadApi";
 import { IMPORT_COLUMN_ALIASES } from "../constants/lead.constants";
@@ -114,6 +114,11 @@ function ImportWizardModal({ open, onCancel, onImported }) {
 
   const skippedColumns = [
     { title: "Row", dataIndex: "row" },
+    {
+      title: "Outcome",
+      dataIndex: "type",
+      render: (type) => (type === "duplicate" ? <Tag color="orange">Duplicate</Tag> : <Tag color="red">Invalid</Tag>),
+    },
     { title: "Reason", dataIndex: "reason" },
   ];
 
@@ -205,7 +210,8 @@ function ImportWizardModal({ open, onCancel, onImported }) {
             type={importResult.skippedCount > 0 ? "warning" : "success"}
             showIcon
             className="!mb-4"
-            message={`Imported ${importResult.importedCount} lead(s), skipped ${importResult.skippedCount}`}
+            message={`Imported ${importResult.importedCount} lead(s)`}
+            description={`${importResult.duplicateCount} skipped as duplicate, ${importResult.failedCount} failed validation`}
           />
 
           {importResult.skipped.length > 0 && (

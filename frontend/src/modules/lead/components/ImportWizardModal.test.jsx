@@ -23,8 +23,10 @@ describe("ImportWizardModal", () => {
       data: {
         data: {
           importedCount: 1,
+          duplicateCount: 0,
+          failedCount: 1,
           skippedCount: 1,
-          skipped: [{ row: 3, reason: "Invalid status: bogus-status" }],
+          skipped: [{ row: 3, type: "invalid", reason: "Invalid status: bogus-status" }],
         },
       },
     });
@@ -53,7 +55,9 @@ describe("ImportWizardModal", () => {
       expect(importLeads).toHaveBeenCalledWith(expect.any(File));
     });
 
-    expect(await screen.findByText("Imported 1 lead(s), skipped 1")).toBeInTheDocument();
+    expect(await screen.findByText("Imported 1 lead(s)")).toBeInTheDocument();
+    expect(screen.getByText("0 skipped as duplicate, 1 failed validation")).toBeInTheDocument();
     expect(screen.getByText("Invalid status: bogus-status")).toBeInTheDocument();
+    expect(screen.getByText("Invalid")).toBeInTheDocument();
   });
 });
