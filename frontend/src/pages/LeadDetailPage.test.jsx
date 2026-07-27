@@ -14,6 +14,7 @@ vi.mock("../modules/lead/api/leadApi", () => ({
   logLeadCall: vi.fn(),
   convertLeadToCustomer: vi.fn(),
   changeLeadStatus: vi.fn(),
+  toggleHotFlag: vi.fn(),
   // LeadFormModal (rendered off-screen for the Edit action) and
   // ImportWizardModal both call useLeadSources() unconditionally on mount —
   // the modal being closed doesn't stop its component function from running.
@@ -127,14 +128,14 @@ describe("LeadDetailPage", () => {
   });
 
   it("toggles the hot flag", async () => {
-    leadApi.updateLead.mockResolvedValue({});
+    leadApi.toggleHotFlag.mockResolvedValue({});
     renderDetailPage();
     await screen.findByText("jane@example.com");
 
     await userEvent.click(screen.getByRole("button", { name: /Mark as Hot/ }));
 
     await waitFor(() => {
-      expect(leadApi.updateLead).toHaveBeenCalledWith("lead-1", { isHot: true });
+      expect(leadApi.toggleHotFlag).toHaveBeenCalledWith("lead-1");
     });
   });
 

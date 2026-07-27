@@ -10,7 +10,7 @@ import LogCallModal from "../modules/lead/components/LogCallModal";
 import LeadFormModal from "../modules/lead/components/LeadFormModal";
 import LostReasonModal from "../modules/lead/components/LostReasonModal";
 import ConvertToCustomerModal from "../modules/lead/components/ConvertToCustomerModal";
-import { logLeadCall, updateLead, deleteLead, convertLeadToCustomer } from "../modules/lead/api/leadApi";
+import { logLeadCall, updateLead, deleteLead, convertLeadToCustomer, toggleHotFlag } from "../modules/lead/api/leadApi";
 import { createContract } from "../modules/customer/api/customerApi";
 import { ROUTE_PATHS } from "../constants/routePaths.constants";
 import { LEAD_STATUS_COLORS, LEAD_STATUS_LABELS } from "../modules/lead/constants/lead.constants";
@@ -74,8 +74,13 @@ function LeadDetailPage() {
     }
   }
 
+  // Was calling the generic `updateLead` — its `updatableFields` allow-list
+  // (lead.service.js) deliberately excludes `isHot`, so that call silently
+  // no-opped (200 OK, but the field never actually changed server-side).
+  // `toggleHotFlag` hits the dedicated `PATCH /leads/:id/hot` endpoint,
+  // the same one LeadsListPage.jsx's (working) table toggle already uses.
   async function handleToggleHot() {
-    await updateLead(id, { isHot: !lead.isHot }).catch(() => {});
+    await toggleHotFlag(id);
     refetch();
   }
 
