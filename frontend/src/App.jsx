@@ -9,11 +9,25 @@ import useSessionStore from "./store/sessionStore";
 // validation highlight) picks it up app-wide, not just the elements styled
 // directly with Tailwind's brand-navy/brand-green utility classes (see
 // src/styles/index.css's @theme block, kept in sync with this).
+//
+// `components.Select` overrides two tokens AntD derives from `colorPrimary`
+// by default (`optionSelectedBg`/`optionActiveBg`) — with this navy as the
+// seed, that derivation lands on a muddy, low-contrast grey-blue
+// (~rgb(173,179,184)) for a dropdown's selected/hovered option, found while
+// checking the Leads status dropdown and the Add Lead form's Select fields.
+// Restored to AntD's own stock light-theme values here so every Select
+// app-wide gets a readable option background instead.
 const BRAND_THEME = {
   token: {
     colorPrimary: "#163b78",
     colorLink: "#163b78",
     borderRadius: 8,
+  },
+  components: {
+    Select: {
+      optionSelectedBg: "#e6f4ff",
+      optionActiveBg: "rgba(0, 0, 0, 0.04)",
+    },
   },
 };
 

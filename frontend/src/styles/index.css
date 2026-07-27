@@ -29,6 +29,28 @@
 }
 
 /*
+ * LeadFormModal's 2-step wizard — each step's wrapping div toggles between
+ * `display: none`/`block` rather than unmounting (so Form state survives
+ * Back/Next). Browsers restart a CSS animation on that none->block
+ * transition, so this alone gives a plain slide-in cue on every step change
+ * with no JS/library involved.
+ */
+@keyframes lead-form-step-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.lead-form-step {
+  animation: lead-form-step-in 220ms ease;
+}
+
+/*
  * Pastel per-stage background for the Leads Status dropdown
  * (LeadStatusSelect.jsx) — `--lead-status-pastel-bg` is set inline by that
  * component (from `LEAD_STATUS_PASTEL_COLORS`, lead.constants.js) since a

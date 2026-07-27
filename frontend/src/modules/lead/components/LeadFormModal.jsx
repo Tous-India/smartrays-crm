@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { Modal, Form, Input, Select, InputNumber, DatePicker, Checkbox, Row, Col, Tabs } from "antd";
+import { useState, useEffect } from "react";
+import { Modal, Steps, Form, Input, Select, InputNumber, DatePicker, Checkbox, Button, Row, Col } from "antd";
 import dayjs from "dayjs";
 import useLeadSources from "../hooks/useLeadSources";
 import useUserDirectory from "../../../hooks/useUserDirectory";
@@ -11,6 +11,25 @@ import {
   SITE_SURVEY_STATUS_OPTIONS,
 } from "../constants/lead.constants";
 
+// Which fields live on which step — mirrors CustomerFormWizard.jsx's
+// STEP_FIELDS pattern, so `handleNext` only validates Step 1's own fields
+// (name) and never Step 2's (clientType), even though both are `required`.
+const STEP_FIELDS = [
+  ["name", "email", "phone", "companyName", "source", "ownerId", "budget", "followUpDate", "followUpNote", "notes"],
+  [
+    "clientType",
+    "roofType",
+    "siteAddress",
+    "monthlyElectricityBill",
+    "estimatedUnitsConsumed",
+    "estimatedCapacityKw",
+    "connectionType",
+    "subsidyApplicable",
+    "siteSurveyStatus",
+    "siteSurveyDate",
+  ],
+];
+
 /**
  * Shared create/edit form — Lead Detail's "Edit" action and the Table/Board
  * "New Lead" button both use this, per leads-customer-functional-spec.md's
@@ -19,9 +38,18 @@ import {
  * always go through `useLeadStatusChangeFlow` (Table dropdown, Board drag,
  * Detail action buttons) so the `lost`-requires-reason rule is never
  * bypassable through a plain edit form.
+ *
+ * A 2-step `Steps` wizard (Contact Info -> Site Details), the same pattern
+ * as CustomerFormWizard.jsx/ImportWizardModal.jsx: one `Form` spans both
+ * steps (so Site Details' state survives navigating back to Step 1 — see
+ * the `display: none` toggle below rather than conditional unmounting),
+ * `footer` fully replaces the Modal's default OK/Cancel, and `handleNext`
+ * validates only Step 1's own fields (`STEP_FIELDS[0]`) before advancing —
+ * Step 2's `clientType` requirement never blocks leaving Step 1.
  */
 function LeadFormModal({ open, mode, initialLead, onCancel, onSubmit, isSubmitting }) {
   const [form] = Form.useForm();
+  const [currentStep, setCurrentStep] = useState(0);
   const { sources } = useLeadSources();
   const { users } = useUserDirectory();
   const currentUser = useSessionStore((state) => state.user);
@@ -48,16 +76,33 @@ function LeadFormModal({ open, mode, initialLead, onCancel, onSubmit, isSubmitti
     }
   }, [open, mode, initialLead, form]);
 
-  async function handleOk() {
+  async function handleNext() {
+    try {
+      await form.validateFields(STEP_FIELDS[0]);
+    } catch {
+      // Same as handleFinish below — AntD's Form already renders the
+      // per-field errors inline, just stop the rejection going uncaught.
+      return;
+    }
+    setCurrentStep(1);
+  }
+
+  function handleBack() {
+    setCurrentStep(0);
+  }
+
+  function handleCancel() {
+    form.resetFields();
+    setCurrentStep(0);
+    onCancel();
+  }
+
+  async function handleFinish() {
     let values;
 
     try {
       values = await form.validateFields();
     } catch {
-      // AntD's Form already renders the per-field errors inline — nothing
-      // further to do here beyond not letting the rejection go unhandled
-      // (previously surfaced as an uncaught `{values, errorFields, ...}`
-      // console error on every failed submit).
       return;
     }
 
@@ -68,224 +113,206 @@ function LeadFormModal({ open, mode, initialLead, onCancel, onSubmit, isSubmitti
     });
   }
 
-  function handleCancel() {
-    form.resetFields();
-    onCancel();
-  }
-
   return (
     <Modal
       title={mode === "edit" ? "Edit Lead" : "New Lead"}
       open={open}
-      onOk={handleOk}
       onCancel={handleCancel}
-      confirmLoading={isSubmitting}
       destroyOnHidden
       width={680}
       styles={{ body: { paddingTop: 8, paddingBottom: 0 } }}
+      footer={[
+        <Button key="cancel" onClick={handleCancel}>
+          Cancel
+        </Button>,
+        currentStep > 0 && (
+          <Button key="back" onClick={handleBack}>
+            Back
+          </Button>
+        ),
+        currentStep === 0 ? (
+          <Button key="next" type="primary" onClick={handleNext}>
+            Next
+          </Button>
+        ) : (
+          <Button key="submit" type="primary" loading={isSubmitting} onClick={handleFinish}>
+            {mode === "edit" ? "Save" : "Add Lead"}
+          </Button>
+        ),
+      ]}
     >
-      {/*
-        Compact multi-column grid — `Row`/`Col` with `xs={24}` collapses
-        every group back to one-per-row on narrow widths (mobile/tablet),
-        rather than forcing a cramped 3-column layout there. Grouping is by
-        field length/expected-input-length, not a mechanical "3 per row
-        regardless of fit": short fields go 3-per-row where the modal width
-        comfortably allows it (tightened from an earlier 2-per-row pass,
-        which still needed internal scroll), but Follow-up Note and Notes
-        (the only free-text fields here) each keep their own full-width row
-        even though Follow-up Note is a plain single-line `Input`, not a
-        `TextArea` — a short label can still want a longer answer than a
-        column comfortably fits. `compact-lead-form` (below) halves AntD's
-        default 24px `Form.Item` margin-bottom — the other half of what
-        eliminated the modal's internal scroll, alongside the 3-column
-        regrouping (fewer rows) and the Modal body's own reduced top/bottom
-        padding above.
+      <Steps
+        current={currentStep}
+        size="small"
+        className="!mb-6"
+        items={[{ title: "Contact Info" }, { title: "Site Details" }]}
+      />
 
-        Adding the full solar field set (10 more fields) on top of this no
-        longer fits in one scroll-free screen even at this density — split
-        into two Tabs instead (both tabs live inside the same `Form`, so
-        validation/submission still treats it as one payload; only the
-        active tab's fields are mounted at a time thanks to AntD `Tabs`
-        `destroyInactiveTabPane`-equivalent default of keeping panes mounted
-        but hidden, which is fine here since no field is large/expensive).
-      */}
       <Form form={form} layout="vertical" className="compact-lead-form">
-        <Tabs
-          items={[
-            {
-              key: "info",
-              label: "Lead Info",
-              children: (
-                <>
-                  <Row gutter={16}>
-                    <Col xs={24} sm={8}>
-                      <Form.Item
-                        label="Name"
-                        name="name"
-                        rules={[{ required: true, message: "Name is required" }]}
-                      >
-                        <Input />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={24} sm={8}>
-                      <Form.Item label="Email" name="email">
-                        <Input type="email" />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={24} sm={8}>
-                      <Form.Item label="Phone" name="phone">
-                        <Input />
-                      </Form.Item>
-                    </Col>
-                  </Row>
+        {/*
+          Compact multi-column grid — `Row`/`Col` with `xs={24}` collapses
+          every group back to one-per-row on narrow widths (mobile/tablet),
+          rather than forcing a cramped 3-column layout there. Grouping is by
+          field length/expected-input-length, not a mechanical "3 per row
+          regardless of fit". `compact-lead-form` halves AntD's default 24px
+          `Form.Item` margin-bottom, keeping each step scroll-free.
 
-                  <Row gutter={16}>
-                    <Col xs={24} sm={canAssignOwner ? 8 : 12}>
-                      <Form.Item label="Company Name" name="companyName">
-                        <Input />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={24} sm={canAssignOwner ? 8 : 12}>
-                      <Form.Item label="Source" name="source">
-                        <Select
-                          allowClear
-                          placeholder="Select a source"
-                          options={sources.map((source) => ({ value: source.name, label: source.name }))}
-                        />
-                      </Form.Item>
-                    </Col>
-                    {canAssignOwner && (
-                      <Col xs={24} sm={8}>
-                        <Form.Item label="Owner" name="ownerId">
-                          <Select
-                            allowClear
-                            placeholder="Defaults to you"
-                            options={users.map((user) => ({ value: user._id, label: user.name }))}
-                            showSearch
-                            optionFilterProp="label"
-                          />
-                        </Form.Item>
-                      </Col>
-                    )}
-                  </Row>
+          Both steps stay mounted (`display: none` on the inactive one,
+          matching CustomerFormWizard.jsx) rather than conditionally
+          rendering — unmounting Step 1 while on Step 2 would lose any
+          `Form.useWatch`-driven state and, more importantly, is exactly the
+          "don't lose data on navigation" behavior the task calls out.
+          `lead-form-step` (styles/index.css) is a small opacity/slide-in
+          animation that replays automatically on the `display:none` ->
+          `block` transition — no JS/library needed for it.
+        */}
+        <div style={{ display: currentStep === 0 ? "block" : "none" }} className="lead-form-step">
+          <Row gutter={16}>
+            <Col xs={24} sm={8}>
+              <Form.Item label="Name" name="name" rules={[{ required: true, message: "Name is required" }]}>
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={8}>
+              <Form.Item label="Email" name="email">
+                <Input type="email" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={8}>
+              <Form.Item label="Phone" name="phone">
+                <Input />
+              </Form.Item>
+            </Col>
+          </Row>
 
-                  <Row gutter={16}>
-                    <Col xs={24} sm={12}>
-                      <Form.Item label="Budget" name="budget">
-                        <InputNumber min={0} style={{ width: "100%" }} />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={24} sm={12}>
-                      <Form.Item label="Follow-up Date" name="followUpDate">
-                        {/* Hours:minutes only — the default `showTime` also asks for
-                            seconds, precision nobody scheduling a follow-up call
-                            actually needs. */}
-                        <DatePicker
-                          showTime={{ format: "HH:mm" }}
-                          format="YYYY-MM-DD HH:mm"
-                          style={{ width: "100%" }}
-                        />
-                      </Form.Item>
-                    </Col>
-                  </Row>
+          <Row gutter={16}>
+            <Col xs={24} sm={canAssignOwner ? 8 : 12}>
+              <Form.Item label="Company Name" name="companyName">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={canAssignOwner ? 8 : 12}>
+              <Form.Item label="Source" name="source">
+                <Select
+                  allowClear
+                  placeholder="Select a source"
+                  options={sources.map((source) => ({ value: source.name, label: source.name }))}
+                />
+              </Form.Item>
+            </Col>
+            {canAssignOwner && (
+              <Col xs={24} sm={8}>
+                <Form.Item label="Owner" name="ownerId">
+                  <Select
+                    allowClear
+                    placeholder="Defaults to you"
+                    options={users.map((user) => ({ value: user._id, label: user.name }))}
+                    showSearch
+                    optionFilterProp="label"
+                  />
+                </Form.Item>
+              </Col>
+            )}
+          </Row>
 
-                  <Form.Item label="Follow-up Note" name="followUpNote">
-                    <Input />
-                  </Form.Item>
+          <Row gutter={16}>
+            <Col xs={24} sm={12}>
+              <Form.Item label="Budget" name="budget">
+                <InputNumber min={0} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item label="Follow-up Date" name="followUpDate">
+                {/* Hours:minutes only — the default `showTime` also asks for
+                    seconds, precision nobody scheduling a follow-up call
+                    actually needs. */}
+                <DatePicker showTime={{ format: "HH:mm" }} format="YYYY-MM-DD HH:mm" style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+          </Row>
 
-                  <Form.Item label="Notes" name="notes" className="!mb-0">
-                    <Input.TextArea rows={2} />
-                  </Form.Item>
-                </>
-              ),
-            },
-            {
-              key: "site",
-              label: "Site Details",
-              forceRender: true,
-              children: (
-                <>
-                  <Row gutter={16}>
-                    <Col xs={24} sm={12}>
-                      <Form.Item
-                        label="Client Type"
-                        name="clientType"
-                        rules={[{ required: true, message: "Client type is required" }]}
-                      >
-                        <Select placeholder="Select a client type" options={CLIENT_TYPE_OPTIONS} />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={24} sm={12}>
-                      <Form.Item label="Roof Type" name="roofType">
-                        <Select allowClear placeholder="Optional" options={ROOF_TYPE_OPTIONS} />
-                      </Form.Item>
-                    </Col>
-                  </Row>
+          <Form.Item label="Follow-up Note" name="followUpNote">
+            <Input />
+          </Form.Item>
 
-                  <Form.Item label="Site Address" name="siteAddress">
-                    <Input.TextArea rows={2} />
-                  </Form.Item>
+          <Form.Item label="Notes" name="notes" className="!mb-0">
+            <Input.TextArea rows={2} />
+          </Form.Item>
+        </div>
 
-                  <Row gutter={16}>
-                    <Col xs={24} sm={12}>
-                      <Form.Item label="Monthly Electricity Bill" name="monthlyElectricityBill">
-                        <InputNumber min={0} style={{ width: "100%" }} />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={24} sm={12}>
-                      <Form.Item label="Estimated Units Consumed" name="estimatedUnitsConsumed">
-                        <InputNumber min={0} style={{ width: "100%" }} />
-                      </Form.Item>
-                    </Col>
-                  </Row>
+        <div style={{ display: currentStep === 1 ? "block" : "none" }} className="lead-form-step">
+          <Row gutter={16}>
+            <Col xs={24} sm={12}>
+              <Form.Item
+                label="Client Type"
+                name="clientType"
+                rules={[{ required: true, message: "Client type is required" }]}
+              >
+                <Select placeholder="Select a client type" options={CLIENT_TYPE_OPTIONS} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item label="Roof Type" name="roofType">
+                <Select allowClear placeholder="Optional" options={ROOF_TYPE_OPTIONS} />
+              </Form.Item>
+            </Col>
+          </Row>
 
-                  <Row gutter={16}>
-                    <Col xs={24} sm={12}>
-                      <Form.Item label="Estimated Capacity (kW)" name="estimatedCapacityKw">
-                        <InputNumber min={0} style={{ width: "100%" }} />
-                      </Form.Item>
-                    </Col>
-                    <Col xs={24} sm={12}>
-                      <Form.Item label="Connection Type" name="connectionType">
-                        <Select allowClear placeholder="Optional" options={CONNECTION_TYPE_OPTIONS} />
-                      </Form.Item>
-                    </Col>
-                  </Row>
+          <Form.Item label="Site Address" name="siteAddress">
+            <Input.TextArea rows={2} />
+          </Form.Item>
 
-                  <Row gutter={16}>
-                    {/* Subsidy schemes only apply to residential clients — hidden
-                        rather than shown-then-ignored for commercial/industrial. */}
-                    {clientType === "residential" && (
-                      <Col xs={24} sm={12}>
-                        <Form.Item
-                          label=" "
-                          name="subsidyApplicable"
-                          valuePropName="checked"
-                          className="!mb-0"
-                        >
-                          <Checkbox>Subsidy Applicable</Checkbox>
-                        </Form.Item>
-                      </Col>
-                    )}
-                    <Col xs={24} sm={12}>
-                      <Form.Item label="Site Survey Status" name="siteSurveyStatus">
-                        <Select options={SITE_SURVEY_STATUS_OPTIONS} />
-                      </Form.Item>
-                    </Col>
-                  </Row>
+          <Row gutter={16}>
+            <Col xs={24} sm={12}>
+              <Form.Item label="Monthly Electricity Bill" name="monthlyElectricityBill">
+                <InputNumber min={0} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item label="Estimated Units Consumed" name="estimatedUnitsConsumed">
+                <InputNumber min={0} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+          </Row>
 
-                  {/* A survey date only means something once one has actually
-                      been scheduled — "not_scheduled" has no date to show. */}
-                  {siteSurveyStatus && siteSurveyStatus !== "not_scheduled" && (
-                    <Form.Item label="Site Survey Date" name="siteSurveyDate" className="!mb-0">
-                      <DatePicker style={{ width: "100%" }} />
-                    </Form.Item>
-                  )}
-                </>
-              ),
-            },
-          ]}
-        />
+          <Row gutter={16}>
+            <Col xs={24} sm={12}>
+              <Form.Item label="Estimated Capacity (kW)" name="estimatedCapacityKw">
+                <InputNumber min={0} style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+            <Col xs={24} sm={12}>
+              <Form.Item label="Connection Type" name="connectionType">
+                <Select allowClear placeholder="Optional" options={CONNECTION_TYPE_OPTIONS} />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <Row gutter={16}>
+            {/* Subsidy schemes only apply to residential clients — hidden
+                rather than shown-then-ignored for commercial/industrial. */}
+            {clientType === "residential" && (
+              <Col xs={24} sm={12}>
+                <Form.Item label=" " name="subsidyApplicable" valuePropName="checked" className="!mb-0">
+                  <Checkbox>Subsidy Applicable</Checkbox>
+                </Form.Item>
+              </Col>
+            )}
+            <Col xs={24} sm={12}>
+              <Form.Item label="Site Survey Status" name="siteSurveyStatus">
+                <Select options={SITE_SURVEY_STATUS_OPTIONS} />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          {/* A survey date only means something once one has actually
+              been scheduled — "not_scheduled" has no date to show. */}
+          {siteSurveyStatus && siteSurveyStatus !== "not_scheduled" && (
+            <Form.Item label="Site Survey Date" name="siteSurveyDate" className="!mb-0">
+              <DatePicker style={{ width: "100%" }} />
+            </Form.Item>
+          )}
+        </div>
       </Form>
     </Modal>
   );
