@@ -10,9 +10,12 @@ import WidgetCard from "./WidgetCard";
  * Sum of payment amounts recorded in the current calendar month, admin-only
  * (§5's matrix: `payments.view`/`create` are "–" for every other role, no
  * ownership scoping exists at all for this module — see
- * `payment.service.js#listPayments`). Reuses `listPayments()` with no
- * filter params (the endpoint takes none) and sums client-side over the
- * current month, since there's no date-range filter on the backend either.
+ * `payment.service.js#listPayments`). Calls `listPayments()` with no filter
+ * params (returns every row unpaginated) and sums client-side over the
+ * current month — could now use the backend's own `from`/`to` filtering
+ * instead, but that's a pre-existing widget this task didn't ask to
+ * optimize, only to keep working after the response shape changed to
+ * `{ items, total, page, limit }`.
  */
 function PaymentsThisMonthWidget() {
   const canView = usePermission("payments", "view");
@@ -35,7 +38,7 @@ function PaymentsThisMonthWidget() {
           return;
         }
         const now = new Date();
-        const thisMonthPayments = response.data.data.filter((payment) => {
+        const thisMonthPayments = response.data.data.items.filter((payment) => {
           const paymentDate = new Date(payment.date);
           return (
             paymentDate.getFullYear() === now.getFullYear() && paymentDate.getMonth() === now.getMonth()

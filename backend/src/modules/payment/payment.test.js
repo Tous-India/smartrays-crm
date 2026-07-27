@@ -307,6 +307,74 @@ describe("GET /payments", () => {
 
     const adminResponse = await adminAgent.get("/api/v1/payments");
     expect(adminResponse.status).toBe(200);
-    expect(adminResponse.body.data).toHaveLength(2);
+    expect(adminResponse.body.data.items).toHaveLength(2);
+    expect(adminResponse.body.data.total).toBe(2);
+  });
+
+  it("returns every matching row unpaginated when no limit is given", async () => {
+    for (let i = 0; i < 3; i += 1) {
+      await adminAgent.post("/api/v1/payments").send({
+        manualClientName: `Client ${i}`,
+        date: "2026-07-01",
+        amount: 100,
+      });
+    }
+
+    const response = await adminAgent.get("/api/v1/payments");
+
+    expect(response.body.data.items).toHaveLength(3);
+    expect(response.body.data.total).toBe(3);
+    expect(response.body.data.limit).toBeNull();
+  });
+
+  it("paginates via page/limit", async () => {
+    for (let i = 0; i < 3; i += 1) {
+      await adminAgent.post("/api/v1/payments").send({
+        manualClientName: `Client ${i}`,
+        date: "2026-07-01",
+        amount: 100,
+      });
+    }
+
+    const firstPage = await adminAgent.get("/api/v1/payments?page=1&limit=2");
+    expect(firstPage.body.data.items).toHaveLength(2);
+    expect(firstPage.body.data.total).toBe(3);
+    expect(firstPage.body.data.page).toBe(1);
+    expect(firstPage.body.data.limit).toBe(2);
+
+    const secondPage = await adminAgent.get("/api/v1/payments?page=2&limit=2");
+    expect(secondPage.body.data.items).toHaveLength(1);
+    expect(secondPage.body.data.total).toBe(3);
+  });
+
+  it("filters by from/to date range, inclusive on both ends", async () => {
+    await adminAgent.post("/api/v1/payments").send({
+      manualClientName: "Before Range",
+      date: "2026-06-30",
+      amount: 100,
+    });
+    await adminAgent.post("/api/v1/payments").send({
+      manualClientName: "Start Of Range",
+      date: "2026-07-01",
+      amount: 200,
+    });
+    await adminAgent.post("/api/v1/payments").send({
+      manualClientName: "End Of Range",
+      date: "2026-07-05",
+      amount: 300,
+    });
+    await adminAgent.post("/api/v1/payments").send({
+      manualClientName: "After Range",
+      date: "2026-07-06",
+      amount: 400,
+    });
+
+    const response = await adminAgent.get("/api/v1/payments?from=2026-07-01&to=2026-07-05");
+
+    expect(response.body.data.total).toBe(2);
+    expect(response.body.data.items.map((payment) => payment.manualClientName).sort()).toEqual([
+      "End Of Range",
+      "Start Of Range",
+    ]);
   });
 });

@@ -1,7 +1,7 @@
-import PlaceholderPage from "../components/PlaceholderPage";
+import PaymentsListPage from "../modules/payment/components/PaymentsListPage";
 
 function PaymentsPage() {
-  return <PlaceholderPage title="Payments" />;
+  return <PaymentsListPage />;
 }
 
 export default PaymentsPage;

@@ -733,7 +733,7 @@ See `.context/final-plan.md` §6.6/§7.9/§11.3. Admin-only tab — module folde
 
 | Method | Path | Access | Notes |
 |---|---|---|---|
-| GET | `/payments` | `payments.view` | All payments, newest first. Admin-only — no ownership scoping exists for this module at all, unlike every other feature module (§5's matrix marks every other role "–"). |
+| GET | `/payments` | `payments.view` | All payments, newest first. Admin-only — no ownership scoping exists for this module at all, unlike every other feature module (§5's matrix marks every other role "–"). Optional query params: `from`/`to` (`YYYY-MM-DD`, inclusive both ends — same convention Attendance/TravelLog's report generators already use, `$gte`/`$lt`-plus-one-day, not invented fresh) and `page`/`limit` — the first real server-side pagination in this backend (every other list endpoint returns its full result set and lets the frontend paginate client-side; Payments needed it since payment history only grows, added for the Payments frontend build). Response shape is `{ items, total, page, limit }`, not a bare array; omitting `limit` returns every matching row unpaginated (`limit: null`). |
 | POST | `/payments` | `payments.create` | Body `{ customerId\|manualClientName, date, amount, notes, invoiceId? }`. Exactly one of `customerId`/`manualClientName` required (never both, never neither). `invoiceId` can only be provided alongside a `customerId` — see the reconciliation logic below. |
 
 **§11.3 resolved — Payments use PARTIAL RECONCILIATION, not a fully standalone log and not full

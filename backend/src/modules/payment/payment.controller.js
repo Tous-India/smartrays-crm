@@ -9,7 +9,8 @@ export const create = asyncWrapper(async (req, res) => {
 });
 
 export const list = asyncWrapper(async (req, res) => {
-  const payments = await listPayments();
+  const { from, to, page, limit } = req.query;
+  const result = await listPayments({ from, to, page, limit });
 
-  res.status(200).json(new ApiResponse(200, payments, "Payments fetched successfully"));
+  res.status(200).json(new ApiResponse(200, result, "Payments fetched successfully"));
 });

@@ -134,6 +134,7 @@ Source of Truth rule made concrete, and to mark what's real vs. planned in the d
 | `location` (frontend) | ✅ **Built — a new route, `/location`, with no prior frontend at all** | Live map (auto-polling `GET /location/live`) + History map (employee+date picker, `GET /location/history` as a polyline) via a generic `GoogleMapView` (native Maps JS SDK, no wrapper library) — see §7.18 |
 | `user` (frontend) | ✅ **Built (§7.19, 2026-07-17)** | `/settings/users` roster list/edit/deactivate/reactivate/admin-password-reset/create, plus self-service + admin-override password reset (`/forgot-password`, `/reset-password`) — see §7.19 |
 | `dashboard` (frontend) | ✅ **Built (§7.20/§7.21)** | `/dashboard` shell composing Leads + Customers widgets (§7.20) plus 6 operational glance widgets — Attendance/Leave/Tickets/AMC/Payments/Payroll (§7.21) — by role via a declarative catalog, each widget independently permission-gated and independently fetching/failing — see §7.20/§7.21 |
+| `payment` (frontend) | ✅ **Built** — the first real UI for this previously backend-only module | `/payments` (admin-only): date-range filter tabs (Today/Yesterday/This Month/Financial Year/All Time) driving a server-paginated table + a Record Payment modal with a genuinely debounced customer search — see §7.22 |
 
 #### Major Cross-Module Flows
 
@@ -2922,6 +2923,57 @@ leave, and Payments/Payroll have no manager tier at all). sales_associate/employ
 the 6 — all six are admin/manager-level operational metrics by nature, not owner-scoped glance
 data those roles would find meaningful the way their Leads/Customers widgets are.
 
+### 7.22 Payments Frontend Module
+
+✅ **Built** — the first real UI for `payment`, previously backend-only (§7.9) with only the
+glance-only `PaymentsThisMonthWidget` (§7.21) consuming it. `frontend/src/modules/payment/`.
+
+**`GET /payments` gained real `from`/`to`/`page`/`limit` support for this** — verified first
+that neither existed (it didn't; the endpoint took no params at all and returned every payment
+ever, unpaginated). This is the first genuine server-side pagination in this backend — every
+other list endpoint (Leads, Customers, Attendance, TravelLog) returns its full result set and
+lets the frontend's AntD `Table` paginate client-side; Payments needed real pagination since
+payment history only grows. `from`/`to` reuses the exact convention Attendance/TravelLog's
+report generators already established (`$gte`/`$lt`-plus-one-day, inclusive both ends), not a
+new one. Response shape changed from a bare array to `{ items, total, page, limit }`; omitting
+`limit` returns everything unpaginated (`limit: null`), which is what the one pre-existing
+caller, `PaymentsThisMonthWidget`, relies on after a one-line update (`response.data.data` →
+`response.data.data.items`) — its own test's mock shape updated to match.
+
+**`PaymentsListPage`** (`/payments`, admin-only per §5 — gated by `usePermission("payments",
+"view")` + a 403 `Result`, the same pattern `AttendanceTeamPage` already uses, since a single
+module+action pair needs no OR-of-grants here):
+- A `Segmented` date-range filter — Today/Yesterday/This Month/Financial Year/All Time,
+  computed client-side and sent as `from`/`to`. **Financial Year (April 1–March 31) has no
+  existing utility anywhere else in this codebase** (checked before writing one) — this is the
+  first place it's computed, in `paymentDateFilters.js`.
+- `PaymentsTable` — Date/Customer/Amount/Notes/Recorded By, server-paginated via AntD `Table`'s
+  controlled `current`/`pageSize`/`total`/`onChange` (also a first for this codebase — every
+  other table uses a static `pagination={{ pageSize: 20 }}`, since every other list is fetched
+  in full). `customerId`/`recordedBy` are resolved to display names via the same Map-lookup
+  convention `CustomersTable`'s Owner column already uses (`useCustomerDirectory` — deliberately
+  NOT the Customers module's own `useCustomers` hook, which also fetches every customer's
+  contracts for a type-badge column this page has no use for; mirrors `useUserDirectory`'s
+  minimal shape instead), not a backend join.
+- **"Record Payment" modal** (`RecordPaymentModal`, separately gated behind `payments.create`
+  via `PermissionGate`) — Customer/Amount/Date/Notes, `POST /payments` on save, closes and
+  refetches the table on success. The Customer field is a genuinely **debounced search-as-you-
+  type** `Select` against the existing `GET /customers?search=` endpoint — no new backend
+  endpoint. This is deliberately different from every other searchable picker in this app
+  (`LeadFormModal`'s Owner, `ConvertToCustomerModal`'s Project Manager), which filter a fully-
+  fetched-once list client-side (`showSearch`/`optionFilterProp="label"`) — that pattern doesn't
+  fit here since the whole point is not fetching every Customer up front.
+- **Scope note, explicit and deliberate:** system customers only (`customerId`) for this first
+  version. The backend also supports `manualClientName` (non-system/cash entries) and
+  invoice-linking (partial reconciliation against an outstanding Invoice, §11.3) — both flagged
+  as easy future additions, neither built now, per this task's own instruction not to add either
+  speculatively.
+
+10 tests (`PaymentsListPage.test.jsx`), all passing, no real network calls — covering table
+rendering + pagination, each filter's computed date range being sent correctly, the debounced
+customer search, save-payload correctness, post-save refetch, and permission gating for both
+`payments.view` and `payments.create` independently.
+
 **Testing:** 20 new tests (one file per widget: mocked-data rendering, an inline error instead
 of a crash on a rejected mock, permission-gating hiding the widget for a mocked user lacking
 the specific grant even when their role's config would normally include it), plus
@@ -3057,7 +3109,7 @@ frontend/
 | 4 | ✅ **Built and verified 2026-07-13:** Payroll (§7.7, `payroll` module, 19 tests + 6 for `src/cron/payrollCron.test.js` = 25) — gross/net computed from Attendance + Leave + approved-only TravelLog mileage, `POST /payroll/run` (single-employee or bulk), `GET /payroll?scope=own\|all`, `GET /payroll/:id/payslip?format=pdf`, a monthly `node-cron` job (`src/cron/payrollCron.js`, new top-level directory). Two prerequisites closed first, in the same task: `User.baseSalary` (§6.1) and TravelLog's `pending`/`approved`/`rejected` approval workflow (§6.5/§7.6, resolving §11.4). `MILEAGE_RATE_PER_KM` is a new, optional env var (defaults to 10, a stated placeholder). **§11.5 resolved: record-keeping only for v1, no disbursement/payment-gateway integration.** **Correction (2026-07-13, follow-up):** `sales_associate`'s default `payroll` grant was fixed — §5 marks it "–" (no access), same as Manager, not "own payslip only" like Employee; an earlier build misread that "–" as blank and granted `sales_associate` the Employee default, now corrected in `permission.service.js`. Full suite: **263 tests, all passing** (verified via a real `npm test` run; the previously reported total also required correcting a miscount in the Transport/Travel approve/reject test count, 7 not 6). | Phase 3 |
 | 5 | ✅ **Built and verified:** Support/Tickets + Customer Portal (§7.0/§7.8, `ticket` module, 35 tests + 6 in `auth.test.js` for Customer Portal self-signup). Customer Portal accounts authenticate through the exact same auth system (`role: "customer"`) and are self-signed-up (not admin-created), verified by an email-domain match against `Contact`/`Customer` records rather than an admin grant. `Ticket` raise (internal admin/manager, or customer portal self-raise)/list (`scope=all\|assigned\|own`)/assign/status-change/comments/attachments (Cloudinary, reusing `uploadAttendancePhoto`'s shared client) all built per §7.8. New `tickets` `PERMISSION_REGISTRY` entry and a `customer` `RolePermissionTemplate`. §11.2 (category/status split) resolved as part of this build. Full suite: **304 tests, all passing** (verified via a real `npm test` run — a follow-up added 2 more tests: manager's `scope=all` checked explicitly alongside admin's, and history-ordering across a mixed comment/status-change sequence). | Phase 2 (needs Customer) |
 | 6 | ✅ **Built and verified 2026-07-13:** Transport/Travel (Google Maps Distance Matrix integration — §7.6, `transport` module, 28 tests). Auto-generates a `TravelLog` from Attendance checkout coords (direct call into `attendance.service.js#checkOut`, never fails checkout); manual entry with coords or a direct `distanceKm` override; `GET /travel-logs?scope=own\|team\|all` (mirrors Leave's shape) + `PATCH /travel-logs/:id/approve\|reject` (added 2026-07-13, resolves §11.4) + `GET /travel-logs/report` (reuses `src/services/report.service.js`). `GOOGLE_MAPS_API_KEY` is now a required env var. §11.4 (feeds payroll?) resolved 2026-07-13 — only `status: "approved"` entries feed Payroll mileage reimbursement. | Phase 3 |
-| 7 | ✅ **Built and verified:** Payments + AMC (§7.9/§7.10, `payment`/`amc` modules, 16 + 20 tests). `Payment` (admin-only, no ownership scoping at all per §5) can optionally attach to a real `Invoice` via a new `invoiceId` field — applying it reduces `Invoice.balance` and updates `Invoice.status` (`paid` at 0, the newly-added `partially_paid` otherwise) — **§11.3 resolved: partial reconciliation, not a standalone log and not full invoicing**. `AMC`'s two-flow creation (`new_customer` reuses `customer.service.js#createCustomer` directly; `existing_customer` requires an in-scope `customerId`) matches smartrays.md's "ask which create client or convert client"; `view`/`edit` scoping ("own team"/"own") is resolved via the underlying Customer's ownership (new `customer.service.js#getVisibleCustomerIds` export), since AMC has no `ownerId` field of its own — Manager's "own team" tier is the "PM" role smartrays.md describes elsewhere. No automation on renewal for v1 (stated simplification). Full suite: **340 tests, all passing.** | Phase 2 |
+| 7 | ✅ **Built and verified:** Payments + AMC (§7.9/§7.10, `payment`/`amc` modules, 16 + 20 tests). `Payment` (admin-only, no ownership scoping at all per §5) can optionally attach to a real `Invoice` via a new `invoiceId` field — applying it reduces `Invoice.balance` and updates `Invoice.status` (`paid` at 0, the newly-added `partially_paid` otherwise) — **§11.3 resolved: partial reconciliation, not a standalone log and not full invoicing**. `AMC`'s two-flow creation (`new_customer` reuses `customer.service.js#createCustomer` directly; `existing_customer` requires an in-scope `customerId`) matches smartrays.md's "ask which create client or convert client"; `view`/`edit` scoping ("own team"/"own") is resolved via the underlying Customer's ownership (new `customer.service.js#getVisibleCustomerIds` export), since AMC has no `ownerId` field of its own — Manager's "own team" tier is the "PM" role smartrays.md describes elsewhere. No automation on renewal for v1 (stated simplification). Full suite: **340 tests, all passing.** ✅ **Payments frontend built — see §7.22**: `/payments` (date-range filter tabs, server-paginated table, a Record Payment modal with a genuinely debounced customer search) — the first server-side pagination/date-filtering added to this backend for it, everything else still paginates client-side. AMC's own frontend remains a placeholder — not part of this task. | Phase 2 |
 | 8 | ✅ **Built and verified:** Reports (§7.11, `report` module, 24 tests). Single `POST /reports/generate` `{module, filters, format}` dispatching to `attendance`/`leave`/`payroll`/`transport`/`leads`/`customers` — each via that module's own existing, already-scoped data-fetcher (`generateAttendanceReport`/`generateTravelLogReport` reused unmodified; `listLeaves`/`listPayroll`/`listLeads`/`listCustomers` reused with new column/row rendering added in `report.service.js` itself). No new `reports.generate` permission — gated per-module by reusing `can()` against that module's own actions. Per-module `filters` shape validated by reusing each target module's own existing query validator (`validateReportQuery`/`validateScopeQuery`/`validateListQuery`) rather than duplicating checks; `leads`/`customers` fall back to their model's own status enum since neither has a dedicated query validator to reuse. **Breaking change (intentional):** `GET /attendance/report`/`GET /travel-logs/report` now internally call this dispatcher and return `{ downloadUrl }` instead of streaming the file — existing tests rewritten to assert against the real buffer the mocked upload was called with. `GET /leads/export` and `GET /payroll/:id/payslip` both deliberately excluded (pre-existing separate export; single-document artifact, respectively) — the payslip exclusion now has a dedicated regression test proving it still streams directly. Full suite: **365 tests, all passing.** | All prior phases have data to report on |
 | 9 | ✅ **Backend half built 2026-07-16 — see §7.16:** Notification module (§6.7), Web Push (VAPID) delivery, lead follow-up reminder cron — wired into Leads (assignment + reminders) and Ticket assignment. **This closes out every backend phase.** ✅ **Frontend half — Dashboard — built, see §7.20/§7.21:** the `/dashboard` shell composing Leads + Customers widgets (§7.20) plus 6 operational glance widgets — Attendance/Leave/Tickets/AMC/Payments/Payroll (§7.21) — by role via a declarative catalog (`dashboardConfig.js`), permission-gated per-widget on top of the role-level config. An Employee-facing own-scoped widget is a future incremental addition using the same pattern, not a gap. Remaining: PWA service worker wiring for push receipt/display (no dashboard-side work left). | All |
 | — | ✅ **Built 2026-07-17 — see §7.19:** password reset (self-service email flow + admin override) and the User Management frontend screen (`/settings/users`, closing a gap that existed since Phase 0 — the backend `user` module had endpoints with no frontend consumer). Bundled login page visual redesign in the same task. Not a numbered roadmap phase — a cross-cutting fix/gap-closure task, not new module scope. **Also: first production deployment, to Vercel — see the Deployment section below.** | Phase 0 (`user` module) |

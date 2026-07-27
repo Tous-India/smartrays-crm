@@ -34,11 +34,16 @@ describe("PaymentsThisMonthWidget", () => {
   it("sums only this calendar month's payment amounts from mocked data", async () => {
     paymentApi.listPayments.mockResolvedValue({
       data: {
-        data: [
-          { _id: "p1", date: THIS_MONTH_ISO, amount: 1000 },
-          { _id: "p2", date: THIS_MONTH_ISO, amount: 500 },
-          { _id: "p3", date: LAST_MONTH_ISO, amount: 9999 },
-        ],
+        data: {
+          items: [
+            { _id: "p1", date: THIS_MONTH_ISO, amount: 1000 },
+            { _id: "p2", date: THIS_MONTH_ISO, amount: 500 },
+            { _id: "p3", date: LAST_MONTH_ISO, amount: 9999 },
+          ],
+          total: 3,
+          page: 1,
+          limit: null,
+        },
       },
     });
 

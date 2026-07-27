@@ -78,11 +78,58 @@ async function applyPaymentToInvoice(invoice, amount) {
   await invoice.save();
 }
 
+// Same `from`/`to` convention already used by Attendance/TravelLog's report
+// generators (`generateAttendanceReport`/`generateTravelLogReport`) — parsed
+// as plain date strings, range inclusive on both ends via `$lt` + one day
+// added to `to` rather than time-of-day math. Not invented fresh for this.
+function addOneDay(date) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + 1);
+  return next;
+}
+
 /**
  * Admin-only (§5's matrix: `payments.view`/`create` are "–" for every other
  * role) — no ownership scoping at all, unlike every other module in this
  * codebase; gated entirely at the route (`authorize("payments", "view")`).
+ *
+ * `page`/`limit` are the first real server-side pagination in this backend
+ * (every other list endpoint returns its full result set and lets the
+ * frontend's AntD `Table` paginate client-side) — the Payments page
+ * genuinely needs it since payment history only grows. Both optional:
+ * omitting `limit` returns every matching row unpaginated (`limit: null` in
+ * the response), which is what `PaymentsThisMonthWidget` — the one existing
+ * caller, predating this change — relies on.
  */
-export async function listPayments() {
-  return Payment.find({}).sort({ date: -1 });
+export async function listPayments({ from, to, page, limit } = {}) {
+  const dateFilter = {};
+
+  if (from) {
+    dateFilter.$gte = new Date(from);
+  }
+
+  if (to) {
+    dateFilter.$lt = addOneDay(new Date(to));
+  }
+
+  const filter = {};
+
+  if (Object.keys(dateFilter).length > 0) {
+    filter.date = dateFilter;
+  }
+
+  const total = await Payment.countDocuments(filter);
+
+  let query = Payment.find(filter).sort({ date: -1 });
+
+  const pageNumber = Number(page) || 1;
+  const limitNumber = Number(limit) || null;
+
+  if (limitNumber) {
+    query = query.skip((pageNumber - 1) * limitNumber).limit(limitNumber);
+  }
+
+  const items = await query;
+
+  return { items, total, page: pageNumber, limit: limitNumber };
 }
