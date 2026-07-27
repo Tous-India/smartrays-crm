@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Card, Empty, Tag, Button } from "antd";
-import { FireFilled } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 
 const URGENCY_STYLES = {
@@ -50,25 +49,18 @@ function PriorityLeadsSection({ priorityLeads }) {
                 className={`w-64 cursor-pointer ${urgency ? urgency.borderClass : "border-orange-200"}`}
                 onClick={() => navigate(`/leads/${lead._id}`)}
               >
-                <div className="flex items-center gap-1.5 font-medium">
-                  {/* `style` for color, not a Tailwind className — AntD's
-                      `Card` sets its own text color that a plain utility
-                      class loses to (same issue found and fixed everywhere
-                      else this icon appears). */}
-                  {lead.isHot && <FireFilled style={{ color: "#fa8c16" }} title="Hot lead" />}
-                  {lead.name}
-                </div>
-                <div className="text-xs text-gray-500">{lead.companyName || "—"}</div>
-                <div className="mt-1.5 flex items-center justify-between">
-                  <span className="flex gap-1">
-                    {lead.isHot && <Tag color="orange">Hot</Tag>}
-                    {urgency && <Tag color={urgency.color}>{urgency.label}</Tag>}
-                  </span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium">{lead.name}</span>
                   {lead.followUpDate && (
-                    <span className="text-xs text-gray-500">
+                    <span className="whitespace-nowrap text-xs text-gray-500">
                       {new Date(lead.followUpDate).toLocaleString()}
                     </span>
                   )}
+                </div>
+                <div className="text-xs text-gray-500">{lead.companyName || "—"}</div>
+                <div className="mt-1.5 flex items-center gap-1">
+                  {lead.isHot && <Tag color="orange">Hot</Tag>}
+                  {urgency && <Tag color={urgency.color}>{urgency.label}</Tag>}
                 </div>
               </Card>
             );
