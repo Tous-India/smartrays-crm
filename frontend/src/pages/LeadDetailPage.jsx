@@ -126,7 +126,11 @@ function LeadDetailPage() {
         title={
           <Space>
             {lead.name}
-            {lead.isHot && <FireFilled className="text-orange-500" title="Hot lead" />}
+            {/* Inline `style`, not a Tailwind className — the Drawer's own
+                title styling sets a color on its children that a plain
+                utility class loses to (verified: stayed near-black even for
+                a genuinely hot lead until switched to inline style). */}
+            {lead.isHot && <FireFilled style={{ color: "#fa8c16" }} title="Hot lead" />}
             <Tag color={LEAD_STATUS_COLORS[lead.status]}>{LEAD_STATUS_LABELS[lead.status]}</Tag>
           </Space>
         }

@@ -55,7 +55,21 @@ function LeadDetailContent({
             </Button>
           </PermissionGate>
           <PermissionGate module="leads" action="edit">
-            <Button icon={lead.isHot ? <FireFilled /> : <FireOutlined />} onClick={onToggleHot}>
+            {/* Inline `style`, not a Tailwind className — AntD's `Button`
+                sets its own icon color via injected CSS that a plain
+                utility class loses to (verified: the icon stayed
+                rgba(0,0,0,0.88) black even on a genuinely hot lead until
+                switched to inline style, which always wins). */}
+            <Button
+              icon={
+                lead.isHot ? (
+                  <FireFilled style={{ color: "#fa8c16" }} />
+                ) : (
+                  <FireOutlined style={{ color: "#bfbfbf" }} />
+                )
+              }
+              onClick={onToggleHot}
+            >
               {lead.isHot ? "Remove Hot" : "Mark as Hot"}
             </Button>
           </PermissionGate>

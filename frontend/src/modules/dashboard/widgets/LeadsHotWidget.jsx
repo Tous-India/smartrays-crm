@@ -68,7 +68,11 @@ function LeadsHotWidget() {
         dataSource={hotLeads.slice(0, 5)}
         renderItem={(lead) => (
           <List.Item>
-            <FireFilled className="mr-2 text-orange-500" title="Hot lead" />
+            {/* `style` for color, not a Tailwind className — AntD's `List`
+                sets its own text color on item content that a plain utility
+                class loses to (same issue found and fixed on the Leads
+                table/detail hot-toggle and detail drawer title). */}
+            <FireFilled className="mr-2" style={{ color: "#fa8c16" }} title="Hot lead" />
             <Link to={`/leads/${lead._id}`}>{lead.name}</Link>
           </List.Item>
         )}

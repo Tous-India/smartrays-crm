@@ -40,7 +40,11 @@ function LeadCard({ lead, canDrag }) {
       >
         <div className="flex items-center justify-between">
           <span className="font-medium">{lead.name}</span>
-          {lead.isHot && <FireFilled className="text-orange-500" title="Hot lead" />}
+          {/* `style` for color, not a Tailwind className — AntD's `Card`
+              sets its own text color that a plain utility class loses to
+              (same issue found and fixed everywhere else this icon
+              appears). */}
+          {lead.isHot && <FireFilled style={{ color: "#fa8c16" }} title="Hot lead" />}
         </div>
         {lead.companyName && <div className="text-xs text-gray-500">{lead.companyName}</div>}
         {lead.budget != null && (

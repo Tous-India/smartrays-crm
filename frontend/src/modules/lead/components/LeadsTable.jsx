@@ -60,7 +60,11 @@ function LeadsTable({
       render: (name, lead) => (
         <div>
           <span className="flex items-center gap-1">
-            {lead.isHot && <FireFilled className="text-orange-500" title="Hot lead" />}
+            {/* `style` for color, not a Tailwind className — AntD's `Table`
+                sets its own base text color that a plain utility class
+                loses to (same issue found and fixed everywhere else this
+                icon appears). */}
+            {lead.isHot && <FireFilled style={{ color: "#fa8c16" }} title="Hot lead" />}
             {name}
           </span>
           {lead.phone && (
@@ -190,9 +194,19 @@ function LeadsTable({
               />
             </Tooltip>
             <Tooltip title={lead.isHot ? "Remove Hot" : "Mark as Hot"}>
+              {/* Inline `style`, not a Tailwind className — AntD's `Button`
+                  sets its own icon color via injected CSS that a plain
+                  utility class loses to (same fix as LeadDetailContent.jsx's
+                  hot-toggle button). */}
               <Button
                 type="text"
-                icon={lead.isHot ? <FireFilled className="text-orange-500" /> : <FireOutlined />}
+                icon={
+                  lead.isHot ? (
+                    <FireFilled style={{ color: "#fa8c16" }} />
+                  ) : (
+                    <FireOutlined style={{ color: "#bfbfbf" }} />
+                  )
+                }
                 onClick={(event) => {
                   event.stopPropagation();
                   onToggleHot(lead);
