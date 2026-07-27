@@ -206,6 +206,7 @@ function LeadsTable({
 
       <Table
         rowKey="_id"
+        size="small"
         loading={isLoading}
         dataSource={leads}
         columns={columns}
