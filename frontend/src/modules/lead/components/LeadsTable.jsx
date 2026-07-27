@@ -59,14 +59,11 @@ function LeadsTable({
       dataIndex: "name",
       render: (name, lead) => (
         <div>
-          <span className="flex items-center gap-1">
-            {/* `style` for color, not a Tailwind className — AntD's `Table`
-                sets its own base text color that a plain utility class
-                loses to (same issue found and fixed everywhere else this
-                icon appears). */}
-            {lead.isHot && <FireFilled style={{ color: "#fa8c16" }} title="Hot lead" />}
-            {name}
-          </span>
+          {/* No hot-fire icon here — the Actions column's toggle already
+              shows it (orange when hot, grey outline when not); showing it
+              a second time next to the name was a duplicate, per this
+              task's own instruction. */}
+          <span className="flex items-center gap-1">{name}</span>
           {lead.phone && (
             <span className="flex items-center gap-1 text-xs text-gray-500">
               {lead.phone}

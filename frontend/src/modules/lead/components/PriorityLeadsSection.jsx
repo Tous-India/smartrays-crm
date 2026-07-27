@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Card, Empty, Tag, Button } from "antd";
+import { FireFilled } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 
 const URGENCY_STYLES = {
@@ -50,7 +51,17 @@ function PriorityLeadsSection({ priorityLeads }) {
                 onClick={() => navigate(`/leads/${lead._id}`)}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium">{lead.name}</span>
+                  <span className="flex items-center gap-1 font-medium">
+                    {/* `style` for color, not a Tailwind className — AntD's
+                        `Card` sets its own text color that a plain utility
+                        class loses to (same issue found and fixed
+                        everywhere else this icon appears). Shown alongside
+                        the "Hot" tag below, not instead of it — the icon is
+                        a quick glance cue in the header, the tag is the
+                        explicit label. */}
+                    {lead.isHot && <FireFilled style={{ color: "#fa8c16" }} title="Hot lead" />}
+                    {lead.name}
+                  </span>
                   {lead.followUpDate && (
                     <span className="whitespace-nowrap text-xs text-gray-500">
                       {new Date(lead.followUpDate).toLocaleString()}
