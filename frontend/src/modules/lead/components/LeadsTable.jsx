@@ -1,5 +1,5 @@
-import { Table, Tag, Select, Button, Tooltip, Space, Popconfirm } from "antd";
-import { FireOutlined, FireFilled, PhoneOutlined } from "@ant-design/icons";
+import { Table, Tag, Select, Button, Tooltip, Space, Popconfirm, message } from "antd";
+import { FireOutlined, FireFilled, PhoneOutlined, CopyOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import LeadStatusSelect from "./LeadStatusSelect";
 import LeadFollowUpCell from "./LeadFollowUpCell";
@@ -11,14 +11,14 @@ function isOverdue(followUpDate) {
 }
 
 /**
- * Table View per leads-customer-functional-spec.md: Name, Company, Status,
- * Source, Owner, Follow-up, Budget, Created columns; status changes via an
- * inline dropdown; overdue follow-ups highlighted red. Row actions (hot
- * toggle, assign owner, quick call-log) are quick actions available without
- * opening the detail slide-over, per the spec's "Quick Actions (from
- * list/board)". Checkbox row selection + a bulk-action toolbar (shown once
- * at least one row is selected) mirror the identical pattern already
- * established in `CustomersTable.jsx`.
+ * Table View per leads-customer-functional-spec.md: Contact (name + phone),
+ * Company, Status, Source, Owner, Follow-up, Budget, Created columns; status
+ * changes via an inline dropdown; overdue follow-ups highlighted red. Row
+ * actions (hot toggle, assign owner, quick call-log) are quick actions
+ * available without opening the detail slide-over, per the spec's "Quick
+ * Actions (from list/board)". Checkbox row selection + a bulk-action toolbar
+ * (shown once at least one row is selected) mirror the identical pattern
+ * already established in `CustomersTable.jsx`.
  */
 function LeadsTable({
   leads,
@@ -42,18 +42,49 @@ function LeadsTable({
 
   const userNameById = new Map(users.map((user) => [user._id, user.name]));
 
+  function handleCopyPhone(event, phone) {
+    event.stopPropagation();
+    // `writeText` rejects (e.g. `NotAllowedError` when the document isn't
+    // focused) — handled explicitly rather than left as an uncaught
+    // rejection, same reasoning as LeadFormModal's `validateFields` fix.
+    navigator.clipboard
+      .writeText(phone)
+      .then(() => message.success("Phone number copied"))
+      .catch(() => message.error("Couldn't copy — please copy it manually"));
+  }
+
   const columns = [
     {
-      title: "Name",
+      title: "Contact",
       dataIndex: "name",
       render: (name, lead) => (
-        <span className="flex items-center gap-1">
-          {lead.isHot && <FireFilled className="text-orange-500" title="Hot lead" />}
-          {name}
-        </span>
+        <div>
+          <span className="flex items-center gap-1">
+            {lead.isHot && <FireFilled className="text-orange-500" title="Hot lead" />}
+            {name}
+          </span>
+          {lead.phone && (
+            <span className="flex items-center gap-1 text-xs text-gray-500">
+              {lead.phone}
+              <Tooltip title="Copy phone number">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<CopyOutlined />}
+                  onClick={(event) => handleCopyPhone(event, lead.phone)}
+                />
+              </Tooltip>
+            </span>
+          )}
+        </div>
       ),
     },
-    { title: "Company", dataIndex: "companyName", render: (value) => value || "—" },
+    {
+      title: "Company",
+      dataIndex: "companyName",
+      className: "leads-company-cell",
+      render: (value) => value || "—",
+    },
     {
       title: "Status",
       dataIndex: "status",
@@ -177,7 +208,7 @@ function LeadsTable({
   return (
     <div>
       {selectedRowKeys.length > 0 && (
-        <div className="mb-3 flex items-center gap-3 rounded-md bg-brand-navy/5 px-4 py-2">
+        <div className="mb-3 flex items-center gap-3 rounded-md bg-brand-navy/5 px-4 py-2  ">
           <span>{selectedRowKeys.length} selected</span>
           {canReassignOwner && (
             <Select
@@ -206,7 +237,7 @@ function LeadsTable({
 
       <Table
         rowKey="_id"
-        size="small"
+        className="leads-table"
         loading={isLoading}
         dataSource={leads}
         columns={columns}

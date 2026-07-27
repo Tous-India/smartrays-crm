@@ -29,6 +29,33 @@
 }
 
 /*
+ * Leads table row density (LeadsTable.jsx) — an explicit 5px/16px cell
+ * padding rather than AntD's `size` prop (whose "small" preset also shrinks
+ * horizontal padding to 8px, tighter than wanted here). Scoped to `tbody`
+ * only, matching what was actually asked for — the header keeps its default
+ * padding.
+ */
+.leads-table .ant-table-tbody > tr > td {
+  padding: 5px 16px;
+}
+
+/*
+ * Company column width (LeadsTable.jsx) — `min-width` rather than AntD's
+ * column `width` prop: without `tableLayout="fixed"` (which would also force
+ * every OTHER column, including the ones holding Select controls, onto a
+ * fixed/equal-share width, an unwanted side effect), the browser's default
+ * auto table layout ignores a plain `<col>` width hint whenever another
+ * column's content needs the space — verified via a CDP inspection that
+ * showed the column rendering at ~98px despite `width: 200`. `min-width` on
+ * the cell itself IS honored by the auto layout algorithm, so this widens
+ * only Company without touching the others.
+ */
+.leads-table .ant-table-tbody > tr > td.leads-company-cell,
+.leads-table .ant-table-thead > tr > th.leads-company-cell {
+  min-width: 200px;
+}
+
+/*
  * LeadFormModal's 2-step wizard — each step's wrapping div toggles between
  * `display: none`/`block` rather than unmounting (so Form state survives
  * Back/Next). Browsers restart a CSS animation on that none->block
