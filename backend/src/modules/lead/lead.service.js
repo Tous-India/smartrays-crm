@@ -50,8 +50,14 @@ const DEFAULT_LEAD_SOURCES = [
  * per .context/final-plan.md §5/§11.9: admin sees everything, a manager sees
  * leads owned by their direct reports (and themselves), everyone else sees
  * only their own.
+ *
+ * Exported for `report/analytics.service.js` to reuse directly, rather than
+ * a second copy of this exact ownership rule for the Leads analytics
+ * endpoints — this codebase's established convention is reusing a target
+ * module's own scoping/fetch logic (already how `report.service.js`'s
+ * existing export dispatcher calls straight into `listLeads` etc.).
  */
-async function resolveOwnershipFilter(requestingUser) {
+export async function resolveOwnershipFilter(requestingUser) {
   if (requestingUser.role === "admin") {
     return {};
   }

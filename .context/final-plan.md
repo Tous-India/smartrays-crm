@@ -122,7 +122,7 @@ Source of Truth rule made concrete, and to mark what's real vs. planned in the d
 | `ticket` | ✅ Built (§7.8, Phase 5) | Internal + Customer Portal support ticket lifecycle — raise/list/assign/status/comments/attachments. Customer Portal self-signup (§7.0) is a companion piece, built the same task |
 | `payment` | ✅ Built (§7.9, Phase 7) | Admin-only manual payment log, with optional partial reconciliation against an existing `Invoice` (§11.3, resolved) |
 | `amc` | ✅ Built (§7.10, Phase 7) | Annual maintenance contract tracking per customer, "own team"/"own" scoped via the underlying Customer's ownership |
-| `report` | ✅ Built (§7.11, Phase 8) | Unified `POST /reports/generate` dispatcher (attendance/leave/payroll/transport/leads/customers) — uploads to Cloudinary, returns a download URL. `GET /attendance/report`/`GET /travel-logs/report` now internally reuse it (breaking response-shape change) |
+| `report` | ✅ Built (§7.11, Phase 8; analytics endpoints added §7.23) | Unified `POST /reports/generate` dispatcher (attendance/leave/payroll/transport/leads/customers) — uploads to Cloudinary, returns a download URL. `GET /attendance/report`/`GET /travel-logs/report` now internally reuse it (breaking response-shape change). §7.23 adds 11 `GET /reports/analytics/*` MongoDB-aggregation endpoints (the first aggregation pipelines in this backend) in a new sibling `analytics.service.js`/`analytics.controller.js`, reusing each target module's own scoping logic |
 | `notification` | ✅ **Built (§6.7/§7.11-Platform, Phase 9, 2026-07-16)** | `Notification`/`PushSubscription` models, Web Push (VAPID) delivery via `web-push`, self-scoped subscribe/list/mark-read endpoints. Wired into Leads (assignment + a 24h/15m follow-up-reminder cron) and Ticket assignment (a deliberate small addition beyond the Leads-only spec) — see §7.16 |
 | `transport` | ✅ Built (§7.6, Phase 6, 2026-07-13) | Distance-per-shift (auto from Attendance checkout, or manual entry) via Google Maps, separate from `location`'s raw GPS stream. Approval workflow (`pending`/`approved`/`rejected`) added 2026-07-13; only `approved` entries feed Payroll mileage reimbursement (§11.4, resolved) |
 | Dashboards | ✅ **Built (§7.13/§7.20/§7.21, Phase 9)** | Frontend widget shell composed by role + permissions, declarative widget catalog (`dashboardConfig.js`) — no dedicated backend module. Leads + Customers widgets (§7.20) plus 6 operational glance widgets — Attendance/Leave/Tickets/AMC/Payments/Payroll (§7.21); an Employee-facing own-scoped widget is a future incremental addition using the same pattern |
@@ -135,6 +135,7 @@ Source of Truth rule made concrete, and to mark what's real vs. planned in the d
 | `user` (frontend) | ✅ **Built (§7.19, 2026-07-17)** | `/settings/users` roster list/edit/deactivate/reactivate/admin-password-reset/create, plus self-service + admin-override password reset (`/forgot-password`, `/reset-password`) — see §7.19 |
 | `dashboard` (frontend) | ✅ **Built (§7.20/§7.21)** | `/dashboard` shell composing Leads + Customers widgets (§7.20) plus 6 operational glance widgets — Attendance/Leave/Tickets/AMC/Payments/Payroll (§7.21) — by role via a declarative catalog, each widget independently permission-gated and independently fetching/failing — see §7.20/§7.21 |
 | `payment` (frontend) | ✅ **Built** — the first real UI for this previously backend-only module | `/payments` (admin-only): date-range filter tabs (Today/Yesterday/This Month/Financial Year/All Time) driving a server-paginated table + a Record Payment modal with a genuinely debounced customer search — see §7.22 |
+| `reports` (frontend) | ✅ **Built (§7.23)** — `/reports`, the app's first-ever data-visualization page (`@ant-design/charts`, a new dependency) | Leads/Customers/Financial/Workforce chart sections (11 `@ant-design/charts` charts + one AMC renewals list) built on the 11 new analytics endpoints, each independently permission-gated/loading/error-isolated, plus a proper UI home for the pre-existing `POST /reports/generate` export dispatcher (module/filters/format picker) — see §7.23 |
 
 #### Major Cross-Module Flows
 
@@ -566,6 +567,10 @@ genuinely compact enough to be useful at a glance.
   artifact, not a filtered-list report, so it doesn't fit this dispatcher pattern (proven by a
   dedicated regression test).
 - **Test coverage:** 24 tests, no application bugs found; see §7.11 for the complete writeup.
+
+**Updated (§7.23) — 11 new `GET /reports/analytics/*` endpoints added alongside this same
+dispatcher**, in a new sibling `analytics.service.js`/`analytics.controller.js` (this dispatcher,
+`report.service.js`/`report.controller.js`, is untouched) — see §7.23 for the full write-up.
 
 ##### Dashboards (§7.13/§7.20/§7.21, Phase 9)
 - **Data model:** none — a frontend composition concept.
@@ -2999,6 +3004,119 @@ cards visually tightened (`WidgetCard` size/typography/empty-state). `BrandLogo`
 `layout` prop (`stacked`/`horizontal`) for the sidebar's new wide-format logo — see
 `frontend/README.md` for the generated-white-asset detail. No new modules, permissions, or
 backend endpoints.
+
+---
+
+### 7.23 Reports & Analytics
+
+✅ **Built** — the app's first real analytics feature, distinct from the pre-existing raw
+export dispatcher (`POST /reports/generate`, §7.11, unchanged), which now has a proper UI home
+on this same `/reports` page instead of a `PlaceholderPage`.
+
+**Backend — 11 new `GET /reports/analytics/*` endpoints**, in a new sibling
+`backend/src/modules/report/analytics.service.js`/`analytics.controller.js` (kept separate from
+the existing 271-line `report.service.js` — that file is a cross-module file-generation
+dispatcher; growing it further for a conceptually different feature, chart aggregation, seemed
+like the wrong tradeoff, but the routes still register inside the existing `report.routes.js`,
+so `/reports/*` stays one routing entry point). **These are the first MongoDB aggregation
+pipelines (`$group`/`$match`) anywhere in this backend** — confirmed via a full grep before
+writing any before this task; every existing "report" was a `.find()`-scoped list rendered to
+PDF/Excel in JS. Endpoints, response shapes, and their scoping (all reused directly from each
+target module's own existing scoping logic, not re-derived):
+
+| Endpoint | Response | Scoping (reused from) |
+|---|---|---|
+| `GET /leads-pipeline` | `[{status, count}]` | `lead.service.js#resolveOwnershipFilter` (now exported) |
+| `GET /leads-conversion?from=&to=` | `[{month, totalLeads, wonLeads, conversionRate}]` | same |
+| `GET /leads-by-source` | `[{source, count}]` | same |
+| `GET /leads-by-client-type` | `[{clientType, count}]` | same |
+| `GET /customers-growth?from=&to=` | `[{month, newCustomers}]` | `customer.service.js#resolveOwnershipFilter` (now exported) |
+| `GET /customers-status-split` | `{active, inactive}` | same |
+| `GET /customers-contract-value` | `[{type, totalValue, count}]` | `customer.service.js#getVisibleCustomerIds` (Contract has no `ownerId`, same reasoning AMC's own scoping already established) |
+| `GET /payments-trend?from=&to=` | `[{month, totalAmount}]` | none — admin-only, matches Payments' own no-team/no-own-tier grant (§5) |
+| `GET /amc-renewals-upcoming?days=30` | `{count, renewals: [{customerId, customerName, renewalDate, amount}]}` | `customer.service.js#getVisibleCustomerIds`, matching `amc.service.js#resolveAMCFilter`'s own pattern |
+| `GET /attendance-trend?from=&to=` | `[{month, attendanceRate}]` | `attendance.service.js#resolveDirectReportIds` (now exported) + `can(user, "attendance", "view_all")`, mirroring `getTeamAttendance`'s own branch exactly |
+| `GET /payroll-cost-trend?from=&to=` | `[{month, totalCost}]` | none — `requireAdmin` at the route, mirroring `POST /payroll/run`'s existing gate (Payroll has no team tier at all, §5) |
+
+`from`/`to` are `YYYY-MM-DD` throughout, the same `$gte`/`$lt`-plus-one-day convention
+Attendance/TravelLog/Payments already established — not a new date-range shape. Payroll stores
+`month`/`year` as separate Numbers (not a Date), so its `from`/`to` are converted to a single
+comparable "month index" (`year*12 + zero-based month`) for the `$match`'s `$expr`, rather than
+inventing a second date-range convention. Three previously-private scoping helpers
+(`lead.service.js#resolveOwnershipFilter`, `customer.service.js#resolveOwnershipFilter`,
+`attendance.service.js#resolveDirectReportIds`) were exported (additive only, no behavior
+change) specifically so `analytics.service.js` could reuse them rather than re-deriving the same
+admin/manager/owner rules a second time — this codebase's strongest existing convention
+(`report.service.js`'s own dispatcher already calls straight into each module's `list*`
+function) applied to a case where the reusable logic wasn't already exported.
+
+**Testing:** 40 new tests (`analytics.test.js`) — correct aggregation against seeded fixtures per
+endpoint, scoping enforcement (admin vs. manager vs. a narrower role, reusing each module's own
+established multi-agent fixture pattern — an unaffiliated `sales3` deliberately left off the
+manager's team), date-range filtering, and empty-data returning a sensible empty result
+(`[]`, `{active:0, inactive:0}`, or `{count:0, renewals:[]}`) rather than an error. One fixture
+bug found and fixed during this task, not a bug in the endpoints themselves: `$dateToString`
+formats in UTC by default, so test dates constructed as local midnight (`new Date(2026, 6, 1)`)
+on a host timezone ahead of UTC silently shifted into the previous UTC day/month — fixed by
+constructing month-boundary-sensitive test fixtures via `Date.UTC(...)` explicitly; production
+is unaffected (the server clock is UTC). Full backend suite: 470 tests, no regressions.
+
+**Frontend — `frontend/src/modules/reports/`**, plus a new `@ant-design/charts` dependency
+(chosen specifically because it renders through the app's existing AntD `ConfigProvider`/brand
+theme automatically — verified: the navy `colorPrimary` seed applies to its charts with no
+extra wiring — unlike a theme-agnostic charting library). This is the app's first chart/data-
+visualization library and first chart of any kind.
+
+- **`DateRangeFilter`/`useAnalyticsDateRange`** — one shared date-range control (This
+  Month/Last 3 Months/This Financial Year/Custom Range) driving every trend-based chart (Leads
+  Conversion, Customer Growth, Payments Trend, Attendance Trend, Payroll Cost Trend). "This
+  Financial Year" reuses the same April 1–March 31 computation `payment/utils/
+  paymentDateFilters.js` already established (§7.22) — a second small copy in its own file
+  rather than generalizing that one, since the two preset lists genuinely differ and there was
+  no third caller yet to justify a shared abstraction.
+- **Chart-per-section mapping** (`@ant-design/charts`): Leads — pipeline (`Column`, not
+  `Funnel` — Lead status isn't a strictly narrowing pipeline, a lead can sit in any status
+  independent of how many came before it), conversion trend (`Line`), by source (`Pie`), by
+  client type (`Column`, so as not to sit two identical-looking Pies side by side). Customers —
+  growth (`Area`), status split (`Pie` with `innerRadius` as a donut), contract value by type
+  (`Column`). Financial — payments trend (`Line`), upcoming AMC renewals (`AmcRenewalsUpcomingList`
+  — a plain `List`, not a chart, with a day-window `Select` defaulting to 30). Workforce —
+  attendance rate trend (`Line`), payroll cost trend (`Column`).
+- **Permission-gating** via the existing `PermissionGate` component (evaluated against
+  `dashboardConfig.js`'s role→widget-catalog pattern first and rejected — that pattern fits many
+  independent pluggable dashboard widgets, not per-section gating within one page) — Leads/
+  Customers sections are each wrapped in one `PermissionGate` (`leads.view`/`customers.view`,
+  since all of that section's charts share the same grant); Financial/Workforce instead check
+  each card's own permission independently (`payments.view` vs. `amc.view`; `attendance.view_team`
+  `||` `view_all` vs. `payroll.run`) and only render the section heading at all if at least one
+  card would be visible — those two group two genuinely different permissions that don't always
+  travel together for a given role.
+- **`ExportForm`** — the proper UI home for the pre-existing `POST /reports/generate` dispatcher:
+  module + filters + format(pdf/xlsx) picker, reusing the existing `ReportDownloadButton`
+  component for the actual download rather than re-implementing that flow. The module list is
+  filtered to whichever modules the current user actually holds view access to (mirroring
+  `report.service.js`'s own per-module `canAccess` checks exactly), so it never offers an option
+  guaranteed to 403 on click.
+- **Isolation:** every chart/list section fetches independently via its own `useAnalyticsQuery`
+  call (matching `usePayments`'s shape) and renders through a shared `ChartSectionCard` (the
+  same loading/error/empty contract as the Dashboard's `WidgetCard`) — one section's fetch
+  failing never affects any other section on the page.
+
+**Testing:** jsdom has no `HTMLCanvasElement.getContext`/`ResizeObserver` support (verified —
+`@ant-design/charts` throws rendering for real in a test environment), so `@ant-design/charts`
+is mocked to a plain stub in `analyticsCharts.test.jsx` (16 tests covering all 11 real chart/list
+components — data fetch, transform, empty/loading/error states); a separate
+`ReportsPageContent.test.jsx` (5 tests) mocks each section component itself instead, to test
+permission-gating and the shared date-range filter propagating identically to every trend
+section, isolated from chart-rendering concerns; `ExportForm.test.jsx` (6 tests) covers the
+module-list permission filtering, dispatcher call correctness, and the `downloadUrl` → download
+handoff. Full frontend suite: 232 tests (the same 2 pre-existing flaky failures —
+`LeadDetailPage`/`CustomersListPage`, confirmed unrelated and passing in isolation — unchanged
+from every prior run); `npm run build` succeeds.
+
+**Known deviations:** none from this task's own stated scope. Live-browser verification (CDP
+screenshots, the technique used for prior frontend tasks this session) was not available in this
+environment — verification here rests on the test suites and a successful production build.
 
 ---
 

@@ -176,7 +176,10 @@ export async function getTeamAttendance(month, requestingUser) {
   return Attendance.find(filter).sort({ date: -1 });
 }
 
-async function resolveDirectReportIds(requestingUser) {
+// Exported for `report/analytics.service.js`'s Attendance-trend endpoint to
+// reuse directly, matching `getTeamAttendance`'s own org-wide/team scoping
+// exactly rather than a second copy of this same manager-lookup query.
+export async function resolveDirectReportIds(requestingUser) {
   const teamMembers = await User.find({ managerId: requestingUser._id }).select("_id");
 
   return teamMembers.map((member) => member._id);

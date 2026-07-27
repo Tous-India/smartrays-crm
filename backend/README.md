@@ -117,7 +117,7 @@ production / `lax` in dev. The token is never present in any response body.
 | `ticket` | ✅ Built (Phase 5) — raise/list/assign/status/comments/attachments, Customer Portal-scoped access (see below). Customer Portal self-signup is a companion piece built the same task — see the Auth section below. |
 | `payment` | ✅ Built (Phase 7) — admin-only manual payment log, with optional partial reconciliation against an existing `Invoice` (see below). |
 | `amc` | ✅ Built (Phase 7) — two-flow creation (new-or-existing customer), "own team"/"own" scoped via the underlying Customer's ownership (see below). |
-| `report` | ✅ Built (Phase 8) — unified `POST /reports/generate` dispatcher (attendance/leave/payroll/transport/leads/customers), no new permission, uploads to Cloudinary and returns a download URL (see below). **`GET /attendance/report`/`GET /travel-logs/report` now internally reuse this dispatcher — breaking response-shape change, see those sections.** |
+| `report` | ✅ Built (Phase 8) — unified `POST /reports/generate` dispatcher (attendance/leave/payroll/transport/leads/customers), no new permission, uploads to Cloudinary and returns a download URL (see below). **`GET /attendance/report`/`GET /travel-logs/report` now internally reuse this dispatcher — breaking response-shape change, see those sections.** **§7.23 added 11 `GET /reports/analytics/*` aggregation endpoints** (the first MongoDB aggregation pipelines in this backend) in a new sibling `analytics.service.js`/`analytics.controller.js` (see below). |
 | `notification` | ✅ Built (Phase 9, 2026-07-16) — `Notification` + `PushSubscription` models, Web Push (VAPID) delivery via `web-push`, self-scoped subscribe/unsubscribe/list/mark-read endpoints (see below). Wired into Leads (assignment + a follow-up-reminder cron) and, as a deliberate small addition beyond the Leads-only spec, Ticket assignment. |
 
 ### Auth (`/api/v1/auth`)
@@ -880,6 +880,57 @@ contains only their own leads, matching `listLeads`' ownership rule; an employee
 and `customers` (a manager's report contains only their team's customers, matching
 `listCustomers`' ownership rule; an employee blocked; a PDF format request). `cloudinary.service.js`
 is mocked at the module boundary — no test makes a real network call.
+
+#### Reports & Analytics (`/api/v1/reports/analytics/*`) — added §7.23
+
+See `.context/final-plan.md` §7.23. Same module folder (`src/modules/report/`), new sibling
+files `analytics.service.js`/`analytics.controller.js` — `report.service.js`/`report.controller.js`
+(the dispatcher documented above) are untouched. Routes still register inside the existing
+`report.routes.js`, so `/reports/*` stays one routing entry point.
+
+**These are the first MongoDB aggregation pipelines (`$group`/`$match`) anywhere in this
+backend** — confirmed via a full grep before writing any; every prior "report" was a
+`.find()`-scoped list rendered to PDF/Excel in JS, never an aggregation.
+
+| Method | Path | Permission | Response |
+|---|---|---|---|
+| GET | `/reports/analytics/leads-pipeline` | `leads.view` | `[{status, count}]`, scoped like Leads' own list (admin org-wide / manager team / owner own). |
+| GET | `/reports/analytics/leads-conversion?from=&to=` | `leads.view` | `[{month, totalLeads, wonLeads, conversionRate}]`, grouped by `createdAt` month (no separate "won at" timestamp exists on `Lead`). |
+| GET | `/reports/analytics/leads-by-source` | `leads.view` | `[{source, count}]`. |
+| GET | `/reports/analytics/leads-by-client-type` | `leads.view` | `[{clientType, count}]`. |
+| GET | `/reports/analytics/customers-growth?from=&to=` | `customers.view` | `[{month, newCustomers}]`, grouped by `signedUpAt` month, scoped like Customers' own list. |
+| GET | `/reports/analytics/customers-status-split` | `customers.view` | `{active, inactive}` — always both keys, `0` rather than omitted when there's no data of that status. |
+| GET | `/reports/analytics/customers-contract-value` | `customers.view` | `[{type, totalValue, count}]`, summed from `Contract` (which has no `ownerId` of its own — scoped via the underlying Customer's ownership, same reasoning AMC's own scoping already uses). |
+| GET | `/reports/analytics/payments-trend?from=&to=` | `payments.view` | `[{month, totalAmount}]` — admin-only, no team/own tier (matches Payments' own grant, §5). |
+| GET | `/reports/analytics/amc-renewals-upcoming?days=30` | `amc.view` | `{count, renewals: [{customerId, customerName, renewalDate, amount}]}` — a scoped/sorted `find`+`populate`, not an aggregation (no grouping need). `days` defaults to 30. |
+| GET | `/reports/analytics/attendance-trend?from=&to=` | `attendance.view_team` or `view_all` | `[{month, attendanceRate}]` — `present` counts as 1, `half_day` as 0.5, `absent`/`on_leave` as 0; scoped exactly like `GET /attendance/team`. |
+| GET | `/reports/analytics/payroll-cost-trend?from=&to=` | admin only (`requireAdmin`) | `[{month, totalCost}]`, summed `netAmount` — mirrors `POST /payroll/run`'s existing gate (Payroll has no team tier at all, §5). |
+
+**Scoping is reused, never re-derived.** Three previously-private helpers were exported
+(additive only — no behavior change to their existing callers) specifically for this task:
+`lead.service.js#resolveOwnershipFilter`, `customer.service.js#resolveOwnershipFilter`, and
+`attendance.service.js#resolveDirectReportIds`. `customer.service.js#getVisibleCustomerIds` was
+already exported (AMC already reuses it) and is reused again here for Contract-value and AMC
+scoping. `attendance-trend`'s org-wide/team branch reuses `can(user, "attendance", "view_all")`,
+exactly mirroring `getTeamAttendance`'s own inline check.
+
+`from`/`to` are `YYYY-MM-DD` throughout — the same `$gte`/`$lt`-plus-one-day convention
+Attendance/TravelLog/Payments already use, not a new date-range shape. Payroll's `month`/`year`
+are separate Number fields (not a Date), so its `from`/`to` are converted to a single comparable
+"month index" (`year*12 + zero-based month`) for the `$match`'s `$expr`, rather than inventing a
+second date-range convention just for this one endpoint.
+
+40 tests (`analytics.test.js`), no application bugs found. Covers, per endpoint group: correct
+aggregation against seeded fixtures, scoping (admin vs. manager vs. a narrower role — reusing
+the same multi-agent fixture pattern every other module's scoping tests already use, including
+an unaffiliated `sales3` deliberately left off the manager's team), date-range filtering where
+applicable, and an empty-data case returning a sensible empty result (`[]`, `{active:0,
+inactive:0}`, or `{count:0, renewals:[]}`) rather than an error. One fixture bug found and fixed
+during this task (not a bug in the endpoints): `$dateToString` formats in UTC by default, so a
+test date built as local midnight (`new Date(2026, 6, 1)`) on a host timezone ahead of UTC
+silently shifted into the previous UTC day/month, merging it into the wrong month's group —
+fixed by constructing month-boundary-sensitive fixtures via `Date.UTC(...)` explicitly;
+production is unaffected since the server clock itself is UTC.
 
 ### Customers (`/api/v1/customers`) — Phase 2
 

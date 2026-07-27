@@ -2,7 +2,8 @@
 
 React + Vite client for the internal CRM + Operations platform. JavaScript only (no
 TypeScript), Tailwind CSS + Ant Design, React Router DOM, Zustand (only for genuine
-cross-page state), Axios, `@dnd-kit` (drag-and-drop for the Leads kanban board).
+cross-page state), Axios, `@dnd-kit` (drag-and-drop for the Leads kanban board),
+`@ant-design/charts` (charts on the Reports & Analytics page, §7.23).
 
 See `.context/final-plan.md` (repo root) — §3 (tech stack), §8 (route map), §9 (folder
 structure), §7.13 (Dashboard shell) — for the full plan this frontend is built against.
@@ -432,7 +433,8 @@ in later frontend tasks — mirroring how the backend was built phase-by-phase.
 | `user` (User Management) | ✅ **Built (§7.19, 2026-07-17)** — a new `/settings/users` route (added since §8's original route map didn't list one; gated on `users.view_all`/`users.view_team`, same as the backend scoping). Roster list (admin sees everyone, manager sees their own team — entirely server-side scoping, no client-side filtering), per-user Edit (name/email/phone/role/managerId/baseSalary via the existing `PATCH /users/:id`), Deactivate/Reactivate, an admin password-reset action (supports both an admin-typed exact password and a backend-generated one-time temp password, shown once), a link to the Permissions module (still a placeholder screen), and Create User (admin only, via the existing `POST /auth/register` — no new backend endpoint). |
 | `dashboard` (Dashboard) | ✅ **Built (§7.20/§7.21)** — the `/dashboard` shell, composing widgets by role via a declarative catalog rather than four separate per-role dashboards. Leads + Customers widgets (§7.20), plus 6 operational glance widgets — Attendance/Leave/Tickets/AMC/Payments/Payroll (§7.21) — see "Dashboard widget catalog" below for the full list and how to extend it. |
 | `payment` (Payments) | ✅ **Built** — the first real UI for this previously backend-only module (`/payments`, admin-only per §5's matrix). `PaymentsListPage` — a `Segmented` date-range filter (Today/Yesterday/This Month/Financial Year/All Time, computed client-side and sent as `from`/`to`; Financial Year is April 1–March 31, no existing FY utility anywhere else in this codebase, added fresh) driving a server-paginated `PaymentsTable` (Date/Customer/Amount/Notes/Recorded By — `customerId`/`recordedBy` resolved to names via the same Map-lookup convention `CustomersTable`'s Owner column already uses, not a backend join). `GET /payments` gained real `from`/`to`/`page`/`limit` support for this — the first server-side pagination in this backend, everything else paginates client-side (see `backend/README.md`'s Payments section). A "Record Payment" modal (`RecordPaymentModal`, gated separately behind `payments.create`) — its Customer field is a genuinely debounced search-as-you-type `Select` against the existing `GET /customers?search=` endpoint, not the fully-fetched-once-then-client-filtered `showSearch` pattern every other picker in this app uses (Owner/Project Manager pickers), since fetching every Customer up front defeats the purpose. Scoped to system customers only for this first version — `manualClientName` (cash/non-system entries) and invoice-linking (partial reconciliation against an outstanding Invoice) are backend-supported but deliberately left for a future pass. 10 tests (`PaymentsListPage.test.jsx`), all passing, no real network calls. |
-| Every other module (`payroll`, `travel-logs`, `tickets`, `amc`, `reports`, `permissions`) | Routing skeleton + placeholder page only — real components/api/hooks not built yet, see `docs/project-status.md` for what's next. |
+| `reports` (Reports & Analytics) | ✅ **Built (§7.23)** — the app's first real analytics feature and first chart library (`@ant-design/charts`, new dependency), replacing the `PlaceholderPage` at `/reports`. See "Reports & Analytics module" below for the full write-up. |
+| Every other module (`payroll`, `travel-logs`, `tickets`, `amc`, `permissions`) | Routing skeleton + placeholder page only — real components/api/hooks not built yet, see `docs/project-status.md` for what's next. |
 
 ### Maps & camera dependency decisions
 
@@ -624,6 +626,107 @@ session role (including manager's narrower 3-of-6 operational set), the empty-ca
 message for a role with none, permission-gating hiding a widget even when the role's config
 would normally include it (a mocked user with an empty `permissions` object), and one widget's
 mocked API rejection not affecting any other widget on the same page.
+
+---
+
+### Reports & Analytics module (`src/modules/reports/`, §7.23)
+
+`/reports` — the app's first real analytics feature, replacing the `PlaceholderPage` that sat
+there before, and distinct from the pre-existing raw export dispatcher (`POST
+/reports/generate`, still `services/reportApi.js`/`components/ReportDownloadButton.jsx`,
+untouched), which now has a proper UI home on this same page instead of no UI at all.
+
+**New dependency: `@ant-design/charts`** — chosen specifically because it renders through the
+app's existing AntD `ConfigProvider`/brand theme (`App.jsx`'s `BRAND_THEME`, navy
+`colorPrimary`) automatically, verified by checking its charts pick up that navy seed with zero
+extra wiring, unlike a theme-agnostic charting library that would need its own separate color
+config kept in sync by hand. This is the app's first chart/data-visualization library and first
+chart of any kind — there was no precedent to follow, so the choices below are this task's own.
+
+**Structure, mirroring the Dashboard widget catalog's own "self-contained component +
+composition layer" split:**
+1. **`api/analyticsApi.js`** — one function per new backend endpoint (11), matching the
+   established one-function-per-endpoint convention.
+2. **`hooks/useAnalyticsQuery.js`** — the same fetch/loading/error shape as `usePayments.js`,
+   generalized: any endpoint function + params in, `{data, isLoading, error, refetch}` out. Each
+   chart section calls this independently, so one section's fetch failing only ever sets that
+   section's own `error` — it can never affect any other section on the page (same isolation
+   principle `WidgetCard`/the Dashboard widgets already established).
+3. **`hooks/useAnalyticsDateRange.js` + `utils/analyticsDateFilters.js` + `components/
+   DateRangeFilter.jsx`** — one shared date-range control (This Month/Last 3 Months/This
+   Financial Year/Custom Range) driving every trend-based chart (Leads Conversion, Customer
+   Growth, Payments Trend, Attendance Trend, Payroll Cost Trend). "This Financial Year" (April
+   1–March 31) reuses the exact computation `payment/utils/paymentDateFilters.js` already
+   established for the Payments page (§7.22) — a small second copy in its own file, not a
+   generalized shared utility, since the two option lists genuinely differ (Payments also offers
+   Today/Yesterday/All Time; this page doesn't) and there's no third caller yet to justify
+   extracting one.
+4. **`components/ChartSectionCard.jsx`** — the same loading/error/empty-state shell as the
+   Dashboard's `WidgetCard`, sized for a full chart instead of a glance-summary card.
+5. **One component per chart/list** — each independently fetches via `useAnalyticsQuery`,
+   transforms the response into the shape its chart needs (e.g. mapping raw enum values through
+   each module's own existing label maps — `LEAD_STATUS_LABELS`, `CLIENT_TYPE_LABELS`,
+   `CONTRACT_TYPE_LABELS` — rather than a new hardcoded label set), and renders through
+   `ChartSectionCard`.
+6. **`components/ReportsPageContent.jsx`** — the composition layer: reads the current user's
+   permissions, decides which sections/cards to render, and owns the one shared
+   `useAnalyticsDateRange` instance passed down to every trend chart.
+
+**Chart-per-section mapping (`@ant-design/charts`):**
+- **Leads** — pipeline (`Column`, not `Funnel`: Lead status isn't a strictly narrowing
+  pipeline — a lead can sit in any status independent of how many came before it, and "lost"
+  isn't a sub-stage of "won" — so a bar-per-status count reads more honestly than a Funnel
+  implies), conversion trend (`Line`, `conversionRate` %), by source (`Pie`), by client type
+  (`Column` — deliberately not a second `Pie` right next to the by-source one, which would read
+  as visually redundant for a different axis).
+- **Customers** — growth (`Area`, new customers per month), status split (`Pie` with
+  `innerRadius={0.6}` as a donut), contract value by type (`Column`, summed `Contract.amount`).
+- **Financial** — payments trend (`Line`), upcoming AMC renewals (`AmcRenewalsUpcomingList` — a
+  plain AntD `List`, not a chart, per this task's own spec — with a day-window `Select`
+  defaulting to 30).
+- **Workforce** — attendance rate trend (`Line`), payroll cost trend (`Column`, summed
+  `Payroll.netAmount`).
+
+**Permission-gating** reuses the existing `PermissionGate` component — evaluated against
+`dashboardConfig.js`'s role→widget-catalog pattern first and rejected for this page: that
+pattern fits composing many independent pluggable dashboard widgets, not gating sections
+*within* one page. Leads/Customers sections are each wrapped in a single `PermissionGate`
+(`leads.view`/`customers.view` — every chart in that section shares the same grant). Financial
+and Workforce instead check each card's own permission independently via `usePermission`
+(`payments.view` vs. `amc.view`; `attendance.view_team || view_all` vs. `payroll.run`, the same
+grant `PayrollStatusWidget` already gates on) and only render the section heading at all if at
+least one card would be visible — those two headings each bundle two genuinely different
+permissions that don't always travel together for a given role (e.g. a sales_associate can hold
+`amc.view` "own" without `payments.view`, which has no non-admin tier at all).
+
+**`ExportForm`** — the proper UI home for the pre-existing `POST /reports/generate` dispatcher:
+a module Select + per-module filter inputs (attendance/transport: a date `RangePicker`;
+leave/payroll: a scope Select; leads/customers: a status Select) + the existing
+`ReportDownloadButton` for the actual format-picker + download, reusing that component's flow
+rather than reimplementing it. The module list is filtered to whichever modules the current
+user actually holds view access to, mirroring `report.service.js#MODULE_HANDLERS[module]
+.canAccess` exactly (`attendance`: `view_team`/`view_all`; `transport`: `travelLogs.view_team`/
+`view_all`; `leave`: any of `view`/`view_team`/`view_all`; `payroll`: `view`; `leads`/
+`customers`: `view`) — so it never offers an option guaranteed to 403 on click; if none apply,
+an `Empty` state renders instead of a broken form.
+
+**Testing:** jsdom has no `HTMLCanvasElement.getContext`/`ResizeObserver` support — verified
+directly: `@ant-design/charts` throws `"Not implemented: HTMLCanvasElement.prototype
+.getContext"` trying to render for real in a test environment. `@ant-design/charts` is
+therefore mocked to a plain stub (`Column`/`Line`/`Pie`/`Area` each rendering their `data` prop
+as JSON text) in `analyticsCharts.test.jsx` (16 tests covering all 11 real chart/list
+components' own data-fetch/transform/empty/loading/error behavior). A separate
+`ReportsPageContent.test.jsx` (5 tests) instead mocks each *section component itself*, isolating
+permission-gating and shared-date-range-propagation tests from chart-rendering concerns
+entirely — the same "test composition separately from leaf widgets" split
+`DashboardPage.test.jsx` already established. `ExportForm.test.jsx` (6 tests) covers the
+module-list permission filtering, per-module filter payloads, and the dispatcher call →
+`downloadUrl` → download handoff (mocking `services/reportApi.js`, the same pattern
+`ReportDownloadButton.test.jsx` already uses).
+
+**Known deviations:** none from this task's own stated scope. Live-browser (CDP screenshot)
+verification, the technique used for prior frontend tasks this session, was not available in
+this environment — verification here rests on the test suites and a successful `npm run build`.
 
 ---
 

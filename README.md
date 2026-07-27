@@ -135,13 +135,16 @@ native camera/geolocation capture, connectivity-gap timeline, Leave request/appr
 including the client-side loop that actually submits `POST /attendance/heartbeat`/
 `POST /location/pings` on an interval while checked in (`useCheckedInHeartbeatLoop`); User
 Management (`/settings/users` — roster list/edit/deactivate/reactivate/admin-password-reset/
-create) plus self-service + admin-override password reset (§7.19); and the Dashboard
+create) plus self-service + admin-override password reset (§7.19); the Dashboard
 (`/dashboard`, §7.20/§7.21 — a declarative widget catalog composing Leads + Customers widgets
 plus 6 operational glance widgets for Attendance/Leave/Tickets/AMC/Payments/Payroll, each
-independently permission-gated and independently fetching/failing) — see
-[`docs/project-status.md`](docs/project-status.md) for current progress and
+independently permission-gated and independently fetching/failing); Payments (`/payments`,
+§7.22, admin-only); and now Reports & Analytics (`/reports`, §7.23) — the app's first real
+analytics feature, 11 new aggregation endpoints charted with a new `@ant-design/charts`
+dependency, plus a proper UI home for the pre-existing `POST /reports/generate` export
+dispatcher — see [`docs/project-status.md`](docs/project-status.md) for current progress and
 [`.context/final-plan.md`](.context/final-plan.md) §10 for the phased roadmap. Attendance/
-Leave/Tickets/AMC/Payments/Payroll now have a glance-only Dashboard widget each, but their own
-full module pages (Payroll, Transport, Tickets, ...) are still routing-skeleton + placeholder
-pages only, filled in module-by-module in later frontend tasks; Phase 9's frontend half is now
-down to just the PWA service worker for push receipt/display.
+Leave/Tickets/AMC/Payments/Payroll now have a glance-only Dashboard widget each, but Payroll/
+Transport/Tickets/AMC/Permissions are still routing-skeleton + placeholder pages only, filled
+in module-by-module in later frontend tasks; Phase 9's frontend half is now down to just the
+PWA service worker for push receipt/display.

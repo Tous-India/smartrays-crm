@@ -6,7 +6,7 @@
 > persistent memory/brain), alongside the original raw notes in `.context/smartrays.md`
 > and `.context/leads-customer-functional-spec.md`.
 
-**Last updated:** 2026-07-21
+**Last updated:** 2026-07-27
 
 ---
 
@@ -37,13 +37,16 @@ was already built ahead of the rest of this phase and **now has a frontend live-
 too, §7.18**), Phase 4 (Payroll), Phase 5 (Support/Tickets + Customer Portal), Phase 6 (Transport/
 Travel), Phase 7 (Payments + AMC), Phase 8 (unified Reports), and Phase 9's backend half
 (Notifications + Web Push + lead follow-up reminder cron, §6.7/§7.16) are built and covered
-by an automated test suite (412 backend tests, all passing — verified via a real `npm test`
-run). **This closes out every backend phase in the roadmap.** The User Management frontend
-screen (`/settings/users`) plus self-service/admin password reset (§7.19), and the Dashboard
+by an automated test suite (470 backend tests, all passing — verified via a real `npm test`
+run, including 11 new `GET /reports/analytics/*` aggregation endpoints added §7.23). **This
+closes out every backend phase in the roadmap.** The User Management frontend
+screen (`/settings/users`) plus self-service/admin password reset (§7.19), the Dashboard
 (§7.13/§7.20/§7.21 — Leads/Customers widgets plus 6 operational glance widgets for Attendance/
-Leave/Tickets/AMC/Payments/Payroll), are now also built — Phase 9's frontend half is down to
-just PWA service worker wiring, and the rest of the frontend module-by-module build-out
-remains anywhere in the plan.
+Leave/Tickets/AMC/Payments/Payroll), the Payments frontend module (§7.22), and now Reports &
+Analytics (§7.23 — the app's first real analytics feature, `@ant-design/charts`) are also
+built — Phase 9's frontend half is down to just PWA service worker wiring, and the rest of the
+frontend module-by-module build-out remains (Payroll/Transport/Tickets/AMC/Permissions still
+render placeholder pages).
 Location Tracking and
 Attendance are proven to work together end-to-end through real HTTP endpoints, not just against
 directly-seeded test data — see the changelog. Photo capture on check-in/check-out is now
@@ -1036,3 +1039,55 @@ resolved while Phase 0 is underway.
   failures unchanged). `npm run build` verified successful. `frontend/README.md` (new "App
   shell UI/UX pass" section), `.context/final-plan.md` (brief note after §7.21), and this file
   all updated.
+- **2026-07-27** — Built Reports & Analytics (§7.23) — the app's first real analytics feature,
+  distinct from the pre-existing raw export dispatcher (`POST /reports/generate`, §7.11,
+  untouched), which now has a proper UI home on the same `/reports` page instead of a
+  `PlaceholderPage`. **Backend:** 11 new `GET /reports/analytics/*` endpoints in a new sibling
+  `analytics.service.js`/`analytics.controller.js` (routes still register inside the existing
+  `report.routes.js`) — the first MongoDB aggregation pipelines (`$group`/`$match`) anywhere in
+  this backend, confirmed via a full grep before writing any (every prior "report" was a
+  `.find()`-scoped list rendered to PDF/Excel in JS). Leads pipeline/conversion/by-source/by-
+  client-type, Customers growth/status-split/contract-value, Payments trend, AMC upcoming
+  renewals, Attendance rate trend, Payroll cost trend — each scoped by reusing the target
+  module's own existing ownership logic (`lead.service.js`/`customer.service.js`'s
+  `resolveOwnershipFilter`, `attendance.service.js#resolveDirectReportIds`, all three newly
+  exported, additive only, for this reuse; `customer.service.js#getVisibleCustomerIds`, already
+  exported, reused again for Contract-value/AMC scoping) rather than re-deriving admin/manager/
+  owner rules a second time. Payroll's `month`/`year` (separate Number fields, not a Date) are
+  converted to a comparable "month index" for `from`/`to` filtering instead of inventing a
+  second date-range convention. 40 new tests (`analytics.test.js`) — aggregation correctness,
+  scoping (admin/manager/narrower-role per endpoint group), date-range filtering, and empty-data
+  returning a sensible empty result rather than an error. One test-fixture bug found and fixed
+  (not an application bug): `$dateToString` formats in UTC by default, so a test date built as
+  local midnight shifted into the previous UTC day/month on a host timezone ahead of UTC — fixed
+  via `Date.UTC(...)` in the fixtures; production is unaffected (server clock is UTC). Full
+  backend suite: 470 tests, no regressions. **Frontend:** `frontend/src/modules/reports/` — a
+  new `@ant-design/charts` dependency (the app's first chart library and first chart of any
+  kind, chosen because it renders through the existing AntD `ConfigProvider`/brand theme
+  automatically), a shared date-range filter (This Month/Last 3 Months/This Financial Year/
+  Custom Range, reusing the same April-March FY computation `paymentDateFilters.js` established
+  at §7.22) driving every trend chart, and one component per chart/list (Leads: Column/Line/
+  Pie/Column; Customers: Area/donut-Pie/Column; Financial: Line + a plain `List` for upcoming
+  AMC renewals with a day-window selector; Workforce: Line/Column) — each independently
+  fetching/loading/error-isolated via a shared `ChartSectionCard`, matching the Dashboard
+  widgets' own isolation principle. Permission-gated via the existing `PermissionGate`
+  (evaluated and rejected `dashboardConfig.js`'s role-catalog pattern first — that fits
+  composing many pluggable widgets, not per-section gating within one page): Leads/Customers
+  sections gate as a whole (one shared grant each); Financial/Workforce gate each card
+  independently (`payments.view` vs. `amc.view`; `attendance.view_team||view_all` vs.
+  `payroll.run`) since those two group genuinely different permissions. A new `ExportForm` gives
+  the pre-existing `POST /reports/generate` dispatcher a proper UI (module + filters + format
+  picker, reusing the existing `ReportDownloadButton`), with its module list filtered to
+  whichever modules the current user actually holds view access to. **Testing:** jsdom has no
+  canvas/`ResizeObserver` support (verified — `@ant-design/charts` throws trying to render for
+  real under test), so it's mocked to a plain stub in `analyticsCharts.test.jsx` (16 tests
+  covering all 11 real chart/list components); `ReportsPageContent.test.jsx` (5 tests) instead
+  mocks each section component itself to test permission-gating and shared-date-range
+  propagation in isolation from chart rendering; `ExportForm.test.jsx` (6 tests) covers module
+  filtering, per-module filter payloads, and the dispatcher-to-`downloadUrl`-to-download
+  handoff. Full frontend suite: 232 tests (the same 2 pre-existing flaky failures —
+  `LeadDetailPage`/`CustomersListPage`, confirmed unrelated and passing in isolation — unchanged
+  from every prior run). `npm run build` verified successful. Live-browser (CDP screenshot)
+  verification was not available in this environment — verification here rests on the test
+  suites and the build. `backend/README.md`, `frontend/README.md`, `.context/final-plan.md`
+  (new §7.23, Modules-at-a-Glance updated), and this file all updated.

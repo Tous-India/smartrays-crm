@@ -1,7 +1,7 @@
-import PlaceholderPage from "../components/PlaceholderPage";
+import ReportsPageContent from "../modules/reports/components/ReportsPageContent";
 
 function ReportsPage() {
-  return <PlaceholderPage title="Reports" />;
+  return <ReportsPageContent />;
 }
 
 export default ReportsPage;

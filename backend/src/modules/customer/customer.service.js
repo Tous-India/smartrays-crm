@@ -15,8 +15,13 @@ import User from "../user/user.model.js";
  * see, the identical pattern to Leads (.context/final-plan.md §5/§11.9):
  * admin sees everything, a manager sees customers owned by their direct
  * reports (and themselves), everyone else sees only their own.
+ *
+ * Exported for `report/analytics.service.js` (Customers analytics reuses
+ * this directly; Contract-value analytics reuses `getVisibleCustomerIds`
+ * below instead, since Contract has no `ownerId` of its own — same
+ * reasoning AMC's existing scoping already established).
  */
-async function resolveOwnershipFilter(requestingUser) {
+export async function resolveOwnershipFilter(requestingUser) {
   if (requestingUser.role === "admin") {
     return {};
   }
