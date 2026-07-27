@@ -44,6 +44,31 @@
 }
 
 /*
+ * The open Status dropdown menu (`.lead-status-select-dropdown`, set via
+ * `classNames.popup.root` in LeadStatusSelect.jsx) — each option row carries
+ * its own `--lead-status-pastel-bg` (same property/value as the closed
+ * selector above, from LEAD_STATUS_PASTEL_COLORS). AntD's own default/hover/
+ * selected states are overridden explicitly rather than left to inherit: its
+ * built-in "selected" background is derived from the navy brand primary
+ * (App.jsx#BRAND_THEME) and renders as a dark grey-blue block that clashes
+ * with the pastel theme, so every state gets its own explicit pastel
+ * background and a fixed dark text color here. `!important` for the same
+ * reason as above — AntD's injected stylesheet rule wins the cascade
+ * otherwise, `:where()`-wrapped or not.
+ */
+.lead-status-select-dropdown .ant-select-item-option {
+  background-color: var(--lead-status-pastel-bg) !important;
+  color: rgba(0, 0, 0, 0.88) !important;
+}
+
+.lead-status-select-dropdown .ant-select-item-option-active,
+.lead-status-select-dropdown .ant-select-item-option-selected {
+  background-color: var(--lead-status-pastel-bg) !important;
+  color: rgba(0, 0, 0, 0.88) !important;
+  filter: brightness(0.94);
+}
+
+/*
  * Single source of truth for the two top-of-layout boxes' height
  * (MainLayout.jsx's white logo box + the blue top-bar strip) — they sit
  * side by side and must be pixel-equal, but were previously set with two
