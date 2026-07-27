@@ -29,6 +29,21 @@
 }
 
 /*
+ * Pastel per-stage background for the Leads Status dropdown
+ * (LeadStatusSelect.jsx) — `--lead-status-pastel-bg` is set inline by that
+ * component (from `LEAD_STATUS_PASTEL_COLORS`, lead.constants.js) since a
+ * static class here can't vary per row's status. AntD's actual visible box
+ * is `.ant-select-selector`, not the outer `.ant-select` a plain `style`
+ * prop would reach, hence the scoped class + nested selector rather than
+ * relying on `style.backgroundColor` alone. `!important` because
+ * `.ant-select-selector`'s own white background is set by AntD's own
+ * higher-specificity CSS-in-JS rule.
+ */
+.lead-status-select .ant-select-selector {
+  background-color: var(--lead-status-pastel-bg) !important;
+}
+
+/*
  * Single source of truth for the two top-of-layout boxes' height
  * (MainLayout.jsx's white logo box + the blue top-bar strip) — they sit
  * side by side and must be pixel-equal, but were previously set with two

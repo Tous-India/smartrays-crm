@@ -49,7 +49,17 @@ function LeadFormModal({ open, mode, initialLead, onCancel, onSubmit, isSubmitti
   }, [open, mode, initialLead, form]);
 
   async function handleOk() {
-    const values = await form.validateFields();
+    let values;
+
+    try {
+      values = await form.validateFields();
+    } catch {
+      // AntD's Form already renders the per-field errors inline — nothing
+      // further to do here beyond not letting the rejection go unhandled
+      // (previously surfaced as an uncaught `{values, errorFields, ...}`
+      // console error on every failed submit).
+      return;
+    }
 
     onSubmit({
       ...values,

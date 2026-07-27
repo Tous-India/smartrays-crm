@@ -35,6 +35,30 @@ export const LEAD_STATUS_COLORS = {
   lost: "red",
 };
 
+// Ant Design's own "1" palette shade for each named color token — the same
+// hue at low saturation/high lightness, i.e. the soft pastel tint of that
+// color rather than its solid form. Keyed by COLOR NAME, not by lead
+// status, specifically so `LEAD_STATUS_PASTEL_COLORS` below can derive from
+// `LEAD_STATUS_COLORS` instead of duplicating a second, separately-
+// maintained per-status map — if a status's color ever changes above, its
+// pastel tint follows automatically.
+const ANTD_COLOR_PASTEL_TINTS = {
+  default: "#FAFAFA",
+  cyan: "#E6FFFB",
+  purple: "#F9F0FF",
+  orange: "#FFF7E6",
+  gold: "#FFFBE6",
+  green: "#F6FFED",
+  red: "#FFF1F0",
+};
+
+// The Status dropdown's (LeadStatusSelect.jsx) per-stage background — a
+// soft pastel hint rather than the Tag badge's loud solid color, derived
+// from LEAD_STATUS_COLORS above rather than a second hardcoded mapping.
+export const LEAD_STATUS_PASTEL_COLORS = Object.fromEntries(
+  Object.entries(LEAD_STATUS_COLORS).map(([status, colorName]) => [status, ANTD_COLOR_PASTEL_TINTS[colorName]])
+);
+
 // Mirrors backend/src/modules/lead/leadCall.model.js#CALL_OUTCOMES.
 export const CALL_OUTCOMES = ["connected", "no_answer", "voicemail", "callback"];
 
