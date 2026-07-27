@@ -27,7 +27,7 @@ function PriorityLeadsSection({ priorityLeads }) {
   const hiddenCount = priorityLeads.length - visibleLeads.length;
 
   return (
-    <div className="mb-4 bg-[#FEF9E7] p-1.25">
+    <div className="mb-4 bg-[#E8F1FB] p-1.25">
       <h3 className="mb-2 text-sm font-semibold text-gray-700">Needs Attention</h3>
 
       {priorityLeads.length === 0 ? (
