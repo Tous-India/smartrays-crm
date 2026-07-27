@@ -682,6 +682,38 @@ describe("CSV import", () => {
 
     expect(response.status).toBe(400);
   });
+
+  it("skips rows that duplicate an existing lead's email, phone, or company, and duplicates within the same file", async () => {
+    await sales1Agent.post("/api/v1/leads").send(
+      buildLeadPayload({ name: "Existing Lead", email: "existing@example.com", phone: "1111111111", companyName: "Existing Co" })
+    );
+
+    const csv = [
+      "Name,Email,Phone,Company,Source,Status,Budget",
+      "Same Email,existing@example.com,2222222222,Brand New Co,Referral,new,1000",
+      "Same Phone,brandnew@example.com,1111111111,Brand New Co 2,Referral,new,1000",
+      "Same Company,another@example.com,3333333333,Existing Co,Referral,new,1000",
+      "Genuinely New,fresh@example.com,4444444444,Fresh Co,Referral,new,1000",
+      "Repeats Row Above,fresh@example.com,5555555555,Another Co,Referral,new,1000",
+    ].join("\n");
+
+    const response = await sales1Agent
+      .post("/api/v1/leads/import")
+      .attach("file", Buffer.from(csv), "leads.csv");
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.importedCount).toBe(1);
+    expect(response.body.data.skippedCount).toBe(4);
+    expect(response.body.data.skipped.map((row) => row.reason)).toEqual([
+      'Duplicate: email "existing@example.com" already exists',
+      'Duplicate: phone "1111111111" already exists',
+      'Duplicate: company "Existing Co" already exists',
+      'Duplicate: email "fresh@example.com" already exists',
+    ]);
+
+    const list = await sales1Agent.get("/api/v1/leads");
+    expect(list.body.data.map((lead) => lead.name).sort()).toEqual(["Existing Lead", "Genuinely New"]);
+  });
 });
 
 describe("Excel export", () => {

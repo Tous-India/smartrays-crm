@@ -408,8 +408,45 @@ const COLUMN_ALIASES = {
  * against the aliases above. Every imported lead is owned by the importing
  * user — mapping an "Owner" column to a different user is not supported yet.
  */
+// Normalizes for comparison — case/whitespace shouldn't decide whether two
+// rows count as "the same" lead (an email typed in different case, or a
+// company name with trailing whitespace from a spreadsheet export, is still
+// a duplicate).
+function normalizeForDupeCheck(value) {
+  return value ? value.trim().toLowerCase() : "";
+}
+
+/**
+ * Bulk-creates leads from an uploaded CSV or Excel file. The first row is
+ * treated as a header row; column names are matched case-insensitively
+ * against the aliases above. Every imported lead is owned by the importing
+ * user — mapping an "Owner" column to a different user is not supported yet.
+ *
+ * Duplicate check: a row matching an existing lead's email, phone, OR
+ * companyName (checked company-wide, not just the importer's own leads —
+ * the point is avoiding duplicate CRM records regardless of who owns the
+ * existing one) is skipped rather than imported. Checked against both
+ * already-saved leads AND rows already accepted earlier in this same file,
+ * so two identical rows in one upload don't both get created. Only non-empty
+ * values are compared — two blank company names isn't a match.
+ */
 export async function importLeadsFromFile(fileBuffer, originalFileName, requestingUser) {
   const rows = await parseLeadRows(fileBuffer, originalFileName);
+
+  const existingLeads = await Lead.find({}, "email phone companyName");
+  const seenEmails = new Set();
+  const seenPhones = new Set();
+  const seenCompanyNames = new Set();
+
+  existingLeads.forEach((lead) => {
+    const email = normalizeForDupeCheck(lead.email);
+    const phone = normalizeForDupeCheck(lead.phone);
+    const companyName = normalizeForDupeCheck(lead.companyName);
+
+    if (email) seenEmails.add(email);
+    if (phone) seenPhones.add(phone);
+    if (companyName) seenCompanyNames.add(companyName);
+  });
 
   const validLeads = [];
   const skipped = [];
@@ -426,6 +463,29 @@ export async function importLeadsFromFile(fileBuffer, originalFileName, requesti
       skipped.push({ row: rowNumber, reason: `Invalid status: ${row.status}` });
       return;
     }
+
+    const email = normalizeForDupeCheck(row.email);
+    const phone = normalizeForDupeCheck(row.phone);
+    const companyName = normalizeForDupeCheck(row.companyName);
+
+    if (email && seenEmails.has(email)) {
+      skipped.push({ row: rowNumber, reason: `Duplicate: email "${row.email}" already exists` });
+      return;
+    }
+
+    if (phone && seenPhones.has(phone)) {
+      skipped.push({ row: rowNumber, reason: `Duplicate: phone "${row.phone}" already exists` });
+      return;
+    }
+
+    if (companyName && seenCompanyNames.has(companyName)) {
+      skipped.push({ row: rowNumber, reason: `Duplicate: company "${row.companyName}" already exists` });
+      return;
+    }
+
+    if (email) seenEmails.add(email);
+    if (phone) seenPhones.add(phone);
+    if (companyName) seenCompanyNames.add(companyName);
 
     validLeads.push({
       name: row.name,
