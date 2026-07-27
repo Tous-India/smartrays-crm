@@ -56,11 +56,15 @@ function LeadDetailContent({
           </PermissionGate>
           <PermissionGate module="leads" action="edit">
             {/* Inline `style`, not a Tailwind className — AntD's `Button`
-                sets its own icon color via injected CSS that a plain
-                utility class loses to (verified: the icon stayed
+                sets its own icon/background color via injected CSS that a
+                plain utility class loses to (verified: the icon stayed
                 rgba(0,0,0,0.88) black even on a genuinely hot lead until
-                switched to inline style, which always wins). */}
+                switched to inline style, which always wins). Hot-state
+                background is the same pastel blue as the "Needs Attention"
+                section (#E8F1FB) for visual consistency; not-hot state is
+                left as AntD's own default button styling, untouched. */}
             <Button
+              style={lead.isHot ? { backgroundColor: "#E8F1FB" } : undefined}
               icon={
                 lead.isHot ? (
                   <FireFilled style={{ color: "#fa8c16" }} />
