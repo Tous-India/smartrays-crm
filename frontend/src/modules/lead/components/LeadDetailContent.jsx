@@ -6,7 +6,9 @@ import {
   EditOutlined,
   DeleteOutlined,
   CheckCircleOutlined,
+  CheckCircleFilled,
   CloseCircleOutlined,
+  CloseCircleFilled,
   SwapOutlined,
 } from "@ant-design/icons";
 import PermissionGate from "../../../routes/PermissionGate";
@@ -16,7 +18,15 @@ import {
   ROOF_TYPE_LABELS,
   CONNECTION_TYPE_LABELS,
   SITE_SURVEY_STATUS_LABELS,
+  LEAD_STATUS_PASTEL_COLORS,
 } from "../constants/lead.constants";
+
+// Solid AntD "green"/"red" (the same named colors LEAD_STATUS_COLORS maps
+// won/lost to for the Status Tag/dropdown elsewhere) — used for the Won/Lost
+// buttons' icon when active, since the pastel background itself is too
+// light for the icon to read against.
+const WON_ICON_COLOR = "#52c41a";
+const LOST_ICON_COLOR = "#f5222d";
 import { buildActivityTimeline } from "../utils/buildActivityTimeline";
 
 /**
@@ -78,12 +88,41 @@ function LeadDetailContent({
             </Button>
           </PermissionGate>
           <PermissionGate module="leads" action="edit">
-            <Button icon={<CheckCircleOutlined />} onClick={onWon}>
+            {/* Same active/inactive treatment as the Hot button above —
+                pastel background + solid icon only when the lead's REAL
+                status matches, reusing LEAD_STATUS_PASTEL_COLORS
+                (lead.constants.js, the same map the Status dropdown/Tag
+                already derive from) rather than a new color. */}
+            <Button
+              style={lead.status === "won" ? { backgroundColor: LEAD_STATUS_PASTEL_COLORS.won } : undefined}
+              icon={
+                lead.status === "won" ? (
+                  <CheckCircleFilled style={{ color: WON_ICON_COLOR }} />
+                ) : (
+                  <CheckCircleOutlined />
+                )
+              }
+              onClick={onWon}
+            >
               Won
             </Button>
           </PermissionGate>
           <PermissionGate module="leads" action="edit">
-            <Button danger icon={<CloseCircleOutlined />} onClick={onLost}>
+            {/* `danger` stays on regardless (that's this button's existing
+                baseline look) — only the pastel fill + solid icon are
+                conditional on the lead actually being lost. */}
+            <Button
+              danger
+              style={lead.status === "lost" ? { backgroundColor: LEAD_STATUS_PASTEL_COLORS.lost } : undefined}
+              icon={
+                lead.status === "lost" ? (
+                  <CloseCircleFilled style={{ color: LOST_ICON_COLOR }} />
+                ) : (
+                  <CloseCircleOutlined />
+                )
+              }
+              onClick={onLost}
+            >
               Lost
             </Button>
           </PermissionGate>
