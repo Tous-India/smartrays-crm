@@ -248,7 +248,7 @@ function LeadsTable({
 
       <Table
         rowKey="_id"
-        className="leads-table"
+        className="app-data-table"
         loading={isLoading}
         dataSource={leads}
         columns={columns}

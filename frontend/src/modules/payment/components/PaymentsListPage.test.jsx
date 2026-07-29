@@ -91,15 +91,15 @@ describe("PaymentsListPage", () => {
     });
   });
 
-  it("defaults to This Month and requests a from/to range covering the current month", async () => {
+  it("defaults to Today and requests a from/to range covering just today", async () => {
     renderPage();
     await screen.findByText("Acme Corp");
 
     const now = new Date();
-    const expectedFrom = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+    const expectedDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 
     expect(paymentApi.listPayments).toHaveBeenCalledWith(
-      expect.objectContaining({ from: expectedFrom })
+      expect.objectContaining({ from: expectedDate, to: expectedDate })
     );
   });
 

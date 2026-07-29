@@ -5,6 +5,11 @@ import { Table } from "antd";
  * and `recordedBy` are resolved to display names via the same Map-lookup
  * convention already used for "Owner" elsewhere (CustomersTable.jsx et al.),
  * not a backend join.
+ *
+ * `className="app-data-table"` (styles/index.css) — the same row-density +
+ * card-border/shadow treatment LeadsTable.jsx uses, generalized from a
+ * Leads-only class into a shared one for this table to reuse rather than
+ * duplicating the same CSS under a second name.
  */
 function PaymentsTable({ payments, isLoading, total, page, pageSize, onPageChange, customerNameById, userNameById }) {
   const columns = [
@@ -39,6 +44,7 @@ function PaymentsTable({ payments, isLoading, total, page, pageSize, onPageChang
   return (
     <Table
       rowKey="_id"
+      className="app-data-table"
       loading={isLoading}
       dataSource={payments}
       columns={columns}

@@ -29,29 +29,59 @@
 }
 
 /*
- * Leads table row density (LeadsTable.jsx) — an explicit 5px/16px cell
- * padding rather than AntD's `size` prop (whose "small" preset also shrinks
- * horizontal padding to 8px, tighter than wanted here). Scoped to `tbody`
- * only, matching what was actually asked for — the header keeps its default
- * padding.
+ * Shared list-table treatment (`.app-data-table`) — originally
+ * Leads-specific (`.leads-table`), generalized here once a second module
+ * (Payments) needed the identical row density + card separation, per that
+ * task's own instruction not to duplicate the same rule under a second
+ * class name. Any future module's list table should use this same class
+ * rather than reintroducing its own row-padding/card CSS.
+ *
+ * An explicit 5px/16px cell padding rather than AntD's `size` prop (whose
+ * "small" preset also shrinks horizontal padding to 8px, tighter than
+ * wanted here). Scoped to `tbody` only, matching what was actually asked
+ * for originally — the header keeps its default padding.
  */
-.leads-table .ant-table-tbody > tr > td {
+.app-data-table .ant-table-tbody > tr > td {
   padding: 5px 16px;
 }
 
 /*
- * Company column width (LeadsTable.jsx) — `min-width` rather than AntD's
- * column `width` prop: without `tableLayout="fixed"` (which would also force
- * every OTHER column, including the ones holding Select controls, onto a
- * fixed/equal-share width, an unwanted side effect), the browser's default
- * auto table layout ignores a plain `<col>` width hint whenever another
- * column's content needs the space — verified via a CDP inspection that
- * showed the column rendering at ~98px despite `width: 200`. `min-width` on
- * the cell itself IS honored by the auto layout algorithm, so this widens
- * only Company without touching the others.
+ * Card-level separation from the page background (added alongside the
+ * Payments table fix) — AntD's own `<Table>` has no outer border/shadow at
+ * all by default (only internal cell borders), so on a page with little
+ * else around it the table visually blends into MainLayout's white content
+ * box. A light border + subtle shadow + rounded corners gives it a
+ * distinct "card" edge; `overflow: hidden` clips the header's square
+ * corners to that same radius. Targets `.ant-table` (the element that
+ * actually paints the grid) rather than the outer `.ant-table-wrapper` (a
+ * plain non-visual layout wrapper) or the pagination control below it,
+ * which deliberately stays outside this card, unstyled.
  */
-.leads-table .ant-table-tbody > tr > td.leads-company-cell,
-.leads-table .ant-table-thead > tr > th.leads-company-cell {
+.app-data-table .ant-table {
+  border: 1px solid rgba(5, 5, 5, 0.06);
+  border-radius: 8px;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.03),
+    0 2px 8px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
+}
+
+/*
+ * Company column width (LeadsTable.jsx only) — `min-width` rather than
+ * AntD's column `width` prop: without `tableLayout="fixed"` (which would
+ * also force every OTHER column, including the ones holding Select
+ * controls, onto a fixed/equal-share width, an unwanted side effect), the
+ * browser's default auto table layout ignores a plain `<col>` width hint
+ * whenever another column's content needs the space — verified via a CDP
+ * inspection that showed the column rendering at ~98px despite
+ * `width: 200`. `min-width` on the cell itself IS honored by the auto
+ * layout algorithm, so this widens only Company without touching the
+ * others. Kept as its own Leads-specific class (not folded into
+ * `.app-data-table`) since it's a column-shape decision, not a shared
+ * table-chrome one.
+ */
+.app-data-table .ant-table-tbody > tr > td.leads-company-cell,
+.app-data-table .ant-table-thead > tr > th.leads-company-cell {
   min-width: 200px;
 }
 

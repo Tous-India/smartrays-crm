@@ -23,7 +23,7 @@ const PAGE_SIZE = 20;
  */
 function PaymentsListPage() {
   const canView = usePermission("payments", "view");
-  const [activeFilter, setActiveFilter] = useState("thisMonth");
+  const [activeFilter, setActiveFilter] = useState("today");
   const [page, setPage] = useState(1);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
