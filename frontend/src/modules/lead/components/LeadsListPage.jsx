@@ -77,6 +77,12 @@ function LeadsListPage({ view }) {
     navigate({ pathname: path, search: searchParams.toString() });
   }
 
+  // Same unguarded-promise gap found and fixed on Customer creation
+  // (CustomersListPage.jsx#handleCreateCustomer) — a failed createLead call
+  // previously rejected with no catch at all, an unhandled rejection visible
+  // only in the console. Caught here and surfaced via the backend's own
+  // validation message; the form stays open on failure so the user doesn't
+  // lose what they'd entered.
   async function handleCreateLead(values) {
     setIsSubmittingForm(true);
 
@@ -85,6 +91,8 @@ function LeadsListPage({ view }) {
       message.success("Lead created");
       setIsFormOpen(false);
       refetch();
+    } catch (error) {
+      message.error(error.response?.data?.message || "Failed to create lead");
     } finally {
       setIsSubmittingForm(false);
     }

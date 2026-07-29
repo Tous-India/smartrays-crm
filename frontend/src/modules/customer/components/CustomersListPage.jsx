@@ -77,6 +77,15 @@ function CustomersListPage() {
    * (`customer.service.js#applyContractCreatedAutomation`) — invisible
    * unless called out, so the success message explicitly names which
    * contracts triggered it, per this task's own instruction.
+   *
+   * A failure at any step (most commonly a 400 from the backend's own
+   * validation) previously rejected with no `catch` at all — an unhandled
+   * promise rejection that only ever showed up in the console, leaving the
+   * user staring at a modal that silently did nothing. Caught here and
+   * surfaced via the backend's own validation message (not a generic
+   * "something went wrong"), and the wizard is deliberately left open on
+   * failure so the user can fix the offending field and resubmit rather
+   * than losing everything they'd entered.
    */
   async function handleCreateCustomer(values) {
     setIsSubmittingWizard(true);
@@ -112,6 +121,8 @@ function CustomersListPage() {
       message.success(successMessage);
       setIsWizardOpen(false);
       refetch();
+    } catch (error) {
+      message.error(error.response?.data?.message || "Failed to create customer");
     } finally {
       setIsSubmittingWizard(false);
     }

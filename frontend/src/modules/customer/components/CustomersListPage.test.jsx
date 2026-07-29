@@ -308,6 +308,37 @@ describe("CustomersListPage — Add Customer wizard", () => {
       );
     });
   });
+
+  it("shows the backend's validation message (not a console-only unhandled rejection) when createCustomer fails, and keeps the wizard open", async () => {
+    customerApi.createCustomer.mockRejectedValue({
+      response: { data: { message: "projectManagerId is required" } },
+    });
+
+    renderPage();
+    await screen.findByText("Acme Corp");
+
+    await userEvent.click(screen.getByRole("button", { name: /Add Customer/ }));
+
+    await userEvent.type(await screen.findByLabelText("Company Name"), "New Co");
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Next" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Next" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Next" }));
+
+    await userEvent.click(await screen.findByLabelText("Project Manager"));
+    await userEvent.click(await screen.findByTitle("Priya PM"));
+
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(message.error).toHaveBeenCalledWith("projectManagerId is required");
+    });
+
+    // The wizard stays open on failure — the user shouldn't lose what
+    // they'd already entered, and there's no unhandled rejection anywhere
+    // in this flow (that's the whole point of the fix under test).
+    expect(screen.getByRole("dialog", { name: "Add Customer" })).toBeInTheDocument();
+  });
 });
 
 describe("CustomersListPage — permission gating", () => {
