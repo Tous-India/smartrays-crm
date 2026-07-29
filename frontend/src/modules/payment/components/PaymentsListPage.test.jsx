@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import dayjs from "dayjs";
 import { MemoryRouter } from "react-router-dom";
 import PaymentsListPage from "./PaymentsListPage";
 import useSessionStore from "../../../store/sessionStore";
@@ -89,6 +90,18 @@ describe("PaymentsListPage", () => {
         expect.objectContaining({ page: 1, limit: 20 })
       );
     });
+  });
+
+  it("displays each payment's date AND time, not just the date", async () => {
+    renderPage();
+    await screen.findByText("Acme Corp");
+
+    // SAMPLE_PAYMENTS' first row is "2026-07-10T00:00:00.000Z" — asserting
+    // via dayjs's own formatting (not a hardcoded string) so this test
+    // doesn't depend on which timezone it runs in, matching how the app
+    // itself renders it (`PaymentsTable.jsx`'s `dayjs(value).format(...)`).
+    const expectedText = dayjs("2026-07-10T00:00:00.000Z").format("DD MMM YYYY, h:mm A");
+    expect(screen.getByText(expectedText)).toBeInTheDocument();
   });
 
   it("defaults to Today and requests a from/to range covering just today", async () => {

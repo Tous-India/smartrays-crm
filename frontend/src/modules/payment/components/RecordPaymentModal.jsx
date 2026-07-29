@@ -101,7 +101,10 @@ function RecordPaymentModal({ open, onCancel, onSubmit, isSubmitting }) {
         </Form.Item>
 
         <Form.Item label="Date" name="date" rules={[{ required: true, message: "Date is required" }]}>
-          <DatePicker style={{ width: "100%" }} />
+          {/* Hours:minutes only — same `showTime` config as LeadFormModal's
+              own follow-up date field; the default `showTime` also asks for
+              seconds, precision a payment record doesn't need either. */}
+          <DatePicker showTime={{ format: "HH:mm" }} format="YYYY-MM-DD HH:mm" style={{ width: "100%" }} />
         </Form.Item>
 
         <Form.Item label="Notes" name="notes">

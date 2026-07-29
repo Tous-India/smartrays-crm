@@ -1,4 +1,5 @@
 import { Table } from "antd";
+import dayjs from "dayjs";
 
 /**
  * `GET /payments` returns bare Payment documents (no populate) — `customerId`
@@ -16,7 +17,14 @@ function PaymentsTable({ payments, isLoading, total, page, pageSize, onPageChang
     {
       title: "Date",
       dataIndex: "date",
-      render: (value) => new Date(value).toLocaleDateString(),
+      // Date + time, matching the "DD MMM YYYY" token convention
+      // `AttendanceTimeline.jsx`/`LeaveListPage.jsx` already use for dates,
+      // extended with hours:minutes (12-hour, no seconds) — `Payment.date`
+      // is a full `Date`, not a date-only value, and the Record Payment
+      // modal now captures a real time via its own `showTime` picker below,
+      // so the table should actually show it instead of silently dropping
+      // it the way a plain `toLocaleDateString()` would.
+      render: (value) => dayjs(value).format("DD MMM YYYY, h:mm A"),
     },
     {
       title: "Customer",
