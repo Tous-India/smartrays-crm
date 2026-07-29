@@ -12,17 +12,21 @@ import { updateCustomer } from "../api/customerApi";
  * active project for this customer, `customer.service.js#updateCustomer`);
  * reactivating has no such side effect and needs none.
  *
- * Icon-only, not icon+text — `StopOutlined`/`CheckCircleOutlined` are the
- * exact icons this component already used before, just without the label
- * now sitting next to them. A `Tooltip` carries the same text on hover so
- * the action stays discoverable, and `aria-label` keeps the button's
- * accessible name identical to the old visible text (also why existing
+ * **Two display modes, one shared implementation:** `iconOnly` (default
+ * `true`, preserving the List table's existing compact behavior) renders
+ * `StopOutlined`/`CheckCircleOutlined` alone inside a `type="text"` button —
+ * matching this codebase's one other icon-only table-row-action precedent
+ * (`LeadsTable.jsx`'s Log Call/Hot-toggle buttons) — wrapped in a `Tooltip`
+ * so the action stays discoverable, with `aria-label` keeping the button's
+ * accessible name identical to the visible-text version (also why existing
  * `getByRole("button", { name: /Deactivate/ })`-style queries still match
- * unchanged). `type="text"` matches this codebase's one other icon-only
- * table-row-action precedent (`LeadsTable.jsx`'s Log Call/Hot-toggle
- * buttons) rather than inventing a new bordered-icon-button style.
+ * unchanged). `iconOnly={false}` (the Customer Detail header's own mode)
+ * renders the same icon plus its visible text label instead — no `Tooltip`
+ * needed once the label itself is on-screen. Both modes share the exact
+ * same `handleToggle`/`Popconfirm` — there is still only one place calling
+ * `PATCH /customers/:id` and one place owning the confirmation copy.
  */
-function CustomerStatusToggleButton({ customer, onChanged, size }) {
+function CustomerStatusToggleButton({ customer, onChanged, size, iconOnly = true }) {
   const isActive = customer.customerStatus === "active";
 
   async function handleToggle() {
@@ -33,6 +37,19 @@ function CustomerStatusToggleButton({ customer, onChanged, size }) {
   }
 
   if (isActive) {
+    const deactivateButton = (
+      <Button
+        danger
+        type={iconOnly ? "text" : "default"}
+        size={size}
+        icon={<StopOutlined />}
+        aria-label="Deactivate"
+        onClick={(event) => event.stopPropagation()}
+      >
+        {!iconOnly && "Deactivate"}
+      </Button>
+    );
+
     return (
       <Popconfirm
         title="Deactivate this customer?"
@@ -41,34 +58,27 @@ function CustomerStatusToggleButton({ customer, onChanged, size }) {
         okType="danger"
         onConfirm={handleToggle}
       >
-        <Tooltip title="Deactivate">
-          <Button
-            danger
-            type="text"
-            size={size}
-            icon={<StopOutlined />}
-            aria-label="Deactivate"
-            onClick={(event) => event.stopPropagation()}
-          />
-        </Tooltip>
+        {iconOnly ? <Tooltip title="Deactivate">{deactivateButton}</Tooltip> : deactivateButton}
       </Popconfirm>
     );
   }
 
-  return (
-    <Tooltip title="Activate">
-      <Button
-        type="text"
-        size={size}
-        icon={<CheckCircleOutlined />}
-        aria-label="Activate"
-        onClick={(event) => {
-          event.stopPropagation();
-          handleToggle();
-        }}
-      />
-    </Tooltip>
+  const activateButton = (
+    <Button
+      type={iconOnly ? "text" : "default"}
+      size={size}
+      icon={<CheckCircleOutlined />}
+      aria-label="Activate"
+      onClick={(event) => {
+        event.stopPropagation();
+        handleToggle();
+      }}
+    >
+      {!iconOnly && "Activate"}
+    </Button>
   );
+
+  return iconOnly ? <Tooltip title="Activate">{activateButton}</Tooltip> : activateButton;
 }
 
 export default CustomerStatusToggleButton;

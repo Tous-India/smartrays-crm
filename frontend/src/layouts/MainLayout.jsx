@@ -62,9 +62,11 @@ function resolveSelectedKey(pathname, candidateKeys) {
  * scrolls, via its own `overflow-y-auto`, and only if genuinely taller than
  * the viewport — invisible scrollbar even then, see `styles/index.css`),
  * and a footer (pinned) holding the current user's identity + Sign out. The
- * right-hand column (top bar + page content) scrolls normally with the
- * page — only the sidebar's own internal regions are fixed/independently-
- * scrolling, not the whole app shell.
+ * top bar is ALSO fixed (full width minus the sidebar, via the same
+ * `ms-0 lg:ms-[220px]` responsive margin the Content column uses, so it
+ * collapses/expands in lockstep with the sidebar) — only `Content` actually
+ * scrolls with the page; it gets a top margin equal to the top bar's height
+ * so nothing renders underneath it on initial load.
  *
  * **Visual design — matched to a reference CRM's sidebar** (a screenshot
  * supplied for this task, not a project asset, deleted after use), with
@@ -217,6 +219,7 @@ function MainLayout() {
           top: 0,
           bottom: 0,
           height: "100vh",
+          zIndex: 10,
         }}
       >
         {/* Top — pinned, never scrolls. WHITE background (the one
@@ -307,13 +310,27 @@ function MainLayout() {
           breakpoint (992px), where the Sider auto-collapses to width 0 and
           reserving 220px of empty margin would otherwise leave a dead gap. */}
       <Layout className="ms-0 lg:ms-[220px]">
-        <Header className="app-topbar-height !flex items-center justify-between !bg-brand-navy px-6 !leading-none">
+        {/* Fixed full-width (minus sidebar) top bar — `inset-x-0` anchors
+            both edges to the viewport, and the same `ms-0 lg:ms-[220px]`
+            margin the Content column uses pushes its start edge in to clear
+            the sidebar, so the two collapse/expand together at the same
+            breakpoint rather than duplicating a hardcoded width. `z-10`
+            matches the Sider's own z-index — they never overlap
+            horizontally, but both need to sit above scrolling Content. */}
+        <Header className="app-topbar-height !flex items-center justify-between !bg-brand-navy px-6 !leading-none fixed inset-x-0 top-0 z-10 ms-0 lg:ms-[220px]">
           <LiveClock />
           <NotificationBell />
         </Header>
-        <Content className="m-4">
-          {/* 100vh minus the shortened 48px header minus this Content's own
-              1rem top+bottom margin (m-4). */}
+        {/* `mt-16` (64px) replaces the header's old in-flow height (48px)
+            plus this element's own original 1rem top margin — the header no
+            longer occupies flow space now that it's fixed, so Content needs
+            that space added back explicitly, or the page would render
+            underneath it on initial load. */}
+        <Content className="mx-4 mb-4 mt-16">
+          {/* 100vh minus the top bar's 48px minus this Content's own 1rem
+              top+bottom margin (unchanged from before — mt-16 already folds
+              the top bar's height into that first 1rem, so the total
+              vertical chrome is still exactly 5rem). */}
           <div className="min-h-[calc(100vh-5rem)] rounded-lg bg-white p-6">
             <Outlet />
           </div>

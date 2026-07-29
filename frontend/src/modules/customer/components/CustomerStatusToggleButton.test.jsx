@@ -83,4 +83,38 @@ describe("CustomerStatusToggleButton", () => {
     await userEvent.hover(screen.getByRole("button", { name: "Activate" }));
     expect(await screen.findAllByText("Activate")).not.toHaveLength(0);
   });
+
+  it("renders a visible text label (not icon-only) when iconOnly is false, for both states", () => {
+    const { rerender } = render(
+      <CustomerStatusToggleButton customer={ACTIVE_CUSTOMER} onChanged={vi.fn()} iconOnly={false} />
+    );
+
+    expect(screen.getByRole("button", { name: "Deactivate" })).toHaveTextContent("Deactivate");
+
+    rerender(
+      <CustomerStatusToggleButton customer={INACTIVE_CUSTOMER} onChanged={vi.fn()} iconOnly={false} />
+    );
+
+    expect(screen.getByRole("button", { name: "Activate" })).toHaveTextContent("Activate");
+  });
+
+  it("still confirms the same consequence-naming Popconfirm and calls the same API when iconOnly is false", async () => {
+    customerApi.updateCustomer.mockResolvedValue({ data: { data: INACTIVE_CUSTOMER } });
+    const onChanged = vi.fn();
+    render(
+      <CustomerStatusToggleButton customer={ACTIVE_CUSTOMER} onChanged={onChanged} iconOnly={false} />
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Deactivate" }));
+
+    expect(await screen.findByText(/completes every active project for this customer/)).toBeInTheDocument();
+
+    const confirmButtons = await screen.findAllByRole("button", { name: /Deactivate/ });
+    await userEvent.click(confirmButtons[confirmButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(customerApi.updateCustomer).toHaveBeenCalledWith("cust-1", { customerStatus: "inactive" });
+    });
+    expect(onChanged).toHaveBeenCalled();
+  });
 });

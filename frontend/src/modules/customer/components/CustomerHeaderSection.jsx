@@ -18,7 +18,9 @@ const { Title, Text } = Typography;
  * Inactive" actions already trigger (`customer.service.js#updateCustomer`,
  * reused by all three) — added here because there was previously no way to
  * change one customer's status without first selecting it in the List
- * page's bulk toolbar.
+ * page's bulk toolbar. Rendered with `iconOnly={false}` here (unlike the
+ * table's default icon-only compact mode) since this header has room for,
+ * and reads better with, the full "Deactivate"/"Activate" text label.
  */
 function CustomerHeaderSection({ customer, onEdit, onDelete, onChanged }) {
   const { users } = useUserDirectory();
@@ -55,7 +57,7 @@ function CustomerHeaderSection({ customer, onEdit, onDelete, onChanged }) {
           </Button>
         </PermissionGate>
         <PermissionGate module="customers" action="edit">
-          <CustomerStatusToggleButton customer={customer} onChanged={onChanged} />
+          <CustomerStatusToggleButton customer={customer} onChanged={onChanged} iconOnly={false} />
         </PermissionGate>
         <PermissionGate module="customers" action="delete">
           <Popconfirm title="Delete this customer?" okText="Delete" okType="danger" onConfirm={onDelete}>
