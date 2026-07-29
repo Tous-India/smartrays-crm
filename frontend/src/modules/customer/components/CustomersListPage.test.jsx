@@ -112,11 +112,26 @@ describe("CustomersListPage — List View", () => {
     });
   });
 
-  it("shows inactive customers when the Show Inactive checkbox is checked", async () => {
+  it("shows inactive customers when the status filter is set to Inactive", async () => {
     renderPage();
     await screen.findByText("Acme Corp");
 
-    await userEvent.click(screen.getByRole("checkbox", { name: "Show Inactive" }));
+    await userEvent.click(screen.getByRole("combobox", { name: "Status" }));
+    await userEvent.click(await screen.findByTitle("Inactive"));
+
+    await waitFor(() => {
+      expect(customerApi.listCustomers).toHaveBeenLastCalledWith(
+        expect.objectContaining({ status: "inactive" })
+      );
+    });
+  });
+
+  it("shows every customer regardless of status when the status filter is set to All", async () => {
+    renderPage();
+    await screen.findByText("Acme Corp");
+
+    await userEvent.click(screen.getByRole("combobox", { name: "Status" }));
+    await userEvent.click(await screen.findByTitle("All"));
 
     await waitFor(() => {
       expect(customerApi.listCustomers).toHaveBeenLastCalledWith(
@@ -131,10 +146,7 @@ describe("CustomersListPage — List View", () => {
     await screen.findByText("Acme Corp");
 
     const checkboxes = screen.getAllByRole("checkbox");
-    // checkboxes[0] is the filters bar's "Show Inactive" checkbox,
-    // checkboxes[1] is the table's "select all" header checkbox — the
-    // first actual row checkbox is index 2.
-    const rowCheckbox = checkboxes[2];
+    const rowCheckbox = checkboxes[1];
     await userEvent.click(rowCheckbox);
 
     expect(await screen.findByText("1 selected")).toBeInTheDocument();

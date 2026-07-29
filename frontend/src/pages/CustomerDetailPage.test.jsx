@@ -108,4 +108,49 @@ describe("CustomerDetailPage", () => {
       expect(customerApi.deleteContract).toHaveBeenCalledWith("cust-1", "contract-1");
     });
   });
+
+  it("deactivating an active customer shows the completes-project warning before calling updateCustomer", async () => {
+    customerApi.updateCustomer.mockResolvedValue({ data: { data: { ...SAMPLE_CUSTOMER, customerStatus: "inactive" } } });
+    renderDetailPage();
+    await screen.findByText("Acme Corp");
+
+    // The trigger button's accessible name includes its icon ("stop
+    // Deactivate"), hence the regex rather than an exact string match.
+    await userEvent.click(screen.getByRole("button", { name: /Deactivate/ }));
+
+    expect(
+      await screen.findByText(/completes every active project for this customer/)
+    ).toBeInTheDocument();
+
+    // Confirming re-uses the exact same single-customer PATCH endpoint Edit
+    // already calls — not the bulk endpoint.
+    expect(customerApi.updateCustomer).not.toHaveBeenCalled();
+
+    // Two "Deactivate" matches once the Popconfirm is open (the trigger
+    // button behind it, plus its own confirm button) — the confirm button
+    // is the last one, same pattern this file previously used for the
+    // (now-removed) credential reveal confirm.
+    const confirmButtons = await screen.findAllByRole("button", { name: /Deactivate/ });
+    await userEvent.click(confirmButtons[confirmButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(customerApi.updateCustomer).toHaveBeenCalledWith("cust-1", { customerStatus: "inactive" });
+    });
+  });
+
+  it("shows Activate (no warning) for an already-inactive customer, toggling back to active", async () => {
+    customerApi.getCustomer.mockResolvedValue({
+      data: { data: { ...SAMPLE_CUSTOMER, customerStatus: "inactive" } },
+    });
+    customerApi.updateCustomer.mockResolvedValue({ data: { data: { ...SAMPLE_CUSTOMER, customerStatus: "active" } } });
+    renderDetailPage();
+    await screen.findByText("Acme Corp");
+
+    expect(screen.queryByRole("button", { name: /Deactivate/ })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Activate/ }));
+
+    await waitFor(() => {
+      expect(customerApi.updateCustomer).toHaveBeenCalledWith("cust-1", { customerStatus: "active" });
+    });
+  });
 });

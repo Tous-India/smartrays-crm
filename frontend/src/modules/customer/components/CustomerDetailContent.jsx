@@ -51,9 +51,30 @@ function CustomerDetailContent({ customer, contacts, contracts, activity, onChan
     onDeleted();
   }
 
+  /**
+   * Reuses the same single-customer `PATCH /customers/:id` endpoint Edit
+   * already calls (`customer.service.js#updateCustomer`) — the canonical
+   * place the deactivation cascade (completes active projects, per that
+   * function's own comment) actually lives; `POST /customers/bulk` is just
+   * a thin per-id wrapper around this same function, not a separate
+   * implementation, so there's no reason to route a single toggle through
+   * the bulk endpoint instead.
+   */
+  async function handleToggleStatus() {
+    const nextStatus = customer.customerStatus === "active" ? "inactive" : "active";
+    await updateCustomer(customer._id, { customerStatus: nextStatus });
+    message.success(nextStatus === "inactive" ? "Customer deactivated" : "Customer activated");
+    onChanged();
+  }
+
   return (
     <div>
-      <CustomerHeaderSection customer={customer} onEdit={() => setIsEditOpen(true)} onDelete={handleDelete} />
+      <CustomerHeaderSection
+        customer={customer}
+        onEdit={() => setIsEditOpen(true)}
+        onDelete={handleDelete}
+        onToggleStatus={handleToggleStatus}
+      />
 
       <CustomerBillingCard customer={customer} onEdit={() => setIsEditOpen(true)} />
 
