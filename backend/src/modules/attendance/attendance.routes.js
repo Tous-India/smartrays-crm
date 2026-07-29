@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import authenticate from "../../middlewares/authenticate.middleware.js";
-import { authorizeAny } from "../../middlewares/authorize.middleware.js";
+import { authorizeAny, requireAdmin } from "../../middlewares/authorize.middleware.js";
 import {
   checkIn,
   checkOut,
@@ -9,12 +9,16 @@ import {
   myAttendance,
   teamAttendance,
   report,
+  adjust,
+  createManual,
 } from "./attendance.controller.js";
 import {
   validateCheckInInput,
   validateCheckOutInput,
   validateMonthQuery,
   validateReportQuery,
+  validateAdjustAttendanceInput,
+  validateCreateManualAttendanceInput,
 } from "./attendance.validation.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -55,5 +59,13 @@ attendanceRouter.get(
   validateReportQuery,
   report
 );
+
+// Admin manual-correction — no `attendance.*` permission tier for this
+// (view_team/view_all are both about VIEWING others' records, not editing),
+// so `requireAdmin` is the gate, the same simple role-check `POST
+// /payroll/run` already uses for its own genuinely admin-only action rather
+// than inventing a permission that in practice only admin would ever hold.
+attendanceRouter.patch("/:id", authenticate, requireAdmin, validateAdjustAttendanceInput, adjust);
+attendanceRouter.post("/manual", authenticate, requireAdmin, validateCreateManualAttendanceInput, createManual);
 
 export default attendanceRouter;

@@ -427,7 +427,7 @@ in later frontend tasks — mirroring how the backend was built phase-by-phase.
 | `auth` (login, session, password reset) | ✅ Built — `POST /auth/login`, `GET /auth/me`, `POST /auth/logout` wired through `sessionStore`. **Password reset added (§7.17, 2026-07-17):** "Forgot password?" link on the login page, a `/forgot-password` request-email page, and a `/reset-password?token=` page — all three (plus login) share a new `AuthLayout` component (`src/components/AuthLayout.jsx`) for the dark-glass background/card treatment. Register/Customer-signup pages still not built (no public UI needed — registration is admin-only, via the User Management module below). |
 | `lead` (Leads) | ✅ **Built — the reference implementation for every module below.** Table View (search/owner/follow-up filters, inline status dropdown, hot toggle, owner reassignment) and Board View (kanban, `@dnd-kit` drag-between-stages) share one page shell (`LeadsListPage`) behind `/leads` and `/leads/board`; Lead Detail (`/leads/:id`) is a real, linkable route rendered as a slide-over (Log Call, Hot toggle, Won, Lost, Convert to Customer, Edit, Delete); an Import wizard (upload → automatic column-matching preview → per-row results) and a filtered Excel export. See `.context/final-plan.md` §7.14's Leads frontend entry for the full write-up, including the one real backend gap found (no lead-specific activity log — the Activity Timeline is assembled client-side from call history + lead fields instead). |
 | `customer` (Customers) | ✅ **Built.** List View (`CustomersListPage`, behind `/customers`) — search/owner/status filters (defaults to active-only, an explicit "Show Inactive" checkbox), sortable columns, row-select + bulk activate/deactivate/delete, and an `Add Customer` wizard (`CustomerFormWizard`) that walks Company Info → Billing → Contracts → Contacts → Project Manager, creating the customer then each staged contract/contact in turn and surfacing the backend's contract automation explicitly in the success toast ("Project + draft Invoice auto-created for: ...") rather than leaving it invisible. Customer Detail (`/customers/:id`, a real full page per leads-customer-functional-spec.md, not a slide-over) renders `CustomerHeaderSection`/`CustomerBillingCard`/`CustomerSiteDetailsCard`/`CustomerContractsSection`/`CustomerContactsSection`/`CustomerInvoicePlaceholder`/`CustomerActivityLog` from one `useCustomerDetail` hook. Every mutating action is gated to the exact backend `customers` permission its endpoint requires. **Credentials Vault UI deliberately removed (2026-07-29)** — see "Credentials Vault removal" below. Tests: `CustomersListPage.test.jsx`, `CustomerDetailPage.test.jsx`, all passing, no real network calls. |
-| `attendance` (Attendance) | ✅ **Built.** `CheckInOutWidget` (`/attendance`, top of the Personal view) — camera capture via native `getUserMedia` + a `<canvas>` snapshot (no library, see below), geolocation via the native `Geolocation` API, both mandatory before Confirm enables (mirroring the backend's server-side-enforced photo requirement, §7.4). Fetches current status on mount rather than assuming — correctly shows "Checked In" + a live elapsed-time counter if the page loads mid-shift, and (see below) resumes the heartbeat/ping loop in that same case. Personal Attendance view (`PersonalAttendanceView`) — a selectable month + `AttendanceTimeline` table (Check-In/Check-Out/Working Hours/Status) with connectivity gaps (`connectivityGaps[]`, §6.5) rendered as visually distinct red segments on a proportional bar (`ConnectivityGapBar`), not decoration — a specific, real requirement. Team Attendance view (`/attendance/team`, `TeamAttendanceView`) — same table + an employee selector (client-side filter; the backend endpoint has no per-employee filter), gated by `attendance.view_team`/`view_all` via a 403 `Result` in `AttendanceTeamPage.jsx` (not `PermissionGate`, which only expresses a single module+action pair — this needs an OR of two). Both views' report button hits the unified `POST /reports/generate` dispatcher (`module: "attendance"`) via the new shared `ReportDownloadButton`/`reportApi.js`. |
+| `attendance` (Attendance) | ✅ **Built.** `CheckInOutWidget` (`/attendance`, top of the Personal view) — camera capture via native `getUserMedia` + a `<canvas>` snapshot (no library, see below), geolocation via the native `Geolocation` API, both mandatory before Confirm enables (mirroring the backend's server-side-enforced photo requirement, §7.4). Fetches current status on mount rather than assuming — correctly shows "Checked In" + a live elapsed-time counter if the page loads mid-shift, and (see below) resumes the heartbeat/ping loop in that same case. Personal Attendance view (`PersonalAttendanceView`) and Team Attendance view (`/attendance/team`, `TeamAttendanceView`) both now render through one shared `AttendanceRecordsSection` (see "Admin correction, photo viewer, calendar view & summary stats" below) — summary stats, a List/Calendar view toggle, a photo-viewer modal, and (admin-only) manual correction actions, on top of the original `AttendanceTimeline` table (Check-In/Check-Out/Working Hours/Status) with connectivity gaps (`connectivityGaps[]`, §6.5) rendered as visually distinct red segments on a proportional bar (`ConnectivityGapBar`). Team view keeps its employee selector (client-side filter; the backend endpoint has no per-employee filter), gated by `attendance.view_team`/`view_all` via a 403 `Result` in `AttendanceTeamPage.jsx` (not `PermissionGate`, which only expresses a single module+action pair — this needs an OR of two). Both views' report button hits the unified `POST /reports/generate` dispatcher (`module: "attendance"`) via the new shared `ReportDownloadButton`/`reportApi.js`. |
 | `leave` (Leave) | ✅ **Built.** `LeaveListPage` (`/leave`) — scope tabs built from whichever `leave.view*` grants the user actually holds (own/team/all), a Request Leave modal (`paid`/`unpaid` only — `unapproved_absence` is never requestable, admin-only via a separate action), and — admin-only, per §7.5's "manager can view but not approve" — Approve/Mark Unapproved Absence actions. The mark-unapproved-absence confirmation shows its 2x-deduction consequence **directly in the `Popconfirm`'s description text**, not a tooltip, since burying it there would fail the whole point of confirming before an irreversible-feeling action. Report download via the same shared `ReportDownloadButton` (`module: "leave"`, `filters: { scope }`). |
 | `location` (Live Map) | ✅ **Built — a new route, `/location`** (§7.4b had no frontend before this task). Live view (`LiveMapView`) re-polls `GET /location/live` every ~12s and plots one marker per visible, currently-checked-in employee; History view (`HistoryMapView`) — an employee + date picker rendering that day's `GET /location/history` ping trail as a polyline. Gated by the existing `location` `PERMISSION_REGISTRY` set (any of `view`/`view_team`/`view_all`), same 403-`Result` pattern as Team Attendance. Uses `GoogleMapView` (`src/components/`) + `useGoogleMapsScript` (`src/hooks/`) — see "Maps & camera dependency decisions" below. Now actually receives pings — see "Heartbeat & location-ping loop" below. |
 | `user` (User Management) | ✅ **Built (§7.19, 2026-07-17)** — a new `/settings/users` route (added since §8's original route map didn't list one; gated on `users.view_all`/`users.view_team`, same as the backend scoping). Roster list (admin sees everyone, manager sees their own team — entirely server-side scoping, no client-side filtering), per-user Edit (name/email/phone/role/managerId/baseSalary via the existing `PATCH /users/:id`), Deactivate/Reactivate, an admin password-reset action (supports both an admin-typed exact password and a backend-generated one-time temp password, shown once), a link to the Permissions module (still a placeholder screen), and Create User (admin only, via the existing `POST /auth/register` — no new backend endpoint). |
@@ -546,6 +546,74 @@ A failed tick doesn't stop the interval or affect check-out in any way.
 tag in `CheckInOutWidget.jsx` (`data-testid="tracking-indicator"`) — not elaborate, just
 enough that this isn't entirely invisible background infrastructure to whoever's using the
 widget.
+
+### Admin correction, photo viewer, calendar view & summary stats (`src/modules/attendance/`)
+
+Four additions on top of Attendance's original check-in/timeline build, all reusing the same
+already-fetched month of records — no new endpoint needed beyond the two admin-correction ones
+below (checked explicitly: `getMyAttendance`/`getTeamAttendance` already return everything the
+new UI needs). Personal and Team views share one new composition component,
+`AttendanceRecordsSection.jsx`, so all four land in both places at once instead of being built
+(and tested) twice.
+
+**Summary stats (`attendanceSummary.js` + `AttendanceSummaryStats.jsx`).** A pure client-side
+`computeAttendanceSummary(records, month)` over the records already loaded for the selected
+month — Present/Absent/Half Day/On Leave counts plus an Attendance Rate. "Working days" is
+defined as weekday count (Mon–Fri) in the month, **deliberately different from Payroll's own
+`daysInMonth`** (every calendar day, for its own pro-rata salary math): a day with no Attendance
+record (e.g. a weekend) renders neutral grey on the calendar grid below, not red/absent, so
+counting it in this percentage's denominator would make every employee's rate look artificially
+low just for having weekends off. `half_day` counts as 0.5 of an attended day, matching the exact
+weighting `backend/src/modules/report/analytics.service.js#getAttendanceTrend` already
+established for "attendance rate" as a concept in this codebase, rather than inventing a second,
+differently-weighted definition of the same phrase.
+
+**Photo viewer (`AttendancePhotoModal.jsx`).** Clicking a day's record (in either the list row or
+a calendar cell — see below) opens a modal showing the check-in and check-out photos side by
+side, each with its captured `Lat/Lng` coords displayed underneath (a plain text readout, not an
+embedded map pin — the task explicitly allowed either, and a full map widget per photo would be
+disproportionate to what this modal needs to show). Gracefully handles a record with no photo at
+all (every manually-created record, and any real record where the photo failed to upload) with a
+"No photo"/"No coordinates captured" placeholder in that slot rather than a broken image or blank
+space. Reuses `ConnectivityGapBar` at the bottom for that day's gap info, the same component the
+list view already uses. Shows an "Edit Record" button in its footer only when the parent passes
+an `onEdit` handler (i.e. only for an admin) — the modal itself has no opinion on permissions.
+
+**Calendar-grid view (`AttendanceCalendar.jsx`).** A `Segmented` "List"/"Calendar" toggle sits
+above the table in both Personal and Team views — the existing timeline table is unchanged and
+still the default, this is purely an added option. One cell per day of the selected month,
+color-coded by that day's record status (present = green, absent = red, half_day = amber,
+on_leave = blue, no record = neutral grey — never red, per the working-days reasoning above).
+Clicking a day with a record opens the same `AttendancePhotoModal` a list-row click would;
+clicking an empty day (admin only) opens the create-mode correction modal instead, pre-filled
+with that date. A manually-adjusted record's cell gets a small `ExclamationCircleFilled` badge
+in its corner (`data-testid="attendance-manual-marker-{date}"`) so it's never visually confused
+with a real, photo-verified check-in — the same marker (and the same reasoning) `AttendanceTimeline`
+now also shows next to the Status tag in the list view, for the identical reason.
+
+**Admin manual correction UI (`AttendanceCorrectionModal.jsx`).** Backs onto the backend's new
+`PATCH /attendance/:id` / `POST /attendance/manual` (see `backend/README.md`'s Attendance
+section). Gated the same way `MainLayout.jsx`'s Payments nav link already is — a plain
+`user?.role === "admin"` check via `useSessionStore`, not `PermissionGate`, since there's no real
+`attendance.*` permission-registry action backing "edit" (matching the backend's own choice of
+`requireAdmin` over inventing a new registry tier). An "Edit" action appears per-row in the list
+view and via the photo modal's "Edit Record" button for a day that already has a record; an "Add
+Record" button in the toolbar (disabled, with an explanatory tooltip, when there's no single
+resolvable `employeeId` to create for — e.g. Team view with "All employees" selected) opens the
+same modal in create mode for a day that doesn't. The form always shows a warning `Alert`
+("Unlike a real check-in, this record isn't backed by a photo or GPS location...") — every
+submission through this form is a manual override, so the admin sees that consequence stated
+plainly before saving, not just inferred afterward from a small badge. On submit, both paths call
+the real `adjustAttendance`/`createManualAttendance` API functions and trigger a refetch of the
+current month's records — the same `onChanged` callback both `PersonalAttendanceView` and
+`TeamAttendanceView` already had a `refetch` for.
+
+Tests: `attendanceSummary.test.js`, `AttendanceCalendar.test.jsx`, `AttendancePhotoModal.test.jsx`,
+`AttendanceCorrectionModal.test.jsx`, `AttendanceRecordsSection.test.jsx` (all new), plus new cases
+added to the existing `AttendanceTimeline.test.jsx` for the manually-adjusted marker and the
+per-row Edit action. Full frontend suite passes (the 3 pre-existing, unrelated timeout failures in
+`LeadDetailPage.test.jsx`/`CustomersListPage.test.jsx` reproduce identically with none of this
+task's changes applied — confirmed via `git stash`); `npm run build` succeeds.
 
 ### Dashboard widget catalog (`src/modules/dashboard/`)
 

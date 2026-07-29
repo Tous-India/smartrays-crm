@@ -1,10 +1,11 @@
 import { useMemo, useState } from "react";
 import dayjs from "dayjs";
 import { DatePicker, Select, Space } from "antd";
-import AttendanceTimeline from "./AttendanceTimeline";
+import AttendanceRecordsSection from "./AttendanceRecordsSection";
 import ReportDownloadButton from "../../../components/ReportDownloadButton";
 import useTeamAttendance from "../hooks/useTeamAttendance";
 import useUserDirectory from "../../../hooks/useUserDirectory";
+import useSessionStore from "../../../store/sessionStore";
 
 /**
  * `/attendance/team` — same shape as the Personal view, but for a manager's/
@@ -14,13 +15,21 @@ import useUserDirectory from "../../../hooks/useUserDirectory";
  * client-side rather than re-fetching per employee. Route-level access is
  * gated by the page (`AttendanceTeamPage.jsx`, via `PermissionGate`), not
  * here — this component assumes it's already allowed to render.
+ *
+ * Admin manual-correction (§7.4 addition) — `defaultEmployeeId` (which
+ * employee a brand-new record, from the toolbar's Add Record button, gets
+ * created for) is only ever a single specific employee, never "All
+ * employees" (there's no one valid target then) — `AttendanceRecordsSection`
+ * disables that button in that case rather than guessing.
  */
 function TeamAttendanceView() {
   const [month, setMonth] = useState(dayjs());
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
   const monthKey = month.format("YYYY-MM");
-  const { records, isLoading } = useTeamAttendance(monthKey);
+  const { records, isLoading, refetch } = useTeamAttendance(monthKey);
   const { users } = useUserDirectory();
+  const currentUser = useSessionStore((state) => state.user);
+  const isAdmin = currentUser?.role === "admin";
 
   const employeeNameById = useMemo(() => new Map(users.map((user) => [user._id, user.name])), [users]);
 
@@ -60,11 +69,15 @@ function TeamAttendanceView() {
         <ReportDownloadButton module="attendance" filters={{ from, to }} filenamePrefix="team-attendance" />
       </div>
 
-      <AttendanceTimeline
+      <AttendanceRecordsSection
         records={filteredRecords}
         isLoading={isLoading}
+        month={month}
         showEmployeeColumn={!selectedEmployeeId}
         employeeNameById={employeeNameById}
+        canCorrect={isAdmin}
+        defaultEmployeeId={selectedEmployeeId || null}
+        onChanged={refetch}
       />
     </div>
   );

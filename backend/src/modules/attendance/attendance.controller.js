@@ -6,6 +6,8 @@ import {
   getMyAttendance,
   recordHeartbeat,
   getTeamAttendance,
+  adjustAttendance,
+  createManualAttendance,
 } from "./attendance.service.js";
 import { generateReport } from "../report/report.service.js";
 
@@ -49,6 +51,18 @@ export const teamAttendance = asyncWrapper(async (req, res) => {
   const records = await getTeamAttendance(req.query.month, req.user);
 
   res.status(200).json(new ApiResponse(200, records, "Team attendance fetched successfully"));
+});
+
+export const adjust = asyncWrapper(async (req, res) => {
+  const record = await adjustAttendance(req.params.id, req.body, req.user);
+
+  res.status(200).json(new ApiResponse(200, record, "Attendance record updated successfully"));
+});
+
+export const createManual = asyncWrapper(async (req, res) => {
+  const record = await createManualAttendance(req.body, req.user);
+
+  res.status(201).json(new ApiResponse(201, record, "Attendance record created successfully"));
 });
 
 // Migrated onto the unified §7.11 dispatcher (Phase 8) — no longer streams

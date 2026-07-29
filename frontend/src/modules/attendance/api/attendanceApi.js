@@ -35,3 +35,15 @@ export function getMyAttendance(month) {
 export function getTeamAttendance(month) {
   return apiClient.get("/attendance/team", { params: { month } });
 }
+
+// --- Admin manual correction (§7.4 addition) — admin-only server-side,
+// same as `POST /payroll/run`'s plain role gate (no `attendance.*`
+// permission tier covers editing, only viewing). ---
+
+export function adjustAttendance(id, payload) {
+  return apiClient.patch(`/attendance/${id}`, payload);
+}
+
+export function createManualAttendance(payload) {
+  return apiClient.post("/attendance/manual", payload);
+}

@@ -1,4 +1,5 @@
-import { Table, Tag } from "antd";
+import { Table, Tag, Tooltip, Button, Space } from "antd";
+import { ExclamationCircleFilled, EditOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import ConnectivityGapBar from "./ConnectivityGapBar";
 import { ATTENDANCE_STATUS_COLORS, ATTENDANCE_STATUS_LABELS } from "../constants/attendance.constants";
@@ -9,8 +10,19 @@ import { ATTENDANCE_STATUS_COLORS, ATTENDANCE_STATUS_LABELS } from "../constants
  * requirement. Reused by both the Personal view (`records` = own month) and
  * the Team view (`records` = the selected employee's records, filtered
  * client-side from the team fetch) rather than duplicating this table twice.
+ *
+ * `onRowClick` (opens `AttendancePhotoModal` in the parent) makes a row
+ * double as the "click a day's record" entry point the photo viewer needs,
+ * the same behavior `AttendanceCalendar`'s day cells offer in the grid view
+ * — clicking a record here or there both do the same thing. A manually-
+ * adjusted record (§7.4's admin-correction addition) gets a small
+ * exclamation badge next to its Status Tag so it's never confused with a
+ * real verified check-in at a glance; `onEditRecord` (only passed by the
+ * parent for an admin) adds a dedicated Edit action per row, the "from
+ * either the list or calendar view" entry point that feature's own spec
+ * asks for.
  */
-function AttendanceTimeline({ records, isLoading, showEmployeeColumn, employeeNameById }) {
+function AttendanceTimeline({ records, isLoading, showEmployeeColumn, employeeNameById, onRowClick, onEditRecord }) {
   const columns = [
     ...(showEmployeeColumn
       ? [
@@ -50,11 +62,48 @@ function AttendanceTimeline({ records, isLoading, showEmployeeColumn, employeeNa
     {
       title: "Status",
       dataIndex: "status",
-      render: (status) => <Tag color={ATTENDANCE_STATUS_COLORS[status]}>{ATTENDANCE_STATUS_LABELS[status]}</Tag>,
+      render: (status, record) => (
+        <Space size={4}>
+          <Tag color={ATTENDANCE_STATUS_COLORS[status]}>{ATTENDANCE_STATUS_LABELS[status]}</Tag>
+          {record.isManuallyAdjusted && (
+            <Tooltip title="Manually adjusted by admin — not a verified self-check-in">
+              <ExclamationCircleFilled data-testid={`manual-marker-${record._id}`} className="text-amber-600" />
+            </Tooltip>
+          )}
+        </Space>
+      ),
     },
+    ...(onEditRecord
+      ? [
+          {
+            title: "",
+            key: "actions",
+            render: (_, record) => (
+              <Button
+                type="text"
+                size="small"
+                icon={<EditOutlined />}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onEditRecord(record);
+                }}
+              />
+            ),
+          },
+        ]
+      : []),
   ];
 
-  return <Table rowKey="_id" columns={columns} dataSource={records} loading={isLoading} pagination={false} />;
+  return (
+    <Table
+      rowKey="_id"
+      columns={columns}
+      dataSource={records}
+      loading={isLoading}
+      pagination={false}
+      onRow={onRowClick ? (record) => ({ onClick: () => onRowClick(record), className: "cursor-pointer" }) : undefined}
+    />
+  );
 }
 
 export default AttendanceTimeline;

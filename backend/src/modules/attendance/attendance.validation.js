@@ -1,4 +1,5 @@
 import ApiError from "../../utils/ApiError.js";
+import { ATTENDANCE_STATUSES } from "./attendance.model.js";
 
 const MONTH_PATTERN = /^\d{4}-\d{2}$/;
 const DATE_PATTERN_SOURCE = "a valid date string";
@@ -80,6 +81,61 @@ export function validateMonthQuery(req, res, next) {
   if (month && !MONTH_PATTERN.test(month)) {
     throw new ApiError(400, "month must be in YYYY-MM format");
   }
+
+  next();
+}
+
+function validateOptionalTimeField(value, fieldLabel) {
+  if (value === undefined || value === null) {
+    return;
+  }
+
+  if (Number.isNaN(Date.parse(value))) {
+    throw new ApiError(400, `${fieldLabel} must be ${DATE_PATTERN_SOURCE}`);
+  }
+}
+
+/**
+ * Validates PATCH /attendance/:id's body — `status`/`checkIn.time`/
+ * `checkOut.time`, all optional (an admin might only be correcting one of
+ * them), but each checked for validity when actually present.
+ */
+export function validateAdjustAttendanceInput(req, res, next) {
+  const { status, checkIn, checkOut } = req.body;
+
+  if (status !== undefined && !ATTENDANCE_STATUSES.includes(status)) {
+    throw new ApiError(400, `status must be one of: ${ATTENDANCE_STATUSES.join(", ")}`);
+  }
+
+  validateOptionalTimeField(checkIn?.time, "checkIn.time");
+  validateOptionalTimeField(checkOut?.time, "checkOut.time");
+
+  next();
+}
+
+/**
+ * Validates POST /attendance/manual's body — `employeeId`/`date` are
+ * required (there's no record to attach `status`/`checkIn`/`checkOut` to
+ * without them); everything else is optional, matching this endpoint's own
+ * "no photo/geolocation required, admin override" nature.
+ */
+export function validateCreateManualAttendanceInput(req, res, next) {
+  const { employeeId, date, status, checkIn, checkOut } = req.body;
+
+  if (!employeeId) {
+    throw new ApiError(400, "employeeId is required");
+  }
+
+  if (!date || Number.isNaN(Date.parse(date))) {
+    throw new ApiError(400, `date is required and must be ${DATE_PATTERN_SOURCE}`);
+  }
+
+  if (status !== undefined && !ATTENDANCE_STATUSES.includes(status)) {
+    throw new ApiError(400, `status must be one of: ${ATTENDANCE_STATUSES.join(", ")}`);
+  }
+
+  validateOptionalTimeField(checkIn?.time, "checkIn.time");
+  validateOptionalTimeField(checkOut?.time, "checkOut.time");
 
   next();
 }

@@ -5,6 +5,8 @@ import mongoose from "mongoose";
 // 2026-07-13 to the full §6.5 shape: connectivityGaps[]/workingHours are now
 // real, and checkIn/checkOut.photoUrl are now actually populated (via
 // Cloudinary, src/services/cloudinary.service.js) instead of sitting unused.
+const ATTENDANCE_STATUSES = ["present", "absent", "half_day", "on_leave"];
+
 const attendanceSchema = new mongoose.Schema(
   {
     employeeId: {
@@ -17,7 +19,15 @@ const attendanceSchema = new mongoose.Schema(
       required: true,
     },
     checkIn: {
-      time: { type: Date, required: true },
+      // No longer schema-required as of the admin manual-correction feature
+      // — a manually-created record (e.g. marking a day `absent`/`on_leave`
+      // after the fact) legitimately has no real check-in event at all, and
+      // synthesizing a fake timestamp for it would actively undermine the
+      // audit-trail distinction this same feature exists to preserve (see
+      // `isManuallyAdjusted` below). Real self-service check-in
+      // (`attendance.service.js#checkIn`) still always sets a real `now`
+      // here regardless — this relaxation only matters for the admin path.
+      time: { type: Date, default: null },
       coords: {
         lat: Number,
         lng: Number,
@@ -34,7 +44,7 @@ const attendanceSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["present", "absent", "half_day", "on_leave"],
+      enum: ATTENDANCE_STATUSES,
       default: "present",
     },
     // §6.5 — periods during the shift with no heartbeat received for longer
@@ -64,6 +74,24 @@ const attendanceSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // Admin manual-correction feature — set together, always both or
+    // neither, by `attendance.service.js#adjustAttendance`/
+    // `createManualAttendance` (the only two writers of either field).
+    // Exists so a record touched by an admin override is always visibly
+    // distinguishable from a real, photo-verified self-service check-in —
+    // both in the API response (every record includes it) and in the UI
+    // (a small badge on the day's cell/detail view) — the whole system's
+    // credibility rests on "present" meaning "verified present," so a
+    // silent, indistinguishable admin edit would undermine that.
+    isManuallyAdjusted: {
+      type: Boolean,
+      default: false,
+    },
+    adjustedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
   },
   {
     timestamps: true,
@@ -73,3 +101,4 @@ const attendanceSchema = new mongoose.Schema(
 const Attendance = mongoose.model("Attendance", attendanceSchema);
 
 export default Attendance;
+export { ATTENDANCE_STATUSES };

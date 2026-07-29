@@ -33,8 +33,8 @@ vi.mock("../../services/googleMaps.service.js", () => ({
 }));
 
 let app;
-let sales1Agent, sales2Agent, sales3Agent, managerAgent;
-let sales1, sales2, sales3;
+let sales1Agent, sales2Agent, sales3Agent, managerAgent, adminAgent;
+let sales1, sales2, sales3, admin;
 
 function buildCoords(overrides = {}) {
   return { lat: 12.9716, lng: 77.5946, ...overrides };
@@ -44,13 +44,13 @@ beforeAll(async () => {
   await startTestDatabase();
   app = await getTestApp();
 
-  await createUserDirectly({
+  admin = await createUserDirectly({
     name: "Admin",
     email: "admin@test.local",
     password: "AdminPass123!",
     role: "admin",
   });
-  const adminAgent = await loginAsAgent(app, "admin@test.local", "AdminPass123!");
+  adminAgent = await loginAsAgent(app, "admin@test.local", "AdminPass123!");
 
   // Registered through the real /auth/register endpoint so these fixtures
   // get the actual role-based attendance permission defaults.
@@ -470,5 +470,192 @@ describe("GET /attendance/report", () => {
     const response = await sales1Agent.get("/api/v1/attendance/report");
 
     expect(response.status).toBe(403);
+  });
+});
+
+describe("PATCH /attendance/:id — admin manual correction", () => {
+  it("lets admin edit status/checkIn.time/checkOut.time and recomputes workingHours", async () => {
+    const checkInRes = await sales1Agent
+      .post("/api/v1/attendance/check-in")
+      .send({ coords: buildCoords(), photo: TEST_PHOTO });
+    await sales1Agent.post("/api/v1/attendance/check-out").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const recordId = checkInRes.body.data._id;
+    const newCheckIn = "2026-06-01T09:00:00.000Z";
+    const newCheckOut = "2026-06-01T17:00:00.000Z"; // exactly 8 hours later
+
+    const response = await adminAgent.patch(`/api/v1/attendance/${recordId}`).send({
+      status: "half_day",
+      checkIn: { time: newCheckIn },
+      checkOut: { time: newCheckOut },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.status).toBe("half_day");
+    expect(new Date(response.body.data.checkIn.time).toISOString()).toBe(newCheckIn);
+    expect(new Date(response.body.data.checkOut.time).toISOString()).toBe(newCheckOut);
+    // No connectivityGaps recorded on this shift, so workingHours is exactly
+    // the gross 8-hour duration between the new times.
+    expect(response.body.data.workingHours).toBe(8);
+    expect(response.body.data.isManuallyAdjusted).toBe(true);
+    expect(response.body.data.adjustedBy).toBe(String(admin._id));
+  });
+
+  it("reverts workingHours to null when checkOut.time is cleared", async () => {
+    const checkInRes = await sales1Agent
+      .post("/api/v1/attendance/check-in")
+      .send({ coords: buildCoords(), photo: TEST_PHOTO });
+    await sales1Agent.post("/api/v1/attendance/check-out").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const recordId = checkInRes.body.data._id;
+
+    const response = await adminAgent.patch(`/api/v1/attendance/${recordId}`).send({
+      checkOut: { time: null },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.checkOut.time).toBeNull();
+    expect(response.body.data.workingHours).toBeNull();
+  });
+
+  it("only touching status still flags the record as manually adjusted", async () => {
+    const checkInRes = await sales1Agent
+      .post("/api/v1/attendance/check-in")
+      .send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const response = await adminAgent
+      .patch(`/api/v1/attendance/${checkInRes.body.data._id}`)
+      .send({ status: "on_leave" });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.isManuallyAdjusted).toBe(true);
+    expect(response.body.data.adjustedBy).toBe(String(admin._id));
+  });
+
+  it("rejects a non-admin (manager included — no attendance.* tier covers this)", async () => {
+    const checkInRes = await sales1Agent
+      .post("/api/v1/attendance/check-in")
+      .send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const managerResponse = await managerAgent
+      .patch(`/api/v1/attendance/${checkInRes.body.data._id}`)
+      .send({ status: "absent" });
+    expect(managerResponse.status).toBe(403);
+
+    const selfResponse = await sales1Agent
+      .patch(`/api/v1/attendance/${checkInRes.body.data._id}`)
+      .send({ status: "absent" });
+    expect(selfResponse.status).toBe(403);
+  });
+
+  it("rejects an invalid status value", async () => {
+    const checkInRes = await sales1Agent
+      .post("/api/v1/attendance/check-in")
+      .send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const response = await adminAgent
+      .patch(`/api/v1/attendance/${checkInRes.body.data._id}`)
+      .send({ status: "on_vacation" });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("returns 404 for a non-existent record", async () => {
+    const response = await adminAgent
+      .patch("/api/v1/attendance/507f1f77bcf86cd799439011")
+      .send({ status: "absent" });
+
+    expect(response.status).toBe(404);
+  });
+});
+
+describe("POST /attendance/manual — admin manual creation", () => {
+  it("creates a record with no checkIn/checkOut for a day the employee never checked in, flagged as manually adjusted", async () => {
+    const response = await adminAgent.post("/api/v1/attendance/manual").send({
+      employeeId: String(sales1._id),
+      date: "2026-06-05",
+      status: "absent",
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.employeeId).toBe(String(sales1._id));
+    expect(response.body.data.status).toBe("absent");
+    expect(response.body.data.checkIn.time).toBeNull();
+    expect(response.body.data.checkOut.time).toBeNull();
+    expect(response.body.data.workingHours).toBeNull();
+    expect(response.body.data.isManuallyAdjusted).toBe(true);
+    expect(response.body.data.adjustedBy).toBe(String(admin._id));
+  });
+
+  it("computes workingHours when both checkIn/checkOut times are provided", async () => {
+    const response = await adminAgent.post("/api/v1/attendance/manual").send({
+      employeeId: String(sales1._id),
+      date: "2026-06-06",
+      status: "present",
+      checkIn: { time: "2026-06-06T09:00:00.000Z" },
+      checkOut: { time: "2026-06-06T13:30:00.000Z" },
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.workingHours).toBe(4.5);
+  });
+
+  it("defaults status to present when omitted", async () => {
+    const response = await adminAgent.post("/api/v1/attendance/manual").send({
+      employeeId: String(sales1._id),
+      date: "2026-06-07",
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.status).toBe("present");
+  });
+
+  it("rejects creating a second record for the same employee+date", async () => {
+    await adminAgent.post("/api/v1/attendance/manual").send({
+      employeeId: String(sales1._id),
+      date: "2026-06-08",
+      status: "present",
+    });
+
+    const response = await adminAgent.post("/api/v1/attendance/manual").send({
+      employeeId: String(sales1._id),
+      date: "2026-06-08",
+      status: "absent",
+    });
+
+    expect(response.status).toBe(409);
+  });
+
+  it("rejects a non-admin", async () => {
+    const managerResponse = await managerAgent.post("/api/v1/attendance/manual").send({
+      employeeId: String(sales1._id),
+      date: "2026-06-09",
+    });
+    expect(managerResponse.status).toBe(403);
+
+    const selfResponse = await sales1Agent.post("/api/v1/attendance/manual").send({
+      employeeId: String(sales1._id),
+      date: "2026-06-09",
+    });
+    expect(selfResponse.status).toBe(403);
+  });
+
+  it("rejects a missing employeeId or date", async () => {
+    const missingEmployee = await adminAgent.post("/api/v1/attendance/manual").send({ date: "2026-06-10" });
+    expect(missingEmployee.status).toBe(400);
+
+    const missingDate = await adminAgent
+      .post("/api/v1/attendance/manual")
+      .send({ employeeId: String(sales1._id) });
+    expect(missingDate.status).toBe(400);
+  });
+
+  it("returns 404 for a non-existent employeeId", async () => {
+    const response = await adminAgent.post("/api/v1/attendance/manual").send({
+      employeeId: "507f1f77bcf86cd799439011",
+      date: "2026-06-11",
+    });
+
+    expect(response.status).toBe(404);
   });
 });

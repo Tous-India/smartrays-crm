@@ -1,5 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import AttendanceTimeline from "./AttendanceTimeline";
 
 const DAY_WITH_GAP = {
@@ -20,6 +21,17 @@ const DAY_WITHOUT_GAP = {
   workingHours: 8,
   connectivityGaps: [],
   status: "present",
+};
+
+const DAY_MANUALLY_ADJUSTED = {
+  _id: "att-manual",
+  date: "2026-06-03T00:00:00.000Z",
+  checkIn: { time: null },
+  checkOut: { time: null },
+  workingHours: null,
+  connectivityGaps: [],
+  status: "on_leave",
+  isManuallyAdjusted: true,
 };
 
 describe("AttendanceTimeline", () => {
@@ -46,5 +58,30 @@ describe("AttendanceTimeline", () => {
 
     expect(screen.queryByTestId("connectivity-gap-segment")).not.toBeInTheDocument();
     expect(screen.getByTestId("connectivity-gap-bar")).toHaveClass("bg-green-400");
+  });
+
+  it("shows a manually-adjusted marker next to the Status tag for an admin-corrected record, and not for a real check-in", () => {
+    render(<AttendanceTimeline records={[DAY_WITHOUT_GAP, DAY_MANUALLY_ADJUSTED]} isLoading={false} />);
+
+    expect(screen.getByTestId(`manual-marker-${DAY_MANUALLY_ADJUSTED._id}`)).toBeInTheDocument();
+    expect(screen.queryByTestId(`manual-marker-${DAY_WITHOUT_GAP._id}`)).not.toBeInTheDocument();
+  });
+
+  it("adds a per-row Edit action only when onEditRecord is provided, and it stops row-click propagation", async () => {
+    const onRowClick = vi.fn();
+    const onEditRecord = vi.fn();
+    render(
+      <AttendanceTimeline
+        records={[DAY_WITHOUT_GAP]}
+        isLoading={false}
+        onRowClick={onRowClick}
+        onEditRecord={onEditRecord}
+      />
+    );
+
+    await userEvent.click(screen.getByRole("button"));
+
+    expect(onEditRecord).toHaveBeenCalledWith(DAY_WITHOUT_GAP);
+    expect(onRowClick).not.toHaveBeenCalled();
   });
 });

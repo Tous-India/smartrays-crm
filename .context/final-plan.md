@@ -949,6 +949,16 @@ service layer (not just a disabled button) to survive multi-tab/multi-device rac
 ✅ **Fully built 2026-07-13** (§7.4) — one field beyond this list was added during that build:
 `lastHeartbeatAt` (Date, internal bookkeeping for connectivity-gap detection only, never exposed
 as its own API concept — see §7.4's connectivity-gap design writeup for why it's needed).
+**Extended for admin manual correction (§7.4's admin-correction addition, frontend Attendance
+task):** two more fields — `isManuallyAdjusted` (Boolean, default `false`) and `adjustedBy`
+(ObjectId → `User`, default `null`) — set together whenever `PATCH /attendance/:id` or
+`POST /attendance/manual` (both admin-only) touch a record, so it's always visibly
+distinguishable from a real, photo-verified self-check-in in both the API response and the UI.
+`checkIn.time` was also relaxed from schema-required to optional (`default: null`) — a
+manually-created `absent`/`on_leave` record legitimately has no real check-in event, and
+synthesizing a fake timestamp for it would undermine the very distinction these two new fields
+exist to preserve; the real self-service check-in path is unaffected and still always sets a
+real timestamp there.
 **`Leave`** — employeeId, date(s) (built as an inclusive `startDate`/`endDate` range — the
 simplest reading of "date(s)"), type (`paid`/`unpaid`/`unapproved_absence`), approvedBy,
 isDoubleDeduction (Boolean — true only for the unapproved-absence-marked-by-admin case, per the
@@ -1437,9 +1447,24 @@ POST   /attendance/heartbeat    (new — not in the original endpoint list; conn
 GET    /attendance/me?month=                                                          ✅ built
 GET    /attendance/team?month=          (manager scope: employeeId in {Users where managerId == req.user._id}) ✅ built
 GET    /attendance/report?from=&to=&format=pdf|xlsx                                   ✅ built
+PATCH  /attendance/:id          admin-only manual correction (status/checkIn/checkOut
+                                 time; recomputes workingHours)                       ✅ built
+POST   /attendance/manual       admin-only manual creation for a day with no record   ✅ built
 ```
 Check-in/out photos upload directly to Cloudinary (§3/§11.6); `Attendance.checkIn.photoUrl` /
 `checkOut.photoUrl` store the returned secure URL, not the binary.
+
+**Admin manual correction, added later (frontend Attendance module task) — `PATCH
+/attendance/:id` and `POST /attendance/manual`, both `requireAdmin`-gated** (no
+`attendance.*` permission-registry tier exists for editing, only viewing — same precedent
+`POST /payroll/run` already set for a genuinely admin-only, no-tier action). The `PATCH`
+recomputes `workingHours` via the same `computeWorkingHours` helper the real checkout flow
+uses, over the record's existing `connectivityGaps`; the `POST` 409s if a record already
+exists for that employee+date. Both set the new `isManuallyAdjusted`/`adjustedBy` fields
+(§6.5) unconditionally — see that section for the full audit-trail reasoning. 13 new tests
+(6 + 7). Frontend surfaces this via a photo-viewer modal, a calendar-grid view, summary
+stats, and an admin-only correction form — see `frontend/README.md`'s "Admin correction,
+photo viewer, calendar view & summary stats" section for the full write-up.
 
 **`GET /attendance/report` — built as groundwork for §7.11, not a one-off:** a new shared
 `src/services/report.service.js` exports `generateExcelReport({sheetName, columns, rows})` (via

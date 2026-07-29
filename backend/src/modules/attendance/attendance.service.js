@@ -185,6 +185,115 @@ export async function resolveDirectReportIds(requestingUser) {
   return teamMembers.map((member) => member._id);
 }
 
+const ADJUSTABLE_FIELDS = ["status"];
+
+/**
+ * Admin-only correction of an existing record — `status`, `checkIn.time`,
+ * `checkOut.time`. Route-level `requireAdmin` (attendance.routes.js) is the
+ * real access gate; there's no `attendance.*` permission tier for this
+ * (PERMISSION_REGISTRY's `attendance` only has `view_team`/`view_all`, no
+ * edit action), matching how `POST /payroll/run` — the other genuinely
+ * admin-only, no-tier action in this codebase — is gated.
+ *
+ * `workingHours` is recomputed via the exact same `computeWorkingHours`
+ * formula real checkout uses, over the record's EXISTING `connectivityGaps`
+ * (this edit doesn't touch gaps) — "recompute," not a new calculation, so a
+ * manual time correction can't silently drift from how every other
+ * `workingHours` value in the system was derived. If the edit leaves no
+ * `checkOut.time` (e.g. it was explicitly cleared), `workingHours` reverts
+ * to `null` — there's nothing to compute a duration against.
+ *
+ * Always sets `isManuallyAdjusted`/`adjustedBy`, even if only `status` was
+ * touched — any admin-originated write to a record that used to be (or
+ * still is) a real self-service check-in must be visibly flagged, not just
+ * edits to the time fields specifically.
+ */
+export async function adjustAttendance(attendanceId, payload, requestingUser) {
+  const record = await Attendance.findById(attendanceId);
+
+  if (!record) {
+    throw new ApiError(404, "Attendance record not found");
+  }
+
+  ADJUSTABLE_FIELDS.forEach((field) => {
+    if (payload[field] !== undefined) {
+      record[field] = payload[field];
+    }
+  });
+
+  if (payload.checkIn?.time !== undefined) {
+    record.checkIn.time = payload.checkIn.time ? new Date(payload.checkIn.time) : null;
+  }
+
+  if (payload.checkOut?.time !== undefined) {
+    record.checkOut.time = payload.checkOut.time ? new Date(payload.checkOut.time) : null;
+  }
+
+  record.workingHours =
+    record.checkIn.time && record.checkOut.time
+      ? computeWorkingHours(record.checkIn.time, record.checkOut.time, record.connectivityGaps)
+      : null;
+
+  record.isManuallyAdjusted = true;
+  record.adjustedBy = requestingUser._id;
+
+  await record.save();
+
+  return record;
+}
+
+/**
+ * Admin-only creation of a record for an employee+date that has none (e.g.
+ * marking someone present on a day they never checked in) — no photo/
+ * geolocation, since this is an explicit override, not a self-service
+ * check-in. Rejects (409) if a record already exists for this
+ * employee+date; the correction path for an existing record is
+ * `adjustAttendance` above, not a second create.
+ *
+ * `checkIn.time`/`checkOut.time` are both genuinely optional here (see the
+ * model's own comment on why `checkIn.time` is no longer schema-required) —
+ * e.g. marking a day `absent`/`on_leave` has no real check-in event to
+ * record at all, and inventing one would misrepresent exactly the kind of
+ * "verified presence" this system exists to track.
+ */
+export async function createManualAttendance(payload, requestingUser) {
+  const { employeeId, date, status, checkIn, checkOut } = payload;
+
+  const employee = await User.findById(employeeId);
+
+  if (!employee) {
+    throw new ApiError(404, "Employee not found");
+  }
+
+  const dayStart = startOfDay(new Date(date));
+  const existing = await Attendance.findOne({ employeeId, date: dayStart });
+
+  if (existing) {
+    throw new ApiError(
+      409,
+      "An attendance record already exists for this employee on this date — edit it instead of creating a new one."
+    );
+  }
+
+  const checkInTime = checkIn?.time ? new Date(checkIn.time) : null;
+  const checkOutTime = checkOut?.time ? new Date(checkOut.time) : null;
+
+  const record = new Attendance({
+    employeeId,
+    date: dayStart,
+    status: status || "present",
+    checkIn: { time: checkInTime },
+    checkOut: { time: checkOutTime },
+    workingHours: checkInTime && checkOutTime ? computeWorkingHours(checkInTime, checkOutTime, []) : null,
+    isManuallyAdjusted: true,
+    adjustedBy: requestingUser._id,
+  });
+
+  await record.save();
+
+  return record;
+}
+
 /**
  * Same visible-employee scoping as getTeamAttendance, filtered further by an
  * optional [from, to] date range (inclusive) instead of a single month.

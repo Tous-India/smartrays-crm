@@ -473,6 +473,46 @@ trip); this one test is what actually proves the two modules' real endpoints con
 both calls in that test — a follow-up fix, since photo capture became mandatory after this test
 was originally written and it would otherwise 400.
 
+**Admin manual correction (added later — frontend Attendance module task).** Until now the only
+way an `Attendance` record ever came into existence was self-service check-in/check-out — no way
+for an admin to fix a broken record (e.g. a photo failed to upload, a gap was mis-detected) or
+create one for a day an employee never checked in at all (e.g. marking someone `absent`/`on_leave`
+after the fact). Two new admin-only endpoints:
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| PATCH | `/attendance/:id` | Admin only (`requireAdmin`) | Body `{ status?, checkIn: { time }?, checkOut: { time }? }`, all optional. Edits an existing record's `status`/check-in/check-out time. `workingHours` is recomputed via the same `computeWorkingHours` helper the real checkout flow uses (over the record's existing `connectivityGaps`, unchanged) whenever both times end up set after the edit; `null` if either is missing. Sets `isManuallyAdjusted: true`/`adjustedBy: <admin's own id>` regardless of which fields changed. **404** if the record doesn't exist. |
+| POST | `/attendance/manual` | Admin only (`requireAdmin`) | Body `{ employeeId, date, status?, checkIn: { time }?, checkOut: { time }? }`. Creates a brand-new record for an employee+date that has none — no photo/geolocation required, since this is an explicit admin override, not a self-service check-in. `status` defaults to `present`. **409** if a record already exists for that employee+date (edit it via `PATCH` instead). **404** if `employeeId` doesn't resolve to a real user. |
+
+**No new permission-registry tier for either endpoint** — `attendance: ["view_team", "view_all"]`
+has no edit-tier action, and inventing one wasn't asked for. Both gate on plain `requireAdmin`,
+the exact same precedent `POST /payroll/run` already established for a genuinely admin-only,
+no-permission-tier action.
+
+**Audit-trail integrity (`isManuallyAdjusted`/`adjustedBy`).** The whole point of this module is
+verified presence via a mandatory photo — a record either endpoint above touches must always be
+visibly distinguishable from a real, photo-verified self-check-in, both in the API response (both
+fields are always present in every `Attendance` document) and in the UI (calendar/list markers,
+photo-viewer warning banner — see `frontend/README.md`). `isManuallyAdjusted: Boolean` (default
+`false`) and `adjustedBy: ObjectId → User` (default `null`) were added to `attendance.model.js`;
+every other read path (`GET /attendance/me`, `/team`, `/report`) returns them unchanged, no special
+casing needed.
+
+**Schema change: `checkIn.time` is no longer required.** A manually-created `absent`/`on_leave`
+record legitimately has no real check-in event at all — synthesizing a fake timestamp for it would
+undermine the very distinction `isManuallyAdjusted` exists to preserve. Relaxed from
+`{ type: Date, required: true }` to `{ type: Date, default: null }`. The real self-service
+check-in path (`attendance.service.js#checkIn`) is untouched and still always sets a real
+timestamp — this relaxation only matters for the admin-correction path.
+
+13 new tests (6 for `PATCH /:id`, 7 for `POST /manual`) — admin-only access enforced (403 for
+non-admin on both), `workingHours` recompute (including reverting to `null` when a check-out time
+is cleared), `isManuallyAdjusted`/`adjustedBy` set correctly on both paths, duplicate-record 409,
+invalid-status/missing-field 400s, 404s for a nonexistent record/employee. 485/486 total backend
+tests pass (the one pre-existing failure is `leave.test.js`'s date-sensitive quota-at-approval
+test, unrelated to this change — confirmed via `git stash` to fail identically with none of this
+task's changes applied).
+
 ### Leave (`/api/v1/leave`)
 
 See `.context/final-plan.md` §6.5/§7.5 and §11.7 (leave cadence, resolved this task).
