@@ -67,6 +67,25 @@
 }
 
 /*
+ * Card-level separation from the page background — the identical box-shadow
+ * value already established just above for `.app-data-table .ant-table`
+ * (Leads/Payments list tables), reused rather than a new value invented for
+ * this page. Applied directly to a `<Card className="app-elevated-card">`
+ * (lands on the actual `.ant-card` root, so no descendant selector is
+ * needed the way the table version above needs one); border-radius already
+ * comes from AntD's own default plus the global `borderRadius: 8` theme
+ * token (App.jsx), so this only ever needs to add the shadow itself. First
+ * used on the Customer Detail page's own section cards (Billing/Site
+ * Details/Contracts/Contacts/Invoice History/Activity Log), which — unlike
+ * Leads/Payments' tables — had no card-separation treatment at all before.
+ */
+.app-elevated-card {
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.03),
+    0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+/*
  * Company column width (LeadsTable.jsx only) — `min-width` rather than
  * AntD's column `width` prop: without `tableLayout="fixed"` (which would
  * also force every OTHER column, including the ones holding Select

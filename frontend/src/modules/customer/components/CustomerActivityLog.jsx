@@ -13,7 +13,7 @@ const { Text } = Typography;
  */
 function CustomerActivityLog({ activity }) {
   return (
-    <Card title="Activity Log">
+    <Card title="Activity Log" className="mb-6 app-elevated-card">
       <List
         dataSource={activity}
         locale={{ emptyText: "No activity recorded yet" }}

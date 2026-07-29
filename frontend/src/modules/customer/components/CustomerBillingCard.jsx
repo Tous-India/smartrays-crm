@@ -13,7 +13,7 @@ function CustomerBillingCard({ customer, onEdit }) {
   return (
     <Card
       title="Billing Details"
-      className="mb-6"
+      className="mb-6 app-elevated-card"
       extra={
         <PermissionGate module="customers" action="edit">
           <Button size="small" icon={<EditOutlined />} onClick={onEdit}>

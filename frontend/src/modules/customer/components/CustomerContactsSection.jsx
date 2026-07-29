@@ -43,7 +43,7 @@ function CustomerContactsSection({ customerId, contacts, onChanged }) {
   return (
     <Card
       title="Contacts"
-      className="mb-6"
+      className="mb-6 app-elevated-card"
       extra={
         <PermissionGate module="customers" action="edit">
           <Button

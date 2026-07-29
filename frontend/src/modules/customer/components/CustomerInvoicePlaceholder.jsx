@@ -1,4 +1,4 @@
-import { Card, Empty, Button, Typography } from "antd";
+import { Card, Empty, Button, Space, Typography } from "antd";
 
 const { Text } = Typography;
 
@@ -19,7 +19,7 @@ const { Text } = Typography;
  */
 function CustomerInvoicePlaceholder() {
   return (
-    <Card title="Invoice History" className="mb-6">
+    <Card title="Invoice History" className="mb-6 app-elevated-card">
       <Empty
         description={
           <Text type="secondary">
@@ -29,10 +29,14 @@ function CustomerInvoicePlaceholder() {
           </Text>
         }
       >
-        <Button disabled>+ Create Invoice</Button>
-        <Button disabled className="ml-2">
-          View Ledger
-        </Button>
+        {/* Plain `<Space>` (default gap), the same button-group spacing
+            convention already used elsewhere in this app (e.g. Lead
+            Detail's own action row) — not a one-off margin utility on a
+            single button. */}
+        <Space>
+          <Button disabled>+ Create Invoice</Button>
+          <Button disabled>View Ledger</Button>
+        </Space>
       </Empty>
     </Card>
   );
