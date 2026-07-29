@@ -1,6 +1,7 @@
 import { Modal, Row, Col, Image, Empty, Tag, Typography, Button, Space } from "antd";
-import { EditOutlined } from "@ant-design/icons";
+import { EditOutlined, EnvironmentOutlined } from "@ant-design/icons";
 import ConnectivityGapBar from "./ConnectivityGapBar";
+import GeofenceViolationBar from "./GeofenceViolationBar";
 import { ATTENDANCE_STATUS_COLORS, ATTENDANCE_STATUS_LABELS } from "../constants/attendance.constants";
 
 const { Text } = Typography;
@@ -102,6 +103,14 @@ function AttendancePhotoModal({ open, record, onCancel, onEdit }) {
         <div>
           <div className="mb-1 text-sm font-medium">Connectivity Gaps</div>
           <ConnectivityGapBar record={record} />
+        </div>
+
+        <div>
+          <div className="mb-1 text-sm font-medium">
+            <EnvironmentOutlined className="mr-1" />
+            Location
+          </div>
+          <GeofenceViolationBar record={record} />
         </div>
       </Space>
     </Modal>

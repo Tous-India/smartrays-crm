@@ -20,6 +20,18 @@ vi.mock("../../services/googleMaps.service.js", () => ({
   getDistanceKm: vi.fn(async () => 5),
 }));
 
+// Geofencing (added later, §6.5/§7.4) — wraps the REAL Haversine
+// implementation in a vi.fn (via importOriginal) rather than replacing it
+// with a fake constant, since the geofence tests below need genuine
+// distance-based behavior (within/beyond the radius). This only exists so
+// the "never blocks the ping" test can force a single call to throw via
+// `mockImplementationOnce`, without touching every other test's real
+// distance calculation.
+vi.mock("../../services/geo.service.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, haversineDistanceMeters: vi.fn(actual.haversineDistanceMeters) };
+});
+
 let app;
 let adminAgent, managerAgent, sales1Agent, sales2Agent, sales3Agent, noPermAgent;
 let manager1, sales1, sales2, sales3;
@@ -207,6 +219,102 @@ describe("POST /location/pings", () => {
     expect(response.status).toBe(201);
     expect(response.body.data.employeeId).toBe(String(sales1._id));
     expect(response.body.data.attendanceId).toBe(String(attendance._id));
+  });
+});
+
+describe("Geofencing (§6.5/§7.4) — POST /location/pings flags a violation against checkIn.coords", () => {
+  // createOpenAttendance's own base check-in point is { lat: 12.9, lng: 77.6 }.
+  // A latitude offset of 0.001 is ~111m (within the default 500m radius); an
+  // offset of 0.01 is ~1113m (well beyond it) — both comfortably clear of the
+  // 500m boundary so these tests aren't sensitive to Haversine's small
+  // curvature error.
+  function nearbyCoords(latOffset) {
+    return { lat: 12.9 + latOffset, lng: 77.6 };
+  }
+
+  it("records no geofence violation when a ping is within the radius", async () => {
+    const attendance = await createOpenAttendance(sales1._id);
+
+    const response = await sales1Agent
+      .post("/api/v1/location/pings")
+      .send(buildPingPayload({ coords: nearbyCoords(0.001) }));
+
+    expect(response.status).toBe(201);
+    const updated = await Attendance.findById(attendance._id);
+    expect(updated.geofenceViolations).toHaveLength(0);
+  });
+
+  it("opens a geofence violation window when a ping exceeds the radius", async () => {
+    const attendance = await createOpenAttendance(sales1._id);
+
+    const response = await sales1Agent
+      .post("/api/v1/location/pings")
+      .send(buildPingPayload({ coords: nearbyCoords(0.01) }));
+
+    expect(response.status).toBe(201);
+    const updated = await Attendance.findById(attendance._id);
+    expect(updated.geofenceViolations).toHaveLength(1);
+    expect(updated.geofenceViolations[0].end).toBeNull();
+    expect(updated.geofenceViolations[0].maxDistanceMeters).toBeGreaterThan(500);
+  });
+
+  it("keeps one open violation window (not a new one) across repeated still-outside pings, tracking the worst distance seen", async () => {
+    const attendance = await createOpenAttendance(sales1._id);
+
+    await sales1Agent.post("/api/v1/location/pings").send(buildPingPayload({ coords: nearbyCoords(0.01) }));
+    await sales1Agent.post("/api/v1/location/pings").send(buildPingPayload({ coords: nearbyCoords(0.02) }));
+
+    const updated = await Attendance.findById(attendance._id);
+    expect(updated.geofenceViolations).toHaveLength(1);
+    expect(updated.geofenceViolations[0].end).toBeNull();
+    expect(updated.geofenceViolations[0].maxDistanceMeters).toBeGreaterThan(2000);
+  });
+
+  it("closes the violation window when a later ping returns within the radius", async () => {
+    const attendance = await createOpenAttendance(sales1._id);
+
+    await sales1Agent.post("/api/v1/location/pings").send(buildPingPayload({ coords: nearbyCoords(0.01) }));
+    const closingResponse = await sales1Agent
+      .post("/api/v1/location/pings")
+      .send(buildPingPayload({ coords: nearbyCoords(0.001) }));
+
+    expect(closingResponse.status).toBe(201);
+    const updated = await Attendance.findById(attendance._id);
+    expect(updated.geofenceViolations).toHaveLength(1);
+    expect(updated.geofenceViolations[0].end).not.toBeNull();
+  });
+
+  it("closes a still-open violation window at checkout, the same 'whichever comes first' pattern as connectivity gaps", async () => {
+    const checkInResponse = await sales1Agent
+      .post("/api/v1/attendance/check-in")
+      .send({ coords: { lat: 12.9, lng: 77.6 }, photo: "data:image/jpeg;base64,ZmFrZQ==" });
+
+    await sales1Agent.post("/api/v1/location/pings").send(buildPingPayload({ coords: nearbyCoords(0.01) }));
+
+    const checkOutResponse = await sales1Agent
+      .post("/api/v1/attendance/check-out")
+      .send({ coords: { lat: 12.9, lng: 77.6 }, photo: "data:image/jpeg;base64,ZmFrZQ==" });
+
+    expect(checkOutResponse.status).toBe(200);
+    expect(checkOutResponse.body.data.geofenceViolations).toHaveLength(1);
+    expect(checkOutResponse.body.data.geofenceViolations[0].end).not.toBeNull();
+
+    // Never blocked check-in's own attendanceId from resolving correctly.
+    expect(checkOutResponse.body.data._id).toBe(checkInResponse.body.data._id);
+  });
+
+  it("never blocks the ping itself even if the geofence distance calculation throws", async () => {
+    await createOpenAttendance(sales1._id);
+    const { haversineDistanceMeters } = await import("../../services/geo.service.js");
+    haversineDistanceMeters.mockImplementationOnce(() => {
+      throw new Error("geofence calculation exploded");
+    });
+
+    const response = await sales1Agent
+      .post("/api/v1/location/pings")
+      .send(buildPingPayload({ coords: nearbyCoords(0.01) }));
+
+    expect(response.status).toBe(201);
   });
 });
 

@@ -1,6 +1,6 @@
 import dayjs from "dayjs";
 import { Tooltip } from "antd";
-import { ExclamationCircleFilled } from "@ant-design/icons";
+import { ExclamationCircleFilled, EnvironmentFilled } from "@ant-design/icons";
 import { ATTENDANCE_STATUS_LABELS } from "../constants/attendance.constants";
 
 // Tailwind pairs (background + border), not the AntD Tag `color` values
@@ -33,7 +33,14 @@ const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
  * Manually-adjusted records (§7.4's admin-correction addition) get a small
  * exclamation badge in the cell's corner so they're never confused with a
  * real verified check-in at a glance, matching the same distinction
- * `AttendancePhotoModal`'s own Tag makes in the detail view.
+ * `AttendancePhotoModal`'s own Tag makes in the detail view. A day with a
+ * geofence violation (added later, §6.5/§7.4) gets its own small badge,
+ * same treatment but in the opposite corner (top-left, not top-right) so
+ * the two markers never overlap on a day that's both manually-adjusted and
+ * had a violation — an orange `EnvironmentFilled` pin, matching
+ * `GeofenceViolationBar`'s own orange (distinct from connectivity's red)
+ * and the location icon vocabulary already established elsewhere in this
+ * app (`EnvironmentOutlined` on the Location nav item/check-in widget).
  */
 function AttendanceCalendar({ month, records, onDayClick }) {
   const recordsByDay = new Map(records.map((record) => [dayjs(record.date).format("YYYY-MM-DD"), record]));
@@ -80,6 +87,15 @@ function AttendanceCalendar({ month, records, onDayClick }) {
                   <ExclamationCircleFilled
                     data-testid={`attendance-manual-marker-${dayKey}`}
                     className="absolute right-1 top-1 text-amber-600"
+                    style={{ fontSize: 11 }}
+                  />
+                </Tooltip>
+              )}
+              {record?.geofenceViolations?.length > 0 && (
+                <Tooltip title="Location: left the geofence during this shift">
+                  <EnvironmentFilled
+                    data-testid={`attendance-geofence-marker-${dayKey}`}
+                    className="absolute left-1 top-1 text-orange-600"
                     style={{ fontSize: 11 }}
                   />
                 </Tooltip>

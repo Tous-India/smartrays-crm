@@ -1,7 +1,8 @@
 import { Table, Tag, Tooltip, Button, Space } from "antd";
-import { ExclamationCircleFilled, EditOutlined } from "@ant-design/icons";
+import { ExclamationCircleFilled, EditOutlined, EnvironmentOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import ConnectivityGapBar from "./ConnectivityGapBar";
+import GeofenceViolationBar from "./GeofenceViolationBar";
 import { ATTENDANCE_STATUS_COLORS, ATTENDANCE_STATUS_LABELS } from "../constants/attendance.constants";
 
 /**
@@ -21,6 +22,12 @@ import { ATTENDANCE_STATUS_COLORS, ATTENDANCE_STATUS_LABELS } from "../constants
  * parent for an admin) adds a dedicated Edit action per row, the "from
  * either the list or calendar view" entry point that feature's own spec
  * asks for.
+ *
+ * A separate "Location" column (added later, geofencing §6.5/§7.4) —
+ * deliberately its own column, not overlaid onto the "Connectivity Gaps"
+ * bar, so a `EnvironmentOutlined`-labeled header plus `GeofenceViolationBar`'s
+ * distinct orange (vs. connectivity's red) makes it immediately clear which
+ * *kind* of issue occurred, not just that "something was wrong" that shift.
  */
 function AttendanceTimeline({ records, isLoading, showEmployeeColumn, employeeNameById, onRowClick, onEditRecord }) {
   const columns = [
@@ -58,6 +65,17 @@ function AttendanceTimeline({ records, isLoading, showEmployeeColumn, employeeNa
       key: "gaps",
       width: 220,
       render: (_, record) => <ConnectivityGapBar record={record} />,
+    },
+    {
+      title: (
+        <Space size={4}>
+          <EnvironmentOutlined />
+          Location
+        </Space>
+      ),
+      key: "geofence",
+      width: 220,
+      render: (_, record) => <GeofenceViolationBar record={record} />,
     },
     {
       title: "Status",

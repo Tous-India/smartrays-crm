@@ -3,6 +3,7 @@ import { can } from "../../helpers/permission.helper.js";
 import { env } from "../../config/env.js";
 import { uploadAttendancePhoto } from "../../services/cloudinary.service.js";
 import { generateExcelReport, generatePdfReport } from "../../services/report.service.js";
+import { haversineDistanceMeters } from "../../services/geo.service.js";
 import { generateAutoTravelLog } from "../transport/travelLog.service.js";
 import Attendance from "./attendance.model.js";
 import User from "../user/user.model.js";
@@ -62,6 +63,7 @@ export async function checkOut(employeeId, coords, photo) {
 
   const now = new Date();
   applyConnectivityGapIfNeeded(openRecord, now);
+  closeOpenGeofenceViolation(openRecord, now);
 
   const photoUrl = photo ? await uploadAttendancePhoto(photo) : null;
   openRecord.checkOut = { time: now, coords, photoUrl };
@@ -122,6 +124,82 @@ export async function recordHeartbeat(employeeId) {
   await openRecord.save();
 
   return openRecord;
+}
+
+/**
+ * Geofencing (added later, §6.5/§7.4) — flags when an employee's GPS
+ * location moves beyond GEOFENCE_RADIUS_METERS from their check-in point
+ * during a shift. Called from `location.service.js#submitPing` on every
+ * ping, mirroring how that module already calls straight into this one's
+ * `Attendance` model for its "is there an open shift" check — a
+ * cross-module direct call, not a duplicated implementation.
+ *
+ * Same violation-window shape as connectivity-gap detection, but live
+ * rather than retroactive: a ping stream arrives in real time, so a
+ * violation opens the moment a ping first lands outside the radius (not
+ * discovered after the fact) and stays open — updating `maxDistanceMeters`
+ * to the worst distance seen — until a later in-radius ping closes it, or
+ * `closeOpenGeofenceViolation` below force-closes it at checkout. `checkIn.
+ * coords` (§6.5, already stored on every real check-in) is reused directly
+ * as this shift's geofence center — no separate storage needed. Distance is
+ * straight-line only (`geo.service.js`'s Haversine formula, not Google
+ * Maps' driving-distance API) — a real-time per-ping radius check doesn't
+ * need routing, and depending on an external API here would mean a ping
+ * starts failing/blocking whenever that API is unavailable.
+ *
+ * Wraps its entire body in try/catch and always resolves — geofencing must
+ * NEVER block or fail the location ping itself, the same "never block the
+ * primary action" principle `travelLog.service.js#generateAutoTravelLog`
+ * already established for Attendance checkout. The ping document itself
+ * (already created by the caller before this runs) is never affected by a
+ * failure in here.
+ */
+export async function applyGeofenceCheck(attendance, coords, now) {
+  try {
+    const checkInCoords = attendance.checkIn?.coords;
+
+    if (checkInCoords?.lat == null || checkInCoords?.lng == null) {
+      return;
+    }
+
+    const distance = haversineDistanceMeters(checkInCoords, coords);
+    const radiusMeters = Number(env.geofenceRadiusMeters);
+    const openViolation = attendance.geofenceViolations.find((violation) => !violation.end);
+
+    if (distance > radiusMeters) {
+      if (openViolation) {
+        openViolation.maxDistanceMeters = Math.max(openViolation.maxDistanceMeters, distance);
+      } else {
+        attendance.geofenceViolations.push({ start: now, end: null, maxDistanceMeters: distance });
+      }
+    } else if (openViolation) {
+      openViolation.end = now;
+    }
+
+    await attendance.save();
+  } catch (error) {
+    // Never block the ping — see this function's own docstring.
+  }
+}
+
+/**
+ * Force-closes a still-open geofence violation at checkout — the "or at
+ * checkout, whichever comes first" half of the violation-window design
+ * above. In-memory only (no separate `.save()`) — `checkOut` already saves
+ * the record once after this runs, the same way it already does for
+ * `applyConnectivityGapIfNeeded`. Wrapped in try/catch for the same
+ * never-block-checkout guarantee.
+ */
+function closeOpenGeofenceViolation(attendance, now) {
+  try {
+    const openViolation = attendance.geofenceViolations.find((violation) => !violation.end);
+
+    if (openViolation) {
+      openViolation.end = now;
+    }
+  } catch (error) {
+    // Never block checkout.
+  }
 }
 
 /**

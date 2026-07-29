@@ -25,6 +25,15 @@ const MANUALLY_ADJUSTED_RECORD = {
   isManuallyAdjusted: true,
 };
 
+const GEOFENCE_VIOLATION_RECORD = {
+  _id: "att-4",
+  date: "2026-06-06T00:00:00.000Z",
+  status: "present",
+  geofenceViolations: [
+    { start: "2026-06-06T12:00:00.000Z", end: "2026-06-06T12:30:00.000Z", maxDistanceMeters: 700 },
+  ],
+};
+
 describe("AttendanceCalendar", () => {
   it("color-codes each day by its record's status", () => {
     render(<AttendanceCalendar month={JUNE_2026} records={[PRESENT_RECORD, ABSENT_RECORD]} onDayClick={vi.fn()} />);
@@ -46,6 +55,21 @@ describe("AttendanceCalendar", () => {
 
     expect(screen.getByTestId("attendance-manual-marker-2026-06-05")).toBeInTheDocument();
     expect(screen.queryByTestId("attendance-manual-marker-2026-06-03")).not.toBeInTheDocument();
+  });
+
+  it("shows a distinct marker on a day with a geofence violation, and no marker on a normal one", () => {
+    render(<AttendanceCalendar month={JUNE_2026} records={[PRESENT_RECORD, GEOFENCE_VIOLATION_RECORD]} onDayClick={vi.fn()} />);
+
+    expect(screen.getByTestId("attendance-geofence-marker-2026-06-06")).toBeInTheDocument();
+    expect(screen.queryByTestId("attendance-geofence-marker-2026-06-03")).not.toBeInTheDocument();
+  });
+
+  it("shows both markers on a day that is both manually-adjusted and has a geofence violation, without one overwriting the other", () => {
+    const bothIssuesRecord = { ...MANUALLY_ADJUSTED_RECORD, geofenceViolations: GEOFENCE_VIOLATION_RECORD.geofenceViolations };
+    render(<AttendanceCalendar month={JUNE_2026} records={[bothIssuesRecord]} onDayClick={vi.fn()} />);
+
+    expect(screen.getByTestId("attendance-manual-marker-2026-06-05")).toBeInTheDocument();
+    expect(screen.getByTestId("attendance-geofence-marker-2026-06-05")).toBeInTheDocument();
   });
 
   it("calls onDayClick with the date and record (or undefined) when a cell is clicked", async () => {

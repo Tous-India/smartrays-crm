@@ -255,6 +255,19 @@ whenever every module inside it ended up empty (e.g. an explicit `{}` override t
 permissions field. Fixed by setting `minimize: false` on the `User` schema. Caught by a test,
 not by inspection — see `.context/final-plan.md` §6.1/§7.4b for the full writeup.
 
+**Geofencing (added later, §6.5/§7.4) — `POST /pings` also checks the ping's distance from the
+shift's check-in point.** `attendance.service.js#applyGeofenceCheck` is called directly from
+`submitPing` here (this module already imports the `Attendance` model for its own open-shift
+check, so calling straight into the sibling module's exported function is the same cross-module
+direct-call precedent already used elsewhere, e.g. `attendance`→`transport`) — no gap-window
+logic is duplicated in this module. See the Attendance section below for the full design
+(the geofence center, the violation-window shape, the new `GEOFENCE_RADIUS_METERS` env var, and
+why this uses a plain Haversine calculation rather than the Google Maps Distance Matrix API).
+**Never blocks the ping** — `applyGeofenceCheck` wraps its entire body in try/catch and always
+resolves, the same "never block the primary action" guarantee `generateAutoTravelLog` already
+established for Attendance checkout; the ping document itself is created before this runs, so a
+failure here can never undo it.
+
 ### Permissions (`/api/v1/permissions`, `/api/v1/users/:id/permissions`)
 
 See `.context/final-plan.md` §7.12 for the full design writeup. Formalizes the pattern used ad
@@ -417,6 +430,48 @@ than routine jitter), the entire silent window becomes one `connectivityGaps` en
 `connectivityGaps` duration, clamped to a minimum of 0. A gap means the employee wasn't
 verifiably working during that window, so it's subtracted rather than left out of the calculation
 in some other way.
+
+**Geofencing (added later) — design.** Flags when an employee's GPS location moves beyond a
+configurable radius from their check-in point during a shift, rendered red on the timeline —
+deliberately mirroring connectivity-gap detection's shape rather than inventing a second pattern.
+
+- **Geofence center: the shift's own check-in point, not a per-site/office geofence.**
+  `checkIn.coords` (§6.5, already stored on every real check-in — confirmed before building this,
+  not duplicated into a new field) is reused directly as the center every ping is measured
+  against. A per-site geofence (a fixed office location + radius, independent of where any given
+  employee actually checked in) was considered and deliberately **not** built: this system has no
+  concept of "sites" or assigned office locations anywhere in its data model (Customers have a
+  `siteAddress`, but employees aren't assigned to one), and smartrays.md never describes one. A
+  check-in-radius geofence needs no new configuration surface at all — it answers "did this
+  employee stay near where they started their shift," which is the literal, directly-supportable
+  reading of "moves beyond a radius from their check-in point," not "did they stay near a
+  predefined office" (a materially different feature this task didn't ask for).
+- **`GEOFENCE_RADIUS_METERS`** (new env var, optional, defaults to 500) — same optional-with-a-
+  sensible-default treatment as `ATTENDANCE_GAP_THRESHOLD_MINUTES`/`LOCATION_PING_INTERVAL_MINUTES`.
+- **Distance: a plain Haversine formula (`src/services/geo.service.js`), not the Google Maps
+  Distance Matrix API** (`googleMaps.service.js`, already used for TravelLog's driving-distance
+  calculation). A per-ping radius check needs straight-line ("as the crow flies") distance, is
+  called far more often than a TravelLog computation (every ~2-minute ping vs. once per shift),
+  and — critically — must never fail/block just because an external API is unavailable or
+  rate-limited. `geo.service.js` has no network dependency at all, so none of that risk exists.
+- **Violation-window shape, live rather than retroactive.** `geofenceViolations: [{ start, end,
+  maxDistanceMeters }]` on the `Attendance` model — structurally parallel to `connectivityGaps`,
+  but genuinely different in one respect: a connectivity gap is always recorded as an
+  already-closed interval (both `start`/`end` computed together, in one shot, at whichever
+  heartbeat/checkout discovers it), whereas the ping stream that drives geofencing is live, so a
+  violation can be genuinely **open** (`end: null`) between pings. `attendance.service.js#applyGeofenceCheck`
+  (called from `location.service.js#submitPing` on every ping — a cross-module direct call, the
+  same precedent `attendance`→`transport` already established, not a duplicated implementation)
+  opens a new entry the first time a ping lands outside the radius, updates the same open entry's
+  `maxDistanceMeters` (never opening a second one) on every subsequent still-outside ping, and
+  closes it (`end` set) the moment a ping lands back inside. `attendance.service.js#closeOpenGeofenceViolation`
+  force-closes any still-open window at checkout — "closes ... at checkout, whichever comes
+  first," the same symmetry `applyConnectivityGapIfNeeded` already has with heartbeat-vs-checkout.
+- **Never blocks the ping.** `applyGeofenceCheck` wraps its entire body (distance calculation,
+  array mutation, and its own `.save()`) in try/catch and always resolves — the same "never block
+  the primary action" principle `generateAutoTravelLog` already established for checkout. The
+  `LocationPing` document itself is already created by the time this runs, so a failure here can
+  never undo it or turn a successful ping into a failed response.
 
 **Photo capture is mandatory, enforced server-side (revised after the initial build).** It was
 originally left optional at the API layer, reasoning that "never a file-upload input" (§7.4) was
@@ -1235,6 +1290,7 @@ See `.env.example` for the full annotated list. Summary:
 | `CREDENTIALS_ENCRYPTION_KEY` | **Yes, as of 2026-07-13** | 32-byte base64 AES-256-GCM key for the customer credentials vault (§6.3/§11.8) — `env.js` now fails fast at boot if it's missing, since every `Credential` record depends on it. |
 | `LOCATION_PING_INTERVAL_MINUTES` | No — defaults to `2` if unset | Minutes between location pings; the client reads this via `GET /location/config` |
 | `ATTENDANCE_GAP_THRESHOLD_MINUTES` | No — defaults to `10` if unset | Minutes of heartbeat silence before a `connectivityGaps[]` entry is recorded (§6.5/§7.4) |
+| `GEOFENCE_RADIUS_METERS` | No — defaults to `500` if unset | Meters a location ping may drift from the shift's check-in point before a `geofenceViolations[]` entry is recorded (§6.5/§7.4) |
 | `GOOGLE_MAPS_API_KEY` | **Yes, as of Phase 6** | Google Maps Distance Matrix API key (§6.5/§7.6) — required for both auto-generated and coords-based manual `TravelLog` entries; `env.js` fails fast at boot if it's missing. |
 | `MILEAGE_RATE_PER_KM` | No — defaults to `10` if unset | Currency units per approved-`TravelLog`-km, Payroll's mileage reimbursement (§6.5/§7.7). **Placeholder value** — a deliberately simple v1 (one single global rate, not per-role/per-project); the client must confirm the real rate. |
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | **Yes, as of Phase 9** | Web Push VAPID keypair (§6.7) — `webPush.service.js#setVapidDetails` fails immediately at import time if either is missing or not a real key. Generate a real pair with `node -e "console.log(require('web-push').generateVAPIDKeys())"` — there's no safe placeholder for a public-key-cryptography pair the way there is for e.g. a Cloudinary cloud name. |
@@ -1352,7 +1408,7 @@ plain Mongoose schema files have no such dependency.
   against the database), and (replacing the old 501-stub test once the `customer` module existed)
   the real conversion flow: rejects with no `projectManagerId`, then creates a real `Customer`
   from the lead's data and sets `convertedCustomerId` on the lead.
-- **Location** (20 tests): ping accepted with an open Attendance record, rejected (409) with
+- **Location** (26 tests — 20 original + 6 new for geofencing): ping accepted with an open Attendance record, rejected (409) with
   none and after checkout, `employeeId` can't be spoofed from the request body, live-view
   scoping (admin/manager/sales_associate/no-permission-at-all), an employee who's checked out
   correctly disappears from the live view, history returns exactly the right employee+day
@@ -1365,7 +1421,14 @@ plain Mongoose schema files have no such dependency.
   actually runs — and (added once the `attendance` module existed) one end-to-end test proving a
   real `POST /attendance/check-in` unblocks a real `POST /location/pings`, and a real
   `POST /attendance/check-out` blocks the next one, with no direct database writes anywhere in
-  that flow.
+  that flow. **Geofencing (6 new tests):** a ping within the default 500m radius records no
+  violation; a ping beyond it opens one (`end: null`, `maxDistanceMeters` set to the actual
+  distance); repeated still-outside pings update the same open window's `maxDistanceMeters` to
+  the worst distance seen rather than opening a second one; a later in-radius ping closes it;
+  a real `POST /attendance/check-out` force-closes a still-open window; and — mocking
+  `geo.service.js#haversineDistanceMeters` to throw once, the same technique
+  `travelLog.test.js` already uses to mock a Google Maps failure — a ping still succeeds (201)
+  even when the geofence calculation itself blows up.
 - **Permission** (20 tests): registry shape, template CRUD (view/edit as admin, blocked for
   non-admin, invalid role rejected), the two behaviors that matter most for a template system —
   editing a template does **not** retroactively change an existing user's permissions, and a

@@ -90,6 +90,11 @@ export const env = {
   // missed heartbeats at the expected ~2-5 minute client cadence before a gap
   // is recorded, rather than flagging routine jitter as a connectivity issue.
   attendanceGapThresholdMinutes: process.env.ATTENDANCE_GAP_THRESHOLD_MINUTES || "10",
+  // Not required at boot — optional geofencing sensitivity tuning for
+  // Attendance/Location (§6.5/§7.4). Defaults to 500 meters if unset: how far
+  // a location ping may drift from the shift's check-in point before it's
+  // recorded as a geofence violation. See attendance.service.js#applyGeofenceCheck.
+  geofenceRadiusMeters: process.env.GEOFENCE_RADIUS_METERS || "500",
   // Google Maps Distance Matrix API key (§6.5/§7.6) — see
   // src/services/googleMaps.service.js.
   googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY,

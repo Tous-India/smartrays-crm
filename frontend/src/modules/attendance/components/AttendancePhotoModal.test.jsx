@@ -30,6 +30,14 @@ const MANUAL_RECORD_NO_PHOTOS = {
   isManuallyAdjusted: true,
 };
 
+const RECORD_WITH_GEOFENCE_VIOLATION = {
+  ...RECORD_WITH_PHOTOS,
+  _id: "att-3",
+  geofenceViolations: [
+    { start: "2026-06-03T12:00:00.000Z", end: "2026-06-03T12:15:00.000Z", maxDistanceMeters: 950 },
+  ],
+};
+
 describe("AttendancePhotoModal", () => {
   it("renders nothing when there is no record", () => {
     const { container } = render(<AttendancePhotoModal open record={null} onCancel={vi.fn()} />);
@@ -70,5 +78,21 @@ describe("AttendancePhotoModal", () => {
     render(<AttendancePhotoModal open record={RECORD_WITH_PHOTOS} onCancel={vi.fn()} />);
 
     expect(screen.queryByRole("button", { name: /Edit Record/ })).not.toBeInTheDocument();
+  });
+
+  it("shows a plain green Location bar with no violation when none occurred", () => {
+    render(<AttendancePhotoModal open record={RECORD_WITH_PHOTOS} onCancel={vi.fn()} />);
+
+    expect(screen.getByText("Location")).toBeInTheDocument();
+    expect(screen.getByTestId("geofence-violation-bar")).toHaveClass("bg-green-400");
+    expect(screen.queryByTestId("geofence-violation-segment")).not.toBeInTheDocument();
+  });
+
+  it("shows the geofence violation info alongside connectivity gaps when a violation occurred", () => {
+    render(<AttendancePhotoModal open record={RECORD_WITH_GEOFENCE_VIOLATION} onCancel={vi.fn()} />);
+
+    const violationSegment = screen.getByTestId("geofence-violation-segment");
+    expect(violationSegment).toHaveClass("bg-orange-500");
+    expect(screen.getByText("Connectivity Gaps")).toBeInTheDocument();
   });
 });

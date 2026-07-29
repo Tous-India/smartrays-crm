@@ -1,6 +1,7 @@
 import ApiError from "../../utils/ApiError.js";
 import { can } from "../../helpers/permission.helper.js";
 import { env } from "../../config/env.js";
+import { applyGeofenceCheck } from "../attendance/attendance.service.js";
 import LocationPing from "./location.model.js";
 import Attendance from "../attendance/attendance.model.js";
 import User from "../user/user.model.js";
@@ -15,6 +16,13 @@ import User from "../user/user.model.js";
  * happens during a shift" (§7.4b). No open record → reject with 409, not a
  * silent no-op, so a client polling every couple of minutes gets a clear
  * signal to stop.
+ *
+ * Also runs geofence detection (§6.5/§7.4, added later) against this same
+ * open Attendance record — a direct call into `attendance.service.js`
+ * (already imported here for `findOpenAttendance` below) rather than
+ * duplicating gap-window logic in this module. `applyGeofenceCheck` is
+ * guaranteed to never throw, so it's called after the ping is already
+ * created and never affects this endpoint's response.
  */
 export async function submitPing({ coords, capturedAt }, requestingUser) {
   const openAttendance = await findOpenAttendance(requestingUser._id);
@@ -29,6 +37,8 @@ export async function submitPing({ coords, capturedAt }, requestingUser) {
     coords,
     capturedAt,
   });
+
+  await applyGeofenceCheck(openAttendance, coords, new Date(capturedAt));
 
   return ping;
 }

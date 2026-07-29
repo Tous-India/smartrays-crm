@@ -638,6 +638,9 @@ LOCATION_PING_INTERVAL_MINUTES=2 # see §7.4b — the client reads this via GET 
 ATTENDANCE_GAP_THRESHOLD_MINUTES=10 # see §7.4 — minutes of heartbeat silence before a
                                   # connectivityGaps[] entry is recorded. Not required — defaults
                                   # to 10 if unset.
+GEOFENCE_RADIUS_METERS=500       # see §6.5/§7.4 — meters a location ping may drift from the
+                                  # shift's check-in point before a geofenceViolations[] entry is
+                                  # recorded. Not required — defaults to 500 if unset.
 GOOGLE_MAPS_API_KEY=             # required as of Phase 6 (Transport/Travel, §7.6) — see
                                   # src/services/googleMaps.service.js
 MILEAGE_RATE_PER_KM=10           # see §6.5/§7.7 — currency units per approved TravelLog km,
@@ -959,6 +962,25 @@ manually-created `absent`/`on_leave` record legitimately has no real check-in ev
 synthesizing a fake timestamp for it would undermine the very distinction these two new fields
 exist to preserve; the real self-service check-in path is unaffected and still always sets a
 real timestamp there.
+**Extended for geofencing (added later, §7.4's geofencing addition):** one more field,
+`geofenceViolations` (`[{ start, end, maxDistanceMeters }]`) — structurally parallel to
+`connectivityGaps[]`, rendered red on the timeline the same way, but a distinct color/marker
+from connectivity gaps in the UI (an admin needs to tell the two issue *types* apart, not just
+see "something was wrong"). **Design decision: geofenced against the shift's own `checkIn.coords`
+(already stored, reused as-is, no new field needed to hold it), not a per-site/fixed-office
+geofence.** A per-site geofence — a configured office location + radius, independent of where
+an employee actually checked in — was considered and deliberately **not** built: this system has
+no "site"/"assigned office" concept anywhere in its data model (Customer has a `siteAddress`, but
+no `User`/`Attendance` record is ever assigned to one), and neither smartrays.md nor this plan
+ever described one. Geofencing against the check-in point directly answers this task's own
+literal framing — "moves beyond a radius from their check-in point" — with zero new
+configuration surface; a per-site model would be a materially different, larger feature (site
+management, assigning employees to sites) that wasn't asked for. `GEOFENCE_RADIUS_METERS` (new
+env var, optional, defaults to 500) tunes the radius. See `backend/README.md`'s Attendance
+section for the full violation-window design (live, not retroactive, unlike connectivityGaps —
+a violation can be genuinely open (`end: null`) between pings) and why distance is computed via
+a plain Haversine formula (`src/services/geo.service.js`, new) rather than the Google Maps
+Distance Matrix API `googleMaps.service.js` already uses for TravelLog.
 **`Leave`** — employeeId, date(s) (built as an inclusive `startDate`/`endDate` range — the
 simplest reading of "date(s)"), type (`paid`/`unpaid`/`unapproved_absence`), approvedBy,
 isDoubleDeduction (Boolean — true only for the unapproved-absence-marked-by-admin case, per the
@@ -1497,9 +1519,9 @@ returned `downloadUrl`.
 
 ### 7.4b Live Location Tracking
 
-✅ **Built and verified 2026-07-13** (19 tests, `npm test`, see `backend/README.md` →
-Testing). Backend only at the time this section was written — **the frontend map UI is now
-built too, see §7.18**. The API shape below (an ordered `{coords,
+✅ **Built and verified 2026-07-13** (26 tests — 20 original + 6 new for geofencing, `npm test`,
+see `backend/README.md` → Testing). Backend only at the time this section was written — **the
+frontend map UI is now built too, see §7.18**. The API shape below (an ordered `{coords,
 capturedAt}[]` for history, `{employeeId, coords, capturedAt}[]` for live) was deliberately
 designed so that UI can be added later with no API changes.
 
@@ -1556,6 +1578,13 @@ cross-module).
 - **History view** — one employee's full ping trail for a single calendar day, meant to render
   as a path on a map. Frontend not built yet (no `frontend/` work has started); the API shape
   (an ordered array of `{coords, capturedAt}`) is exactly what a map polyline needs.
+- **Geofencing (added later) — every ping is also checked against the shift's Attendance
+  record.** `POST /location/pings` calls directly into `attendance.service.js#applyGeofenceCheck`
+  (this module already imports the `Attendance` model for its own open-shift check, so a direct
+  call into the sibling module rather than a duplicated implementation) — see §6.5's `Attendance`
+  entry above for the full design (check-in-point geofence center, `GEOFENCE_RADIUS_METERS`,
+  the live open/close violation-window shape, and why a plain Haversine formula is used instead
+  of the Google Maps API). Never blocks or fails the ping itself.
 
 **Permissions — new `location` module, same mechanism as every other module, nothing new
 invented:**

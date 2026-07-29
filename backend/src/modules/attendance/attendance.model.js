@@ -59,6 +59,26 @@ const attendanceSchema = new mongoose.Schema(
       ],
       default: [],
     },
+    // Geofencing (added later) — periods during the shift where a location
+    // ping landed more than GEOFENCE_RADIUS_METERS from checkIn.coords (this
+    // shift's geofence center, reused as-is — no separate storage needed);
+    // rendered red on the timeline, distinctly from connectivityGaps. Unlike
+    // connectivityGaps (always recorded as a complete, already-closed
+    // interval), an entry here can be genuinely OPEN (`end: null`) between
+    // pings — the ping stream is live, not summarized after the fact — and is
+    // only closed by a later in-radius ping or at checkout, whichever comes
+    // first. See attendance.service.js#applyGeofenceCheck/
+    // closeOpenGeofenceViolation.
+    geofenceViolations: {
+      type: [
+        {
+          start: { type: Date, required: true },
+          end: { type: Date, default: null },
+          maxDistanceMeters: { type: Number, required: true },
+        },
+      ],
+      default: [],
+    },
     // §6.5 — computed once at checkout: (checkOut.time - checkIn.time) minus
     // total connectivityGaps duration, in hours. Null until checkout.
     workingHours: {
