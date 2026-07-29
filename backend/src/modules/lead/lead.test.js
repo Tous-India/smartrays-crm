@@ -651,7 +651,7 @@ describe("Convert to customer", () => {
   });
 });
 
-describe("CSV import", () => {
+describe("CSV/Excel import", () => {
   it("bulk-creates valid rows and reports skipped invalid rows without aborting the batch", async () => {
     const csv = [
       "Name,Email,Phone,Company,Source,Status,Budget",
@@ -708,6 +708,82 @@ describe("CSV import", () => {
     expect(response.status).toBe(201);
     // "Same Company Different Contact" is NOT skipped — company alone isn't
     // a duplicate signal, per this feature's explicit scope.
+    expect(response.body.data.importedCount).toBe(2);
+    expect(response.body.data.duplicateCount).toBe(3);
+    expect(response.body.data.failedCount).toBe(0);
+    expect(response.body.data.skippedCount).toBe(3);
+    expect(response.body.data.skipped).toEqual([
+      {
+        row: 2,
+        type: "duplicate",
+        reason: `Duplicate: email "existing@example.com" matches existing lead "Existing Lead" (${existingLeadId})`,
+        matchedField: "email",
+        existingLeadId,
+        existingLeadName: "Existing Lead",
+      },
+      {
+        row: 3,
+        type: "duplicate",
+        reason: `Duplicate: phone "1111111111" matches existing lead "Existing Lead" (${existingLeadId})`,
+        matchedField: "phone",
+        existingLeadId,
+        existingLeadName: "Existing Lead",
+      },
+      {
+        row: 6,
+        type: "duplicate",
+        reason: 'Duplicate: email "fresh@example.com" matches row 5 earlier in this file',
+        matchedField: "email",
+      },
+    ]);
+
+    const list = await sales1Agent.get("/api/v1/leads");
+    expect(list.body.data.map((lead) => lead.name).sort()).toEqual([
+      "Existing Lead",
+      "Genuinely New",
+      "Same Company Different Contact",
+    ]);
+  });
+
+  /**
+   * The duplicate-detection test above only ever exercised the CSV branch
+   * of `parseLeadRows` (`workbook.csv.read`) — the `.xlsx` branch
+   * (`workbook.xlsx.load`) had NO duplicate-detection coverage at all,
+   * despite `importLeadsFromFile` sharing the exact same post-parse
+   * duplicate logic for both formats. That gap is exactly how a real
+   * regression (an unexplained `exceljs` downgrade from ^4.4.0 to ^3.4.0,
+   * found and reverted elsewhere in this project's history — ExcelJS's v3
+   * cell/row API returns differ from v4's) could have silently broken only
+   * the `.xlsx` import path's duplicate matching while this CSV-only test
+   * kept passing the whole time. Builds a real `.xlsx` buffer with ExcelJS
+   * (the same library `parseLeadRows` itself uses) and runs the identical
+   * email/phone/within-file/same-company-different-contact scenario as the
+   * CSV test above, so a future regression in either ExcelJS's version or
+   * the `.xlsx` parsing branch specifically would fail here even if CSV
+   * import stayed correct.
+   */
+  it("skips rows duplicating an existing lead's email or phone (not company alone), and duplicates within the same file — via .xlsx, not just .csv", async () => {
+    const existing = await sales1Agent.post("/api/v1/leads").send(
+      buildLeadPayload({ name: "Existing Lead", email: "existing@example.com", phone: "1111111111", companyName: "Existing Co" })
+    );
+    const existingLeadId = existing.body.data._id;
+
+    const { default: ExcelJS } = await import("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Leads");
+    worksheet.addRow(["Name", "Email", "Phone", "Company", "Source", "Status", "Budget"]);
+    worksheet.addRow(["Same Email", "existing@example.com", "2222222222", "Brand New Co", "Referral", "new", 1000]);
+    worksheet.addRow(["Same Phone", "brandnew@example.com", "1111111111", "Brand New Co 2", "Referral", "new", 1000]);
+    worksheet.addRow(["Same Company Different Contact", "another@example.com", "3333333333", "Existing Co", "Referral", "new", 1000]);
+    worksheet.addRow(["Genuinely New", "fresh@example.com", "4444444444", "Fresh Co", "Referral", "new", 1000]);
+    worksheet.addRow(["Repeats Row Above", "fresh@example.com", "5555555555", "Another Co", "Referral", "new", 1000]);
+    const xlsxBuffer = await workbook.xlsx.writeBuffer();
+
+    const response = await sales1Agent
+      .post("/api/v1/leads/import")
+      .attach("file", Buffer.from(xlsxBuffer), "leads.xlsx");
+
+    expect(response.status).toBe(201);
     expect(response.body.data.importedCount).toBe(2);
     expect(response.body.data.duplicateCount).toBe(3);
     expect(response.body.data.failedCount).toBe(0);
