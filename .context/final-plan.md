@@ -128,7 +128,7 @@ Source of Truth rule made concrete, and to mark what's real vs. planned in the d
 | Dashboards | ✅ **Built (§7.13/§7.20/§7.21, Phase 9)** | Frontend widget shell composed by role + permissions, declarative widget catalog (`dashboardConfig.js`) — no dedicated backend module. Leads + Customers widgets (§7.20) plus 6 operational glance widgets — Attendance/Leave/Tickets/AMC/Payments/Payroll (§7.21); an Employee-facing own-scoped widget is a future incremental addition using the same pattern |
 | `frontend` (scaffold) | ✅ **Built (Frontend Phase 0, 2026-07-16)** | Vite + Tailwind + Ant Design scaffold, API client, session store, route guards, dashboard/portal layout shells, full §8 route map wired (every route exists; only `/login` and `/` are functionally complete, the rest are placeholders) — see the Frontend Phase 0 LLD entry below and `frontend/README.md` |
 | `lead` (frontend) | ✅ **Built (2026-07-16) — the reference implementation for every later frontend module** | Table View + Board View (`@dnd-kit` kanban) behind one shared page shell, Lead Detail slide-over (real route), Import wizard, filtered export — see §7.15 |
-| `customer` (frontend) | ✅ **Built** | List View (search/owner/status filters, bulk activate/deactivate/delete) + Add Customer wizard (surfaces the backend's contract automation explicitly) + a real Customer Detail full page (billing/contacts/contracts/credentials vault/activity log) — see §7.17 |
+| `customer` (frontend) | ✅ **Built** | List View (search/owner/status filters, bulk activate/deactivate/delete) + Add Customer wizard (surfaces the backend's contract automation explicitly) + a real Customer Detail full page (billing/site details/contracts/contacts/activity log). Credentials Vault UI deliberately removed 2026-07-29 (backend/data untouched, just not surfaced) — see §7.17 |
 | `attendance` (frontend) | ✅ **Built** | Check-in/out widget (native `getUserMedia`+`<canvas>` camera capture, native `Geolocation`, both mandatory before submit) + Personal/Team timeline views with connectivity gaps rendered as red bar segments + report download via the unified dispatcher — see §7.18 |
 | `leave` (frontend) | ✅ **Built** | Request modal + scope-tabbed list (own/team/all, built from whichever grants the user holds) + admin-only Approve/Mark Unapproved Absence, the latter's 2x-deduction consequence shown directly in the confirm prompt — see §7.18 |
 | `location` (frontend) | ✅ **Built — a new route, `/location`, with no prior frontend at all** | Live map (auto-polling `GET /location/live`) + History map (employee+date picker, `GET /location/history` as a polyline) via a generic `GoogleMapView` (native Maps JS SDK, no wrapper library) — see §7.18 |
@@ -2559,9 +2559,10 @@ rather than a generic "Customer created" that would leave the automation silent.
 
 **Customer Detail** (`/customers/:id`) — a real, linkable **full page** (not a slide-over,
 unlike Lead Detail — per leads-customer-functional-spec.md's own distinction between the
-two), rendering `CustomerHeaderSection`/`CustomerBillingCard`/`CustomerContactsSection`/
-`CustomerContractsSection`/`CustomerCredentialsSection`/`CustomerActivityLog` from one
-`useCustomerDetail` hook.
+two), rendering `CustomerHeaderSection`/`CustomerBillingCard`/`CustomerSiteDetailsCard`/
+`CustomerContractsSection`/`CustomerContactsSection`/`CustomerInvoicePlaceholder`/
+`CustomerActivityLog` from one `useCustomerDetail` hook. (Originally also rendered a
+`CustomerCredentialsSection` here — removed 2026-07-29, see below.)
 
 **Credentials Vault — masking and reveal exactly matches backend behavior, not just a UI
 convention:** passwords render as `••••••••` by default; revealing one requires an explicit
@@ -2575,23 +2576,35 @@ The whole section is wrapped in a `PermissionGate` for `credentials.view` **by t
 matching leads-customer-functional-spec.md's "only visible to users with credentials.view
 permission" literally.
 
+**Updated (2026-07-29) — Credentials Vault UI removed from Customer Detail entirely,
+deliberately, not an unfinished feature.** `CustomerCredentialsSection.jsx`/
+`CredentialFormModal.jsx` deleted, the `PermissionGate`-wrapped section pulled out of
+`CustomerDetailContent.jsx` (no longer takes a `credentials` prop), and `useCustomerDetail.js`
+no longer fetches `listCredentials` at all. **Frontend-only** — the backend `Credential`
+model, its AES-256-GCM encryption, the `/customers/:id/credentials*` endpoints (§7.2), and any
+already-stored encrypted data are completely untouched; `customerApi.js`'s credential
+functions are left in place unused (easy to re-wire a UI onto later). No UI anywhere in the app
+reaches this data today. See `frontend/README.md`'s "Credentials Vault removal" section for
+the full list of what was removed vs. deliberately kept.
+
 **Permission gating** (UI convenience only, real enforcement stays server-side, per §4.1
 applied to the frontend, same as Leads) — every mutating action gated to the exact backend
-`customers`/`credentials` `PERMISSION_REGISTRY` action its endpoint requires: Add Customer →
-`customers.create`; Edit/bulk actions/contract-contact-credential CRUD → `customers.edit`
-(credentials additionally require `credentials.view` to even see the section at all).
+`customers` `PERMISSION_REGISTRY` action its endpoint requires: Add Customer →
+`customers.create`; Edit/bulk actions/contract/contact CRUD → `customers.edit`. (Credentials
+Vault's own `credentials.view` gate no longer applies to anything on this page — see the
+removal note above.)
 
-**Testing:** 13 tests total (`CustomersListPage.test.jsx`: 7, `CustomerDetailPage.test.jsx`:
-6), all passing, no real network calls (every `customerApi`/`userDirectoryApi` call mocked
-at the module boundary). Coverage includes: default active-only fetch + search + "Show
-Inactive" toggle + column sort + bulk-action-calls-the-right-endpoint-with-the-right-ids (List
-View); the full wizard walk-through asserting both the created contract's payload **and**
-the automation-feedback toast text (Add Customer wizard); a role with no `customers.create`
-grant never sees the Add Customer button (permission gating); every detail section rendering
-real fetched data, a contract removal showing the completes-project warning before calling
-delete, the credential staying masked until an explicit reveal confirm (and the reveal
-endpoint genuinely not being called before that confirm completes), and the Credentials Vault
-section being present/absent based on `credentials.view` (Customer Detail).
+**Testing:** `CustomersListPage.test.jsx`/`CustomerDetailPage.test.jsx`, all passing, no real
+network calls (every `customerApi`/`userDirectoryApi` call mocked at the module boundary).
+Coverage includes: default active-only fetch + search + "Show Inactive" toggle + column sort +
+bulk-action-calls-the-right-endpoint-with-the-right-ids (List View); the full wizard
+walk-through asserting both the created contract's payload **and** the automation-feedback
+toast text (Add Customer wizard); a role with no `customers.create` grant never sees the Add
+Customer button (permission gating); every detail section rendering real fetched data, and a
+contract removal showing the completes-project warning before calling delete. The
+Credentials-Vault-specific tests (masked-until-revealed, reveal-confirm-flow,
+`credentials.view` permission-gating pair) were deleted alongside the 2026-07-29 removal above,
+not left skipped.
 
 **Known deviations:** none from this task's own scope. `Invoice`-related UI
 (`CustomerInvoicePlaceholder.jsx`) stays a placeholder, matching the backend's own `Invoice`

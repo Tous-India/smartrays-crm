@@ -14,8 +14,7 @@ import { ROUTE_PATHS } from "../constants/routePaths.constants";
 function CustomerDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { customer, contacts, contracts, credentials, activity, isLoading, error, refetch } =
-    useCustomerDetail(id);
+  const { customer, contacts, contracts, activity, isLoading, error, refetch } = useCustomerDetail(id);
 
   if (isLoading) {
     return (
@@ -49,7 +48,6 @@ function CustomerDetailPage() {
         customer={customer}
         contacts={contacts}
         contracts={contracts}
-        credentials={credentials}
         activity={activity}
         onChanged={refetch}
         onDeleted={() => navigate(ROUTE_PATHS.CUSTOMERS)}

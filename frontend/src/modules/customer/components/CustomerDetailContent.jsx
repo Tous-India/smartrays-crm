@@ -1,13 +1,11 @@
 import { useState } from "react";
 import { message } from "antd";
-import PermissionGate from "../../../routes/PermissionGate";
 import CustomerHeaderSection from "./CustomerHeaderSection";
 import CustomerEditModal from "./CustomerEditModal";
 import CustomerBillingCard from "./CustomerBillingCard";
 import CustomerSiteDetailsCard from "./CustomerSiteDetailsCard";
 import CustomerContractsSection from "./CustomerContractsSection";
 import CustomerContactsSection from "./CustomerContactsSection";
-import CustomerCredentialsSection from "./CustomerCredentialsSection";
 import CustomerInvoicePlaceholder from "./CustomerInvoicePlaceholder";
 import CustomerActivityLog from "./CustomerActivityLog";
 import { updateCustomer, deleteCustomer } from "../api/customerApi";
@@ -16,14 +14,20 @@ import { usePermission } from "../../../hooks/usePermission";
 /**
  * Composes every section of the Customer Detail Page, per
  * leads-customer-functional-spec.md's Customer Detail Page structure —
- * Header, Billing, Contracts, Contacts, Credentials Vault (permission-
- * gated), Invoice History (placeholder — see CustomerInvoicePlaceholder.jsx),
- * Activity Log. Unlike Lead Detail (a slide-over), this is a real full page
- * — the functional spec calls it a dedicated "Customer Detail Page," not a
- * panel, and there's meaningfully more content here (5+ sections) than a
- * slide-over comfortably holds.
+ * Header, Billing, Contracts, Contacts, Invoice History (placeholder — see
+ * CustomerInvoicePlaceholder.jsx), Activity Log. Unlike Lead Detail (a
+ * slide-over), this is a real full page — the functional spec calls it a
+ * dedicated "Customer Detail Page," not a panel, and there's meaningfully
+ * more content here than a slide-over comfortably holds.
+ *
+ * **Credentials Vault deliberately removed from this page** (see
+ * `frontend/README.md`'s Customer module section and `.context/final-
+ * plan.md` for the full note) — the backend `Credential` model, its
+ * encryption, and any already-stored data are untouched; this is a
+ * frontend-only removal, not a rollback of the feature's data layer. No UI
+ * anywhere in the app reaches it right now.
  */
-function CustomerDetailContent({ customer, contacts, contracts, credentials, activity, onChanged, onDeleted }) {
+function CustomerDetailContent({ customer, contacts, contracts, activity, onChanged, onDeleted }) {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
   const canEdit = usePermission("customers", "edit");
@@ -63,14 +67,6 @@ function CustomerDetailContent({ customer, contacts, contracts, credentials, act
       />
 
       <CustomerContactsSection customerId={customer._id} contacts={contacts} onChanged={onChanged} />
-
-      <PermissionGate module="credentials" action="view">
-        <CustomerCredentialsSection
-          customerId={customer._id}
-          credentials={credentials}
-          onChanged={onChanged}
-        />
-      </PermissionGate>
 
       <CustomerInvoicePlaceholder />
 
