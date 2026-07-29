@@ -38,7 +38,7 @@ function LeadStatusSelect({ lead, disabled, onRequestChange }) {
       options={STATUS_OPTIONS}
       disabled={disabled}
       size="small"
-      style={{ minWidth: 140, "--lead-status-pastel-bg": LEAD_STATUS_PASTEL_COLORS[lead.status] }}
+      style={{ minWidth: 126, "--lead-status-pastel-bg": LEAD_STATUS_PASTEL_COLORS[lead.status] }}
       className="lead-status-select"
       classNames={{ popup: { root: "lead-status-select-dropdown" } }}
       onClick={(event) => event.stopPropagation()}

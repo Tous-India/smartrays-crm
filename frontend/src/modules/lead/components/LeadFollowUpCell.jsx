@@ -33,6 +33,12 @@ function LeadFollowUpCell({ lead, onReschedule }) {
       allowClear
       placeholder="Set follow-up"
       variant="borderless"
+      // Explicit width — "YYYY-MM-DD HH:mm" (16 chars) plus the calendar
+      // icon needs more room than AntD's own default DatePicker width
+      // gives it; left unset, the input truncated its own text (down to
+      // "S.." for the placeholder) rather than the column being too
+      // narrow for a naturally-sized picker.
+      style={{ width: 150 }}
       className={isOverdue(lead.followUpDate) ? "!text-red-600 font-medium" : ""}
       onClick={(event) => event.stopPropagation()}
     />

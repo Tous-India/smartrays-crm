@@ -115,7 +115,7 @@ function LeadsTable({
           <Select
             size="small"
             value={ownerId}
-            style={{ minWidth: 140 }}
+            style={{ minWidth: 110 }}
             options={options}
             onClick={(event) => event.stopPropagation()}
             onChange={(newOwnerId) => onAssignOwner(lead, newOwnerId)}
@@ -126,6 +126,7 @@ function LeadsTable({
     {
       title: "Follow-up",
       dataIndex: "followUpDate",
+      className: "leads-followup-cell",
       // Inline-editable when the caller holds `leads.edit` — same
       // permission check already gating the Status dropdown, per this
       // task's own instruction to reuse it rather than introducing a
@@ -145,6 +146,7 @@ function LeadsTable({
     {
       title: "Budget",
       dataIndex: "budget",
+      className: "leads-budget-cell",
       render: (value) => (value != null ? value.toLocaleString() : "—"),
     },
     {
@@ -252,6 +254,7 @@ function LeadsTable({
           className: "cursor-pointer",
         })}
         pagination={{ pageSize: 20 }}
+        scroll={{ x: "max-content" }}
       />
     </div>
   );

@@ -105,6 +105,30 @@
 }
 
 /*
+ * Follow-up/Budget column widths (LeadsTable.jsx only) — same `min-width`-
+ * on-the-cell technique as `.leads-company-cell` above, now that the table
+ * also has `scroll={{ x: "max-content" }}` set (LeadsTable.jsx) so the auto
+ * layout actually sizes every column to its content/min-width instead of
+ * squeezing all of them to fit the visible viewport. Follow-up's own
+ * DatePicker already carries an explicit `width: 150` (LeadFollowUpCell.jsx)
+ * — this just gives the read-only (no `leads.edit`) fallback text and the
+ * "—" empty state the same floor, so the column doesn't shrink back down
+ * when there's nothing wide inline to hold it open. Budget has no inline
+ * control at all (plain text via `.toLocaleString()`), so this is its only
+ * width source — sized for a 7-figure amount plus thousands separators
+ * (e.g. "1,000,000") without wrapping.
+ */
+.app-data-table .ant-table-tbody > tr > td.leads-followup-cell,
+.app-data-table .ant-table-thead > tr > th.leads-followup-cell {
+  min-width: 160px;
+}
+
+.app-data-table .ant-table-tbody > tr > td.leads-budget-cell,
+.app-data-table .ant-table-thead > tr > th.leads-budget-cell {
+  min-width: 100px;
+}
+
+/*
  * LeadFormModal's 2-step wizard — each step's wrapping div toggles between
  * `display: none`/`block` rather than unmounting (so Form state survives
  * Back/Next). Browsers restart a CSS animation on that none->block
