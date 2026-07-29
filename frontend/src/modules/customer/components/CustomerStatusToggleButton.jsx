@@ -1,4 +1,4 @@
-import { Button, Popconfirm, message } from "antd";
+import { Button, Popconfirm, Tooltip, message } from "antd";
 import { StopOutlined, CheckCircleOutlined } from "@ant-design/icons";
 import { updateCustomer } from "../api/customerApi";
 
@@ -11,6 +11,16 @@ import { updateCustomer } from "../api/customerApi";
  * confirmation naming its real, non-obvious side effect (completes every
  * active project for this customer, `customer.service.js#updateCustomer`);
  * reactivating has no such side effect and needs none.
+ *
+ * Icon-only, not icon+text — `StopOutlined`/`CheckCircleOutlined` are the
+ * exact icons this component already used before, just without the label
+ * now sitting next to them. A `Tooltip` carries the same text on hover so
+ * the action stays discoverable, and `aria-label` keeps the button's
+ * accessible name identical to the old visible text (also why existing
+ * `getByRole("button", { name: /Deactivate/ })`-style queries still match
+ * unchanged). `type="text"` matches this codebase's one other icon-only
+ * table-row-action precedent (`LeadsTable.jsx`'s Log Call/Hot-toggle
+ * buttons) rather than inventing a new bordered-icon-button style.
  */
 function CustomerStatusToggleButton({ customer, onChanged, size }) {
   const isActive = customer.customerStatus === "active";
@@ -31,24 +41,33 @@ function CustomerStatusToggleButton({ customer, onChanged, size }) {
         okType="danger"
         onConfirm={handleToggle}
       >
-        <Button danger size={size} icon={<StopOutlined />} onClick={(event) => event.stopPropagation()}>
-          Deactivate
-        </Button>
+        <Tooltip title="Deactivate">
+          <Button
+            danger
+            type="text"
+            size={size}
+            icon={<StopOutlined />}
+            aria-label="Deactivate"
+            onClick={(event) => event.stopPropagation()}
+          />
+        </Tooltip>
       </Popconfirm>
     );
   }
 
   return (
-    <Button
-      size={size}
-      icon={<CheckCircleOutlined />}
-      onClick={(event) => {
-        event.stopPropagation();
-        handleToggle();
-      }}
-    >
-      Activate
-    </Button>
+    <Tooltip title="Activate">
+      <Button
+        type="text"
+        size={size}
+        icon={<CheckCircleOutlined />}
+        aria-label="Activate"
+        onClick={(event) => {
+          event.stopPropagation();
+          handleToggle();
+        }}
+      />
+    </Tooltip>
   );
 }
 

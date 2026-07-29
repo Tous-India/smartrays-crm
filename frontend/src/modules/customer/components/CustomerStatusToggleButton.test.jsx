@@ -56,4 +56,31 @@ describe("CustomerStatusToggleButton", () => {
     expect(onChanged).toHaveBeenCalled();
     expect(message.success).toHaveBeenCalledWith("Customer activated");
   });
+
+  it("renders icon-only (no visible label text) for both states, while keeping the same accessible name", () => {
+    const { rerender } = render(<CustomerStatusToggleButton customer={ACTIVE_CUSTOMER} onChanged={vi.fn()} />);
+
+    const deactivateButton = screen.getByRole("button", { name: "Deactivate" });
+    expect(deactivateButton).not.toHaveTextContent("Deactivate");
+    expect(deactivateButton.querySelector("svg")).toBeInTheDocument();
+
+    rerender(<CustomerStatusToggleButton customer={INACTIVE_CUSTOMER} onChanged={vi.fn()} />);
+
+    const activateButton = screen.getByRole("button", { name: "Activate" });
+    expect(activateButton).not.toHaveTextContent("Activate");
+    expect(activateButton.querySelector("svg")).toBeInTheDocument();
+  });
+
+  it("shows a hover tooltip with the action's text label for both states", async () => {
+    const { rerender } = render(<CustomerStatusToggleButton customer={ACTIVE_CUSTOMER} onChanged={vi.fn()} />);
+
+    await userEvent.hover(screen.getByRole("button", { name: "Deactivate" }));
+    expect(await screen.findAllByText("Deactivate")).not.toHaveLength(0);
+    await userEvent.unhover(screen.getByRole("button", { name: "Deactivate" }));
+
+    rerender(<CustomerStatusToggleButton customer={INACTIVE_CUSTOMER} onChanged={vi.fn()} />);
+
+    await userEvent.hover(screen.getByRole("button", { name: "Activate" }));
+    expect(await screen.findAllByText("Activate")).not.toHaveLength(0);
+  });
 });
