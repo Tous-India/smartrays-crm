@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { Card, Empty, Tag, Button } from "antd";
+import { Card, Empty, Tag } from "antd";
 import { FireFilled } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 
@@ -9,26 +8,23 @@ const URGENCY_STYLES = {
   upcoming: { color: "blue", label: "Upcoming", borderClass: "border-blue-200" },
 };
 
-const VISIBLE_COUNT = 4;
-
 /**
  * Combined Hot Leads + Upcoming Follow-ups row — supersedes the two
  * separate sections this page used to render (see
  * `utils/upcomingFollowUps.js#getPriorityLeads` for the merge/dedupe/sort).
- * Capped at 4 cards per row on desktop; "+N more" expands the rest in place
- * rather than navigating away, since there's no dedicated filtered view for
- * "leads needing attention" to link to.
+ * Renders every qualifying lead via flex-wrap with `flex-1 basis-64` cards
+ * (not CSS Grid's `repeat(4, 1fr)`) so ANY short row — a total under 4, or
+ * the trailing wrapped row when there are more than 4 — stretches its cards
+ * to fill the width instead of leaving empty grid cells; a fixed-column
+ * grid only fills full rows, not partial ones. No "+N more" cap: this list
+ * is bounded by "hot" + "due in the next 3 days", not by total lead count.
  */
 function PriorityLeadsSection({ priorityLeads }) {
   const navigate = useNavigate();
-  const [showAll, setShowAll] = useState(false);
-
-  const visibleLeads = showAll ? priorityLeads : priorityLeads.slice(0, VISIBLE_COUNT);
-  const hiddenCount = priorityLeads.length - visibleLeads.length;
 
   return (
-    <div className="mb-4 bg-[#E8F1FB] p-1.25">
-      <h3 className="mb-2 text-sm font-semibold text-gray-700">Needs Attention</h3>
+    <div className="mb-4 bg-[#E8F1FB] p-1.25 rounded-[7px]">
+      <h3 className="mb-2 text-sm font-semibold text-gray-700 p-[10px] pb-0">Needs Attention</h3>
 
       {priorityLeads.length === 0 ? (
         <Card size="small">
@@ -38,8 +34,8 @@ function PriorityLeadsSection({ priorityLeads }) {
           />
         </Card>
       ) : (
-        <div className="flex flex-wrap gap-3">
-          {visibleLeads.map((lead) => {
+        <div className="flex flex-wrap gap-3 p-[10px]">
+          {priorityLeads.map((lead) => {
             const urgency = lead.followUpUrgency ? URGENCY_STYLES[lead.followUpUrgency] : null;
 
             return (
@@ -47,7 +43,7 @@ function PriorityLeadsSection({ priorityLeads }) {
                 key={lead._id}
                 size="small"
                 hoverable
-                className={`w-64 cursor-pointer ${urgency ? urgency.borderClass : "border-orange-200"}`}
+                className={`flex-1 basis-64 cursor-pointer ${urgency ? urgency.borderClass : "border-orange-200"}`}
                 onClick={() => navigate(`/leads/${lead._id}`)}
               >
                 <div className="flex items-center justify-between gap-2">
@@ -76,12 +72,6 @@ function PriorityLeadsSection({ priorityLeads }) {
               </Card>
             );
           })}
-
-          {hiddenCount > 0 && (
-            <Button type="dashed" className="h-auto w-64" onClick={() => setShowAll(true)}>
-              +{hiddenCount} more, view all
-            </Button>
-          )}
         </div>
       )}
     </div>
