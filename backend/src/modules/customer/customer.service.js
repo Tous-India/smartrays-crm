@@ -131,6 +131,40 @@ export async function createCustomer(payload, requestingUser) {
   return customer;
 }
 
+/**
+ * Attaches each customer's primary contact (`{ name, phone }`, or `null` if
+ * none is flagged `isPrimary`) via one extra query against every returned
+ * customer's id, not one query per row — the same N+1 mistake already found
+ * and fixed on the Leads table. `Contact`/`Customer` have no populate/virtual
+ * wiring between them (a plain reverse one-to-many), so this is a manual
+ * `$in` query + in-memory Map join rather than a `.populate()` call.
+ * `isPrimary` isn't enforced unique per customer at the model layer (see
+ * `createContact`/`updateContact` — no "unset every other contact's
+ * isPrimary" step exists), so if more than one is somehow flagged primary,
+ * whichever sorts first (oldest first) wins — deterministic, not arbitrary.
+ */
+async function attachPrimaryContacts(customers) {
+  const customerIds = customers.map((customer) => customer._id);
+
+  const primaryContacts = await Contact.find({ customerId: { $in: customerIds }, isPrimary: true })
+    .sort({ createdAt: 1 })
+    .select("customerId name phone")
+    .lean();
+
+  const primaryContactByCustomerId = new Map();
+  primaryContacts.forEach((contact) => {
+    const key = String(contact.customerId);
+    if (!primaryContactByCustomerId.has(key)) {
+      primaryContactByCustomerId.set(key, { name: contact.name, phone: contact.phone || null });
+    }
+  });
+
+  return customers.map((customer) => ({
+    ...customer.toObject(),
+    primaryContact: primaryContactByCustomerId.get(String(customer._id)) || null,
+  }));
+}
+
 export async function listCustomers(filters, requestingUser) {
   const ownershipFilter = await resolveOwnershipFilter(requestingUser);
   const searchFilter = buildSearchFilter(filters.search);
@@ -141,7 +175,9 @@ export async function listCustomers(filters, requestingUser) {
     $and: [ownershipFilter, searchFilter, statusFilter, ownerFilter],
   };
 
-  return Customer.find(combinedFilter).sort({ createdAt: -1 });
+  const customers = await Customer.find(combinedFilter).sort({ createdAt: -1 });
+
+  return attachPrimaryContacts(customers);
 }
 
 function buildSearchFilter(search) {

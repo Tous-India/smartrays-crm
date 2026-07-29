@@ -1,9 +1,10 @@
-import { Table, Tag, Select, Button, Tooltip, Space, Popconfirm, message } from "antd";
-import { FireOutlined, FireFilled, PhoneOutlined, CopyOutlined } from "@ant-design/icons";
+import { Table, Tag, Select, Button, Tooltip, Space, Popconfirm } from "antd";
+import { FireOutlined, FireFilled, PhoneOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import LeadStatusSelect from "./LeadStatusSelect";
 import LeadFollowUpCell from "./LeadFollowUpCell";
 import PermissionGate from "../../../routes/PermissionGate";
+import CopyablePhoneCell from "../../../components/CopyablePhoneCell";
 import { LEAD_STATUS_COLORS, LEAD_STATUS_LABELS, CLIENT_TYPE_LABELS } from "../constants/lead.constants";
 
 function isOverdue(followUpDate) {
@@ -42,17 +43,6 @@ function LeadsTable({
 
   const userNameById = new Map(users.map((user) => [user._id, user.name]));
 
-  function handleCopyPhone(event, phone) {
-    event.stopPropagation();
-    // `writeText` rejects (e.g. `NotAllowedError` when the document isn't
-    // focused) — handled explicitly rather than left as an uncaught
-    // rejection, same reasoning as LeadFormModal's `validateFields` fix.
-    navigator.clipboard
-      .writeText(phone)
-      .then(() => message.success("Phone number copied"))
-      .catch(() => message.error("Couldn't copy — please copy it manually"));
-  }
-
   const columns = [
     {
       title: "Contact",
@@ -64,19 +54,7 @@ function LeadsTable({
               a second time next to the name was a duplicate, per this
               task's own instruction. */}
           <span className="flex items-center gap-1">{name}</span>
-          {lead.phone && (
-            <span className="flex items-center gap-1 text-xs text-gray-500">
-              {lead.phone}
-              <Tooltip title="Copy phone number">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<CopyOutlined />}
-                  onClick={(event) => handleCopyPhone(event, lead.phone)}
-                />
-              </Tooltip>
-            </span>
-          )}
+          <CopyablePhoneCell phone={lead.phone} />
         </div>
       ),
     },

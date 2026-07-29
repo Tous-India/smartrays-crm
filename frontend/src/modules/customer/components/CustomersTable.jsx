@@ -1,6 +1,7 @@
 import { Table, Tag, Space, Button, Popconfirm } from "antd";
 import { useNavigate } from "react-router-dom";
 import PermissionGate from "../../../routes/PermissionGate";
+import CopyablePhoneCell from "../../../components/CopyablePhoneCell";
 import {
   CUSTOMER_STATUS_COLORS,
   CUSTOMER_STATUS_LABELS,
@@ -10,11 +11,22 @@ import {
 
 /**
  * List View table per leads-customer-functional-spec.md: Company Name,
- * Owner, Type badges (derived from contracts — see useCustomers.js),
- * Source, Signed Up (sortable), Status columns; checkbox row selection +
- * bulk Mark Active/Mark Inactive/Delete, shown as a toolbar above the table
- * once at least one row is selected (Select All is antd Table's own
- * built-in header checkbox — no separate control needed for that).
+ * Contact, Owner, Type badges (derived from contracts — see
+ * useCustomers.js), Source, Signed Up (sortable), Status columns; checkbox
+ * row selection + bulk Mark Active/Mark Inactive/Delete, shown as a toolbar
+ * above the table once at least one row is selected (Select All is antd
+ * Table's own built-in header checkbox — no separate control needed for
+ * that).
+ *
+ * **Contact column** — each customer's primary contact (`Contact.isPrimary:
+ * true`), name on top + phone below with the same copy-to-clipboard button
+ * as `LeadsTable.jsx`'s own Contact column (`CopyablePhoneCell`, extracted
+ * from that table so both reuse the identical behavior). `customer.
+ * primaryContact` comes pre-attached in the `GET /customers` list response
+ * (`customer.service.js#attachPrimaryContacts`) — one extra query for the
+ * whole page, not one per row, the same N+1 mistake already fixed on Leads.
+ * `null` (no contact flagged primary, or no contacts at all) renders as
+ * "—", not a broken/empty layout.
  */
 function CustomersTable({
   customers,
@@ -38,6 +50,22 @@ function CustomersTable({
       render: (companyName, customer) => (
         <a onClick={() => navigate(`/customers/${customer._id}`)}>{companyName}</a>
       ),
+    },
+    {
+      title: "Contact",
+      key: "contact",
+      render: (_, customer) => {
+        if (!customer.primaryContact) {
+          return "—";
+        }
+
+        return (
+          <div>
+            <span className="flex items-center gap-1">{customer.primaryContact.name}</span>
+            <CopyablePhoneCell phone={customer.primaryContact.phone} />
+          </div>
+        );
+      },
     },
     {
       title: "Owner",

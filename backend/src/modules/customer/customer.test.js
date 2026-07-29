@@ -182,6 +182,46 @@ describe("Customer CRUD + scoping", () => {
   });
 });
 
+describe("GET /customers — primaryContact", () => {
+  it("includes each customer's isPrimary contact (name + phone), not every contact", async () => {
+    const created = await sales1Agent
+      .post("/api/v1/customers")
+      .send(buildCustomerPayload({ projectManagerId: manager1._id }));
+    const customerId = created.body.data._id;
+
+    await Contact.create({ customerId, name: "Secondary Contact", phone: "1112223333", isPrimary: false });
+    await Contact.create({ customerId, name: "Primary Contact", phone: "4445556666", isPrimary: true });
+
+    const response = await sales1Agent.get("/api/v1/customers");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0].primaryContact).toEqual({ name: "Primary Contact", phone: "4445556666" });
+  });
+
+  it("returns primaryContact: null for a customer with no contacts at all", async () => {
+    await sales1Agent.post("/api/v1/customers").send(buildCustomerPayload({ projectManagerId: manager1._id }));
+
+    const response = await sales1Agent.get("/api/v1/customers");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data[0].primaryContact).toBeNull();
+  });
+
+  it("returns primaryContact: null when contacts exist but none is flagged isPrimary", async () => {
+    const created = await sales1Agent
+      .post("/api/v1/customers")
+      .send(buildCustomerPayload({ projectManagerId: manager1._id }));
+
+    await Contact.create({ customerId: created.body.data._id, name: "Just A Contact", phone: "9990001111" });
+
+    const response = await sales1Agent.get("/api/v1/customers");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data[0].primaryContact).toBeNull();
+  });
+});
+
 describe("Solar-specific fields", () => {
   it("creates a customer with no solar fields set (they're optional, not required)", async () => {
     const response = await sales1Agent

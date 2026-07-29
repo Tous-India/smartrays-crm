@@ -54,6 +54,7 @@ const SAMPLE_CUSTOMERS = [
     source: "Referral",
     signedUpAt: "2026-01-01T00:00:00.000Z",
     customerStatus: "active",
+    primaryContact: { name: "Jane Primary", phone: "9998887777" },
   },
   {
     _id: "cust-2",
@@ -62,6 +63,7 @@ const SAMPLE_CUSTOMERS = [
     source: "Website",
     signedUpAt: "2026-02-01T00:00:00.000Z",
     customerStatus: "active",
+    primaryContact: null,
   },
 ];
 
@@ -96,6 +98,35 @@ describe("CustomersListPage — List View", () => {
     expect(customerApi.listCustomers).toHaveBeenCalledWith(
       expect.objectContaining({ status: "active" })
     );
+  });
+
+  it("shows each customer's primary contact (name + copyable phone), and '—' when there is none", async () => {
+    // jsdom has no `navigator.clipboard` at all — stubbed here the same way
+    // this codebase mocks every other browser API jsdom lacks (getUserMedia,
+    // the Google Maps SDK, etc.), since this is the first test anywhere to
+    // actually exercise the copy button's click handler rather than just its
+    // rendering.
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { value: { writeText }, configurable: true });
+
+    renderPage();
+    await screen.findByText("Acme Corp");
+
+    expect(screen.getByText("Jane Primary")).toBeInTheDocument();
+    expect(screen.getByText("9998887777")).toBeInTheDocument();
+
+    const betaRow = screen.getByText("Beta Co").closest("tr");
+    const betaCells = within(betaRow).getAllByRole("cell");
+    // cells[0] is the row-selection checkbox cell; column order after that is
+    // Company Name, Contact, Owner, Type, Source, Signed Up, Status.
+    expect(betaCells[2]).toHaveTextContent("—");
+
+    await userEvent.click(screen.getByRole("button", { name: /copy/i }));
+
+    expect(writeText).toHaveBeenCalledWith("9998887777");
+    await waitFor(() => {
+      expect(message.success).toHaveBeenCalledWith("Phone number copied");
+    });
   });
 
   it("re-fetches with the search term when searching", async () => {
