@@ -72,7 +72,6 @@ describe("Template CRUD", () => {
       customers: { view: true, create: true, edit: true, delete: true },
       credentials: { view: true },
       projects: { view: true, assign_team: true },
-      tasks: { view: true, assign: true },
       attendance: { view_team: true },
       leave: { view_team: true },
       travelLogs: { view_team: true },

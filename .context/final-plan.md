@@ -116,7 +116,7 @@ Source of Truth rule made concrete, and to mark what's real vs. planned in the d
 | `permission` | ✅ Built (§7.12) | Role permission templates + per-user overrides — the authorization data source itself |
 | `attendance` | ✅ **Fully built** (§7.4, 2026-07-13) | Check-in/check-out with photo capture (Cloudinary) + connectivity-gap-adjusted `workingHours` + own/team/org history and PDF/Excel reports |
 | `customer` | ✅ Built (§7.2, Phase 2, 2026-07-13) | Client account: billing, contracts, contacts, credentials vault, activity log, contract→Project automation. `Invoice` remains a minimal placeholder model — Phase 7's Payments module (§7.9) adds partial balance/status reconciliation onto it, not full invoicing |
-| `project` | ✅ Built (§7.3, Phase 2, 2026-07-13) | Delivery unit linked to a customer/contract; owns tasks + team assignment. No direct creation endpoint — always born from a Contract |
+| `project` | ✅ Built (§7.3, Phase 2, 2026-07-13) | Delivery unit linked to a customer/contract; owns team assignment. No direct creation endpoint — always born from a Contract. Originally also owned Task functionality, deliberately removed 2026-07-29 (§6.4/§7.3) |
 | `leave` | ✅ Built (§7.5, Phase 3, 2026-07-13) | Leave requests/approval, one-paid-leave-per-month quota (§11.7), the 2x unapproved-absence rule |
 | `payroll` | ✅ Built (§7.7, Phase 4, 2026-07-13) | Monthly gross/net computation from Attendance + Leave + approved TravelLog data, mileage reimbursement, PDF payslips, monthly `node-cron` job |
 | `ticket` | ✅ Built (§7.8, Phase 5) | Internal + Customer Portal support ticket lifecycle — raise/list/assign/status/comments/attachments. Customer Portal self-signup (§7.0) is a companion piece, built the same task |
@@ -367,25 +367,27 @@ genuinely compact enough to be useful at a glance.
   Phase 7 as noted above.
 - **Test coverage:** 21 tests, no application bugs found.
 
-##### Projects & Tasks (§7.3, Phase 2, built 2026-07-13)
-- **Data model:** `Project`, `Task` — §6.4, built as designed.
-- **API surface:** `GET /projects`, `GET /projects/:id`, `POST /projects/:id/team`,
-  `GET /projects/:id/tasks`, `POST /tasks`, `PATCH /tasks/:id/start`, `PATCH /tasks/:id/stop` —
-  full list at §7.3. **No `POST /projects`** — a project is only ever created via the customer
-  module's contract automation above, never directly.
-- **Permission requirements:** `projects.view`/`assign_team`; `tasks.view`/`assign` — real,
-  admin-editable grants (manager/admin get both by default), not hardcoded role checks, per §4.1.
-  Starting/stopping a task is an ownership check (assignee or admin), not a permission tier —
-  there is deliberately no `tasks.update_own` registry entry.
-- **Key invariants:** **one `in_progress` task per employee at a time**, enforced server-side
-  (not just a disabled button) to survive multi-tab/multi-device races — checked fresh against
-  the database on every start, not client state. "Team members addable by Manager/Admin only"
-  (§7.3) is interpreted narrowly: holding `projects.assign_team` is necessary but not sufficient —
-  the caller must also be *this specific project's* `projectManagerId`, or admin. A project has no
-  `managerId`-based "own team" scoping the way Leads/Customers do — visibility is admin-sees-all,
-  else PM-or-team-member-only.
+##### Projects (§7.3, Phase 2, built 2026-07-13; Task removed 2026-07-29)
+- **Data model:** `Project` — §6.4, built as designed.
+- **API surface:** `GET /projects`, `GET /projects/:id`, `POST /projects/:id/team` — full list at
+  §7.3. **No `POST /projects`** — a project is only ever created via the customer module's
+  contract automation above, never directly.
+- **Permission requirements:** `projects.view`/`assign_team` — real, admin-editable grants
+  (manager/admin get both by default), not hardcoded role checks, per §4.1.
+- **Key invariants:** "Team members addable by Manager/Admin only" (§7.3) is interpreted
+  narrowly: holding `projects.assign_team` is necessary but not sufficient — the caller must also
+  be *this specific project's* `projectManagerId`, or admin. A project has no `managerId`-based
+  "own team" scoping the way Leads/Customers do — visibility is admin-sees-all, else
+  PM-or-team-member-only.
 - **Known deviations:** none from the ask.
-- **Test coverage:** 19 tests, no application bugs found.
+- **Test coverage:** 10 tests (19 originally, minus 9 Task-specific tests removed alongside the
+  feature), no application bugs found.
+- **Task functionality — deliberately removed 2026-07-29.** This entry originally also covered a
+  `Task` model (§6.4), the endpoints `GET /projects/:id/tasks`/`POST /tasks`/
+  `PATCH /tasks/:id/start`/`PATCH /tasks/:id/stop`, the `tasks.view`/`assign` permission grants,
+  and the server-side one-`in_progress`-task-per-employee constraint. Removed at the user's
+  request (backend + frontend + docs), Project itself left fully intact — see §6.4/§7.3 for the
+  full historical record.
 
 ##### Leave (§7.5, Phase 3, built 2026-07-13)
 - **Data model:** `Leave` — §6.5, built as designed plus one added field: `status`
@@ -938,13 +940,18 @@ key rotation in v1 (env-based single key, not a KMS); rotating the key is a manu
 `credentials.view` on top of `customers.view`.
 **`Invoice`** — customerId, contractId, number, type (`proforma`/`gst`), amount, balance, status, issuedAt
 
-### 6.4 Projects & Tasks
+### 6.4 Projects
 
 **`Project`** — name, customerId, projectManagerId, teamMemberIds[], type (`recurring`/`onetime`),
 status (`active`/`completed`/`paused`), linkedContractId, createdAt
-**`Task`** — projectId, title, assignedToId, status (`todo`/`in_progress`/`done`), startedAt, stoppedAt
-— **server-side constraint: one `in_progress` task per employee at a time**, enforced in the
-service layer (not just a disabled button) to survive multi-tab/multi-device races.
+
+**Task functionality — deliberately removed 2026-07-29.** This section originally also specified a
+`Task` model: projectId, title, assignedToId, status (`todo`/`in_progress`/`done`), startedAt,
+stoppedAt — with a server-side constraint of one `in_progress` task per employee at a time,
+enforced in the service layer (not just a disabled button) to survive multi-tab/multi-device
+races. Task was fully removed at the user's request (backend model/routes/service/controller/
+tests, the `tasks` permission registry entry, and the frontend `TasksPage`/nav entry) — this note
+preserves the historical record of what existed rather than silently deleting it.
 
 ### 6.5 Workforce
 
@@ -1373,28 +1380,29 @@ GET    /customers/:id/ledger?from=&to=                             NOT built —
 GET    /customers/:id/activity                                                       ✅ built
 ```
 
-### 7.3 Projects & Tasks
+### 7.3 Projects
 
-✅ **Built and verified 2026-07-13** (19 tests, `npm test`, see `backend/README.md` → Testing),
-in the same task as `customer` (§7.2), which is what actually creates a Project (there is no
-`POST /projects` — see below).
+✅ **Built and verified 2026-07-13** (10 tests after the 2026-07-29 Task removal below, `npm test`,
+see `backend/README.md` → Testing), in the same task as `customer` (§7.2), which is what actually
+creates a Project (there is no `POST /projects` — see below).
 
-**Screens:** Project detail (team members, linked contract, tasks list), Task board per
-employee dashboard.
+**Screens:** Project detail (team members, linked contract).
 **Rules:** team members addable by Manager/Admin only (implemented narrowly — *this specific
-project's* manager, or admin, not any user holding the manager role globally); task start/stop
-enforces one in-progress task per employee server-side.
+project's* manager, or admin, not any user holding the manager role globally).
 **Endpoints (✅ marks what's built; note there is deliberately no `POST /projects` — a project is
 only ever created via the customer module's contract automation, §7.2/§6.3/§6.4):**
 ```
 GET    /projects                                                                      ✅ built
 GET    /projects/:id                                                                  ✅ built
 POST   /projects/:id/team           add/remove member                                 ✅ built
-GET    /projects/:id/tasks                                                            ✅ built
-POST   /tasks                       (assign)                                          ✅ built
-PATCH  /tasks/:id/start             rejects if another task already in_progress for user ✅ built
-PATCH  /tasks/:id/stop                                                                ✅ built
 ```
+
+**Task functionality — deliberately removed 2026-07-29.** This module originally also included a
+Task board (per employee dashboard), the endpoints `GET /projects/:id/tasks`, `POST /tasks`,
+`PATCH /tasks/:id/start`, `PATCH /tasks/:id/stop`, and the rule that starting a task enforced one
+in-progress task per employee server-side — see §6.4 for the full historical record. Removed at
+the user's request; the Project module itself (team add/remove, project CRUD, contract-linked
+automation) was left fully intact.
 
 ### 7.4 Attendance
 
@@ -2339,6 +2347,10 @@ employee:         { location: { view: true },
 customer:         {}
 ```
 
+**`tasks` removed 2026-07-29.** The `tasks` registry entry and its `manager`/`employee` template
+grants shown above were removed alongside the rest of Task functionality — see §6.4/§7.3. This
+snapshot is left otherwise unchanged as the historical record of the 2026-07-13 permission build.
+
 **Validation rule, applied to both template edits and per-user overrides:** every key in a
 submitted `permissions` object must be a module that exists in `PERMISSION_REGISTRY`, every
 action key under it must be one of that module's registered actions, and every value must be a
@@ -3256,7 +3268,7 @@ environment — verification here rests on the test suites and a successful prod
 /leads/:id
 /customers               /customers/:id
 /projects/:id
-/tasks                   (employee "my tasks")
+                          (/tasks — employee "my tasks" — deliberately removed 2026-07-29, §6.4/§7.3)
 /attendance               (self)      /attendance/team (manager)
 /leave
 /payroll                  /payroll/:id/payslip

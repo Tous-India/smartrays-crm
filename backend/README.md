@@ -110,7 +110,7 @@ production / `lax` in dev. The token is never present in any response body.
 | `user` | ✅ Built — roster CRUD, team scoping, self/admin field rules, manager assignment (see below). Model still shared by `auth`, `lead`, `location`, `permission`. |
 | `attendance` | ✅ **Fully built** — check-in/check-out with photo capture, connectivity-gap detection, `workingHours`, own/team/org history, PDF/Excel reports (see below). |
 | `customer` | ✅ Built (Phase 2) — Customer/Contact/Contract/Credential CRUD, contract→Project+Invoice automation, deactivation cascade, encrypted credentials vault, activity log (see below). `Invoice` is a minimal placeholder model only — no invoice service/controller/routes yet. |
-| `project` | ✅ Built (Phase 2) — Project + Task, team assignment, one-`in_progress`-task-per-employee constraint (see below). No `POST /projects` — projects are only ever created via the customer module's contract automation. |
+| `project` | ✅ Built (Phase 2) — Project + team assignment (see below). No `POST /projects` — projects are only ever created via the customer module's contract automation. Task functionality (model, endpoints, one-`in_progress`-task-per-employee constraint) was deliberately removed 2026-07-29 — not never built, actually removed. |
 | `leave` | ✅ Built (Phase 3) — request/approve/mark-unapproved-absence, one-paid-leave-per-month quota (see below). |
 | `transport` | ✅ Built (Phase 6) — `TravelLog` auto-generated from Attendance checkout + manual entry, own/team/org history, PDF/Excel reports. **Retrofitted 2026-07-13** with a `pending`/`approved`/`rejected` approval workflow (see below). |
 | `payroll` | ✅ Built (Phase 4, 2026-07-13) — monthly gross/net computation from Attendance + Leave + approved TravelLog data, mileage reimbursement, PDF payslips, a monthly `node-cron` job (see below). |
@@ -397,7 +397,7 @@ model was extended in place, not replaced.
 
 | Method | Path | Access | Notes |
 |---|---|---|---|
-| POST | `/attendance/check-in` | Authenticated, no module permission | Body `{ coords: {lat, lng}, photo }`. `photo` is **required** (400 if missing) — a base64 data URI (JSON body) or a multipart file field (`multer`, same as Leads' CSV import); either transport works on the same route. Creates a new `Attendance` record with `checkIn.time` set to the server clock and `date` set to today. `employeeId` always comes from the session. **409** if the employee already has an open record — one open check-in at a time, the same "reject the second one" pattern as the one-`in_progress`-task-per-employee rule (§6.4). |
+| POST | `/attendance/check-in` | Authenticated, no module permission | Body `{ coords: {lat, lng}, photo }`. `photo` is **required** (400 if missing) — a base64 data URI (JSON body) or a multipart file field (`multer`, same as Leads' CSV import); either transport works on the same route. Creates a new `Attendance` record with `checkIn.time` set to the server clock and `date` set to today. `employeeId` always comes from the session. **409** if the employee already has an open record — one open check-in at a time. |
 | POST | `/attendance/check-out` | Authenticated, no module permission | Body `{ coords: {lat, lng}, photo }`. `photo` is **required** (400 if missing). Closes the caller's own open record, runs the same connectivity-gap check a heartbeat would (covering any silence since the last one), computes `workingHours`, and auto-generates a `TravelLog` from this shift's check-in/check-out coords (§7.6, Phase 6) — never fails checkout if travel logging fails. **409** if there's no open record. |
 | POST | `/attendance/heartbeat` | Authenticated, no module permission | No body. A "still alive" signal the client calls periodically while checked in — see the connectivity-gap design below. **409** with no open shift. |
 | GET | `/attendance/me` | Authenticated | Own history, newest first, optional `?month=YYYY-MM` filter. Unconditional — no `attendance.*` grant needed, matching `GET /auth/me`. |
@@ -1152,7 +1152,7 @@ delete-permission test needed a user whose `customers.delete` grant was explicit
 since both `manager` and `sales_associate` hold full `customers` CRUD by default (matching Leads'
 own precedent) — no role lacks `delete` while still holding other customer permissions.
 
-### Projects & Tasks (`/api/v1/projects`, `/api/v1/tasks`) — Phase 2
+### Projects (`/api/v1/projects`) — Phase 2
 
 See `.context/final-plan.md` §6.4/§7.3. **There is no `POST /projects` endpoint** — a project is
 only ever created by the customer module's contract automation above, never directly.
@@ -1162,19 +1162,20 @@ only ever created by the customer module's contract automation above, never dire
 | GET | `/projects` | `projects.view` | Scoped differently from Leads/Customers — there's no `managerId`-based "own team" concept for a Project (its own team IS `teamMemberIds`/`projectManagerId`). Admin sees all; everyone else sees only projects where they're the manager or a team member. |
 | GET | `/projects/:id` | `projects.view` | 404 (not 403) for an out-of-scope project. |
 | POST | `/projects/:id/team` | `projects.assign_team` **+** must be *this specific project's* `projectManagerId`, or admin | "Manager/Admin only" (§7.3) is interpreted narrowly — holding the permission grant is necessary but not sufficient; a different manager who isn't this project's own PM still gets 403 (mirrors `user.service.js#updateUser`'s "self OR admin" shape). Body `{ action: "add"\|"remove", userId }`. |
-| GET | `/projects/:id/tasks` | `tasks.view` | All tasks for the project — no further per-task narrowing once you can see the project at all. |
-| POST | `/tasks` | `tasks.assign` | Body `{ projectId, title, assignedToId }`. `assignedToId` must be the project's manager or a team member (400 otherwise). |
-| PATCH | `/tasks/:id/start` | Authenticated only — no `tasks.*` gate | Ownership check instead: the task's own assignee, or admin. **409** if another task is already `in_progress` for that same employee — the server-side "one `in_progress` task per employee at a time" constraint (§6.4), checked fresh against the database on every call, not client state. |
-| PATCH | `/tasks/:id/stop` | Authenticated only | Same ownership check. 409 if the task isn't currently `in_progress`. Moves it to `done` (there's no separate "paused" state in this 3-status model, so "stop" means "finish"). |
 
-**Permission design:** `projects.assign_team` and `tasks.assign` are real, admin-editable grants
-(manager/admin get both by default) rather than hardcoded role checks — consistent with this
-codebase's Single Source of Truth for Auth principle (§4.1), which the Permissions module (§7.12)
-exists specifically to uphold. There's deliberately no `tasks.update_own` registry entry — starting
-/stopping your own task is an ownership check, the same reasoning as Leads' `ownerId` scoping and
-`PATCH /users/:id`'s self-editable fields, not a permission tier.
+**Permission design:** `projects.assign_team` is a real, admin-editable grant (manager/admin get it
+by default) rather than a hardcoded role check — consistent with this codebase's Single Source of
+Truth for Auth principle (§4.1), which the Permissions module (§7.12) exists specifically to
+uphold.
 
-19 tests, no application bugs found.
+10 tests, no application bugs found.
+
+**Task functionality — deliberately removed 2026-07-29.** This module originally also included a
+`Task` sub-feature (model, `GET /projects/:id/tasks`, `POST /tasks`, `PATCH /tasks/:id/start`,
+`PATCH /tasks/:id/stop`, the `tasks` permission registry entry, and a server-side one-`in_progress`
+-task-per-employee constraint) plus a frontend `TasksPage` and sidebar nav entry. It was fully
+removed at the user's request, not left unbuilt — see `.context/final-plan.md` §6.4/§7.3 for the
+historical record of what existed before removal.
 
 ---
 
@@ -1519,16 +1520,13 @@ plain Mongoose schema files have no such dependency.
   list/detail never expose `passwordEncrypted`/`passwordIv`, reveal decrypts correctly and writes
   an activity-log entry, and a role without `credentials.view` is blocked from the vault
   entirely), plus the activity log itself recording actions in the right order.
-- **Project** (19 tests): list/detail scoping (admin sees everything, everyone else only projects
+- **Project** (10 tests): list/detail scoping (admin sees everything, everyone else only projects
   where they're the manager or a team member, **404** not 403 for out-of-scope, **403** for a role
   with no `projects.*` grant at all), team add/remove (this project's own manager or admin only —
   a *different* manager who merely holds the role-level grant is still blocked, and an employee
-  with no `assign_team` grant is blocked at the route), task assignment (`assignedToId` must be
-  the project's manager or a team member, an employee with no `tasks.assign` grant is blocked),
-  and the one-`in_progress`-task-per-employee constraint (starting a second task while one is
-  already in progress is rejected with 409, a different employee can start their own task
-  independently, stopping a task frees that employee to start another, only the assignee or an
-  admin may start/stop a given task).
+  with no `assign_team` grant is blocked at the route). Task assignment and the
+  one-`in_progress`-task-per-employee constraint were tested here too until Task functionality was
+  deliberately removed 2026-07-29 — see the Projects section above.
 - **Transport/Travel** (28 tests): a real Attendance checkout auto-creates a `source: "auto"`
   `TravelLog` from that shift's check-in/check-out coords with the mocked distance; calling
   `generateAutoTravelLog` directly with missing coords returns `null` and creates nothing;

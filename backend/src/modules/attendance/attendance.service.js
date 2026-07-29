@@ -11,9 +11,8 @@ import User from "../user/user.model.js";
 /**
  * Opens a new attendance record for "now". Rejects (409) if the employee
  * already has an OPEN record (checked in, not yet checked out) — one open
- * check-in at a time, the same server-side "reject the second one" pattern
- * used for the one-`in_progress`-Task-per-employee constraint (§6.4) and
- * reused as-is (no date scoping) from location.service.js#findOpenAttendance,
+ * check-in at a time, reused as-is (no date scoping) from
+ * location.service.js#findOpenAttendance,
  * since "open" already implies "not yet closed," regardless of which day it
  * started on. `photo` is uploaded to Cloudinary — never stored as binary in
  * MongoDB (§6.5/§7.4). Mandatory server-side (attendance.validation.js

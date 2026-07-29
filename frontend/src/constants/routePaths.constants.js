@@ -15,7 +15,6 @@ export const ROUTE_PATHS = {
   CUSTOMERS: "/customers",
   CUSTOMER_DETAIL: "/customers/:id",
   PROJECT_DETAIL: "/projects/:id",
-  TASKS: "/tasks",
   ATTENDANCE: "/attendance",
   ATTENDANCE_TEAM: "/attendance/team",
   LEAVE: "/leave",

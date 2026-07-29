@@ -30,12 +30,6 @@ export const PERMISSION_REGISTRY = {
   // + admin get it by default) rather than a hardcoded role check, consistent
   // with this codebase's Single Source of Truth for Auth principle (§4.1).
   projects: ["view", "assign_team"],
-  // `assign` gates POST /tasks (creating/assigning a new task, a manager/admin
-  // action per §7.3). Starting/stopping your OWN task is an ownership check
-  // resolved in project.service.js (assignedToId === requestingUser._id, or
-  // admin) — not a separate permission tier, the same reasoning as Leads'
-  // ownerId-based edit scoping.
-  tasks: ["view", "assign"],
   // Added 2026-07-13 (full Phase 3 build, §7.4). No plain "view" tier — same
   // reasoning as `users`: an employee's own attendance is always reachable
   // via GET /attendance/me with no gate at all, so a "view own" grant would

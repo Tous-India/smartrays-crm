@@ -6,7 +6,7 @@ import permissionRouter, { userPermissionRouter } from "./modules/permission/per
 import userRouter from "./modules/user/user.routes.js";
 import attendanceRouter from "./modules/attendance/attendance.routes.js";
 import customerRouter from "./modules/customer/customer.routes.js";
-import projectRouter, { taskRouter } from "./modules/project/project.routes.js";
+import projectRouter from "./modules/project/project.routes.js";
 import leaveRouter from "./modules/leave/leave.routes.js";
 import travelLogRouter from "./modules/transport/travelLog.routes.js";
 import payrollRouter from "./modules/payroll/payroll.routes.js";
@@ -26,7 +26,6 @@ router.use("/permissions", permissionRouter);
 router.use("/attendance", attendanceRouter);
 router.use("/customers", customerRouter);
 router.use("/projects", projectRouter);
-router.use("/tasks", taskRouter);
 router.use("/leave", leaveRouter);
 router.use("/travel-logs", travelLogRouter);
 router.use("/payroll", payrollRouter);

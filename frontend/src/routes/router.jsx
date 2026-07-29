@@ -13,7 +13,6 @@ import LeadDetailPage from "../pages/LeadDetailPage";
 import CustomersPage from "../pages/CustomersPage";
 import CustomerDetailPage from "../pages/CustomerDetailPage";
 import ProjectDetailPage from "../pages/ProjectDetailPage";
-import TasksPage from "../pages/TasksPage";
 import AttendancePage from "../pages/AttendancePage";
 import AttendanceTeamPage from "../pages/AttendanceTeamPage";
 import LeavePage from "../pages/LeavePage";
@@ -59,7 +58,6 @@ export const router = createBrowserRouter(
           <Route path="customers" element={<CustomersPage />} />
           <Route path="customers/:id" element={<CustomerDetailPage />} />
           <Route path="projects/:id" element={<ProjectDetailPage />} />
-          <Route path="tasks" element={<TasksPage />} />
           <Route path="attendance" element={<AttendancePage />} />
           <Route path="attendance/team" element={<AttendanceTeamPage />} />
           <Route path="leave" element={<LeavePage />} />

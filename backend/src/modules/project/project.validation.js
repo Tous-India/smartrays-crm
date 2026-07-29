@@ -13,21 +13,3 @@ export function validateTeamUpdateInput(req, res, next) {
 
   next();
 }
-
-export function validateCreateTaskInput(req, res, next) {
-  const { projectId, title, assignedToId } = req.body;
-
-  if (!projectId) {
-    throw new ApiError(400, "projectId is required");
-  }
-
-  if (!title || !title.trim()) {
-    throw new ApiError(400, "title is required");
-  }
-
-  if (!assignedToId) {
-    throw new ApiError(400, "assignedToId is required");
-  }
-
-  next();
-}

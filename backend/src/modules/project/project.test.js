@@ -3,7 +3,6 @@ import { startTestDatabase, stopTestDatabase } from "../../../tests/helpers/test
 import { getTestApp } from "../../../tests/helpers/testApp.js";
 import { createUserDirectly, loginAsAgent } from "../../../tests/helpers/authHelpers.js";
 import Project from "./project.model.js";
-import Task from "./task.model.js";
 
 let app;
 let adminAgent, manager1Agent, manager2Agent, employee1Agent, employee2Agent, sales1Agent;
@@ -27,7 +26,6 @@ async function createProjectDirectly({ projectManagerId, teamMemberIds = [] }) {
 
 async function clearProjectData() {
   await Project.deleteMany({});
-  await Task.deleteMany({});
 }
 
 beforeAll(async () => {
@@ -43,8 +41,8 @@ beforeAll(async () => {
   adminAgent = await loginAsAgent(app, "admin@test.local", "AdminPass123!");
 
   // Registered through the real /auth/register endpoint so these fixtures get
-  // the actual role-based projects/tasks permission defaults, not a
-  // hand-picked override.
+  // the actual role-based projects permission defaults, not a hand-picked
+  // override.
   const manager1Response = await adminAgent.post("/api/v1/auth/register").send({
     name: "Manager One",
     email: "manager1@test.local",
@@ -84,7 +82,7 @@ beforeAll(async () => {
   employee2 = employee2Response.body.data;
   employee2Agent = await loginAsAgent(app, "employee2@test.local", "Password123");
 
-  // sales_associate has no projects/tasks grant by default — used for the
+  // sales_associate has no projects grant by default — used for the
   // no-permission-at-all case.
   const sales1Response = await adminAgent.post("/api/v1/auth/register").send({
     name: "Sales One",
@@ -205,138 +203,5 @@ describe("POST /projects/:id/team", () => {
       .send({ action: "add", userId: String(employee1._id) });
 
     expect(response.status).toBe(200);
-  });
-});
-
-describe("POST /tasks (assign)", () => {
-  it("a manager can assign a task to this project's team member", async () => {
-    const project = await createProjectDirectly({
-      projectManagerId: manager1._id,
-      teamMemberIds: [employee1._id],
-    });
-
-    const response = await manager1Agent.post("/api/v1/tasks").send({
-      projectId: project._id,
-      title: "Design homepage",
-      assignedToId: String(employee1._id),
-    });
-
-    expect(response.status).toBe(201);
-    expect(response.body.data.status).toBe("todo");
-  });
-
-  it("rejects assigning a task to someone who isn't this project's manager or a team member", async () => {
-    const project = await createProjectDirectly({ projectManagerId: manager1._id });
-
-    const response = await manager1Agent.post("/api/v1/tasks").send({
-      projectId: project._id,
-      title: "Design homepage",
-      assignedToId: String(employee1._id),
-    });
-
-    expect(response.status).toBe(400);
-  });
-
-  it("blocks an employee (no tasks.assign grant) from creating a task", async () => {
-    const project = await createProjectDirectly({
-      projectManagerId: manager1._id,
-      teamMemberIds: [employee1._id],
-    });
-
-    const response = await employee1Agent.post("/api/v1/tasks").send({
-      projectId: project._id,
-      title: "Design homepage",
-      assignedToId: String(employee1._id),
-    });
-
-    expect(response.status).toBe(403);
-  });
-});
-
-describe("PATCH /tasks/:id/start and /stop — one in_progress task per employee", () => {
-  it("starts a todo task assigned to the caller", async () => {
-    const project = await createProjectDirectly({
-      projectManagerId: manager1._id,
-      teamMemberIds: [employee1._id],
-    });
-    const task = await Task.create({ projectId: project._id, title: "Task A", assignedToId: employee1._id });
-
-    const response = await employee1Agent.patch(`/api/v1/tasks/${task._id}/start`);
-
-    expect(response.status).toBe(200);
-    expect(response.body.data.status).toBe("in_progress");
-    expect(response.body.data.startedAt).not.toBeNull();
-  });
-
-  it("rejects starting a second task while one is already in_progress for the same employee", async () => {
-    const project = await createProjectDirectly({
-      projectManagerId: manager1._id,
-      teamMemberIds: [employee1._id],
-    });
-    const taskA = await Task.create({ projectId: project._id, title: "Task A", assignedToId: employee1._id });
-    const taskB = await Task.create({ projectId: project._id, title: "Task B", assignedToId: employee1._id });
-
-    await employee1Agent.patch(`/api/v1/tasks/${taskA._id}/start`);
-
-    const response = await employee1Agent.patch(`/api/v1/tasks/${taskB._id}/start`);
-
-    expect(response.status).toBe(409);
-  });
-
-  it("lets a different employee start their own task while another employee's task is in_progress", async () => {
-    const project = await createProjectDirectly({
-      projectManagerId: manager1._id,
-      teamMemberIds: [employee1._id, employee2._id],
-    });
-    const taskA = await Task.create({ projectId: project._id, title: "Task A", assignedToId: employee1._id });
-    const taskB = await Task.create({ projectId: project._id, title: "Task B", assignedToId: employee2._id });
-
-    await employee1Agent.patch(`/api/v1/tasks/${taskA._id}/start`);
-
-    const response = await employee2Agent.patch(`/api/v1/tasks/${taskB._id}/start`);
-
-    expect(response.status).toBe(200);
-  });
-
-  it("blocks a different employee from starting someone else's task", async () => {
-    const project = await createProjectDirectly({
-      projectManagerId: manager1._id,
-      teamMemberIds: [employee1._id, employee2._id],
-    });
-    const task = await Task.create({ projectId: project._id, title: "Task A", assignedToId: employee1._id });
-
-    const response = await employee2Agent.patch(`/api/v1/tasks/${task._id}/start`);
-
-    expect(response.status).toBe(403);
-  });
-
-  it("stops an in_progress task and frees the employee to start another", async () => {
-    const project = await createProjectDirectly({
-      projectManagerId: manager1._id,
-      teamMemberIds: [employee1._id],
-    });
-    const taskA = await Task.create({ projectId: project._id, title: "Task A", assignedToId: employee1._id });
-    const taskB = await Task.create({ projectId: project._id, title: "Task B", assignedToId: employee1._id });
-
-    await employee1Agent.patch(`/api/v1/tasks/${taskA._id}/start`);
-
-    const stopResponse = await employee1Agent.patch(`/api/v1/tasks/${taskA._id}/stop`);
-    expect(stopResponse.status).toBe(200);
-    expect(stopResponse.body.data.status).toBe("done");
-
-    const startBResponse = await employee1Agent.patch(`/api/v1/tasks/${taskB._id}/start`);
-    expect(startBResponse.status).toBe(200);
-  });
-
-  it("rejects stopping a task that isn't currently in_progress", async () => {
-    const project = await createProjectDirectly({
-      projectManagerId: manager1._id,
-      teamMemberIds: [employee1._id],
-    });
-    const task = await Task.create({ projectId: project._id, title: "Task A", assignedToId: employee1._id });
-
-    const response = await employee1Agent.patch(`/api/v1/tasks/${task._id}/stop`);
-
-    expect(response.status).toBe(409);
   });
 });

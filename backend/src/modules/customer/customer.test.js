@@ -49,7 +49,7 @@ beforeAll(async () => {
 
   // Registered through the real /auth/register endpoint (not createUserDirectly),
   // so these fixtures exercise the actual role-based customers/credentials/
-  // projects/tasks permission defaults instead of bypassing that logic.
+  // projects permission defaults instead of bypassing that logic.
   const managerResponse = await adminAgent.post("/api/v1/auth/register").send({
     name: "Manager One",
     email: "manager1@test.local",

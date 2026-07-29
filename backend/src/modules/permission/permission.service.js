@@ -23,7 +23,6 @@ const INITIAL_TEMPLATE_DEFAULTS = {
     customers: { view: true, create: true, edit: true, delete: true },
     credentials: { view: true },
     projects: { view: true, assign_team: true },
-    tasks: { view: true, assign: true },
     // Added 2026-07-13 (full Phase 3, §7.4/§7.5). A manager needs to see
     // their team's attendance and leave requests (to view, though only
     // admin can approve/mark-unapproved-absence) — the same managerId-based
@@ -72,10 +71,9 @@ const INITIAL_TEMPLATE_DEFAULTS = {
   },
   employee: {
     location: { view: true },
-    // An employee works tasks inside projects — no customers/credentials
-    // access by default, just enough to see and work their own tasks.
+    // An employee works inside projects — no customers/credentials access by
+    // default, just enough to see the projects they're on.
     projects: { view: true },
-    tasks: { view: true },
     // Added 2026-07-13 (§7.5) — viewing your own leave requests. There's no
     // equivalent `attendance.view` grant needed here: unlike `leave`,
     // Attendance's own-record access (GET /attendance/me) is unconditional,
