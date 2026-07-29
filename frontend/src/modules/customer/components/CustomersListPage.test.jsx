@@ -202,6 +202,42 @@ describe("CustomersListPage — List View", () => {
     // rows[0] is the header row; after ascending sort, the earlier date (Acme) leads.
     expect(within(rows[1]).queryByText("Acme Corp")).toBeInTheDocument();
   });
+
+  it("toggling status from the table's per-row Actions column calls the same PATCH endpoint and refreshes the table, with no full page reload", async () => {
+    customerApi.updateCustomer.mockResolvedValue({
+      data: { data: { ...SAMPLE_CUSTOMERS[0], customerStatus: "inactive" } },
+    });
+    renderPage();
+    await screen.findByText("Acme Corp");
+
+    const acmeRow = screen.getByText("Acme Corp").closest("tr");
+    await userEvent.click(within(acmeRow).getByRole("button", { name: /Deactivate/ }));
+
+    const confirmButtons = await screen.findAllByRole("button", { name: /Deactivate/ });
+    await userEvent.click(confirmButtons[confirmButtons.length - 1]);
+
+    await waitFor(() => {
+      expect(customerApi.updateCustomer).toHaveBeenCalledWith("cust-1", { customerStatus: "inactive" });
+    });
+    // `onChanged` is the same `refetch` the rest of the page already uses —
+    // a second `listCustomers` call (beyond the initial mount fetch) is what
+    // proves the table refreshes itself rather than needing a reload.
+    await waitFor(() => {
+      expect(customerApi.listCustomers).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("shows Activate (no confirmation) in the Actions column for an already-inactive row", async () => {
+    customerApi.listCustomers.mockResolvedValue({
+      data: { data: [{ ...SAMPLE_CUSTOMERS[0], customerStatus: "inactive" }, SAMPLE_CUSTOMERS[1]] },
+    });
+    renderPage();
+    await screen.findByText("Acme Corp");
+
+    const acmeRow = screen.getByText("Acme Corp").closest("tr");
+    expect(within(acmeRow).getByRole("button", { name: /Activate/ })).toBeInTheDocument();
+    expect(within(acmeRow).queryByRole("button", { name: /Deactivate/ })).not.toBeInTheDocument();
+  });
 });
 
 describe("CustomersListPage — Add Customer wizard", () => {

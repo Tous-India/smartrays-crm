@@ -133,6 +133,7 @@ function CustomersListPage() {
         onSelectionChange={setSelectedRowKeys}
         onBulkAction={handleBulkAction}
         isBulkActing={isBulkActing}
+        onChanged={refetch}
       />
 
       <CustomerFormWizard

@@ -446,6 +446,39 @@ describe("Deactivation cascade", () => {
     const projectsAfter = await Project.find({ customerId });
     expect(projectsAfter.every((project) => project.status === "completed")).toBe(true);
   });
+
+  // Regression test for a reported "Deactivate/Activate appears to work but
+  // doesn't survive a refresh" symptom. The critical thing this asserts that
+  // a naive test wouldn't: it never trusts the PATCH response body or any
+  // in-memory object the app already holds — `Customer.findById` here is a
+  // deliberately fresh, independent query straight from the DB (the same
+  // thing a real page reload's GET would see), the only way to actually
+  // prove the write landed rather than just that the request "looked" like
+  // it succeeded.
+  it("customerStatus toggled via PATCH genuinely persists — confirmed via an independent fresh query, not the response body", async () => {
+    const created = await sales1Agent
+      .post("/api/v1/customers")
+      .send(buildCustomerPayload({ projectManagerId: manager1._id }));
+    const customerId = created.body.data._id;
+    expect(created.body.data.customerStatus).toBe("active");
+
+    const deactivateResponse = await sales1Agent
+      .patch(`/api/v1/customers/${customerId}`)
+      .send({ customerStatus: "inactive" });
+    expect(deactivateResponse.status).toBe(200);
+
+    const afterDeactivate = await Customer.findById(customerId);
+    expect(afterDeactivate.customerStatus).toBe("inactive");
+
+    // Round-trip back, confirming the same holds in the other direction too.
+    const activateResponse = await sales1Agent
+      .patch(`/api/v1/customers/${customerId}`)
+      .send({ customerStatus: "active" });
+    expect(activateResponse.status).toBe(200);
+
+    const afterActivate = await Customer.findById(customerId);
+    expect(afterActivate.customerStatus).toBe("active");
+  });
 });
 
 describe("Contacts", () => {

@@ -2,6 +2,7 @@ import { Table, Tag, Space, Button, Popconfirm } from "antd";
 import { useNavigate } from "react-router-dom";
 import PermissionGate from "../../../routes/PermissionGate";
 import CopyablePhoneCell from "../../../components/CopyablePhoneCell";
+import CustomerStatusToggleButton from "./CustomerStatusToggleButton";
 import {
   CUSTOMER_STATUS_COLORS,
   CUSTOMER_STATUS_LABELS,
@@ -27,6 +28,12 @@ import {
  * whole page, not one per row, the same N+1 mistake already fixed on Leads.
  * `null` (no contact flagged primary, or no contacts at all) renders as
  * "—", not a broken/empty layout.
+ *
+ * **Actions column** — a per-row `CustomerStatusToggleButton`, the exact
+ * same component (and thus the exact same `PATCH /customers/:id` call and
+ * Popconfirm consequence text) the Customer Detail header already uses, so
+ * this doesn't duplicate that logic. `onChanged` refetches the list so the
+ * row's Status/Actions reflect the change immediately, no full page reload.
  */
 function CustomersTable({
   customers,
@@ -36,6 +43,7 @@ function CustomersTable({
   onSelectionChange,
   onBulkAction,
   isBulkActing,
+  onChanged,
 }) {
   const navigate = useNavigate();
   const userNameById = new Map(users.map((user) => [user._id, user.name]));
@@ -99,6 +107,15 @@ function CustomersTable({
       title: "Status",
       dataIndex: "customerStatus",
       render: (status) => <Tag color={CUSTOMER_STATUS_COLORS[status]}>{CUSTOMER_STATUS_LABELS[status]}</Tag>,
+    },
+    {
+      title: "Actions",
+      key: "actions",
+      render: (_, customer) => (
+        <PermissionGate module="customers" action="edit">
+          <CustomerStatusToggleButton customer={customer} onChanged={onChanged} size="small" />
+        </PermissionGate>
+      ),
     },
   ];
 
