@@ -4,7 +4,14 @@ import mongoose from "mongoose";
 // an enum, the same convention as LEAD_STATUSES/CALL_OUTCOMES elsewhere in
 // this codebase — adding a new notification type later is a one-line change
 // here, not a schema migration.
-const NOTIFICATION_TYPES = ["lead_assigned", "lead_follow_up_due", "ticket_assigned"];
+const NOTIFICATION_TYPES = [
+  "lead_assigned",
+  "lead_follow_up_due",
+  "ticket_assigned",
+  "leave_requested",
+  "leave_approved",
+  "leave_declined",
+];
 
 const notificationSchema = new mongoose.Schema(
   {

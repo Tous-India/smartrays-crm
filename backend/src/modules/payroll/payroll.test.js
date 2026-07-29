@@ -215,6 +215,36 @@ describe("POST /payroll/run — single-employee computation (§7.7 formulas)", (
     expect(paidOn.getDate()).toBe(1);
   });
 
+  it("counts a half-day (isHalfDay:true) paid leave as 0.5 toward paidLeaveDays, and a half-day unpaid leave as 0.5 toward unpaidDeductionDays", async () => {
+    await adminAgent.patch(`/api/v1/users/${sales1._id}`).send({ baseSalary: 30000 });
+
+    await Leave.create({
+      employeeId: sales1._id,
+      startDate: juneDate(10),
+      endDate: juneDate(10),
+      type: "paid",
+      status: "approved",
+      isHalfDay: true,
+    });
+
+    await Leave.create({
+      employeeId: sales1._id,
+      startDate: juneDate(11),
+      endDate: juneDate(11),
+      type: "unpaid",
+      status: "approved",
+      isHalfDay: true,
+    });
+
+    const response = await adminAgent.post(
+      `/api/v1/payroll/run?employeeId=${sales1._id}&month=${MONTH}&year=${YEAR}`
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.paidLeaveDays).toBe(0.5);
+    expect(response.body.data.unpaidDeductionDays).toBe(0.5);
+  });
+
   it("rejects re-running an already-generated employee/month without regenerate", async () => {
     await adminAgent.patch(`/api/v1/users/${sales1._id}`).send({ baseSalary: 30000 });
 

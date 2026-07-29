@@ -965,6 +965,12 @@ isDoubleDeduction (Boolean — true only for the unapproved-absence-marked-by-ad
 2x rule). ✅ **Built 2026-07-13** (§7.5) — one field beyond this list was added: `status`
 (`pending`/`approved`/`rejected`), necessary to support the request→approve workflow §7.5's own
 endpoints imply (a leave request has to start somewhere before an admin can "approve" it).
+**Extended later (§7.5's five additions):** `isHalfDay` (Boolean, default `false`) — a half-day
+request counts as 0.5 days against quotas/payroll rather than a full day; validation requires
+`startDate === endDate` whenever it's true. `declineReason` (String, nullable) — set only by the
+new `PATCH /leave/:id/decline`, kept separate from the existing `reason` field so declining never
+overwrites the requester's own stated reason for taking leave. No new `status` enum value was
+needed — `declineLeave` sets the existing, previously-unused `"rejected"` value.
 **`TravelLog`** — employeeId, date, originCoords, destinationCoords, distanceKm (from Google Maps Distance Matrix), source (`auto` from check-in/out or `manual`). **Retrofitted
 2026-07-13 with an approval workflow** (§7.6/§7.7, done alongside resolving §11.4): `status`
 (`pending`/`approved`/`rejected`, default `pending` — neither `auto` nor `manual` entries
@@ -1652,7 +1658,9 @@ whatever's held.
 ```
 POST   /leave/request                                                                 ✅ built
 GET    /leave?scope=own|team|all                                                      ✅ built
+GET    /leave/balance?employeeId=          (own always; team/all reuse view tiers)    ✅ built
 PATCH  /leave/:id/approve         (admin)                                             ✅ built
+PATCH  /leave/:id/decline         (admin; reason?, sets status: "rejected")           ✅ built
 PATCH  /leave/:id/mark-unapproved-absence   (admin; sets isDoubleDeduction=true)       ✅ built
 ```
 **Key invariants:** a `paid`-type approval is capped by the monthly quota (§11.7) — a single
@@ -1664,6 +1672,56 @@ second paid request in the same month always succeeds (201, `status: "pending"`)
 second *approval* attempt is rejected. `mark-unapproved-absence` is an unconditional admin
 decree, not a normal approval — it works regardless of the record's current status and always
 sets `isDoubleDeduction: true` per the 2x rule (smartrays.md).
+
+**Five additions (added later, frontend Leave module task) — half-day support, a balance
+endpoint, a decline action, notifications, and a frontend team calendar view:**
+
+- **Half-day leave (`isHalfDay: Boolean`, default `false`, added to the `Leave` model).** A
+  half-day request counts as **0.5 days** against the monthly paid-leave quota and Payroll's
+  leave-day math, rather than a full day. Every place that used to count inclusive calendar days
+  — the quota check, the new balance endpoint below, and `payroll.service.js`'s own leave-day
+  calculation — now goes through one shared, exported function, `leave.service.js#computeLeaveDays`,
+  so "does half-day count as 0.5?" is answered in exactly one place, not re-derived per caller.
+  Validation enforces `startDate === endDate` whenever `isHalfDay: true` (a half day only ever
+  describes a single day), compared via the UTC calendar-date key rather than local date
+  components — the same local-timezone day-boundary bug class already fixed for Attendance/
+  Reports in earlier tasks this session.
+- **`GET /leave/balance`** — reuses the exact quota-checking calculation the approval flow
+  already has (a new shared `getApprovedPaidLeaveDaysForMonth` helper, called by both
+  `ensureWithinMonthlyPaidLeaveQuota` and this endpoint) rather than a second implementation.
+  Returns `{ paidLeaveUsed, paidLeaveLimit: 1, paidLeaveRemaining }` for the calendar month
+  containing today. Own balance needs no permission grant (same "own data" precedent as
+  `GET /attendance/me`); `?employeeId=` for someone else reuses the exact `leave.view_team`/
+  `view_all` tiers `GET /leave?scope=` already checks, with a manager's `view_team` further
+  scoped to their own direct reports.
+- **`PATCH /leave/:id/decline` — a schema decision, not a new enum value.** `LEAVE_STATUSES`
+  already declared `"rejected"` (present since the original build, but never actually set by any
+  endpoint) — `declineLeave` sets that existing value rather than adding a redundant `"declined"`
+  meaning the same thing; this is the first endpoint to ever use it. A new `declineReason` field
+  was added, kept separate from the existing `reason` field (the requester's own reason for
+  taking leave) so declining never overwrites that original context. `approvedBy` is reused to
+  record which admin made the decline decision, the same treatment `mark-unapproved-absence`
+  already gives that field despite its own outcome not literally being "approved" either.
+- **Notifications** — reuses the existing Notification module's `createNotification`, no new
+  infrastructure. Three new types: `leave_requested` (the requester's manager, if set, and every
+  admin — the first "notify all admins" recipient shape in this codebase, a plain
+  `User.find({ role: "admin" })`, rather than one specific already-known recipient, on
+  `POST /leave/request`), `leave_approved`/`leave_declined` (the requester only, on the matching
+  decision endpoint). Every path skips self-notification the same way Leads' assignment
+  notification already does. Deliberately **not** wired into `mark-unapproved-absence` — that's a
+  distinct, retroactive admin action the task didn't ask to notify on.
+- **Frontend team leave calendar** — one row per team member, one column per day of the selected
+  month (a client-side month filter over already-loaded records, no new endpoint), chosen over a
+  single combined day-grid (Attendance's own calendar-view shape) because a leave request spans a
+  date *range* and several employees can be on leave the same day; a per-day cell would either
+  only show one employee or need to stack entries. See `frontend/README.md`'s "Half-day, balance,
+  decline, calendar & notifications" section for the full frontend write-up, including the
+  `GET /leave/balance`-per-row-column design for viewing an employee's balance from the Team/All
+  scope table, and the Notification bell's `MODULE_ROUTES` gap that was found and fixed while
+  confirming the bell actually surfaces the new `leave_*` types (it only knew `leads`/`tickets`
+  before this task).
+
+41 tests total (18 original + 23 new), all passing.
 
 ### 7.6 Transport/Travel
 

@@ -6,6 +6,7 @@ import Payroll from "./payroll.model.js";
 import User from "../user/user.model.js";
 import Attendance from "../attendance/attendance.model.js";
 import Leave from "../leave/leave.model.js";
+import { computeLeaveDays } from "../leave/leave.service.js";
 import TravelLog from "../transport/travelLog.model.js";
 
 /**
@@ -129,7 +130,10 @@ function ensureHasBaseSalary(employee) {
  * - unpaidDeductionDays: approved `unpaid` Leave days, plus approved
  *   `unapproved_absence` days doubled — driven by the existing
  *   `isDoubleDeduction` flag already on the Leave model, not a duplicated
- *   type check.
+ *   type check. Both day counts go through `leave.service.js#computeLeaveDays`
+ *   (added for half-day support) rather than a second, local day-counting
+ *   function — an `isHalfDay` leave correctly contributes 0.5 here, the same
+ *   value the monthly paid-leave quota check already uses it for.
  * - mileageReimbursement: `status: "approved"` TravelLog distanceKm this
  *   month × `MILEAGE_RATE_PER_KM` (§11.4, resolved) — `pending`/`rejected`
  *   entries never count.
@@ -159,7 +163,7 @@ async function computePayrollFields(employee, month, year) {
     status: "approved",
     startDate: { $gte: start, $lt: end },
   });
-  const paidLeaveDays = sumInclusiveDays(paidLeaves);
+  const paidLeaveDays = paidLeaves.reduce((total, leave) => total + computeLeaveDays(leave), 0);
 
   const deductingLeaves = await Leave.find({
     employeeId: employee._id,
@@ -168,7 +172,7 @@ async function computePayrollFields(employee, month, year) {
     startDate: { $gte: start, $lt: end },
   });
   const unpaidDeductionDays = deductingLeaves.reduce((total, leave) => {
-    const days = countInclusiveDays(leave.startDate, leave.endDate);
+    const days = computeLeaveDays(leave);
     return total + (leave.isDoubleDeduction ? days * 2 : days);
   }, 0);
 
@@ -208,22 +212,6 @@ async function computePayrollFields(employee, month, year) {
     generatedAt: new Date(),
     paidOn: new Date(year, month, 1),
   };
-}
-
-function sumInclusiveDays(leaves) {
-  return leaves.reduce((total, leave) => total + countInclusiveDays(leave.startDate, leave.endDate), 0);
-}
-
-function countInclusiveDays(startDate, endDate) {
-  const oneDayMs = 24 * 60 * 60 * 1000;
-
-  return Math.round((startOfDay(endDate) - startOfDay(startDate)) / oneDayMs) + 1;
-}
-
-function startOfDay(date) {
-  const value = new Date(date);
-
-  return new Date(value.getFullYear(), value.getMonth(), value.getDate());
 }
 
 function resolveMonthRange(month, year) {

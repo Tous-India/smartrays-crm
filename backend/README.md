@@ -519,10 +519,12 @@ See `.context/final-plan.md` §6.5/§7.5 and §11.7 (leave cadence, resolved thi
 
 | Method | Path | Access | Notes |
 |---|---|---|---|
-| POST | `/leave/request` | Authenticated, no module permission | Body `{ startDate, endDate, type?, reason? }`. Self-service — same reasoning as Attendance check-in/out. `employeeId` is forced to the caller unless they're admin (an admin can request on behalf of someone else — needed so `mark-unapproved-absence` below has a record to act on for an employee who never self-requested). `type` defaults to `paid`; `unapproved_absence` is rejected here (400) — it's only ever set via the dedicated admin action. |
+| POST | `/leave/request` | Authenticated, no module permission | Body `{ startDate, endDate, type?, reason?, isHalfDay? }`. Self-service — same reasoning as Attendance check-in/out. `employeeId` is forced to the caller unless they're admin (an admin can request on behalf of someone else — needed so `mark-unapproved-absence` below has a record to act on for an employee who never self-requested). `type` defaults to `paid`; `unapproved_absence` is rejected here (400) — it's only ever set via the dedicated admin action. `isHalfDay` (added later) requires `startDate === endDate` (400 otherwise) — see "Half-day leave support" below. Notifies the requester's manager (if set) and every admin — see "Notifications" below. |
 | GET | `/leave` | `leave.view`/`view_team`/`view_all`, per the requested `?scope=` | `?scope=own` (default), `team`, or `all` — each checked against its own matching permission action, not resolved as a union of whatever's held (unlike Location's implicit-view design; §7.5's endpoint gives the caller an explicit choice). |
-| PATCH | `/leave/:id/approve` | Admin only | Rejects (409) if the record isn't `pending`. A `paid`-type approval is capped by the one-paid-leave-per-month quota (§11.7) — see below. |
-| PATCH | `/leave/:id/mark-unapproved-absence` | Admin only | Unconditional admin decree — works regardless of current status. Sets `type: "unapproved_absence"`, `isDoubleDeduction: true`, `status: "approved"`, per the 2x rule (smartrays.md). |
+| GET | `/leave/balance` | Own always reachable; `?employeeId=` reuses `view_team`/`view_all` | Added later. Returns `{ paidLeaveUsed, paidLeaveLimit: 1, paidLeaveRemaining }` for the calendar month containing today — see "Leave balance" below. |
+| PATCH | `/leave/:id/approve` | Admin only | Rejects (409) if the record isn't `pending`. A `paid`-type approval is capped by the one-paid-leave-per-month quota (§11.7) — see below. Notifies the requester (`leave_approved`) unless the admin is approving their own request. |
+| PATCH | `/leave/:id/decline` | Admin only | Added later. Body `{ reason? }`. Sets `status: "rejected"` — rejects (409) if the record isn't `pending`. Notifies the requester (`leave_declined`, includes the reason if given) unless the admin is declining their own request. See "Decline action" below for the schema decision. |
+| PATCH | `/leave/:id/mark-unapproved-absence` | Admin only | Unconditional admin decree — works regardless of current status. Sets `type: "unapproved_absence"`, `isDoubleDeduction: true`, `status: "approved"`, per the 2x rule (smartrays.md). Deliberately **not** wired to the notification below — the task that added Leave notifications only asked for submit/approve/decline, and this is a distinct, retroactive admin action. |
 
 **One paid leave per month, no carry-over (§11.7, resolved this task):** neither source document
 said anything about carry-over either way — genuinely ambiguous, so this is a deliberate,
@@ -535,11 +537,61 @@ employee already has another **approved** `paid` leave somewhere in that same ca
 rather than Attendance's/Users' unconditional-self-access pattern, because viewing your own leave
 data — not just requesting it — genuinely is gated behind a real grant here, matching how
 `GET /leave?scope=` lets the caller choose. `sales_associate`/`employee` get `leave.view: true`
-by default; `manager` gets `leave.view_team: true`. `/approve` and `/mark-unapproved-absence` are
-`requireAdmin`, not a permission tier — the same binary-admin-action reasoning as account
-creation and User deactivate/reactivate.
+by default; `manager` gets `leave.view_team: true`. `/approve`, `/decline`, and
+`/mark-unapproved-absence` are `requireAdmin`, not a permission tier — the same binary-admin-action
+reasoning as account creation and User deactivate/reactivate.
 
-18 tests, all passing. No application bugs found.
+**Half-day leave support (added later).** `Leave.isHalfDay` (Boolean, default `false`) — when
+true, the request counts as **0.5 days**, not a full day, against both the monthly paid-leave
+quota and Payroll's leave-day math. Every place that used to count inclusive calendar days now
+goes through one shared, exported function, `leave.service.js#computeLeaveDays(leave)` — it
+returns `0.5` for a half-day record, otherwise the same inclusive-day count as before. This is
+reused (not duplicated) by `payroll.service.js#computePayrollFields`, which imports
+`computeLeaveDays` directly rather than keeping its own separate day-counting logic — a
+half-day paid leave now correctly contributes `0.5` to `paidLeaveDays`, and a half-day
+unpaid/unapproved-absence leave correctly contributes `0.5` (or `1` if also double-deducted) to
+`unpaidDeductionDays`. A half-day request is enforced (400) to have `startDate === endDate` at
+the validation layer — a half day only ever describes a single day — compared via the UTC
+calendar-date key (`toISOString().slice(0,10)`) rather than local date components, to avoid the
+same local-timezone day-boundary bug class already fixed elsewhere in this codebase (Attendance,
+Reports).
+
+**Leave balance (`GET /leave/balance`, added later).** Reuses the exact quota-checking
+calculation the approval flow already has — `computeLeaveDays` plus a new shared
+`getApprovedPaidLeaveDaysForMonth(employeeId, referenceDate, excludeLeaveId?)` helper, called by
+both `ensureWithinMonthlyPaidLeaveQuota` (with the leave being approved excluded from its own
+"already used" count) and `getLeaveBalance` (without exclusion, since there's no specific request
+being evaluated). Own balance needs no permission grant at all, the same "own data" precedent as
+`GET /attendance/me`; `?employeeId=` for someone else reuses the exact same `leave.view_team`/
+`view_all` tiers `GET /leave?scope=` already checks — a manager's `view_team` is further scoped to
+their own direct reports (a `User.findOne({ _id: employeeIdParam, managerId: requestingUser._id })`
+lookup), matching `scope=team`'s own `managerId` filter.
+
+**Decline action (`PATCH /leave/:id/decline`, added later) — schema decision.** The task asked to
+"add to the Leave status/type enum as appropriate," but `leave.model.js`'s `LEAVE_STATUSES` already
+declared a `"rejected"` value that no endpoint had ever actually set (only `approveLeave` and
+`markUnapprovedAbsence` existed, both of which only ever set `status: "approved"`). Rather than
+adding a redundant `"declined"` value meaning the same thing, `declineLeave` sets the existing
+`"rejected"` value — this is the first endpoint to ever use it. A new `declineReason` field (String,
+nullable) was added, kept **separate** from the existing `reason` field (the requester's own reason
+for taking leave) so declining a request never overwrites that original context. `approvedBy` is
+reused to record which admin made the decline decision — the same treatment `markUnapprovedAbsence`
+already gives that field despite its own outcome not being a literal "approval" either; this field
+means "the admin who last decided this record's approval state," not strictly "approved by."
+
+**Notifications (added later) — reuses the existing Notification module's `createNotification`,
+no new infrastructure.** Three new `NOTIFICATION_TYPES`: `leave_requested`, `leave_approved`,
+`leave_declined`. On `POST /leave/request`, notifies the requester's manager (via `managerId`, if
+set) **and every admin** — the first place in this codebase that notifies "all admins" rather than
+one specific already-known recipient (a plain `User.find({ role: "admin" })`); the requester is
+never a recipient of their own submission, the same self-notify skip
+`lead.service.js#notifyLeadAssignment` already established for lead reassignment. On approve/decline,
+notifies the requester only (skipped if the deciding admin is the requester themselves — a
+self-requested-then-self-decided edge case). Neither notification path can block its own action —
+`createNotification` itself already never throws on a push failure.
+
+41 tests, all passing (18 original + 23 new for half-day/decline/balance/notifications). No
+application bugs found in this task's additions.
 
 ### Transport/Travel (`/api/v1/travel-logs`) — Phase 6
 
@@ -627,12 +679,17 @@ an employee is rejected outright (400).
 **`runPayroll`'s formulas, implementing §7.7 exactly:**
 - `daysInMonth` — actual calendar days in that month/year.
 - `presentDays` — count of `Attendance` records with status `present`/`half_day` that month.
-- `paidLeaveDays` — sum of inclusive days across approved `paid` `Leave` that month (capped at 1
+- `paidLeaveDays` — sum of days across approved `paid` `Leave` that month (capped at 1
   in practice by `leave.service.js#approveLeave`'s own monthly quota, §11.7 — this doesn't
-  re-enforce the cap, it just sums whatever's actually approved).
+  re-enforce the cap, it just sums whatever's actually approved). **Since the half-day leave
+  addition (see the Leave section above), this goes through `leave.service.js#computeLeaveDays`
+  (imported directly, not re-derived here) rather than payroll's own former local day-counting
+  function** — a half-day (`isHalfDay: true`) leave correctly contributes `0.5`.
 - `unpaidDeductionDays` — approved `unpaid` `Leave` days, **plus** approved
   `unapproved_absence` days **doubled** — driven by the existing `isDoubleDeduction` flag
-  already on the `Leave` model, not a duplicated type check.
+  already on the `Leave` model, not a duplicated type check. Same `computeLeaveDays` reuse as
+  above — a half-day unpaid leave contributes `0.5`, doubled to `1` if also
+  `isDoubleDeduction`.
 - `workingHoursTotal` — sum of `Attendance.workingHours` for the month.
 - `grossAmount` = `(baseSalary / daysInMonth) × (presentDays + paidLeaveDays)`.
 - `mileageReimbursement` = sum of `distanceKm` from that employee's **`status: "approved"`**
@@ -1114,6 +1171,12 @@ re-activate.
   notification off of; stated here (and in `.context/final-plan.md`) explicitly as scope added
   on top of what this task was asked to build, not a silent expansion. Skipped when an
   admin/manager assigns a ticket to themselves.
+- **Leave (`leave.service.js`, added later)** — three new `NOTIFICATION_TYPES`:
+  `leave_requested` (the requester's manager, if set, and every admin — the first "notify all
+  admins" recipient shape in this codebase, a plain `User.find({ role: "admin" })`, rather than
+  one specific already-known recipient), `leave_approved`/`leave_declined` (the requester only,
+  on `PATCH /leave/:id/approve`/`/decline`). Every path skips self-notification the same way
+  Leads' assignment notification does. See the Leave section above for the full write-up.
 
 **`src/cron/leadFollowUpReminderCron.js`** — the other literal Leads requirement ("push 24h and
 15min before follow-up, via cron"). Runs every 5 minutes (`*/5 * * * *`, much finer-grained than
@@ -1369,7 +1432,18 @@ plain Mongoose schema files have no such dependency.
   successfully (201), the first approval succeeds, and only the second approval is rejected
   (409) with a message naming the quota** — and an unpaid request's approval never touches the
   paid-leave quota; marking an unapproved absence sets `type`/`isDoubleDeduction`/`status`
-  correctly and is blocked for a non-admin.
+  correctly and is blocked for a non-admin. **(41 tests total after this task's additions — 23
+  new):** half-day requests accepted only when `startDate === endDate` and a non-boolean
+  `isHalfDay` rejected; two half-day paid approvals in the same month both succeed (0.5 + 0.5)
+  while a third is rejected (409, quota exceeded); `PATCH /leave/:id/decline` sets `status:
+  "rejected"`/`declineReason` correctly (with or without a reason), is admin-only, 409s a
+  non-pending record, 400s a non-string reason, 404s a nonexistent id; `GET /leave/balance`
+  returns correct used/limit/remaining numbers (including the 0.5 half-day case), ignores a
+  pending leave, and is scoped correctly for admin/manager/sales_associate viewing someone
+  else's balance (own always allowed; manager only for their own direct reports; sales_associate
+  blocked entirely); notifications — the requester's manager and every admin (but never the
+  requester) are notified on submission, an unaffiliated manager is not, and the requester is
+  notified on both approve and decline (the decline notification includes the reason).
 - **Customer** (21 tests): CRUD + scoping identical in shape to Leads (admin/manager-team/
   sales_associate-own, including **404** not 403 for an out-of-scope fetch and `ownerId` forced to
   self for a sales_associate), bulk activate/deactivate/delete (including that the delete action
@@ -1417,8 +1491,10 @@ plain Mongoose schema files have no such dependency.
   `status: "pending"`, the target employee's own manager can approve, an admin can reject, a
   manager is blocked (403) from resolving a non-report's log, a plain sales_associate is blocked
   entirely, re-resolving an already-resolved log is rejected (409), and a nonexistent id is 404.
-- **Payroll** (20 tests, §7.7, Phase 4 + a Phase 8 regression test): see the Payroll section above for the full formula
-  coverage; also: a non-admin (manager included) is blocked from `POST /payroll/run`,
+- **Payroll** (21 tests, §7.7, Phase 4 + a Phase 8 regression test + 1 new for half-day leave):
+  see the Payroll section above for the full formula
+  coverage (the new test confirms a half-day paid/unpaid `Leave` contributes exactly `0.5` to
+  `paidLeaveDays`/`unpaidDeductionDays`); also: a non-admin (manager included) is blocked from `POST /payroll/run`,
   missing/invalid `month`/`year` rejected (400), running for an employee with no `baseSalary`
   rejected (400), re-running an already-generated employee/month rejected (409) unless
   `regenerate=true` (which recomputes the same document in place, not a duplicate), a bulk run

@@ -9,6 +9,9 @@ import useNotifications from "../hooks/useNotifications";
 const MODULE_ROUTES = {
   leads: (id) => `/leads/${id}`,
   tickets: (id) => `/tickets/${id}`,
+  // Leave has no per-record detail route — every leave notification just
+  // goes to the list page, ignoring `relatedEntity.id`.
+  leave: () => "/leave",
 };
 
 function timeAgo(dateString) {

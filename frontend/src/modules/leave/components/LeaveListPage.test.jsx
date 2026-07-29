@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { message } from "antd";
 import LeaveListPage from "./LeaveListPage";
@@ -15,7 +15,9 @@ vi.mock("../api/leaveApi", () => ({
   listLeave: vi.fn(),
   requestLeave: vi.fn(),
   approveLeave: vi.fn(),
+  declineLeave: vi.fn(),
   markUnapprovedAbsence: vi.fn(),
+  getLeaveBalance: vi.fn(),
 }));
 
 vi.mock("../../../hooks/useUserDirectory", () => ({
@@ -34,9 +36,12 @@ const PENDING_LEAVE = {
   isDoubleDeduction: false,
 };
 
+const DEFAULT_BALANCE = { paidLeaveUsed: 0, paidLeaveLimit: 1, paidLeaveRemaining: 1 };
+
 beforeEach(() => {
   vi.clearAllMocks();
   leaveApi.listLeave.mockResolvedValue({ data: { data: [PENDING_LEAVE] } });
+  leaveApi.getLeaveBalance.mockResolvedValue({ data: { data: DEFAULT_BALANCE } });
 });
 
 describe("LeaveListPage — request flow", () => {
@@ -151,5 +156,66 @@ describe("LeaveListPage — approve/mark-unapproved-absence are admin-only", () 
     await waitFor(() => {
       expect(leaveApi.approveLeave).toHaveBeenCalledWith("leave-1");
     });
+  });
+
+  it("lets an admin decline a pending leave request, optionally with a reason", async () => {
+    useSessionStore.setState({
+      user: { _id: "admin-1", role: "admin", permissions: {} },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    leaveApi.declineLeave.mockResolvedValue({ data: { data: {} } });
+
+    render(<LeaveListPage />);
+    await screen.findByText("Paid");
+
+    await userEvent.click(screen.getByRole("button", { name: "Decline" }));
+    expect(await screen.findByText("Decline Leave Request")).toBeInTheDocument();
+
+    const dialog = screen.getByRole("dialog");
+    await userEvent.type(within(dialog).getByPlaceholderText("Reason (optional)"), "Not enough coverage");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Decline" }));
+
+    await waitFor(() => {
+      expect(leaveApi.declineLeave).toHaveBeenCalledWith("leave-1", "Not enough coverage");
+    });
+    expect(message.success).toHaveBeenCalledWith("Leave declined");
+  });
+});
+
+describe("LeaveListPage — leave balance", () => {
+  it("always shows the caller's own balance card, regardless of scope", async () => {
+    useSessionStore.setState({
+      user: { _id: "admin-1", role: "admin", permissions: {} },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    render(<LeaveListPage />);
+
+    expect(await screen.findByText("Your Paid Leave Balance This Month")).toBeInTheDocument();
+    expect(leaveApi.getLeaveBalance).toHaveBeenCalledWith(undefined);
+  });
+});
+
+describe("LeaveListPage — calendar view", () => {
+  it("toggles from the list table to the team leave calendar and back", async () => {
+    useSessionStore.setState({
+      user: { _id: "admin-1", role: "admin", permissions: {} },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    render(<LeaveListPage />);
+    await screen.findByText("Paid");
+    expect(screen.getByRole("table")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText("Calendar"));
+
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByText("List"));
+
+    expect(screen.getByRole("table")).toBeInTheDocument();
   });
 });

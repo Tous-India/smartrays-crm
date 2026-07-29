@@ -20,3 +20,14 @@ export function approveLeave(id) {
 export function markUnapprovedAbsence(id) {
   return apiClient.patch(`/leave/${id}/mark-unapproved-absence`);
 }
+
+export function declineLeave(id, reason) {
+  return apiClient.patch(`/leave/${id}/decline`, reason ? { reason } : {});
+}
+
+// `employeeId` omitted fetches the caller's own balance; passed, fetches an
+// employee on the caller's team (manager) or anyone (admin) — see
+// backend/src/modules/leave/leave.service.js#getLeaveBalance.
+export function getLeaveBalance(employeeId) {
+  return apiClient.get("/leave/balance", { params: employeeId ? { employeeId } : {} });
+}

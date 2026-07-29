@@ -1,8 +1,8 @@
 import { Router } from "express";
 import authenticate from "../../middlewares/authenticate.middleware.js";
 import { requireAdmin } from "../../middlewares/authorize.middleware.js";
-import { request, list, approve, markAbsence } from "./leave.controller.js";
-import { validateLeaveRequestInput, validateScopeQuery } from "./leave.validation.js";
+import { request, list, approve, decline, markAbsence, balance } from "./leave.controller.js";
+import { validateLeaveRequestInput, validateScopeQuery, validateDeclineInput } from "./leave.validation.js";
 
 const leaveRouter = Router();
 
@@ -15,8 +15,15 @@ leaveRouter.post("/request", authenticate, validateLeaveRequestInput, request);
 // view_all), so one authorize() call can't express all three ahead of time.
 leaveRouter.get("/", authenticate, validateScopeQuery, list);
 
+// Own balance needs no gate at all (same "own data" precedent as
+// GET /attendance/me); ?employeeId= for someone else is checked inside
+// getLeaveBalance per-scope (view_team/view_all), not at the route level —
+// same reasoning as GET / above.
+leaveRouter.get("/balance", authenticate, balance);
+
 // Admin-only per §7.5 — "manager can view but not approve."
 leaveRouter.patch("/:id/approve", authenticate, requireAdmin, approve);
+leaveRouter.patch("/:id/decline", authenticate, requireAdmin, validateDeclineInput, decline);
 leaveRouter.patch("/:id/mark-unapproved-absence", authenticate, requireAdmin, markAbsence);
 
 export default leaveRouter;

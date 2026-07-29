@@ -3,6 +3,7 @@ import { startTestDatabase, stopTestDatabase } from "../../../tests/helpers/test
 import { getTestApp } from "../../../tests/helpers/testApp.js";
 import { createUserDirectly, loginAsAgent } from "../../../tests/helpers/authHelpers.js";
 import Leave from "./leave.model.js";
+import Notification from "../notification/notification.model.js";
 
 let app;
 let adminAgent, managerAgent, sales1Agent, sales2Agent, sales3Agent;
@@ -69,6 +70,7 @@ beforeAll(async () => {
 
 afterEach(async () => {
   await Leave.deleteMany({});
+  await Notification.deleteMany({});
 });
 
 afterAll(async () => {
@@ -117,6 +119,31 @@ describe("POST /leave/request", () => {
     const response = await sales1Agent
       .post("/api/v1/leave/request")
       .send({ startDate: isoDate(5), endDate: isoDate(5), type: "unapproved_absence" });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("accepts isHalfDay:true for a single-day request", async () => {
+    const response = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5), isHalfDay: true });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.isHalfDay).toBe(true);
+  });
+
+  it("rejects isHalfDay:true when startDate and endDate differ — a half day only describes a single day", async () => {
+    const response = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(6), isHalfDay: true });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects a non-boolean isHalfDay", async () => {
+    const response = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5), isHalfDay: "yes" });
 
     expect(response.status).toBe(400);
   });
@@ -244,6 +271,39 @@ describe("PATCH /leave/:id/approve", () => {
 
     expect(response.status).toBe(200);
   });
+
+  it("a half-day paid request counts as 0.5 against the monthly quota — two can be approved in the same month", async () => {
+    const first = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(1), endDate: isoDate(1), isHalfDay: true });
+    const second = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(1), endDate: isoDate(1), isHalfDay: true });
+
+    const firstApproval = await adminAgent.patch(`/api/v1/leave/${first.body.data._id}/approve`);
+    expect(firstApproval.status).toBe(200);
+
+    const secondApproval = await adminAgent.patch(`/api/v1/leave/${second.body.data._id}/approve`);
+    expect(secondApproval.status).toBe(200);
+  });
+
+  it("rejects a third half-day paid approval once 1.0 day has already been used (0.5 + 0.5 + 0.5 > 1)", async () => {
+    const first = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(1), endDate: isoDate(1), isHalfDay: true });
+    const second = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(1), endDate: isoDate(1), isHalfDay: true });
+    const third = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(1), endDate: isoDate(1), isHalfDay: true });
+
+    await adminAgent.patch(`/api/v1/leave/${first.body.data._id}/approve`);
+    await adminAgent.patch(`/api/v1/leave/${second.body.data._id}/approve`);
+    const thirdApproval = await adminAgent.patch(`/api/v1/leave/${third.body.data._id}/approve`);
+
+    expect(thirdApproval.status).toBe(409);
+  });
 });
 
 describe("PATCH /leave/:id/mark-unapproved-absence", () => {
@@ -272,5 +332,200 @@ describe("PATCH /leave/:id/mark-unapproved-absence", () => {
     );
 
     expect(response.status).toBe(403);
+  });
+});
+
+describe("PATCH /leave/:id/decline", () => {
+  it("admin declines a pending request, optionally with a reason", async () => {
+    const created = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5) });
+
+    const response = await adminAgent
+      .patch(`/api/v1/leave/${created.body.data._id}/decline`)
+      .send({ reason: "Team is short-staffed that week" });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.status).toBe("rejected");
+    expect(response.body.data.declineReason).toBe("Team is short-staffed that week");
+    expect(response.body.data.approvedBy).toBe(String((await adminAgent.get("/api/v1/auth/me")).body.data._id));
+  });
+
+  it("works with no reason at all", async () => {
+    const created = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5) });
+
+    const response = await adminAgent.patch(`/api/v1/leave/${created.body.data._id}/decline`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.status).toBe("rejected");
+    expect(response.body.data.declineReason).toBeNull();
+  });
+
+  it("rejects a non-string reason", async () => {
+    const created = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5) });
+
+    const response = await adminAgent
+      .patch(`/api/v1/leave/${created.body.data._id}/decline`)
+      .send({ reason: 12345 });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("blocks a non-admin (including the requester's manager) from declining", async () => {
+    const created = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5) });
+
+    const response = await managerAgent.patch(`/api/v1/leave/${created.body.data._id}/decline`);
+
+    expect(response.status).toBe(403);
+  });
+
+  it("rejects declining a request that isn't pending", async () => {
+    const created = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5) });
+    await adminAgent.patch(`/api/v1/leave/${created.body.data._id}/approve`);
+
+    const response = await adminAgent.patch(`/api/v1/leave/${created.body.data._id}/decline`);
+
+    expect(response.status).toBe(409);
+  });
+
+  it("404s for a nonexistent leave record", async () => {
+    const response = await adminAgent.patch("/api/v1/leave/000000000000000000000000/decline");
+
+    expect(response.status).toBe(404);
+  });
+});
+
+describe("GET /leave/balance", () => {
+  it("returns zero usage/full remaining for an employee with no approved paid leave this month", async () => {
+    const response = await sales1Agent.get("/api/v1/leave/balance");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toEqual({ paidLeaveUsed: 0, paidLeaveLimit: 1, paidLeaveRemaining: 1 });
+  });
+
+  it("reflects a full-day approved paid leave as fully used", async () => {
+    const created = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(1), endDate: isoDate(1) });
+    await adminAgent.patch(`/api/v1/leave/${created.body.data._id}/approve`);
+
+    const response = await sales1Agent.get("/api/v1/leave/balance");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toEqual({ paidLeaveUsed: 1, paidLeaveLimit: 1, paidLeaveRemaining: 0 });
+  });
+
+  it("reflects a half-day approved paid leave as 0.5 used, 0.5 remaining", async () => {
+    const created = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(1), endDate: isoDate(1), isHalfDay: true });
+    await adminAgent.patch(`/api/v1/leave/${created.body.data._id}/approve`);
+
+    const response = await sales1Agent.get("/api/v1/leave/balance");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toEqual({ paidLeaveUsed: 0.5, paidLeaveLimit: 1, paidLeaveRemaining: 0.5 });
+  });
+
+  it("ignores a pending (not yet approved) paid leave", async () => {
+    await sales1Agent.post("/api/v1/leave/request").send({ startDate: isoDate(1), endDate: isoDate(1) });
+
+    const response = await sales1Agent.get("/api/v1/leave/balance");
+
+    expect(response.body.data.paidLeaveUsed).toBe(0);
+  });
+
+  it("lets an admin view any employee's balance via ?employeeId=", async () => {
+    const created = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(1), endDate: isoDate(1) });
+    await adminAgent.patch(`/api/v1/leave/${created.body.data._id}/approve`);
+
+    const response = await adminAgent.get(`/api/v1/leave/balance?employeeId=${sales1._id}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.paidLeaveUsed).toBe(1);
+  });
+
+  it("lets a manager view their own direct report's balance via ?employeeId=", async () => {
+    const response = await managerAgent.get(`/api/v1/leave/balance?employeeId=${sales1._id}`);
+
+    expect(response.status).toBe(200);
+  });
+
+  it("blocks a manager from viewing a non-direct-report's balance", async () => {
+    const response = await managerAgent.get(`/api/v1/leave/balance?employeeId=${sales3._id}`);
+
+    expect(response.status).toBe(403);
+  });
+
+  it("blocks a sales_associate (no view_team/view_all grant) from viewing someone else's balance", async () => {
+    const response = await sales1Agent.get(`/api/v1/leave/balance?employeeId=${sales2._id}`);
+
+    expect(response.status).toBe(403);
+  });
+});
+
+describe("Leave notifications", () => {
+  it("notifies the requester's manager and every admin on submission — never the requester themselves", async () => {
+    const created = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5) });
+
+    expect(created.status).toBe(201);
+
+    const managerNotification = await Notification.findOne({ userId: manager1._id, type: "leave_requested" });
+    expect(managerNotification).not.toBeNull();
+    expect(managerNotification.relatedEntity.id.toString()).toBe(created.body.data._id);
+
+    const adminUserId = (await adminAgent.get("/api/v1/auth/me")).body.data._id;
+    const adminNotification = await Notification.findOne({ userId: adminUserId, type: "leave_requested" });
+    expect(adminNotification).not.toBeNull();
+
+    const selfNotification = await Notification.findOne({ userId: sales1._id, type: "leave_requested" });
+    expect(selfNotification).toBeNull();
+  });
+
+  it("does not notify an unaffiliated manager who isn't this employee's manager", async () => {
+    // sales3 has no managerId at all — only admins should be notified.
+    const created = await sales3Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5) });
+
+    expect(created.status).toBe(201);
+    expect(await Notification.countDocuments({ userId: manager1._id, type: "leave_requested" })).toBe(0);
+  });
+
+  it("notifies the requester when their leave is approved", async () => {
+    const created = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5) });
+    await adminAgent.patch(`/api/v1/leave/${created.body.data._id}/approve`);
+
+    const notification = await Notification.findOne({ userId: sales1._id, type: "leave_approved" });
+    expect(notification).not.toBeNull();
+    expect(notification.message).toMatch(/approved/i);
+  });
+
+  it("notifies the requester when their leave is declined, including the reason", async () => {
+    const created = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5) });
+    await adminAgent
+      .patch(`/api/v1/leave/${created.body.data._id}/decline`)
+      .send({ reason: "Insufficient coverage" });
+
+    const notification = await Notification.findOne({ userId: sales1._id, type: "leave_declined" });
+    expect(notification).not.toBeNull();
+    expect(notification.message).toMatch(/declined/i);
+    expect(notification.message).toMatch(/Insufficient coverage/);
   });
 });

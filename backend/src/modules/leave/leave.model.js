@@ -50,6 +50,25 @@ const leaveSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    // Half-day leave support (added later). When true, the request counts as
+    // 0.5 days against the monthly paid-leave quota and Payroll's
+    // paid/unpaid-deduction day counting, rather than the full inclusive-day
+    // span — see leave.service.js#computeLeaveDays, the single function both
+    // that quota check and payroll.service.js's calculation now go through.
+    // Validation enforces startDate === endDate whenever this is true — a
+    // half day only ever describes a single day.
+    isHalfDay: {
+      type: Boolean,
+      default: false,
+    },
+    // Set only by PATCH /leave/:id/decline — kept separate from `reason`
+    // (the requester's own reason for taking leave) so declining a request
+    // never overwrites that original context.
+    declineReason: {
+      type: String,
+      trim: true,
+      default: null,
+    },
   },
   {
     timestamps: true,

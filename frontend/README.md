@@ -428,7 +428,7 @@ in later frontend tasks — mirroring how the backend was built phase-by-phase.
 | `lead` (Leads) | ✅ **Built — the reference implementation for every module below.** Table View (search/owner/follow-up filters, inline status dropdown, hot toggle, owner reassignment) and Board View (kanban, `@dnd-kit` drag-between-stages) share one page shell (`LeadsListPage`) behind `/leads` and `/leads/board`; Lead Detail (`/leads/:id`) is a real, linkable route rendered as a slide-over (Log Call, Hot toggle, Won, Lost, Convert to Customer, Edit, Delete); an Import wizard (upload → automatic column-matching preview → per-row results) and a filtered Excel export. See `.context/final-plan.md` §7.14's Leads frontend entry for the full write-up, including the one real backend gap found (no lead-specific activity log — the Activity Timeline is assembled client-side from call history + lead fields instead). |
 | `customer` (Customers) | ✅ **Built.** List View (`CustomersListPage`, behind `/customers`) — search/owner/status filters (defaults to active-only, an explicit "Show Inactive" checkbox), sortable columns, row-select + bulk activate/deactivate/delete, and an `Add Customer` wizard (`CustomerFormWizard`) that walks Company Info → Billing → Contracts → Contacts → Project Manager, creating the customer then each staged contract/contact in turn and surfacing the backend's contract automation explicitly in the success toast ("Project + draft Invoice auto-created for: ...") rather than leaving it invisible. Customer Detail (`/customers/:id`, a real full page per leads-customer-functional-spec.md, not a slide-over) renders `CustomerHeaderSection`/`CustomerBillingCard`/`CustomerSiteDetailsCard`/`CustomerContractsSection`/`CustomerContactsSection`/`CustomerInvoicePlaceholder`/`CustomerActivityLog` from one `useCustomerDetail` hook. Every mutating action is gated to the exact backend `customers` permission its endpoint requires. **Credentials Vault UI deliberately removed (2026-07-29)** — see "Credentials Vault removal" below. Tests: `CustomersListPage.test.jsx`, `CustomerDetailPage.test.jsx`, all passing, no real network calls. |
 | `attendance` (Attendance) | ✅ **Built.** `CheckInOutWidget` (`/attendance`, top of the Personal view) — camera capture via native `getUserMedia` + a `<canvas>` snapshot (no library, see below), geolocation via the native `Geolocation` API, both mandatory before Confirm enables (mirroring the backend's server-side-enforced photo requirement, §7.4). Fetches current status on mount rather than assuming — correctly shows "Checked In" + a live elapsed-time counter if the page loads mid-shift, and (see below) resumes the heartbeat/ping loop in that same case. Personal Attendance view (`PersonalAttendanceView`) and Team Attendance view (`/attendance/team`, `TeamAttendanceView`) both now render through one shared `AttendanceRecordsSection` (see "Admin correction, photo viewer, calendar view & summary stats" below) — summary stats, a List/Calendar view toggle, a photo-viewer modal, and (admin-only) manual correction actions, on top of the original `AttendanceTimeline` table (Check-In/Check-Out/Working Hours/Status) with connectivity gaps (`connectivityGaps[]`, §6.5) rendered as visually distinct red segments on a proportional bar (`ConnectivityGapBar`). Team view keeps its employee selector (client-side filter; the backend endpoint has no per-employee filter), gated by `attendance.view_team`/`view_all` via a 403 `Result` in `AttendanceTeamPage.jsx` (not `PermissionGate`, which only expresses a single module+action pair — this needs an OR of two). Both views' report button hits the unified `POST /reports/generate` dispatcher (`module: "attendance"`) via the new shared `ReportDownloadButton`/`reportApi.js`. |
-| `leave` (Leave) | ✅ **Built.** `LeaveListPage` (`/leave`) — scope tabs built from whichever `leave.view*` grants the user actually holds (own/team/all), a Request Leave modal (`paid`/`unpaid` only — `unapproved_absence` is never requestable, admin-only via a separate action), and — admin-only, per §7.5's "manager can view but not approve" — Approve/Mark Unapproved Absence actions. The mark-unapproved-absence confirmation shows its 2x-deduction consequence **directly in the `Popconfirm`'s description text**, not a tooltip, since burying it there would fail the whole point of confirming before an irreversible-feeling action. Report download via the same shared `ReportDownloadButton` (`module: "leave"`, `filters: { scope }`). |
+| `leave` (Leave) | ✅ **Built.** `LeaveListPage` (`/leave`) — scope tabs built from whichever `leave.view*` grants the user actually holds (own/team/all), a Request Leave modal (`paid`/`unpaid` only — `unapproved_absence` is never requestable, admin-only via a separate action), and — admin-only, per §7.5's "manager can view but not approve" — Approve/Decline/Mark Unapproved Absence actions. The mark-unapproved-absence confirmation shows its 2x-deduction consequence **directly in the `Popconfirm`'s description text**, not a tooltip, since burying it there would fail the whole point of confirming before an irreversible-feeling action. Report download via the same shared `ReportDownloadButton` (`module: "leave"`, `filters: { scope }`). **Extended later** with half-day support, a leave balance card, a Decline action, and a team leave calendar view — see "Half-day, balance, decline, calendar & notifications" below for the full write-up. |
 | `location` (Live Map) | ✅ **Built — a new route, `/location`** (§7.4b had no frontend before this task). Live view (`LiveMapView`) re-polls `GET /location/live` every ~12s and plots one marker per visible, currently-checked-in employee; History view (`HistoryMapView`) — an employee + date picker rendering that day's `GET /location/history` ping trail as a polyline. Gated by the existing `location` `PERMISSION_REGISTRY` set (any of `view`/`view_team`/`view_all`), same 403-`Result` pattern as Team Attendance. Uses `GoogleMapView` (`src/components/`) + `useGoogleMapsScript` (`src/hooks/`) — see "Maps & camera dependency decisions" below. Now actually receives pings — see "Heartbeat & location-ping loop" below. |
 | `user` (User Management) | ✅ **Built (§7.19, 2026-07-17)** — a new `/settings/users` route (added since §8's original route map didn't list one; gated on `users.view_all`/`users.view_team`, same as the backend scoping). Roster list (admin sees everyone, manager sees their own team — entirely server-side scoping, no client-side filtering), per-user Edit (name/email/phone/role/managerId/baseSalary via the existing `PATCH /users/:id`), Deactivate/Reactivate, an admin password-reset action (supports both an admin-typed exact password and a backend-generated one-time temp password, shown once), a link to the Permissions module (still a placeholder screen), and Create User (admin only, via the existing `POST /auth/register` — no new backend endpoint). |
 | `dashboard` (Dashboard) | ✅ **Built (§7.20/§7.21)** — the `/dashboard` shell, composing widgets by role via a declarative catalog rather than four separate per-role dashboards. Leads + Customers widgets (§7.20), plus 6 operational glance widgets — Attendance/Leave/Tickets/AMC/Payments/Payroll (§7.21) — see "Dashboard widget catalog" below for the full list and how to extend it. |
@@ -614,6 +614,61 @@ added to the existing `AttendanceTimeline.test.jsx` for the manually-adjusted ma
 per-row Edit action. Full frontend suite passes (the 3 pre-existing, unrelated timeout failures in
 `LeadDetailPage.test.jsx`/`CustomersListPage.test.jsx` reproduce identically with none of this
 task's changes applied — confirmed via `git stash`); `npm run build` succeeds.
+
+### Half-day, balance, decline, calendar & notifications (`src/modules/leave/`)
+
+Five additions on top of Leave's original request/scope-list build, backing onto the matching
+backend endpoints (`backend/README.md`'s Leave section) and the existing Notification module.
+
+**Half Day (`LeaveRequestModal.jsx`).** A plain `Checkbox`, not a separate "duration" field.
+Checking it force-syncs End Date to Start Date (a half day only ever describes a single day,
+enforced server-side too) and **hides** the End Date field entirely — `Form.useWatch("isHalfDay",
+form)` drives the conditional render — rather than leaving it present but ignored, which would
+silently mislead whoever's filling the form into thinking it still matters.
+
+**Leave balance (`LeaveBalanceCard.jsx` + `useLeaveBalance.js`).** A prominent card at the top of
+`/leave`, always showing the caller's own balance regardless of which scope tab is selected — pure
+`GET /leave/balance` passthrough, no client-side re-derivation of the quota math (that stays
+entirely server-side). For "admin/manager can see an employee's balance when viewing their
+requests," the Team/All-scope table gains a **per-row "Paid Leave Balance" column** instead of a
+second, ambiguous card — since those scopes list several employees' requests side by side, a
+single balance card couldn't say whose balance it was showing. `LeaveListPage.jsx` batch-fetches
+one balance per distinct `employeeId` currently listed (`Promise.all`, deduplicated), reusing the
+exact same `getLeaveBalance` call the top card makes.
+
+**Decline (`LeaveDeclineModal.jsx`).** A plain text-prompt `Modal`, not `Popconfirm` like
+Approve/Mark-Unapproved-Absence — unlike those two, Decline optionally takes a `reason`, which
+`Popconfirm` has no field for. Appears alongside Approve for any `pending` request, admin-only.
+
+**Team leave calendar (`TeamLeaveCalendar.jsx`).** A `Segmented` List/Calendar toggle next to the
+scope tabs (the existing list table is unchanged and still the default) plus a month `DatePicker`
+that scopes the calendar only — purely a client-side filter over the already-loaded
+`leaveRequests` for the selected scope, no new endpoint. **Layout: one row per team member, one
+column per day of the month** — chosen over a single combined day-grid (the shape Attendance's own
+calendar view uses) because a leave request spans a date *range* and several employees can be on
+leave the same day; a single per-day cell would either only show one employee at a time or need to
+stack multiple entries into one cell. A row per employee keeps every person's leave span visually
+distinct as its own colored horizontal run, with no overlap to resolve. Shows **approved** leave
+only, color-coded by type (green paid / blue unpaid / red unapproved-absence), with a tooltip per
+cell naming the type and half-day status.
+
+**Notification bell — verified, not assumed (`NotificationBell.jsx`).** The bell's `MODULE_ROUTES`
+map (which `relatedEntity.module` routes to which page on click) only listed `leads`/`tickets`
+before this task — a new notification `type` doesn't automatically get a working click-through
+just because `createNotification` starts calling it; the mapping has to be updated by hand for
+each module. Checked directly (not assumed) and found the gap: added `leave: () => "/leave"` —
+Leave has no per-record detail route, so every leave notification just opens the list page,
+ignoring `relatedEntity.id`. The message text itself needed no changes — the bell already renders
+any notification's `message` regardless of `type`. Confirmed via a new dedicated test in
+`NotificationBell.test.jsx` that renders a `leave_requested`-type notification, clicks it, and
+asserts the app actually navigated to `/leave`.
+
+Tests: `LeaveRequestModal.test.jsx`, `LeaveBalanceCard.test.jsx`, `LeaveDeclineModal.test.jsx`,
+`TeamLeaveCalendar.test.jsx` (all new), plus new cases added to `LeaveListPage.test.jsx` (decline
+end-to-end, the balance card, the List/Calendar toggle) and `NotificationBell.test.jsx` (the leave
+routing check above). Full frontend suite passes (the same 3 pre-existing, unrelated timeout
+failures in `LeadDetailPage.test.jsx`/`CustomersListPage.test.jsx` as the Attendance task above);
+`npm run build` succeeds.
 
 ### Dashboard widget catalog (`src/modules/dashboard/`)
 
