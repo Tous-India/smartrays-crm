@@ -1276,3 +1276,31 @@ resolved while Phase 0 is underway.
   permission-registry snapshot, and the §8 route map all updated with an explicit removal note
   rather than silent deletion — the historical record of Task having existed is preserved), and
   this file all updated.
+- **2026-07-30** — Built a new `team` module (§7.24) plus verified the pre-existing Create User
+  flow. **Part 0:** confirmed `POST /auth/register` + the User Management "New User" form
+  already work end-to-end (role dropdown correct, no "Executive" relabeling anywhere) — no
+  rebuild needed. **Backend:** `Team` model (name/type/headManagerId/isActive, deliberately no
+  stored member list), `team.service.js` CRUD + `getTeamMembers`/`addMemberToTeam`/
+  `removeMemberFromTeam` (the latter two reuse the existing `user.service.js#assignManager`
+  rather than writing `managerId` a second way), 8 admin-only endpoints under `teams.manage` in
+  `PERMISSION_REGISTRY`. **This extends, not replaces, §11.9's "no separate Team collection"
+  resolution** — `.context/final-plan.md` §11.9 updated with an explicit 2026-07-30 reversal
+  note explaining why: `Team` membership is still always `User.find({managerId:
+  team.headManagerId})`, so every pre-existing "own team" scope (Leads/Customers/Attendance/AMC)
+  picks up Team members automatically with zero code changes. 17 new backend tests
+  (`team.test.js`); confirmed the pre-existing own-team-scoping tests are unaffected. Full
+  backend suite: **528 tests, all passing** (no regressions). **Frontend:** new `/settings/teams`
+  tab (`src/modules/team/`) — list, create/edit modal, member add/remove modal via the existing
+  `useUserDirectory` lookup, all admin-gated via `PermissionGate`. Every flow (create, rename,
+  add member, remove member, delete) verified live end-to-end through a real browser session —
+  including creating a throwaway test employee first, since the dev database had no employee/
+  sales_associate accounts to add to a team until then; deleted afterward. Also fixed a small
+  pre-existing accessibility gap found along the way: the new module's icon-only action buttons
+  now carry an explicit `title`/`aria-label` (a bare `Tooltip` alone doesn't provide an
+  accessible name), matching the pattern already established for the Leads quick-action icons.
+  5 new frontend tests (`TeamManagementPage.test.jsx`). Full frontend suite: 283 tests, 280
+  passing in the full run (the same pre-existing timing-flaky `LeadDetailPage`/
+  `CustomersListPage` tests — confirmed passing 16/16 in isolation, unrelated to this change);
+  `npm run build` succeeds. `backend/README.md`, `frontend/README.md`, and
+  `.context/final-plan.md` (new §7.24, plus updates to §11.9, the Modules-at-a-Glance table, the
+  Key Architectural Decisions list, and the `User`/`Team` schema entries) all updated.

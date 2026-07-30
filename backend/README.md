@@ -388,6 +388,40 @@ pair in `user.test.js`: self-fetch with no grant succeeds (200), a *different* u
 grant still 403s (proving the self-bypass wasn't accidentally broadened into `GET /users`' list-
 level `fallbackToSelf` behavior above).
 
+### Teams (`/api/v1/teams`) — added 2026-07-30
+
+See `.context/final-plan.md` §7.24 for the full design writeup, and §11.9 for the design
+decision this extends. An admin-only org-structure entity — name, free-text type, and a head
+manager — layered on top of the pre-existing `managerId`-based "own team" scoping used
+throughout the rest of the app (Leads/Customers/Attendance/AMC). It does **not** replace that
+mechanism or introduce a second one.
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| GET | `/teams` | `teams.manage` (admin only) | List, each row's `memberCount` computed live via `User.countDocuments({ managerId: team.headManagerId })`. |
+| POST | `/teams` | `teams.manage` | `name` + `headManagerId` required; `headManagerId` must resolve to a `manager` or `admin` (`user.service.js#ensureValidManagerId`, exported for this reuse). |
+| GET/PATCH/DELETE | `/teams/:id` | `teams.manage` | Delete does not touch any member's `managerId` — a team's members simply become "unassigned" (`managerId` unchanged, still pointing at the deleted team's former head) unless separately reassigned. |
+| GET | `/teams/:id/members` | `teams.manage` | Always a live `User.find({ managerId: team.headManagerId })` — never a stored/cached list. |
+| POST | `/teams/:id/members` | `teams.manage` | Body `{ userId }`. Implemented as `assignManager(userId, team.headManagerId)` — the exact same function `PATCH /users/:id/manager` already uses, not a parallel write path. |
+| DELETE | `/teams/:id/members/:userId` | `teams.manage` | Implemented as `assignManager(userId, null)`. |
+
+**Deliberately no stored `memberIds` array on `Team`** — membership is always derived from
+`User.managerId`, the same field every other "own team" scope in this app already reads. Adding
+a user to a Team literally sets their `managerId` to that team's `headManagerId`, so:
+- A user can never be a member of two teams simultaneously — setting `managerId` to a new
+  team's head is, by construction, also leaving whichever team/manager they had before.
+- Every pre-existing "own team" query (Leads/Customers/Attendance/AMC) automatically includes a
+  Team's members with zero changes to those modules — they were already filtering by
+  `managerId`, which is all a Team membership actually is.
+
+**`teams: ["manage"]`** in `PERMISSION_REGISTRY` — one combined tier (no separate view/create/
+edit/delete), mirroring `permissions: ["manage"]`'s own shape. No default grant for any
+non-admin role, matching how `permissions.manage` itself is never granted by default.
+
+17 tests (`team.test.js`), all passing — CRUD, membership (add/remove/single-team-membership),
+`headManagerId` validation, and a check that the pre-existing Leads/Customers/Attendance
+own-team-scoping tests are unaffected.
+
 ### Attendance (`/api/v1/attendance`)
 
 See `.context/final-plan.md` §6.5/§7.4 for the full design writeup. Started as a minimal

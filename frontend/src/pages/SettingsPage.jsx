@@ -4,6 +4,7 @@ import useSessionStore from "../store/sessionStore";
 import { can } from "../utils/permission.utils";
 import { ROUTE_PATHS } from "../constants/routePaths.constants";
 import UserManagementPage from "../modules/user/components/UserManagementPage";
+import TeamManagementPage from "../modules/team/components/TeamManagementPage";
 import PlaceholderPage from "../components/PlaceholderPage";
 
 /**
@@ -22,12 +23,18 @@ function SettingsPage() {
 
   const canViewUsers = can(user, "users", "view_all") || can(user, "users", "view_team");
   const canManagePermissions = can(user, "permissions", "manage");
+  const canManageTeams = can(user, "teams", "manage");
 
   const items = [
     canViewUsers && {
       key: ROUTE_PATHS.SETTINGS_USERS,
       label: "User Management",
       children: <UserManagementPage />,
+    },
+    canManageTeams && {
+      key: ROUTE_PATHS.SETTINGS_TEAMS,
+      label: "Teams",
+      children: <TeamManagementPage />,
     },
     canManagePermissions && {
       key: ROUTE_PATHS.SETTINGS_PERMISSIONS,

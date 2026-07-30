@@ -33,5 +33,6 @@ export const ROUTE_PATHS = {
   SETTINGS: "/settings",
   SETTINGS_PERMISSIONS: "/settings/permissions",
   SETTINGS_USERS: "/settings/users",
+  SETTINGS_TEAMS: "/settings/teams",
   PORTAL: "/portal",
 };

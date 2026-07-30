@@ -86,4 +86,9 @@ export const PERMISSION_REGISTRY = {
   // rather than duplicating the ownership-scoping logic. Employee/customer
   // get neither — matrix marks both "–".
   amc: ["view", "edit"],
+  // Team is an org-structure entity (like Permissions' own templates) —
+  // admin only, one combined `manage` tier rather than separate view/create/
+  // edit/delete actions, matching `permissions.manage`'s exact shape rather
+  // than inventing a new access pattern for another admin-only module.
+  teams: ["manage"],
 };

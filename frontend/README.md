@@ -931,6 +931,37 @@ module-list permission filtering, per-module filter payloads, and the dispatcher
 verification, the technique used for prior frontend tasks this session, was not available in
 this environment — verification here rests on the test suites and a successful `npm run build`.
 
+### Team Management module (`src/modules/team/`, §7.24, 2026-07-30)
+
+`/settings/teams` — a new tab on `SettingsPage` alongside User Management/Permissions (same
+tab-not-route pattern, `PermissionGate`d on `can(user, "teams", "manage")`, admin only).
+
+- **`TeamManagementPage.jsx`** — list (name/type/head/derived member count/status), "Create
+  Team" button, wires `TeamFormModal` + `TeamMembersModal`. `useUserDirectory` is fetched once
+  here and passed down to both modals rather than each fetching its own copy.
+- **`TeamFormModal.jsx`** — create/edit; head picker (`headManagerId`) filtered client-side to
+  `role === "manager" || "admin"` from the same lightweight lookup every other "assign to"
+  picker in this app already uses.
+- **`TeamMembersModal.jsx`** — member list is always re-fetched fresh from `GET /teams/:id/
+  members` on open, never derived/cached client-side (mirrors the backend's own "always live,
+  never stored" design, see backend/README.md's Teams section). The add-picker is filtered to
+  `employee`/`sales_associate`, but deliberately does **not** cross-check every other team's
+  membership to grey out someone already on a different team — `GET /users/dropdown` doesn't
+  return `managerId`, and fetching every team's membership just to grey out one dropdown option
+  wasn't judged worth the extra requests for an admin-only, low-frequency action. A `Popconfirm`
+  names the real consequence ("moves them here, doesn't add to both") before every add instead.
+- Every new icon-only action button (manage members/edit/delete/remove-member) carries an
+  explicit `title`/`aria-label` — a bare `Tooltip` only contributes `aria-describedby`, not an
+  accessible name, the same gap already fixed for the Leads quick-action icons.
+- **Testing:** `TeamManagementPage.test.jsx` (5 tests) — list rendering, create-modal open,
+  edit-modal pre-fill, delete, and the full add-member flow (opens `TeamMembersModal`, picks a
+  user via the `Select`, confirms via `Popconfirm`, asserts `addTeamMember` is called with the
+  right ids).
+- **Verification:** every flow (create/edit/add member/remove member/delete) was also driven
+  live through a real browser session against the dev servers, not just the unit tests above —
+  including creating a throwaway test employee first, since the dev database had no employee/
+  sales_associate accounts to add to a team until then.
+
 ---
 
 ## Env Vars

@@ -90,9 +90,11 @@ export async function createCustomerSelfSignupUser({ name, email, password }) {
 
 /**
  * A manager can only ever be someone with role "manager" or "admin" —
- * enforced both here (create) and in updateUser/assignManager.
+ * enforced both here (create) and in updateUser/assignManager. Exported so
+ * team.service.js can enforce the exact same rule for a Team's
+ * `headManagerId` rather than a second copy of this check.
  */
-async function ensureValidManagerId(managerId) {
+export async function ensureValidManagerId(managerId) {
   const manager = await User.findById(managerId);
 
   if (!manager) {

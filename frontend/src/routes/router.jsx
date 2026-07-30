@@ -77,6 +77,7 @@ export const router = createBrowserRouter(
           <Route path="settings" element={<Navigate to="settings/users" replace />} />
           <Route path="settings/permissions" element={<SettingsPage />} />
           <Route path="settings/users" element={<SettingsPage />} />
+          <Route path="settings/teams" element={<SettingsPage />} />
         </Route>
 
         <Route element={<PortalLayout />}>

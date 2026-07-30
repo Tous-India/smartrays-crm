@@ -111,6 +111,7 @@ Source of Truth rule made concrete, and to mark what's real vs. planned in the d
 |---|---|---|
 | `auth` | ✅ Built (§7.0) | Identity, sessions, account creation |
 | `user` | ✅ Built (§7.0b, 2026-07-13) | User roster CRUD, "own team" scoping, dropdown picker — the model itself remains the shared foundation every other module reads via `req.user` |
+| `team` | ✅ Built (§7.24, 2026-07-30) | Admin-only org-structure entity (name/type/head) layered over the existing `managerId` scoping — no stored member list, see §11.9 |
 | `lead` | ✅ Built (§7.1) | Sales pipeline: board/table, call logging, conversion entry point — conversion is now a real implementation (§7.2, 2026-07-13), not a 501 stub |
 | `location` | ✅ Built (§7.4b) | Live GPS tracking during an open shift — live view + day-trail history |
 | `permission` | ✅ Built (§7.12) | Role permission templates + per-user overrides — the authorization data source itself |
@@ -178,8 +179,10 @@ Full statements live where cited — this is a summary index, not a restatement:
 - **Permission registry / template / per-user override model** — `PERMISSION_REGISTRY`
   (structural, code-only) validates `RolePermissionTemplate` (DB, admin-editable defaults) and
   `User.permissions` (DB, per-user actual grants). See §7.12.
-- **No `Team` collection** — "own team" is always computed from `User.managerId`
-  (self-reference, direct reports only, one level). See §11.9.
+- **"Own team" is always computed from `User.managerId`** (self-reference, direct reports only,
+  one level) — a `Team` collection was added later (§7.24) as an admin-only org-structure label,
+  but it has no stored member list of its own and sets `managerId` under the hood, so this
+  scoping mechanism is unchanged. See §11.9.
 
 #### External Integrations at a Glance
 
@@ -789,12 +792,23 @@ for v1, not two. There is no separate `executive` value in the permission matrix
 this table gains a column and `User.role` gains a value; until then, treat every mention of
 "Executive" elsewhere in the source notes as the `employee` role.
 
-**"Own team" definition (§11.9, resolved 2026-07-13):** there is no separate `Team` collection.
-"Own team" means the set of `User` documents whose `managerId` equals the requesting manager's
-`_id` — a single level of direct reports, not a recursive org chart. Every "own team" cell in
-this matrix (Leads, Customers, Attendance, AMC) and every "team" scope query in §7 is scoped
-this way. See §6.1/§6.7 for the schema change. `location.view_team` (added 2026-07-13, §7.4b)
-reuses this exact same `managerId` scoping — no separate team concept for location either.
+**"Own team" definition (§11.9, resolved 2026-07-13, extended 2026-07-30):** "Own team" means
+the set of `User` documents whose `managerId` equals the requesting manager's `_id` — a single
+level of direct reports, not a recursive org chart. Every "own team" cell in this matrix (Leads,
+Customers, Attendance, AMC) and every "team" scope query in §7 is scoped this way. See §6.1/§6.7
+for the schema change. `location.view_team` (added 2026-07-13, §7.4b) reuses this exact same
+`managerId` scoping — no separate team concept for location either.
+
+**Reversal (2026-07-30):** a `Team` collection was later added (§7.24) as an admin-only org-
+structure layer — name/type/head, admin-only CRUD — but it deliberately does **not** change the
+scoping mechanism above. `Team` stores no member list of its own; adding a user to a Team is
+implemented as literally setting that user's `managerId` to the Team's `headManagerId` (reusing
+`user.service.js#assignManager`), so a Team's membership is always just `User.find({managerId:
+team.headManagerId})` — the exact same query every "own team" scope already ran. The original
+"no separate Team collection" call was about not needing a stored membership list to compute
+"own team" — that's still true; `Team` is a thin admin-facing label over the same `managerId`
+data, not a second source of truth. A user can only ever be in one team at a time, as a direct
+consequence of `managerId` being a single field.
 
 **`location.*` role defaults (added 2026-07-13, §7.4b) — the one exception to "every permission
 defaults to false":** `employee`/`sales_associate` get `location.view: true` and `manager` gets
@@ -870,7 +884,7 @@ part of Phase 2, superseding this row's original speculative shape:**
 | passwordHash | String | bcrypt |
 | role | enum | `admin`, `manager`, `sales_associate`, `employee`, `customer` — no separate `executive` value, resolved §11.1 |
 | permissions | Object/Array | per-module action grants, admin-editable. Seeded from that role's `RolePermissionTemplate` at creation time (§7.12) unless the caller explicitly provides `permissions`; independently editable per-user after that — editing a template never touches existing users. Schema uses `minimize: false` (fixed 2026-07-13 during the Location Tracking build) so an explicit empty grant (`{}`) stays visibly present in API responses instead of Mongoose silently stripping it |
-| managerId | ObjectId → User (self-reference) | optional; set on `employee`/`sales_associate` docs to their manager. Replaces the earlier `teamId → Team` design — resolved §11.9, no separate `Team` collection. "Own team" queries elsewhere in this doc filter by `managerId == requestingManager._id` |
+| managerId | ObjectId → User (self-reference) | optional; set on `employee`/`sales_associate` docs to their manager. "Own team" queries elsewhere in this doc filter by `managerId == requestingManager._id`. A `Team` collection (§7.24) now exists as an admin-facing org label, but adding a user to a Team just sets this same field — see §11.9's 2026-07-30 reversal note |
 | isActive | Boolean | |
 | baseSalary | Number | **Added 2026-07-13 — resolved schema gap, not a silent addition.** Nothing before Payroll (§7.7, Phase 4) tracked a salary figure at all, and Payroll can't compute `grossAmount`/`netAmount` without one. `select: false` (same defense-in-depth pattern as `passwordHash`) — never returned by a plain list/dropdown query, only by `payroll.service.js`'s explicit `.select("+baseSalary")` or the update response itself. Treated as a **privileged field** in `user.service.js` — the same admin-only, not-self-editable treatment already given to `role`/`managerId`/`isActive`, for the obvious reason that self-service salary editing would defeat the field's purpose. Settable via the existing `PATCH /users/:id` flow, not a new endpoint. |
 | customerId | ObjectId → Customer | **Added — resolved schema gap, not a silent addition.** Nothing before the Customer Portal (§7.8, Phase 5) linked a `role: "customer"` account to the `Customer` company it belongs to. Only ever set for `role: "customer"` accounts (null for every other role) — normally resolved automatically at self-signup via an email-domain match (`customer.service.js#resolveCustomerIdByEmailDomain`, see §7.0/§7.8), though an admin can also set it manually through the existing `POST /auth/register`/`PATCH /users/:id` flows as a fallback. Treated as a **privileged field** in `user.service.js` — the same admin-only, not-self-editable treatment as `baseSalary`/`role`/`managerId`/`isActive`, for the obvious reason that letting a portal user relink themselves to a different company would be a security hole. |
@@ -1053,11 +1067,15 @@ fields added or changed. See §7.16 for the full write-up.
 **`PushSubscription`** — userId, endpoint, keys (VAPID)
 **`Notification`** — userId, type, message, isRead, relatedEntity (module + id)
 
-No separate `Team` collection — resolved 2026-07-13 (§11.9). Manager-scoped "own team" views
-(Leads, Customers, Attendance, Leave, AMC) are computed by looking up `User` documents where
-`managerId` equals the requesting manager's `_id` (see §6.1), then filtering the target
-collection's `ownerId`/`employeeId` against that set. Simpler than an explicit `Team`
-collection and avoids keeping a second membership list in sync with `User.managerId`.
+Manager-scoped "own team" views (Leads, Customers, Attendance, Leave, AMC) are computed by
+looking up `User` documents where `managerId` equals the requesting manager's `_id` (see §6.1),
+then filtering the target collection's `ownerId`/`employeeId` against that set — avoids keeping
+a second membership list in sync with `User.managerId`. A `Team` collection (§7.24, added
+2026-07-30) exists as an admin-facing org-structure label on top of this, but it stores no
+member list — see §11.9's reversal note.
+
+**`Team`** — name, type (free text), headManagerId (ObjectId → User, must be manager/admin),
+isActive. See §7.24.
 
 ---
 
@@ -3254,6 +3272,75 @@ from every prior run); `npm run build` succeeds.
 **Known deviations:** none from this task's own stated scope. Live-browser verification (CDP
 screenshots, the technique used for prior frontend tasks this session) was not available in this
 environment — verification here rests on the test suites and a successful production build.
+
+---
+
+### 7.24 Team Management (2026-07-30)
+
+✅ **Built** — a new `team` module giving admins a named org-structure layer (e.g. "North Sales
+Team") over the roster, plus this task closed out a verification gap on the pre-existing Create
+User flow (see below).
+
+**Part 0 — Create User verification:** confirmed already fully working end-to-end (backend
+`POST /auth/register` + the User Management "New User" form, §7.0b/§7.19) — no rebuild needed.
+Role dropdown correctly lists Manager/Sales Associate/Employee; there is no "Executive"
+relabeling anywhere in the frontend, matching §11.1's existing resolution that "Employee" and
+"Executive" are one role for v1.
+
+**Backend — `backend/src/modules/team/`:**
+- **`Team` model** — `name` (required), `type` (free text, not an enum — an admin can name a new
+  kind of team as the org grows without a schema change), `headManagerId` (ObjectId → User,
+  required, must resolve to a `manager` or `admin` — enforced via the now-exported
+  `user.service.js#ensureValidManagerId`, reused rather than duplicated), `isActive` (default
+  `true`). **Deliberately no stored `memberIds` array** — see §11.9's reversal note for why.
+- **`team.service.js`** — CRUD; `getTeamMembers(teamId)` is always a live
+  `User.find({managerId: team.headManagerId})`, never a cached/stored list;
+  `addMemberToTeam(teamId, userId)` calls the existing `user.service.js#assignManager(userId,
+  team.headManagerId)` rather than writing `managerId` directly a second way;
+  `removeMemberFromTeam(teamId, userId)` calls the same `assignManager(userId, null)`. A user
+  moving to a second team is therefore not a special case to guard against — setting `managerId`
+  to the new team's head is definitionally also leaving whatever team/manager they had before,
+  since `managerId` is one field.
+- **Endpoints** (all `authorize("teams", "manage")`, admin-only — matching the Permissions
+  module's own single-tier access pattern, not `requireAdmin`): `GET/POST /teams`, `GET/PATCH/
+  DELETE /teams/:id`, `GET/POST /teams/:id/members`, `DELETE /teams/:id/members/:userId`.
+- **`PERMISSION_REGISTRY`** gained `teams: ["manage"]` — one combined tier, no separate view/
+  create/edit/delete, mirroring `permissions: ["manage"]`'s own shape exactly. No
+  `INITIAL_TEMPLATE_DEFAULTS` entry for manager/sales_associate/employee, matching how
+  `permissions.manage` itself is never granted to non-admins by default.
+- **Testing:** 17 new tests (`team.test.js`) — access control (403 non-admin), CRUD (create,
+  reject-invalid-head, list-with-derived-memberCount, update, delete-without-touching-members),
+  membership (add sets `managerId`, member list correctly reflects it, moving to a second team
+  clears the first automatically, remove clears `managerId`). Confirmed the pre-existing
+  Leads/Customers/Attendance "own team" scoping tests are unaffected — proving `Team` is a clean
+  addition on top of the existing scoping, not a parallel mechanism.
+
+**Frontend — `frontend/src/modules/team/`, new `/settings/teams` tab** (same tab pattern as
+User Management/Permissions on `SettingsPage`, admin-only via `PermissionGate`/`can(user,
+"teams", "manage")`):
+- **List** — name, type, head's name (resolved from `useUserDirectory`), derived member count,
+  status.
+- **`TeamFormModal`** — create/edit; head picker filtered to `role === "manager" || "admin"`
+  from the same lightweight `useUserDirectory` lookup every other "assign to" picker in this app
+  already uses.
+- **`TeamMembersModal`** — member list always re-fetched fresh (never cached client-side, for
+  the same reason the backend never stores it); add-picker filtered to `employee`/
+  `sales_associate`. Does **not** cross-reference every other team's membership to grey out a
+  user already on a different team — `GET /users/dropdown` doesn't carry `managerId` and
+  fetching every team's membership just to grey out one dropdown option wasn't judged worth the
+  extra requests for an admin-only, low-frequency action. Instead a `Popconfirm` names the real
+  consequence ("this moves them here, not adds them to both") before every add.
+- All new icon-only action buttons (Manage members/Edit team/Delete team/Remove member) carry an
+  explicit `title`/`aria-label`, matching this app's established icon-button pattern — a
+  `Tooltip` alone only contributes `aria-describedby`, not an accessible name.
+- **Verification:** every flow (create, edit/rename, add member, remove member, delete team)
+  driven live end-to-end via a real login + browser session, not just unit tests — including
+  creating a throwaway test employee first, since this dev database had no
+  employee/sales_associate users to add to a team until then.
+- **Testing:** `TeamManagementPage.test.jsx` (5 tests) — list rendering, create-modal open,
+  edit-modal pre-fill, delete, and the add-member flow through `TeamMembersModal`.
+
+**Known deviations:** none from this task's own stated scope.
 
 ---
 
