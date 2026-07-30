@@ -13,27 +13,51 @@ const URGENCY_STYLES = {
  * Combined Hot Leads + Upcoming Follow-ups row — supersedes the two
  * separate sections this page used to render (see
  * `utils/upcomingFollowUps.js#getPriorityLeads` for the merge/dedupe/sort).
- * Renders every qualifying lead in a fixed-width card grid —
- * `repeat(auto-fill, 256px)`, a genuinely fixed pixel track, not `1fr`
- * tracks, `flex-1`/`basis-64`, or a percentage-based `minmax(24%, 256px)`
- * (briefly tried in between) — so cards are ALWAYS normal/fixed width in
- * every row including the first, and the column COUNT is the only thing
- * that ever changes with viewport width, in clean integer steps. The
- * percentage-based `minmax(24%, 256px)` variant broke visibly at
- * intermediate widths (confirmed ~1281-1455px): once 24% of the
- * container exceeds 256px, CSS Grid's own spec clamps the track's max up
- * to match the min (min may never exceed max), silently turning "fixed at
- * 256px, up to 24%" into "fixed at whatever 24% computes to" — hence
- * exactly 3, oversized, non-256px cards per row there, wide enough that
- * the tag/icon-action row no longer fit on one line and visibly wrapped/
- * overlapped inside the card. A fixed pixel track has no such threshold to
- * cross, so it can't reproduce this failure mode at any width. A row with
- * fewer than 4 cards (whether it's the only row or a wrapped one) simply
- * leaves the remaining slots empty rather than stretching its cards to
- * fill them; an earlier pass made partial rows stretch, which read as
- * visually wrong for a lone card and was reverted back to this fixed-width
- * behavior. No "+N more" cap: this list is bounded by "hot" + "due in the
- * next 3 days", not by total lead count.
+ * Renders every qualifying lead in a proportional-column grid —
+ * `grid-template-columns: repeat(4, 1fr)` at desktop widths (Tailwind's
+ * `grid-cols-4` utility, which already compiles to exactly
+ * `repeat(4, minmax(0, 1fr))` — functionally identical to plain `1fr`
+ * tracks for sizing purposes), NOT a fixed pixel track
+ * (`repeat(auto-fill, 256px)`, tried immediately before this) or `flex-1`/
+ * `basis-64`. The fixed-pixel version fixed an earlier percentage-based
+ * `minmax()` bug (see below) but reintroduced the ORIGINAL complaint this
+ * section started with: a full row of cards didn't span the container's
+ * full width, since `auto-fill` sizes columns to the literal 256px value
+ * regardless of how much space is actually available, leaving a
+ * leftover strip on the right unless the container width happens to be an
+ * exact multiple of 256px + gap. `1fr` columns don't have that problem —
+ * a full row of 4 always divides 100% of the container into 4 equal
+ * shares, with no remainder. A PARTIAL row (1-3 cards) still doesn't
+ * stretch under `1fr` either: grid track sizing is a property of the grid
+ * itself (always 4 equal-width columns, however many are actually
+ * occupied), not of how many items got placed into it — an item placed in
+ * column 1 of a 4-column grid renders at that column's own 1fr width
+ * whether columns 2-4 hold other cards or nothing at all, so unused
+ * columns in a partial row stay genuinely empty rather than the placed
+ * cards growing to fill them (that redistribution is a `flex-grow`
+ * behavior, which is exactly why the earlier `flex-1`/`basis-64` attempt
+ * DID stretch and had to be reverted — plain CSS Grid tracks never do
+ * this). Responsive column count (`grid-cols-1 sm:grid-cols-2
+ * lg:grid-cols-4`, not an unconditional 4 all the way down to mobile) is a
+ * deliberate deviation from a literal "always 4" reading: at genuinely
+ * narrow widths 4 columns would give each card far too little room for
+ * its own content (name/date, tags, 5 icon buttons) and reproduce the
+ * exact overflow-inside-the-card failure already fixed twice this session
+ * for other reasons — scaling the column count down first, while keeping
+ * every step's tracks proportional (never fixed-px), avoids that without
+ * giving up "fills the full row, doesn't stretch a partial one" at any
+ * single breakpoint. The percentage-based `minmax(24%, 256px)` variant
+ * (tried between the two fixed-width passes) broke visibly at
+ * intermediate widths (confirmed ~1281-1455px): once 24% of the container
+ * exceeds 256px, CSS Grid's own spec clamps the track's max up to match
+ * the min (min may never exceed max), silently turning "fixed at 256px,
+ * up to 24%" into "fixed at whatever 24% computes to" — exactly 3,
+ * oversized, non-256px cards per row there, wide enough that the
+ * tag/icon-action row no longer fit on one line and visibly wrapped/
+ * overlapped inside the card. Plain `1fr` (or Tailwind's `minmax(0,1fr)`)
+ * tracks have no such competing min/max to cross, so they can't reproduce
+ * that failure mode at any width. No "+N more" cap: this list is bounded
+ * by "hot" + "due in the next 3 days", not by total lead count.
  *
  * Each card also carries a row of icon-only quick actions — Log Call,
  * Reschedule, Won, Lost, Mark/Remove Hot — every one of them wired to the
@@ -88,7 +112,7 @@ function PriorityLeadsSection({
           />
         </Card>
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,256px)] gap-3 p-[10px]">
+        <div className="grid grid-cols-1 gap-3 p-[10px] sm:grid-cols-2 lg:grid-cols-4">
           {priorityLeads.map((lead) => {
             const urgency = lead.followUpUrgency ? URGENCY_STYLES[lead.followUpUrgency] : null;
 
