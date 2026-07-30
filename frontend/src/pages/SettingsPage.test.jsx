@@ -18,6 +18,19 @@ vi.mock("../services/userDirectoryApi", () => ({
   fetchUserDropdown: vi.fn().mockResolvedValue({ data: { data: [] } }),
 }));
 
+// AntD's Tabs mounts every pane's children up front (only the active one is
+// shown), so PermissionManagementPage's registry fetch fires regardless of
+// which tab is actually active — same reason the Teams tab needs its own
+// useTeams mock elsewhere.
+vi.mock("../modules/permission/api/permissionApi", () => ({
+  getPermissionRegistry: vi.fn().mockResolvedValue({ data: { data: { leads: ["view", "create"] } } }),
+  getRoleTemplate: vi.fn().mockResolvedValue({ data: { data: { role: "admin", permissions: {} } } }),
+  getUserPermissions: vi.fn(),
+  updateRoleTemplate: vi.fn(),
+  updateUserPermissions: vi.fn(),
+  resetUserPermissions: vi.fn(),
+}));
+
 function renderSettings(initialPath = "/settings/users") {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>

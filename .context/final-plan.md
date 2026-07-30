@@ -114,7 +114,7 @@ Source of Truth rule made concrete, and to mark what's real vs. planned in the d
 | `team` | ✅ Built (§7.24, 2026-07-30) | Admin-only org-structure entity (name/type/head) layered over the existing `managerId` scoping — no stored member list, see §11.9 |
 | `lead` | ✅ Built (§7.1) | Sales pipeline: board/table, call logging, conversion entry point — conversion is now a real implementation (§7.2, 2026-07-13), not a 501 stub |
 | `location` | ✅ Built (§7.4b) | Live GPS tracking during an open shift — live view + day-trail history |
-| `permission` | ✅ Built (§7.12) | Role permission templates + per-user overrides — the authorization data source itself |
+| `permission` | ✅ Built (§7.12); frontend built (§7.27, 2026-07-30) | Role permission templates + per-user overrides — the authorization data source itself |
 | `attendance` | ✅ **Fully built** (§7.4, 2026-07-13) | Check-in/check-out with photo capture (Cloudinary) + connectivity-gap-adjusted `workingHours` + own/team/org history and PDF/Excel reports |
 | `customer` | ✅ Built (§7.2, Phase 2, 2026-07-13) | Client account: billing, contracts, contacts, credentials vault, activity log, contract→Project automation. `Invoice` remains a minimal placeholder model — Phase 7's Payments module (§7.9) adds partial balance/status reconciliation onto it, not full invoicing |
 | `project` | ✅ Built (§7.3, Phase 2, 2026-07-13) | Delivery unit linked to a customer/contract; owns team assignment. No direct creation endpoint — always born from a Contract. Originally also owned Task functionality, deliberately removed 2026-07-29 (§6.4/§7.3) |
@@ -2968,8 +2968,8 @@ and manager-assignment endpoints since Phase 0, but no frontend screen ever cons
 Built now: a list (admin sees everyone, manager sees their own team, both via the existing
 `resolveVisibleUserFilter` scoping — no new backend logic needed), per-user Edit (name/email/
 phone/role/managerId/baseSalary via the existing `PATCH /users/:id`), Deactivate/Reactivate
-actions, the new admin password-reset action, a link to the Permissions module (still a
-placeholder screen — `PermissionSettingsPage` — noted as such rather than silently ignored),
+actions, the new admin password-reset action, a link to the Permissions module (was a
+placeholder screen at the time — `PermissionSettingsPage` — since built 2026-07-30, see §7.27),
 and Create User (admin only, via the existing `POST /auth/register`).
 
 **New route: `/settings/users`** — added to `ROUTE_PATHS`/`router.jsx` and wired into
@@ -3418,6 +3418,40 @@ with neither phone nor email). Full backend suite: 535 tests, all passing.
 is a best-effort mapping given no access to the real WordPress form's configuration; if a real
 submission's fields aren't recognized, the full raw payload is still preserved (never silently
 dropped) in the created lead's `notes`, so nothing is lost even in that case.
+
+---
+
+### 7.26 Sidebar Count Badges (2026-07-30)
+
+✅ **Built** — small `Badge` counts next to the Leads and Leave sidebar nav items
+(`MainLayout.jsx`), the first badges on any sidebar item, establishing the pattern for a future
+Tickets/AMC badge. New lightweight `GET /leads/count` and `GET /leave/pending-count` endpoints
+(`countDocuments`, not a full list fetch) — Leads reuses the exact same ownership scoping as
+`GET /leads` itself via a shared `buildLeadFilter` helper; Leave's badge is admin-only via a
+hard `requireAdmin` role gate, not a `leave.view_all` permission grant, and is never even
+fetched (not just hidden) for a non-admin. Both poll every 60 seconds via a shared
+`useSidebarBadgeCounts` hook, matching the notification bell's own polling cadence. See
+`frontend/README.md`'s "Sidebar count badges" section for the full write-up (this task's
+STANDING RULE only called for a frontend/README.md update, not this file — added here now as
+part of §7.27's own doc pass for consistent numbering). 6 new backend tests + 10 new frontend
+tests (`useSidebarBadgeCounts.test.js` + `MainLayout.test.jsx`).
+
+### 7.27 Permissions Management Frontend (2026-07-30)
+
+✅ **Built** — the first real frontend for the `permission` module (§7.12), replacing the
+long-standing `PlaceholderPage` at `/settings/permissions`. See `frontend/README.md`'s
+"Permissions Management module" section for the full write-up: a shared `PermissionMatrix`
+component (rows = `PERMISSION_REGISTRY` modules, columns = the union of every valid action,
+blank — not disabled — cells for an invalid module+action pair), a Role Defaults tab
+(`GET/PATCH /permissions/templates/:role`, with a warning that edits are non-retroactive and a
+"last updated by/on" line), and a User Overrides tab (`GET/PATCH /users/:id/permissions` plus a
+confirm-gated "Reset to Role Default" via `POST /users/:id/permissions/reset`). No new backend
+endpoints — every endpoint this consumes already existed and was already tested (§7.12's 20
+backend tests, unchanged). 5 new frontend tests (`PermissionManagementPage.test.jsx`); non-admin
+access is already covered by the existing `SettingsPage.test.jsx` tab-visibility tests, since
+`permissions.manage` already gates the tab itself — no separate internal gate needed.
+
+**Known deviations:** none from this task's own stated scope.
 
 ---
 

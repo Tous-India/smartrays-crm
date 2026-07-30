@@ -1354,3 +1354,17 @@ resolved while Phase 0 is underway.
   a real browser session (edit, reason-required validation, view history, delete, row
   disappearing from the list). `backend/README.md`, `frontend/README.md`, and
   `.context/final-plan.md` (§6.6/§7.9 extended) updated.
+- **2026-07-30** — Built the Permissions Management frontend (§7.27) — the first real UI for
+  the `permission` module, replacing the long-standing `PlaceholderPage` at
+  `/settings/permissions`. No new backend endpoints were needed; every endpoint this consumes
+  (`GET /permissions/registry`, `GET/PATCH /permissions/templates/:role`, `GET/PATCH
+  /users/:id/permissions`, `POST /users/:id/permissions/reset`) already existed and was already
+  tested (§7.12). A shared `PermissionMatrix` component (rows = registry modules, columns = the
+  union of valid actions, blank cells — not disabled checkboxes — for an invalid module+action
+  pair) backs both a Role Defaults tab (with an explicit non-retroactive warning and a "last
+  updated by/on" line) and a User Overrides tab (with a confirm-gated "Reset to Role Default").
+  5 new frontend tests; full frontend suite passes (same pre-existing timing-flaky files,
+  confirmed unrelated); `npm run build` succeeds. Verified live via a real browser session
+  (role template loading/switching, user override loading). `frontend/README.md` and
+  `.context/final-plan.md` (new §7.26 documenting the earlier same-day sidebar-badges task for
+  consistent numbering, and new §7.27) updated.

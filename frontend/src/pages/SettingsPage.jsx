@@ -5,7 +5,7 @@ import { can } from "../utils/permission.utils";
 import { ROUTE_PATHS } from "../constants/routePaths.constants";
 import UserManagementPage from "../modules/user/components/UserManagementPage";
 import TeamManagementPage from "../modules/team/components/TeamManagementPage";
-import PlaceholderPage from "../components/PlaceholderPage";
+import PermissionManagementPage from "../modules/permission/components/PermissionManagementPage";
 
 /**
  * `/settings/users` and `/settings/permissions` both render this one page —
@@ -39,9 +39,7 @@ function SettingsPage() {
     canManagePermissions && {
       key: ROUTE_PATHS.SETTINGS_PERMISSIONS,
       label: "Permissions",
-      // Still a placeholder — the real Permissions management UI (§7.12)
-      // isn't built yet, unrelated to this task's sidebar/tabs restructure.
-      children: <PlaceholderPage title="Permission Settings" />,
+      children: <PermissionManagementPage />,
     },
   ].filter(Boolean);
 
