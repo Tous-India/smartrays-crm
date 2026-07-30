@@ -8,7 +8,7 @@ import Invoice from "../customer/invoice.model.js";
 
 let app;
 let adminAgent, managerAgent, sales1Agent, employee1Agent;
-let admin, customer1, customer2;
+let admin, customer1, customer2, employee1;
 
 beforeAll(async () => {
   await startTestDatabase();
@@ -46,6 +46,7 @@ beforeAll(async () => {
     role: "employee",
   });
   employee1Agent = await loginAsAgent(app, "employee1@test.local", "Password123");
+  employee1 = employee1Response.body.data;
 
   customer1 = await Customer.create({
     companyName: "Acme Corp",
@@ -91,6 +92,30 @@ describe("POST /payments — standalone (no reconciliation)", () => {
     expect(response.body.data.manualClientName).toBe("Walk-in Client");
     expect(response.body.data.customerId).toBeNull();
     expect(response.body.data.invoiceId).toBeNull();
+  });
+
+  it("stores collectedBy when provided — the employee who physically collected it, distinct from recordedBy (whoever entered it)", async () => {
+    const response = await adminAgent.post("/api/v1/payments").send({
+      manualClientName: "Walk-in Client",
+      date: "2026-07-01",
+      amount: 1500,
+      collectedBy: String(employee1._id),
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.collectedBy).toBe(String(employee1._id));
+    expect(response.body.data.recordedBy).toBe(String(admin._id));
+  });
+
+  it("defaults collectedBy to null when not provided", async () => {
+    const response = await adminAgent.post("/api/v1/payments").send({
+      manualClientName: "Walk-in Client",
+      date: "2026-07-01",
+      amount: 1500,
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.collectedBy).toBeNull();
   });
 
   it("logs a payment against a real customerId with no invoiceId, nothing to reconcile", async () => {

@@ -33,6 +33,16 @@ const paymentSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    // Who physically collected the payment (e.g. a field sales rep taking
+    // cash) — distinct from `recordedBy` (whoever entered it into the CRM,
+    // possibly an admin doing so later). Optional: not every payment has a
+    // separate collector worth naming, e.g. a bank transfer an admin
+    // reconciles directly.
+    collectedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
     // Added for partial reconciliation (§7.9/§11.3, resolved) — only ever
     // set when customerId is also set (an invoice always belongs to a real
     // Customer, so a manual-only payment has nothing to reconcile against).

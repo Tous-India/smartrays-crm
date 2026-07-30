@@ -96,6 +96,7 @@ function PaymentsListPage() {
         onCancel={() => setIsModalOpen(false)}
         onSubmit={handleRecordPayment}
         isSubmitting={isSubmitting}
+        users={users}
       />
     </div>
   );

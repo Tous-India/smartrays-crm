@@ -18,8 +18,16 @@ const SEARCH_DEBOUNCE_MS = 300;
  * `manualClientName` (non-system/cash entries) and invoice-linking
  * (reconciling against an outstanding Invoice) are backend-supported but
  * deliberately left out of this first version.
+ *
+ * "Collected By" — the employee who physically collected the payment
+ * (e.g. a field sales rep taking cash), distinct from "Recorded By" (set
+ * server-side to whoever is actually submitting this form, possibly an
+ * admin entering it later). Optional, since not every payment has a
+ * separate collector worth naming. `users` is passed down from
+ * `PaymentsListPage` (already fetched there via `useUserDirectory` for the
+ * table's own "Recorded By" column) rather than fetched again here.
  */
-function RecordPaymentModal({ open, onCancel, onSubmit, isSubmitting }) {
+function RecordPaymentModal({ open, onCancel, onSubmit, isSubmitting, users }) {
   const [form] = Form.useForm();
   const [customerOptions, setCustomerOptions] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -61,6 +69,7 @@ function RecordPaymentModal({ open, onCancel, onSubmit, isSubmitting }) {
       amount: values.amount,
       date: values.date.toISOString(),
       notes: values.notes,
+      collectedBy: values.collectedBy,
     });
 
     form.resetFields();
@@ -72,6 +81,8 @@ function RecordPaymentModal({ open, onCancel, onSubmit, isSubmitting }) {
     setCustomerOptions([]);
     onCancel();
   }
+
+  const userOptions = users.map((user) => ({ value: user._id, label: user.name }));
 
   return (
     <Modal
@@ -109,6 +120,16 @@ function RecordPaymentModal({ open, onCancel, onSubmit, isSubmitting }) {
 
         <Form.Item label="Notes" name="notes">
           <Input.TextArea rows={2} />
+        </Form.Item>
+
+        <Form.Item label="Collected By" name="collectedBy">
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            options={userOptions}
+            placeholder="Who physically collected this payment? (optional)"
+          />
         </Form.Item>
       </Form>
     </Modal>

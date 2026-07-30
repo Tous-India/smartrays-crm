@@ -26,6 +26,7 @@ export async function createPayment(payload, requestingUser) {
     amount: payload.amount,
     notes: payload.notes,
     recordedBy: requestingUser._id,
+    collectedBy: payload.collectedBy || null,
     invoiceId: invoice ? invoice._id : null,
   });
 

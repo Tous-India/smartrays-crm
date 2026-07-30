@@ -38,6 +38,7 @@ const SAMPLE_PAYMENTS = [
     amount: 5000,
     notes: "First installment",
     recordedBy: "user-1",
+    collectedBy: "user-2",
   },
   {
     _id: "pay-2",
@@ -47,6 +48,7 @@ const SAMPLE_PAYMENTS = [
     amount: 1500,
     notes: null,
     recordedBy: "user-1",
+    collectedBy: null,
   },
 ];
 
@@ -68,7 +70,7 @@ describe("PaymentsListPage", () => {
       data: { data: [{ _id: "cust-1", companyName: "Acme Corp" }] },
     });
     fetchUserDropdown.mockResolvedValue({
-      data: { data: [{ _id: "user-1", name: "Vinay" }] },
+      data: { data: [{ _id: "user-1", name: "Vinay" }, { _id: "user-2", name: "Sam Sales" }] },
     });
     useSessionStore.setState({
       user: { _id: "admin-1", role: "admin", permissions: {} },
@@ -77,13 +79,17 @@ describe("PaymentsListPage", () => {
     });
   });
 
-  it("renders the fetched payments with resolved customer/recorded-by names, paginated", async () => {
+  it("renders the fetched payments with resolved customer/recorded-by/collected-by names, paginated", async () => {
     renderPage();
 
     expect(await screen.findByText("Acme Corp")).toBeInTheDocument();
     expect(screen.getByText("Walk-in Client")).toBeInTheDocument();
     expect(screen.getByText("₹5,000")).toBeInTheDocument();
     expect(screen.getAllByText("Vinay")).toHaveLength(2);
+    // Only the first row has collectedBy set — resolves to "Sam Sales";
+    // the second row (collectedBy: null) shows "—" rather than blank or
+    // a raw id.
+    expect(screen.getByText("Sam Sales")).toBeInTheDocument();
 
     await waitFor(() => {
       expect(paymentApi.listPayments).toHaveBeenCalledWith(
@@ -212,6 +218,33 @@ describe("PaymentsListPage", () => {
       // Called once on mount, once after the save-triggered refetch.
       await waitFor(() => {
         expect(paymentApi.listPayments).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    it("populates Collected By from the same user directory and includes the selection in the saved payload", async () => {
+      paymentApi.createPayment.mockResolvedValue({ data: { data: { _id: "new-payment" } } });
+
+      renderPage();
+      await screen.findByText("Acme Corp");
+
+      await userEvent.click(screen.getByRole("button", { name: /Record Payment/ }));
+
+      const customerSearch = await screen.findByLabelText("Customer");
+      await userEvent.type(customerSearch, "Acme");
+      await waitFor(() => expect(customerApi.listCustomers).toHaveBeenCalled());
+      await userEvent.click(await screen.findByTitle("Acme Corp"));
+
+      await userEvent.type(screen.getByLabelText("Amount"), "2500");
+
+      await userEvent.click(screen.getByLabelText("Collected By"));
+      await userEvent.click(await screen.findByTitle("Sam Sales"));
+
+      await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      await waitFor(() => {
+        expect(paymentApi.createPayment).toHaveBeenCalledWith(
+          expect.objectContaining({ collectedBy: "user-2" })
+        );
       });
     });
 

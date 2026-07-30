@@ -47,6 +47,11 @@ function PaymentsTable({ payments, isLoading, total, page, pageSize, onPageChang
       dataIndex: "recordedBy",
       render: (recordedBy) => userNameById.get(recordedBy) || "—",
     },
+    {
+      title: "Collected By",
+      dataIndex: "collectedBy",
+      render: (collectedBy) => (collectedBy ? userNameById.get(collectedBy) || "—" : "—"),
+    },
   ];
 
   return (
