@@ -73,8 +73,9 @@ describe("NotificationBell", () => {
     expect(screen.getByText("Follow-up due for Beta Co")).toBeInTheDocument();
   });
 
-  it("marks a notification read when clicked", async () => {
+  it("marks a notification read when clicked, clearing the badge immediately (no poll wait)", async () => {
     renderBell();
+    await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
     await userEvent.click(await screen.findByRole("button", { name: "Notifications" }));
 
     await userEvent.click(await screen.findByText("You've been assigned a lead: Acme Co"));
@@ -82,10 +83,12 @@ describe("NotificationBell", () => {
     await waitFor(() => {
       expect(notificationApi.markNotificationRead).toHaveBeenCalledWith("n1");
     });
+    expect(screen.queryByText("1")).not.toBeInTheDocument();
   });
 
-  it("marks all as read when the button is clicked", async () => {
+  it("marks all as read when the button is clicked, clearing the badge immediately (no poll wait)", async () => {
     renderBell();
+    await waitFor(() => expect(screen.getByText("1")).toBeInTheDocument());
     await userEvent.click(await screen.findByRole("button", { name: "Notifications" }));
 
     await userEvent.click(await screen.findByRole("button", { name: /Mark all as read/ }));
@@ -93,6 +96,7 @@ describe("NotificationBell", () => {
     await waitFor(() => {
       expect(notificationApi.markAllNotificationsRead).toHaveBeenCalled();
     });
+    expect(screen.queryByText("1")).not.toBeInTheDocument();
   });
 });
 
