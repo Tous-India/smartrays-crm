@@ -255,6 +255,13 @@ function LeadsTable({
         })}
         pagination={{ pageSize: 20 }}
         scroll={{ x: "max-content" }}
+        // Without `sticky`, the horizontal scrollbar only lives at the
+        // table's own bottom edge — on a long list you have to scroll the
+        // whole page down just to reach it. `sticky` keeps both the header
+        // and the x-scrollbar pinned to the viewport while the table is in
+        // view; `offsetHeader` matches `.app-topbar-height`'s fixed 48px so
+        // the sticky table header doesn't slide under the fixed app header.
+        sticky={{ offsetHeader: 48 }}
       />
     </div>
   );

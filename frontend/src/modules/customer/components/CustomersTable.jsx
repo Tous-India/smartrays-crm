@@ -159,6 +159,13 @@ function CustomersTable({
           onChange: onSelectionChange,
         }}
         pagination={{ pageSize: 20 }}
+        scroll={{ x: "max-content" }}
+        // See LeadsTable.jsx's own comment — `sticky` keeps the horizontal
+        // scrollbar reachable at the viewport's bottom edge instead of only
+        // at the table's own, and `offsetHeader` matches the fixed app
+        // header's `.app-topbar-height` (48px) so the table's own sticky
+        // header doesn't slide underneath it.
+        sticky={{ offsetHeader: 48 }}
       />
     </div>
   );

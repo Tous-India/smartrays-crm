@@ -51,11 +51,24 @@
  * all by default (only internal cell borders), so on a page with little
  * else around it the table visually blends into MainLayout's white content
  * box. A light border + subtle shadow + rounded corners gives it a
- * distinct "card" edge; `overflow: hidden` clips the header's square
- * corners to that same radius. Targets `.ant-table` (the element that
- * actually paints the grid) rather than the outer `.ant-table-wrapper` (a
- * plain non-visual layout wrapper) or the pagination control below it,
- * which deliberately stays outside this card, unstyled.
+ * distinct "card" edge. Targets `.ant-table` (the element that actually
+ * paints the grid) rather than the outer `.ant-table-wrapper` (a plain
+ * non-visual layout wrapper) or the pagination control below it, which
+ * deliberately stays outside this card, unstyled.
+ *
+ * No `overflow: hidden` here (removed 2026-07-30, alongside the sticky-
+ * scrollbar fix) — `overflow: hidden` makes `.ant-table` a CSS "scroll
+ * container," which becomes the nearest scrolling ancestor for any
+ * `position: sticky` descendant. AntD's sticky table header lives inside
+ * this very element, so its `top` offset was being resolved against this
+ * short, non-scrolling box instead of the window — rendering the header
+ * permanently shifted down by `offsetHeader` regardless of actual page
+ * scroll, overlapping the first body row (confirmed via
+ * `getBoundingClientRect`: header top 185 vs. its un-shifted container top
+ * 137, a constant +48 = the `offsetHeader` value, present even at
+ * `scrollY: 0`). The header's square top corners are rounded directly
+ * below instead, so the card look survives without needing to clip
+ * anything.
  */
 .app-data-table .ant-table {
   border: 1px solid rgba(5, 5, 5, 0.06);
@@ -63,7 +76,19 @@
   box-shadow:
     0 1px 2px rgba(0, 0, 0, 0.03),
     0 2px 8px rgba(0, 0, 0, 0.04);
-  overflow: hidden;
+}
+
+.app-data-table .ant-table-header {
+  border-top-left-radius: 8px;
+  border-top-right-radius: 8px;
+}
+
+.app-data-table .ant-table-tbody > tr:last-child > td:first-child {
+  border-bottom-left-radius: 8px;
+}
+
+.app-data-table .ant-table-tbody > tr:last-child > td:last-child {
+  border-bottom-right-radius: 8px;
 }
 
 /*
