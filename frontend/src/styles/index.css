@@ -86,6 +86,28 @@
 }
 
 /*
+ * Coexistence fix, not a revert of a separate concurrent session's own
+ * in-progress (uncommitted) `.ant-layout-header` rule, which this file may
+ * or may not currently have depending on that session's progress - that
+ * rule's unconditional `width: 100%` ignores the sidebar entirely, so
+ * combined with MainLayout.jsx's own `ms-0 lg:ms-[220px]` margin on this
+ * same element, the header's computed box becomes 220px wider than the
+ * viewport at the `lg` breakpoint and up (confirmed via
+ * `getBoundingClientRect`: width 1440 at a 1440px viewport, left 220 -
+ * 220px hanging off the right edge that should never be there). A compound
+ * selector combining `.ant-layout-header` with `.app-topbar-height`
+ * (already present on this exact element) has higher specificity than a
+ * bare `.ant-layout-header` selector, so `width: auto` here reliably wins
+ * regardless of the two rules order in the file - letting the browser
+ * compute width from left/right/margin again (this element already has
+ * `inset-x-0` for left/right: 0 from its own Tailwind classes), instead of
+ * removing or reordering the other session's rule.
+ */
+.ant-layout-header.app-topbar-height {
+  width: auto;
+}
+
+/*
  * Company column width (LeadsTable.jsx only) — `min-width` rather than
  * AntD's column `width` prop: without `tableLayout="fixed"` (which would
  * also force every OTHER column, including the ones holding Select
