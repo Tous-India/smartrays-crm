@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Modal, Form, Select, InputNumber, Input, DatePicker } from "antd";
+import { Modal, Form, Select, InputNumber, Input, DatePicker, Row, Col } from "antd";
 import dayjs from "dayjs";
 import { CONTRACT_TYPE_UI_OPTIONS, CONTRACT_TYPE_LABELS } from "../constants/customer.constants";
 
@@ -33,6 +33,18 @@ const TERM_YEARS_OPTIONS = [1, 2, 3].map((years) => ({ value: years, label: `${y
  * NOT fire the DatePicker's own `onChange` — only Form's `onValuesChange` —
  * which is exactly the hook used here to tell "the admin typed/picked this"
  * apart from "the form computed this for them".
+ *
+ * Layout: `Row`/`Col` 2-fields-per-row, matching the compact-form pattern
+ * already established on Add Lead/Add Customer/Convert to Customer, rather
+ * than the one-field-per-row stack this form had before. Type stays
+ * full-width on its own row — it's the one field that changes what the
+ * rest of the form even shows (Yearly's three extra fields), so it reads
+ * better as the form's first, primary decision than paired with something
+ * else. Amount + Label share a row. Term has no natural pairing partner
+ * (Start Date and Expiry Date belong together instead, per this task's own
+ * instruction) — sitting alone would look like a mistake at full width, so
+ * it takes the left half of its own row rather than stretching to fill it.
+ * Start Date + Expiry Date share a row, side by side.
  */
 function ContractFormModal({ open, mode, initialContract, onCancel, onSubmit, isSubmitting }) {
   const [form] = Form.useForm();
@@ -128,28 +140,44 @@ function ContractFormModal({ open, mode, initialContract, onCancel, onSubmit, is
         >
           <Select options={typeOptions} disabled={mode === "edit"} />
         </Form.Item>
-        <Form.Item label="Amount" name="amount">
-          <InputNumber min={0} style={{ width: "100%" }} />
-        </Form.Item>
-        <Form.Item label="Label" name="label">
-          <Input placeholder='e.g. "Website", "Social Media Mgmt"' />
-        </Form.Item>
+        <Row gutter={16}>
+          <Col span={12}>
+            <Form.Item label="Amount" name="amount">
+              <InputNumber min={0} style={{ width: "100%" }} />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item label="Label" name="label">
+              <Input placeholder='e.g. "Website", "Social Media Mgmt"' />
+            </Form.Item>
+          </Col>
+        </Row>
 
         {isYearly && (
           <>
-            <Form.Item label="Term" name="termYears">
-              <Select options={TERM_YEARS_OPTIONS} placeholder="Select term" />
-            </Form.Item>
-            <Form.Item label="Start Date" name="startDate">
-              <DatePicker style={{ width: "100%" }} />
-            </Form.Item>
-            <Form.Item
-              label="Expiry Date"
-              name="renewalDate"
-              extra="Auto-fills from Start Date + Term once both are set — editing it directly keeps your value from then on."
-            >
-              <DatePicker style={{ width: "100%" }} onChange={() => setHasManuallyEditedExpiry(true)} />
-            </Form.Item>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item label="Term" name="termYears">
+                  <Select options={TERM_YEARS_OPTIONS} placeholder="Select term" />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Row gutter={16}>
+              <Col span={12}>
+                <Form.Item label="Start Date" name="startDate">
+                  <DatePicker style={{ width: "100%" }} />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  label="Expiry Date"
+                  name="renewalDate"
+                  extra="Auto-fills from Start Date + Term once both are set — editing it directly keeps your value from then on."
+                >
+                  <DatePicker style={{ width: "100%" }} onChange={() => setHasManuallyEditedExpiry(true)} />
+                </Form.Item>
+              </Col>
+            </Row>
           </>
         )}
       </Form>
