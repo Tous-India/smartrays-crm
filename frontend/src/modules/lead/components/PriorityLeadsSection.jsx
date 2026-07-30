@@ -12,12 +12,16 @@ const URGENCY_STYLES = {
  * Combined Hot Leads + Upcoming Follow-ups row — supersedes the two
  * separate sections this page used to render (see
  * `utils/upcomingFollowUps.js#getPriorityLeads` for the merge/dedupe/sort).
- * Renders every qualifying lead via flex-wrap with `flex-1 basis-64` cards
- * (not CSS Grid's `repeat(4, 1fr)`) so ANY short row — a total under 4, or
- * the trailing wrapped row when there are more than 4 — stretches its cards
- * to fill the width instead of leaving empty grid cells; a fixed-column
- * grid only fills full rows, not partial ones. No "+N more" cap: this list
- * is bounded by "hot" + "due in the next 3 days", not by total lead count.
+ * Renders every qualifying lead in a fixed-width card grid —
+ * `repeat(auto-fill, minmax(256px, 256px))`, not `1fr` tracks or
+ * `flex-1`/`basis-64` — so cards are ALWAYS normal/fixed width, 4 per row
+ * at this section's actual width, in every row including the first. A row
+ * with fewer than 4 cards (whether it's the only row or a wrapped one)
+ * simply leaves the remaining slots empty rather than stretching its cards
+ * to fill them; an earlier pass made partial rows stretch, which read as
+ * visually wrong for a lone card and was reverted back to this fixed-width
+ * behavior. No "+N more" cap: this list is bounded by "hot" + "due in the
+ * next 3 days", not by total lead count.
  */
 function PriorityLeadsSection({ priorityLeads }) {
   const navigate = useNavigate();
@@ -34,7 +38,7 @@ function PriorityLeadsSection({ priorityLeads }) {
           />
         </Card>
       ) : (
-        <div className="flex flex-wrap gap-3 p-[10px]">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(256px,256px))] gap-3 p-[10px]">
           {priorityLeads.map((lead) => {
             const urgency = lead.followUpUrgency ? URGENCY_STYLES[lead.followUpUrgency] : null;
 
@@ -43,7 +47,7 @@ function PriorityLeadsSection({ priorityLeads }) {
                 key={lead._id}
                 size="small"
                 hoverable
-                className={`flex-1 basis-64 cursor-pointer ${urgency ? urgency.borderClass : "border-orange-200"}`}
+                className={`cursor-pointer ${urgency ? urgency.borderClass : "border-orange-200"}`}
                 onClick={() => navigate(`/leads/${lead._id}`)}
               >
                 <div className="flex items-center justify-between gap-2">
