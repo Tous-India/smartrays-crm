@@ -65,24 +65,36 @@ describe("PermissionManagementPage", () => {
   });
 
   describe("Role Defaults tab", () => {
-    it("loads the selected role's current template and shows its last-updated info", async () => {
+    it("defaults to Manager (not Admin — admin bypasses all permission checks, so its template is meaningless)", async () => {
       permissionApi.getRoleTemplate.mockResolvedValue({ data: { data: MANAGER_TEMPLATE } });
 
       render(<PermissionManagementPage />);
 
       await waitFor(() => {
-        expect(permissionApi.getRoleTemplate).toHaveBeenCalledWith("admin");
-      });
-
-      // Switch to Manager via the role Select.
-      await userEvent.click(screen.getByText("Admin"));
-      await userEvent.click(await screen.findByTitle("Manager"));
-
-      await waitFor(() => {
         expect(permissionApi.getRoleTemplate).toHaveBeenCalledWith("manager");
       });
-      expect(await screen.findByText(/Last updated by Manager One/)).toBeInTheDocument();
-      expect(screen.getByRole("checkbox", { name: "leads view" })).toBeChecked();
+      expect(screen.queryByTitle("Admin")).not.toBeInTheDocument();
+    });
+
+    it("loads the selected role's current template and shows its last-updated info", async () => {
+      const SALES_TEMPLATE = { role: "sales_associate", permissions: { leads: { view: true } } };
+      permissionApi.getRoleTemplate.mockImplementation((role) =>
+        Promise.resolve({ data: { data: role === "manager" ? MANAGER_TEMPLATE : SALES_TEMPLATE } })
+      );
+
+      render(<PermissionManagementPage />);
+      await waitFor(() => expect(permissionApi.getRoleTemplate).toHaveBeenCalledWith("manager"));
+
+      // Switch to Executive (displayed label for the `employee` role) via
+      // the role Select — also proves "Admin" isn't offered as an option.
+      fireEvent.mouseDown(screen.getByText("Manager"));
+      expect(screen.queryByTitle("Admin")).not.toBeInTheDocument();
+      await userEvent.click(await screen.findByTitle("Sales Associate"));
+
+      await waitFor(() => {
+        expect(permissionApi.getRoleTemplate).toHaveBeenCalledWith("sales_associate");
+      });
+      expect(await screen.findByText("Never edited — still the initial default template.")).toBeInTheDocument();
     });
 
     it("saves the edited template via PATCH /permissions/templates/:role", async () => {
@@ -99,7 +111,7 @@ describe("PermissionManagementPage", () => {
 
       await waitFor(() => {
         expect(permissionApi.updateRoleTemplate).toHaveBeenCalledWith(
-          "admin",
+          "manager",
           expect.objectContaining({ leads: expect.objectContaining({ delete: true }) })
         );
       });

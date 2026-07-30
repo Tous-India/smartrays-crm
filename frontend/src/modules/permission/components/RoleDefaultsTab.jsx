@@ -2,9 +2,18 @@ import { useEffect, useState } from "react";
 import { Select, Alert, Spin, message } from "antd";
 import dayjs from "dayjs";
 import useUserDirectory from "../../../hooks/useUserDirectory";
-import { USER_ROLES, USER_ROLE_LABELS } from "../../user/constants/user.constants";
+import { USER_ROLES, ROLE_PICKER_LABELS } from "../../user/constants/user.constants";
 import { getRoleTemplate, updateRoleTemplate } from "../api/permissionApi";
 import PermissionMatrix from "./PermissionMatrix";
+
+// "Admin" is excluded (2026-07-30 fix) — admin bypasses every permission
+// check in code (`can()`'s own admin-bypass, §4.1), so its template is never
+// actually consulted for anything; editing an "Admin template" here would
+// be meaningless. Labels come from the shared `ROLE_PICKER_LABELS`
+// (user.constants.js, the same constant `UserFormModal.jsx`'s New User
+// form role picker already uses) so "Executive" isn't a second hardcoded
+// label for the `employee` value.
+const SELECTABLE_ROLES = USER_ROLES.filter((role) => role !== "admin");
 
 /**
  * Role Defaults — edits the template new accounts of a given role are
@@ -15,7 +24,7 @@ import PermissionMatrix from "./PermissionMatrix";
  * otherwise.
  */
 function RoleDefaultsTab({ registry }) {
-  const [selectedRole, setSelectedRole] = useState(USER_ROLES[0]);
+  const [selectedRole, setSelectedRole] = useState(SELECTABLE_ROLES[0]);
   const [template, setTemplate] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -52,31 +61,31 @@ function RoleDefaultsTab({ registry }) {
   }
 
   return (
-    <div>
+    <div className="flex flex-col gap-6">
       <Alert
         type="warning"
         showIcon
-        className="mb-4"
         message="Changes here only affect users created after this save — existing users' permissions are not retroactively changed."
       />
 
-      <Select
-        className="mb-4"
-        style={{ width: 240 }}
-        value={selectedRole}
-        onChange={setSelectedRole}
-        options={USER_ROLES.map((role) => ({ value: role, label: USER_ROLE_LABELS[role] }))}
-      />
+      <div className="flex flex-col gap-2">
+        <Select
+          style={{ width: 240 }}
+          value={selectedRole}
+          onChange={setSelectedRole}
+          options={SELECTABLE_ROLES.map((role) => ({ value: role, label: ROLE_PICKER_LABELS[role] }))}
+        />
 
-      {template && (
-        <div className="mb-3 text-sm text-gray-500">
-          {template.updatedBy
-            ? `Last updated by ${userNameById.get(template.updatedBy) || "Unknown user"} on ${dayjs(
-                template.updatedAt
-              ).format("DD MMM YYYY, h:mm A")}`
-            : "Never edited — still the initial default template."}
-        </div>
-      )}
+        {template && (
+          <div className="text-sm text-gray-500">
+            {template.updatedBy
+              ? `Last updated by ${userNameById.get(template.updatedBy) || "Unknown user"} on ${dayjs(
+                  template.updatedAt
+                ).format("DD MMM YYYY, h:mm A")}`
+              : "Never edited — still the initial default template."}
+          </div>
+        )}
+      </div>
 
       {isLoading || !template ? (
         <Spin />

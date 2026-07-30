@@ -78,11 +78,10 @@ function UserOverridesTab({ registry }) {
   }));
 
   return (
-    <div>
+    <div className="flex flex-col gap-6">
       <Select
         showSearch
         allowClear
-        className="mb-4"
         style={{ width: 320 }}
         placeholder="Select a user"
         optionFilterProp="label"
@@ -92,7 +91,7 @@ function UserOverridesTab({ registry }) {
       />
 
       {selectedUserId && (
-        <div>
+        <div className="flex flex-col gap-6">
           <Popconfirm
             title="Reset to role default?"
             description="This applies the role's CURRENT template, not whatever it was when this user was created — any custom overrides for this user will be lost."
@@ -100,7 +99,7 @@ function UserOverridesTab({ registry }) {
             okType="danger"
             onConfirm={handleReset}
           >
-            <Button danger loading={isResetting} className="mb-4">
+            <Button danger loading={isResetting}>
               Reset to Role Default
             </Button>
           </Popconfirm>

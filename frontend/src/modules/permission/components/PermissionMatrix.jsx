@@ -64,7 +64,23 @@ function PermissionMatrix({ registry, value, onSave, isSaving }) {
   const dataSource = modules.map((moduleName) => ({ key: moduleName, module: moduleName }));
 
   return (
-    <div>
+    <div className="permission-matrix flex flex-col gap-4">
+      {/*
+        Fix (2026-07-30): AntD's default unchecked-checkbox border
+        (`#d9d9d9`) reads as barely visible against this table's plain
+        white cells — confirmed via a live screenshot, not assumed. Scoped
+        to this component only (not a global `index.css` change, avoiding
+        that file's own contested-edit situation entirely) via a darker,
+        slightly thicker border on the unchecked state; the checked state
+        (solid navy fill + white check, from the app's own brand theme) was
+        already clearly visible and is left untouched.
+      */}
+      <style>{`
+        .permission-matrix .ant-checkbox:not(.ant-checkbox-checked) .ant-checkbox-inner {
+          border-color: #8c8c8c;
+          border-width: 1.5px;
+        }
+      `}</style>
       <Table
         rowKey="key"
         dataSource={dataSource}
@@ -73,12 +89,7 @@ function PermissionMatrix({ registry, value, onSave, isSaving }) {
         scroll={{ x: "max-content" }}
         size="small"
       />
-      <Button
-        type="primary"
-        className="mt-4"
-        loading={isSaving}
-        onClick={() => onSave(localPermissions)}
-      >
+      <Button type="primary" loading={isSaving} onClick={() => onSave(localPermissions)}>
         Save
       </Button>
     </div>

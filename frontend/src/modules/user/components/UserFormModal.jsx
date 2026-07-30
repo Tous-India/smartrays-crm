@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Modal, Form, Input, Select, InputNumber, Row, Col } from "antd";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import useTeams from "../../team/hooks/useTeams";
-import { USER_ROLES, USER_ROLE_LABELS } from "../constants/user.constants";
+import { USER_ROLES, USER_ROLE_LABELS, ROLE_PICKER_LABELS } from "../constants/user.constants";
 
 // Create-mode-only role options (2026-07-30 rework) — "Customer" is removed
 // entirely (customer accounts are only ever created via the existing self-
@@ -14,16 +14,13 @@ import { USER_ROLES, USER_ROLE_LABELS } from "../constants/user.constants";
 // list, so an admin can still view/edit one without being blocked by this
 // narrower create-only list.
 //
-// "Executive" is a DISPLAY LABEL ONLY for the existing `employee` role
-// value — no schema/enum change, mirrors the already-resolved
-// Executive=Employee decision (`user.model.js`'s own comment,
-// `.context/final-plan.md` §11.1). This label is deliberately NOT merged
-// into the shared `USER_ROLE_LABELS` constant, which must keep showing
-// "Employee" elsewhere (e.g. the User Management table's Role column) —
-// this mapping only applies to this one create-mode dropdown.
+// Labels come from the shared `ROLE_PICKER_LABELS` (user.constants.js) —
+// the one place "Executive" is mapped onto the `employee` value — reused
+// as-is here (and by the Permissions Role Defaults tab's own role picker)
+// rather than a second hardcoded "Executive" string.
 const CREATE_ROLE_OPTIONS = [
-  { value: "manager", label: "Manager" },
-  { value: "employee", label: "Executive" },
+  { value: "manager", label: ROLE_PICKER_LABELS.manager },
+  { value: "employee", label: ROLE_PICKER_LABELS.employee },
 ];
 
 /**

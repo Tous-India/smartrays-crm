@@ -10,3 +10,13 @@ export const USER_ROLE_LABELS = {
   employee: "Employee",
   customer: "Customer",
 };
+
+// "Executive" is a DISPLAY LABEL ONLY for the existing `employee` role value
+// (no schema/enum change — mirrors the already-resolved Executive=Employee
+// decision, `user.model.js`'s own comment, `.context/final-plan.md` §11.1).
+// Scoped to admin-facing role-PICKER dropdowns only (the New User form's
+// Role select, the Permissions Role Defaults tab's role select) — NOT the
+// roster table's Role column or anywhere else, which still shows
+// `USER_ROLE_LABELS`'s plain "Employee". The one shared constant every such
+// picker imports, so this mapping is never duplicated ad hoc per picker.
+export const ROLE_PICKER_LABELS = { ...USER_ROLE_LABELS, employee: "Executive" };
