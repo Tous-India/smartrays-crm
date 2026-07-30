@@ -29,6 +29,16 @@ vi.mock("../../../hooks/useUserDirectory", () => ({
   default: () => ({ users: [], isLoading: false }),
 }));
 
+const SAMPLE_TEAMS = [
+  { _id: "team-1", name: "North Sales Team", type: "Sales", headManagerId: "user-1" },
+  { _id: "team-2", name: "Install Crew", type: null, headManagerId: "user-3" },
+];
+
+vi.mock("../../team/hooks/useTeams", () => ({
+  useTeams: () => ({ teams: SAMPLE_TEAMS, isLoading: false, refetch: vi.fn() }),
+  default: () => ({ teams: SAMPLE_TEAMS, isLoading: false, refetch: vi.fn() }),
+}));
+
 const ADMIN_USER = { _id: "admin-1", name: "Admin", role: "admin", permissions: {} };
 
 const SAMPLE_USERS = [
@@ -140,5 +150,83 @@ describe("UserManagementPage", () => {
     expect(screen.queryByRole("button", { name: "New User" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Reset Password" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Deactivate" })).not.toBeInTheDocument();
+  });
+
+  describe("New User form (reworked 2026-07-30)", () => {
+    it("shows the compact 4-row layout with Name/Email/Phone/Password/Role/Department/Salary", async () => {
+      renderPage();
+      await screen.findAllByText("Manager One");
+
+      await userEvent.click(screen.getByRole("button", { name: "New User" }));
+      const dialog = await screen.findByRole("dialog", { name: "New User" });
+
+      expect(within(dialog).getByLabelText("Name")).toBeInTheDocument();
+      expect(within(dialog).getByLabelText("Email")).toBeInTheDocument();
+      expect(within(dialog).getByLabelText("Phone")).toBeInTheDocument();
+      expect(within(dialog).getByLabelText("Password")).toBeInTheDocument();
+      expect(within(dialog).getByLabelText("Role")).toBeInTheDocument();
+      expect(within(dialog).getByLabelText("Department")).toBeInTheDocument();
+      expect(within(dialog).getByLabelText("Salary")).toBeInTheDocument();
+      // No standalone "Manager" field in create mode — Department implies it.
+      expect(within(dialog).queryByLabelText("Manager")).not.toBeInTheDocument();
+    });
+
+    it("Role dropdown offers only Manager and Executive, not Sales Associate or Customer", async () => {
+      renderPage();
+      await screen.findAllByText("Manager One");
+
+      await userEvent.click(screen.getByRole("button", { name: "New User" }));
+      const dialog = await screen.findByRole("dialog", { name: "New User" });
+
+      await userEvent.click(within(dialog).getByLabelText("Role"));
+
+      expect(await screen.findByTitle("Manager")).toBeInTheDocument();
+      expect(screen.getByTitle("Executive")).toBeInTheDocument();
+      expect(screen.queryByTitle("Sales Associate")).not.toBeInTheDocument();
+      expect(screen.queryByTitle("Customer")).not.toBeInTheDocument();
+      expect(screen.queryByTitle("Employee")).not.toBeInTheDocument();
+    });
+
+    it("Department dropdown lists real teams with name and type", async () => {
+      renderPage();
+      await screen.findAllByText("Manager One");
+
+      await userEvent.click(screen.getByRole("button", { name: "New User" }));
+      const dialog = await screen.findByRole("dialog", { name: "New User" });
+
+      await userEvent.click(within(dialog).getByLabelText("Department"));
+
+      expect(await screen.findByTitle("North Sales Team (Sales)")).toBeInTheDocument();
+      expect(screen.getByTitle("Install Crew")).toBeInTheDocument();
+    });
+
+    it("selecting a Department sets managerId to that team's headManagerId on submit", async () => {
+      userApi.createUser.mockResolvedValue({ data: {} });
+      renderPage();
+      await screen.findAllByText("Manager One");
+
+      await userEvent.click(screen.getByRole("button", { name: "New User" }));
+      const dialog = await screen.findByRole("dialog", { name: "New User" });
+
+      await userEvent.type(within(dialog).getByLabelText("Name"), "New Hire");
+      await userEvent.type(within(dialog).getByLabelText("Email"), "newhire@test.local");
+      await userEvent.type(within(dialog).getByLabelText("Password"), "Password123");
+
+      await userEvent.click(within(dialog).getByLabelText("Role"));
+      await userEvent.click(await screen.findByTitle("Executive"));
+
+      await userEvent.click(within(dialog).getByLabelText("Department"));
+      await userEvent.click(await screen.findByTitle("North Sales Team (Sales)"));
+
+      await userEvent.click(within(dialog).getByRole("button", { name: "OK" }));
+
+      await waitFor(() => {
+        expect(userApi.createUser).toHaveBeenCalledWith(
+          expect.objectContaining({ role: "employee", managerId: "user-1" })
+        );
+      });
+      // The UI-only Department field itself is never sent to the backend.
+      expect(userApi.createUser.mock.calls[0][0]).not.toHaveProperty("departmentTeamId");
+    });
   });
 });
