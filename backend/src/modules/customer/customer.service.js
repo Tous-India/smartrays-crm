@@ -410,6 +410,7 @@ export async function createContract(customerId, payload, requestingUser) {
     label: payload.label,
     renewalDate: payload.renewalDate || null,
     termYears: payload.termYears ?? null,
+    startDate: payload.startDate || null,
   });
 
   await applyContractCreatedAutomation(customer, contract);
@@ -459,7 +460,7 @@ export async function updateContract(customerId, contractId, payload, requesting
     throw new ApiError(404, "Contract not found");
   }
 
-  ["type", "amount", "label", "renewalDate", "termYears"].forEach((field) => {
+  ["type", "amount", "label", "renewalDate", "termYears", "startDate"].forEach((field) => {
     if (payload[field] !== undefined) {
       contract[field] = payload[field];
     }

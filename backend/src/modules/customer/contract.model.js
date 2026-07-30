@@ -35,6 +35,15 @@ const contractSchema = new mongoose.Schema(
       min: 0,
       default: null,
     },
+    // Yearly-contract-only (frontend/src/modules/customer/components/
+    // ContractFormModal.jsx): when the contract started, so `renewalDate`
+    // (the expiry) can be auto-calculated as startDate + termYears and the
+    // admin still has a real record of the term's start, not just its end.
+    // Optional on every other contract type, same as termYears already was.
+    startDate: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
