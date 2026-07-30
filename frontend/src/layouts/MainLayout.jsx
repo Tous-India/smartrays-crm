@@ -124,6 +124,12 @@ function MainLayout() {
         icon: <TeamOutlined />,
         show: can(user, "customers", "view"),
       },
+      {
+        key: ROUTE_PATHS.PAYMENTS,
+        label: "Payments",
+        icon: <CreditCardOutlined />,
+        show: user?.role === "admin",
+      },
       { key: ROUTE_PATHS.ATTENDANCE, label: "Attendance", icon: <CalendarOutlined />, show: true },
       { key: ROUTE_PATHS.LEAVE, label: "Leave", icon: <FileDoneOutlined />, show: true },
       {
@@ -147,12 +153,6 @@ function MainLayout() {
         label: "Tickets",
         icon: <CustomerServiceOutlined />,
         show: can(user, "tickets", "view_assigned") || can(user, "tickets", "view_all"),
-      },
-      {
-        key: ROUTE_PATHS.PAYMENTS,
-        label: "Payments",
-        icon: <CreditCardOutlined />,
-        show: user?.role === "admin",
       },
       {
         key: ROUTE_PATHS.AMC,
