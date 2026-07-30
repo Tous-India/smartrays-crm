@@ -13,6 +13,11 @@ export function listLeave(scope) {
   return apiClient.get("/leave", { params: { scope } });
 }
 
+// Sidebar badge (§7.26) — admin-only (hard role gate server-side).
+export function getPendingLeaveCount() {
+  return apiClient.get("/leave/pending-count");
+}
+
 export function approveLeave(id) {
   return apiClient.patch(`/leave/${id}/approve`);
 }

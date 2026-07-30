@@ -7,6 +7,7 @@ import {
   markUnapprovedAbsence,
   declineLeave,
   getLeaveBalance,
+  getPendingLeaveCount,
 } from "./leave.service.js";
 
 export const request = asyncWrapper(async (req, res) => {
@@ -43,4 +44,10 @@ export const balance = asyncWrapper(async (req, res) => {
   const data = await getLeaveBalance(req.query.employeeId, req.user);
 
   res.status(200).json(new ApiResponse(200, data, "Leave balance fetched successfully"));
+});
+
+export const pendingCount = asyncWrapper(async (req, res) => {
+  const total = await getPendingLeaveCount();
+
+  res.status(200).json(new ApiResponse(200, { count: total }, "Pending leave count fetched successfully"));
 });

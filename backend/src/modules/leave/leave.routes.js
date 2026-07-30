@@ -1,7 +1,7 @@
 import { Router } from "express";
 import authenticate from "../../middlewares/authenticate.middleware.js";
 import { requireAdmin } from "../../middlewares/authorize.middleware.js";
-import { request, list, approve, decline, markAbsence, balance } from "./leave.controller.js";
+import { request, list, approve, decline, markAbsence, balance, pendingCount } from "./leave.controller.js";
 import { validateLeaveRequestInput, validateScopeQuery, validateDeclineInput } from "./leave.validation.js";
 
 const leaveRouter = Router();
@@ -20,6 +20,14 @@ leaveRouter.get("/", authenticate, validateScopeQuery, list);
 // getLeaveBalance per-scope (view_team/view_all), not at the route level —
 // same reasoning as GET / above.
 leaveRouter.get("/balance", authenticate, balance);
+
+// Sidebar badge (§7.26) — admin-only, hard role gate (see
+// leave.service.js#getPendingLeaveCount for why this is `requireAdmin`, not
+// authorize("leave", "view_all")). Registered before any "/:id" pattern so
+// Express never matches "pending-count" as a leave id (moot today — this
+// router has no "GET /:id" — but kept consistent with every other module's
+// convention regardless).
+leaveRouter.get("/pending-count", authenticate, requireAdmin, pendingCount);
 
 // Admin-only per §7.5 — "manager can view but not approve."
 leaveRouter.patch("/:id/approve", authenticate, requireAdmin, approve);

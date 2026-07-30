@@ -134,7 +134,13 @@ export async function createLead(payload, requestingUser) {
   return lead;
 }
 
-export async function listLeads(filters, requestingUser) {
+/**
+ * Shared by `listLeads` and `getLeadCount` below — the same ownership/
+ * search/follow-up/status/owner/client-type filter, built once so the
+ * count endpoint (sidebar badge, §7.26) can't drift out of sync with what
+ * the list view itself actually shows.
+ */
+async function buildLeadFilter(filters, requestingUser) {
   const ownershipFilter = await resolveOwnershipFilter(requestingUser);
   const searchFilter = buildSearchFilter(filters.search);
   const followUpFilter = buildFollowUpFilter(filters.followUp);
@@ -142,13 +148,32 @@ export async function listLeads(filters, requestingUser) {
   const ownerFilter = filters.owner ? { ownerId: filters.owner } : {};
   const clientTypeFilter = filters.clientType ? { clientType: filters.clientType } : {};
 
-  const combinedFilter = {
+  return {
     $and: [ownershipFilter, searchFilter, followUpFilter, statusFilter, ownerFilter, clientTypeFilter],
   };
+}
+
+export async function listLeads(filters, requestingUser) {
+  const combinedFilter = await buildLeadFilter(filters, requestingUser);
 
   const leads = await Lead.find(combinedFilter).sort({ createdAt: -1 });
 
   return leads;
+}
+
+/**
+ * `GET /leads/count` (§7.26, sidebar badge) — a lightweight
+ * `countDocuments`, not a full `find()` the frontend would otherwise have
+ * to fetch in its entirety just to read `.length`. Same ownership scoping
+ * as `listLeads` (admin sees org-wide, manager sees their team, everyone
+ * else sees only their own), via the same `buildLeadFilter` helper — this
+ * count can never disagree with what `GET /leads?status=new` itself would
+ * return for the same caller.
+ */
+export async function getLeadCount(filters, requestingUser) {
+  const combinedFilter = await buildLeadFilter(filters, requestingUser);
+
+  return Lead.countDocuments(combinedFilter);
 }
 
 function buildSearchFilter(search) {

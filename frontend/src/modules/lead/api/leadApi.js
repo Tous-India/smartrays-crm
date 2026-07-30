@@ -11,6 +11,11 @@ export function listLeads(filters) {
   return apiClient.get("/leads", { params: filters });
 }
 
+// Sidebar badge (§7.26) — a lightweight `countDocuments`, not the full list.
+export function getLeadCount(filters) {
+  return apiClient.get("/leads/count", { params: filters });
+}
+
 export function getLead(id) {
   return apiClient.get(`/leads/${id}`);
 }

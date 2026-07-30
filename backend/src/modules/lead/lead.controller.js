@@ -4,6 +4,7 @@ import ApiError from "../../utils/ApiError.js";
 import {
   createLead,
   listLeads,
+  getLeadCount,
   getLeadDetail,
   updateLead,
   deleteLead,
@@ -28,6 +29,12 @@ export const list = asyncWrapper(async (req, res) => {
   const leads = await listLeads(req.query, req.user);
 
   res.status(200).json(new ApiResponse(200, leads, "Leads fetched successfully"));
+});
+
+export const count = asyncWrapper(async (req, res) => {
+  const total = await getLeadCount(req.query, req.user);
+
+  res.status(200).json(new ApiResponse(200, { count: total }, "Lead count fetched successfully"));
 });
 
 export const getOne = asyncWrapper(async (req, res) => {

@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { Layout, Menu, Avatar, Button } from "antd";
+import { Layout, Menu, Avatar, Button, Badge } from "antd";
 import {
   UserOutlined,
   LogoutOutlined,
@@ -20,6 +20,7 @@ import {
 } from "@ant-design/icons";
 import useSessionStore from "../store/sessionStore";
 import { can } from "../utils/permission.utils";
+import useSidebarBadgeCounts from "../hooks/useSidebarBadgeCounts";
 import { ROUTE_PATHS } from "../constants/routePaths.constants";
 import { USER_ROLE_LABELS } from "../modules/user/constants/user.constants";
 import BrandLogo from "../components/BrandLogo";
@@ -109,6 +110,10 @@ function MainLayout() {
     );
   }, [user]);
 
+  const canViewLeads = can(user, "leads", "view");
+  const isAdmin = user?.role === "admin";
+  const { newLeadsCount, pendingLeaveCount } = useSidebarBadgeCounts({ canViewLeads, isAdmin });
+
   const menuItems = useMemo(() => {
     const allItems = [
       { key: ROUTE_PATHS.DASHBOARD, label: "Dashboard", icon: <DashboardOutlined />, show: true },
@@ -116,7 +121,11 @@ function MainLayout() {
         key: ROUTE_PATHS.LEADS,
         label: "Leads",
         icon: <RiseOutlined />,
-        show: can(user, "leads", "view"),
+        show: canViewLeads,
+        // Count of leads with status "new", scoped the same way the Leads
+        // list itself is (admin org-wide, manager team, sales_associate
+        // own) — see `GET /leads/count` (§7.26).
+        badgeCount: newLeadsCount,
       },
       {
         key: ROUTE_PATHS.CUSTOMERS,
@@ -131,7 +140,18 @@ function MainLayout() {
         show: user?.role === "admin",
       },
       { key: ROUTE_PATHS.ATTENDANCE, label: "Attendance", icon: <CalendarOutlined />, show: true },
-      { key: ROUTE_PATHS.LEAVE, label: "Leave", icon: <FileDoneOutlined />, show: true },
+      {
+        key: ROUTE_PATHS.LEAVE,
+        label: "Leave",
+        icon: <FileDoneOutlined />,
+        show: true,
+        // Admin-only count of pending-approval leave requests (§7.26) — not
+        // shown at all (not even a 0) to any non-admin role; `badgeCount`
+        // stays 0 for them since `useSidebarBadgeCounts` never even fetches
+        // it without `isAdmin`, but the `isAdmin` check here is what
+        // actually prevents rendering the badge itself.
+        badgeCount: isAdmin ? pendingLeaveCount : 0,
+      },
       {
         key: ROUTE_PATHS.LOCATION,
         label: "Location",
@@ -163,9 +183,16 @@ function MainLayout() {
       { key: ROUTE_PATHS.REPORTS, label: "Reports", icon: <BarChartOutlined />, show: true },
     ];
 
-    const items = allItems
-      .filter((item) => item.show)
-      .map((item) => ({ key: item.key, icon: item.icon, label: <Link to={item.key}>{item.label}</Link> }));
+    const items = allItems.filter((item) => item.show).map((item) => ({
+      key: item.key,
+      icon: item.icon,
+      label: (
+        <Link to={item.key} className="flex items-center justify-between">
+          <span>{item.label}</span>
+          {Boolean(item.badgeCount) && <Badge count={item.badgeCount} size="small" />}
+        </Link>
+      ),
+    }));
 
     // Settings — a single flat nav item (no submenu/dropdown), linking
     // straight to the Users tab of the combined SettingsPage
@@ -185,7 +212,7 @@ function MainLayout() {
     }
 
     return items;
-  }, [user, canViewSettings]);
+  }, [user, canViewSettings, canViewLeads, isAdmin, newLeadsCount, pendingLeaveCount]);
 
   const allKnownKeys = useMemo(() => menuItems.map((item) => item.key), [menuItems]);
 

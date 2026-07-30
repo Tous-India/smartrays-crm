@@ -7,6 +7,7 @@ import ApiError from "../../utils/ApiError.js";
 import {
   create,
   list,
+  count,
   getOne,
   update,
   remove,
@@ -58,8 +59,9 @@ function verifyWebsiteIntakeToken(req, res, next) {
 leadRouter.get("/", authenticate, authorize("leads", "view"), list);
 leadRouter.post("/", authenticate, authorize("leads", "create"), validateCreateLeadInput, create);
 
-// "/export" and "/import" are registered before "/:id" so Express never
-// matches "export"/"import" as a lead id.
+// "/count", "/export" and "/import" are registered before "/:id" so Express
+// never matches any of them as a lead id.
+leadRouter.get("/count", authenticate, authorize("leads", "view"), count);
 leadRouter.get("/export", authenticate, authorize("leads", "view"), exportLeads);
 leadRouter.post(
   "/import",

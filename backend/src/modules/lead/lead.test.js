@@ -593,6 +593,39 @@ describe("Permission scoping", () => {
   });
 });
 
+describe("GET /leads/count (§7.26, sidebar badge)", () => {
+  it("returns a count, not the full list, scoped the same way as GET /leads per role", async () => {
+    await sales1Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "S1 Lead", status: "new" }));
+    await sales2Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "S2 Lead", status: "new" }));
+    await sales3Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "S3 Lead", status: "new" }));
+
+    const adminResponse = await adminAgent.get("/api/v1/leads/count?status=new");
+    expect(adminResponse.status).toBe(200);
+    expect(adminResponse.body.data.count).toBe(3);
+
+    const managerResponse = await managerAgent.get("/api/v1/leads/count?status=new");
+    expect(managerResponse.body.data.count).toBe(2);
+
+    const salesResponse = await sales1Agent.get("/api/v1/leads/count?status=new");
+    expect(salesResponse.body.data.count).toBe(1);
+  });
+
+  it("only counts leads matching the given status filter", async () => {
+    await sales1Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "New Lead", status: "new" }));
+    await sales1Agent.post("/api/v1/leads").send(buildLeadPayload({ name: "Contacted Lead", status: "contacted" }));
+
+    const response = await sales1Agent.get("/api/v1/leads/count?status=new");
+
+    expect(response.body.data.count).toBe(1);
+  });
+
+  it("returns 403 for a user with no leads permission granted", async () => {
+    const response = await noPermAgent.get("/api/v1/leads/count?status=new");
+
+    expect(response.status).toBe(403);
+  });
+});
+
 describe("Convert to customer", () => {
   it("rejects a convert request with no projectManagerId", async () => {
     const created = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload());

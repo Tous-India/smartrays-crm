@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import MainLayout from "./MainLayout";
 import useSessionStore from "../store/sessionStore";
 import * as userApi from "../modules/user/api/userApi";
+import * as leadApi from "../modules/lead/api/leadApi";
+import * as leaveApi from "../modules/leave/api/leaveApi";
 
 vi.mock("../modules/user/api/userApi", () => ({
   updateUser: vi.fn(),
@@ -14,6 +16,14 @@ vi.mock("../modules/notification/api/notificationApi", () => ({
   listNotifications: vi.fn().mockResolvedValue({ data: { data: [] } }),
   markNotificationRead: vi.fn(),
   markAllNotificationsRead: vi.fn(),
+}));
+
+vi.mock("../modules/lead/api/leadApi", () => ({
+  getLeadCount: vi.fn(),
+}));
+
+vi.mock("../modules/leave/api/leaveApi", () => ({
+  getPendingLeaveCount: vi.fn(),
 }));
 
 function renderLayout(initialPath = "/dashboard") {
@@ -41,6 +51,8 @@ const ADMIN_USER = {
 describe("MainLayout — nav composition and Settings gating", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    leadApi.getLeadCount.mockResolvedValue({ data: { data: { count: 0 } } });
+    leaveApi.getPendingLeaveCount.mockResolvedValue({ data: { data: { count: 0 } } });
     useSessionStore.setState({ user: ADMIN_USER, isAuthenticated: true, isLoading: false });
   });
 
@@ -80,9 +92,67 @@ describe("MainLayout — nav composition and Settings gating", () => {
   });
 });
 
+describe("MainLayout — Leads/Leave sidebar count badges (§7.26)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("shows the new-leads count badge on the Leads nav item for an admin", async () => {
+    leadApi.getLeadCount.mockResolvedValue({ data: { data: { count: 5 } } });
+    leaveApi.getPendingLeaveCount.mockResolvedValue({ data: { data: { count: 0 } } });
+    useSessionStore.setState({ user: ADMIN_USER, isAuthenticated: true, isLoading: false });
+
+    renderLayout();
+
+    const leadsItem = await screen.findByRole("menuitem", { name: /Leads/ });
+    expect(within(leadsItem).getByText("5")).toBeInTheDocument();
+    expect(leadApi.getLeadCount).toHaveBeenCalledWith({ status: "new" });
+  });
+
+  it("hides the Leads badge entirely when the count is 0", async () => {
+    leadApi.getLeadCount.mockResolvedValue({ data: { data: { count: 0 } } });
+    leaveApi.getPendingLeaveCount.mockResolvedValue({ data: { data: { count: 0 } } });
+    useSessionStore.setState({ user: ADMIN_USER, isAuthenticated: true, isLoading: false });
+
+    renderLayout();
+
+    const leadsItem = await screen.findByRole("menuitem", { name: /Leads/ });
+    expect(within(leadsItem).queryByText("0")).not.toBeInTheDocument();
+  });
+
+  it("shows the pending-leave count badge on the Leave nav item for an admin", async () => {
+    leadApi.getLeadCount.mockResolvedValue({ data: { data: { count: 0 } } });
+    leaveApi.getPendingLeaveCount.mockResolvedValue({ data: { data: { count: 3 } } });
+    useSessionStore.setState({ user: ADMIN_USER, isAuthenticated: true, isLoading: false });
+
+    renderLayout();
+
+    const leaveItem = await screen.findByRole("menuitem", { name: /Leave/ });
+    expect(within(leaveItem).getByText("3")).toBeInTheDocument();
+  });
+
+  it("never shows the Leave badge for a non-admin, and never even fetches the pending count", async () => {
+    leadApi.getLeadCount.mockResolvedValue({ data: { data: { count: 0 } } });
+    leaveApi.getPendingLeaveCount.mockResolvedValue({ data: { data: { count: 7 } } });
+    useSessionStore.setState({
+      user: { _id: "manager-1", name: "Manager One", role: "manager", permissions: { leads: { view: true } } },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    renderLayout();
+
+    const leaveItem = await screen.findByRole("menuitem", { name: /Leave/ });
+    expect(within(leaveItem).queryByText("7")).not.toBeInTheDocument();
+    expect(leaveApi.getPendingLeaveCount).not.toHaveBeenCalled();
+  });
+});
+
 describe("MainLayout — sidebar footer profile menu", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    leadApi.getLeadCount.mockResolvedValue({ data: { data: { count: 0 } } });
+    leaveApi.getPendingLeaveCount.mockResolvedValue({ data: { data: { count: 0 } } });
     useSessionStore.setState({ user: ADMIN_USER, isAuthenticated: true, isLoading: false });
   });
 

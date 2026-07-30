@@ -133,6 +133,19 @@ export async function listLeaves(scope, requestingUser) {
 }
 
 /**
+ * `GET /leave/pending-count` (§7.26, sidebar badge) — admin-only, hard-gated
+ * by role at the route (`requireAdmin`), not a `leave.*` permission grant:
+ * this task's own spec is explicit that this badge is admin-only full stop,
+ * not "whoever happens to hold `view_all`" (which a permission override
+ * could technically extend to a manager later). Org-wide, no ownership
+ * scoping — matches "manager can view but not approve" (§7.5): only an
+ * admin approves, so only an admin needs to know how many are waiting.
+ */
+export async function getPendingLeaveCount() {
+  return Leave.countDocuments({ status: "pending" });
+}
+
+/**
  * Admin-only (§7.5). A `paid`-type request is capped at the one-paid-leave-
  * per-calendar-month rule (§11.7, resolved 2026-07-13): a single request
  * can't span more than 1 day, and approving it must not push the employee's

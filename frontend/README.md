@@ -1005,6 +1005,41 @@ rework the "New User" form specifically and an admin still needs to view/edit ex
   with name+type, and selecting a Department produces the correct `managerId` in the submitted
   payload (with `departmentTeamId` itself absent from it).
 
+### Sidebar count badges (§7.26, 2026-07-30)
+
+`MainLayout.jsx`'s Leads and Leave nav items each get a small AntD `Badge` next to their label,
+showing a live count — the first badges on any sidebar item; establishes the pattern for
+Tickets/AMC or any future module's badge.
+
+- **Leads badge** — count of leads with `status: "new"`, via the new `GET /leads/count`
+  endpoint (a lightweight `countDocuments`, not the full list — see `backend/README.md`'s Leads
+  section). Scoped identically to `GET /leads` itself (admin org-wide, manager their team,
+  everyone else their own) via the same shared `buildLeadFilter` helper, so the badge can never
+  disagree with what the Leads list itself would show for that caller.
+- **Leave badge** — count of `status: "pending"` leave requests, via the new
+  `GET /leave/pending-count` endpoint. **Admin-only, a hard role gate** (`requireAdmin` at the
+  route), not a `leave.view_all` permission grant — this task's own spec was explicit that this
+  stays admin-only even if a permission override later extended `view_all` to a manager. Not
+  rendered at all for a non-admin (not even a `0`), and the count is never even fetched for one
+  — `useSidebarBadgeCounts` skips the request entirely when `isAdmin` is false, not just the
+  badge.
+- **`useSidebarBadgeCounts`** (`src/hooks/`) — the shared hook backing both badges. Polls every
+  60 seconds (the same cadence as the notification bell's own poll, `useNotifications.js`), each
+  count fetched and caught independently so one failing never blocks or breaks the other — a
+  transient error just leaves that badge showing its last-known value until the next tick.
+  `Badge`'s own default behavior (no `showZero`) already hides the badge at count `0`, so no
+  extra logic was needed for that.
+- **Pattern for a future Tickets/AMC badge:** add a lightweight `GET .../count` endpoint to that
+  module (reusing its existing scoping helper, the same way `getLeadCount` reuses
+  `buildLeadFilter`), a thin API wrapper, extend `useSidebarBadgeCounts` with one more polled
+  count (or compose a second small hook alongside it), and add a `badgeCount` field to that nav
+  item's entry in `MainLayout.jsx`'s `allItems` array.
+- **Testing:** `useSidebarBadgeCounts.test.js` (6 tests, `renderHook` + `vi.useFakeTimers`,
+  matching `useCheckedInHeartbeatLoop.test.js`'s established polling-hook test pattern) —
+  correct scoping call, gated fetching per role, refetch on the poll interval, and a failed poll
+  not clobbering the last-known count. 4 new tests in `MainLayout.test.jsx` — badge shows the
+  right count, hides at 0, Leave badge admin-only (never fetched for a non-admin at all).
+
 ---
 
 ## Env Vars

@@ -529,3 +529,30 @@ describe("Leave notifications", () => {
     expect(notification.message).toMatch(/Insufficient coverage/);
   });
 });
+
+describe("GET /leave/pending-count (§7.26, sidebar badge)", () => {
+  it("returns the org-wide count of pending leave requests", async () => {
+    await sales1Agent.post("/api/v1/leave/request").send({ startDate: isoDate(5), endDate: isoDate(5) });
+    await sales2Agent.post("/api/v1/leave/request").send({ startDate: isoDate(6), endDate: isoDate(6) });
+    const third = await sales3Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(7), endDate: isoDate(7) });
+    await adminAgent.patch(`/api/v1/leave/${third.body.data._id}/approve`);
+
+    const response = await adminAgent.get("/api/v1/leave/pending-count");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.count).toBe(2);
+  });
+
+  it("is admin-only — a hard role gate, not a leave.view_all permission grant", async () => {
+    expect((await managerAgent.get("/api/v1/leave/pending-count")).status).toBe(403);
+    expect((await sales1Agent.get("/api/v1/leave/pending-count")).status).toBe(403);
+  });
+
+  it("returns 0 when there are no pending requests", async () => {
+    const response = await adminAgent.get("/api/v1/leave/pending-count");
+
+    expect(response.body.data.count).toBe(0);
+  });
+});
