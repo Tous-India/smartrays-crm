@@ -14,12 +14,23 @@ const URGENCY_STYLES = {
  * separate sections this page used to render (see
  * `utils/upcomingFollowUps.js#getPriorityLeads` for the merge/dedupe/sort).
  * Renders every qualifying lead in a fixed-width card grid —
- * `repeat(auto-fill, minmax(256px, 256px))`, not `1fr` tracks or
- * `flex-1`/`basis-64` — so cards are ALWAYS normal/fixed width, 4 per row
- * at this section's actual width, in every row including the first. A row
- * with fewer than 4 cards (whether it's the only row or a wrapped one)
- * simply leaves the remaining slots empty rather than stretching its cards
- * to fill them; an earlier pass made partial rows stretch, which read as
+ * `repeat(auto-fill, 256px)`, a genuinely fixed pixel track, not `1fr`
+ * tracks, `flex-1`/`basis-64`, or a percentage-based `minmax(24%, 256px)`
+ * (briefly tried in between) — so cards are ALWAYS normal/fixed width in
+ * every row including the first, and the column COUNT is the only thing
+ * that ever changes with viewport width, in clean integer steps. The
+ * percentage-based `minmax(24%, 256px)` variant broke visibly at
+ * intermediate widths (confirmed ~1281-1455px): once 24% of the
+ * container exceeds 256px, CSS Grid's own spec clamps the track's max up
+ * to match the min (min may never exceed max), silently turning "fixed at
+ * 256px, up to 24%" into "fixed at whatever 24% computes to" — hence
+ * exactly 3, oversized, non-256px cards per row there, wide enough that
+ * the tag/icon-action row no longer fit on one line and visibly wrapped/
+ * overlapped inside the card. A fixed pixel track has no such threshold to
+ * cross, so it can't reproduce this failure mode at any width. A row with
+ * fewer than 4 cards (whether it's the only row or a wrapped one) simply
+ * leaves the remaining slots empty rather than stretching its cards to
+ * fill them; an earlier pass made partial rows stretch, which read as
  * visually wrong for a lone card and was reverted back to this fixed-width
  * behavior. No "+N more" cap: this list is bounded by "hot" + "due in the
  * next 3 days", not by total lead count.
@@ -65,7 +76,7 @@ function PriorityLeadsSection({
           />
         </Card>
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(24%,256px))] gap-3 p-[10px] justify-evenly">
+        <div className="grid grid-cols-[repeat(auto-fill,256px)] gap-3 p-[10px]">
           {priorityLeads.map((lead) => {
             const urgency = lead.followUpUrgency ? URGENCY_STYLES[lead.followUpUrgency] : null;
 
