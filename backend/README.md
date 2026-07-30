@@ -364,10 +364,10 @@ that was missing until now — `User` was previously a shared model only, import
 | Method | Path | Access | Notes |
 |---|---|---|---|
 | GET | `/users/dropdown` | Authenticated (any role) | Low-sensitivity `_id`/`name`/`role` picker list, active users only — for other modules' "assign to" dropdowns (Leads owner, etc.). Not gated by `users.*`, same reasoning as `GET /lead-sources`. Registered before `/:id` so Express doesn't treat "dropdown" as an id. |
-| GET | `/users` | Authenticated (no route-level gate) | Full roster list, scoped in the service, not the route: `view_all` sees everyone; `view_team` sees direct reports + self; **no grant at all still returns 200 with a 1-item list containing just the caller** (`fallbackToSelf`, see below) rather than 403 — a plain "list my stuff" request always succeeds. Filters: `role`, `isActive`, `managerId`. |
+| GET | `/users` | Authenticated (no route-level gate) | Full roster list, scoped in the service, not the route: `view_all` sees everyone; `view_team` sees direct reports + self; **no grant at all still returns 200 with a 1-item list containing just the caller** (`fallbackToSelf`, see below) rather than 403 — a plain "list my stuff" request always succeeds. Filters: `role`, `isActive`, `managerId`, and (added 2026-07-30, §7.28) `teamId`. |
 | GET | `/users/:id` | Authenticated (self always allowed) | A user can always fetch their own record regardless of any grant, matching `GET /auth/me`. Looking up **someone else's** specific id with no `users.*` grant is still a 403 (deliberately not narrowed to self the way the list is — see below); **404** (not 403) if the target exists but is outside scope for a caller who does hold a grant, matching the Leads/Location precedent. |
 | PATCH | `/users/:id` | Authenticated (self or admin) | Self can update `name`/`email`/`phone` only. Admin can additionally update `role`/`managerId`/`isActive`/**`baseSalary`** (added 2026-07-13, §7.7 Payroll prerequisite) on **anyone's** record, including their own. A non-admin sending a privileged field on their own record gets 403, not a silent drop. Enforced in **two layers**: `user.validation.js` rejects it before the controller even runs, and `user.service.js#updateUser` enforces the identical rule again — deliberate defense in depth, not accidental duplication. |
-| PATCH | `/users/:id/deactivate` | Admin only | |
+| PATCH | `/users/:id/deactivate` | Admin only | **Team-head guard added 2026-07-30 (§7.28):** rejected (400) if this user is currently the `headManagerId` of one or more active Teams, naming the team(s) in the error message (e.g. `"Cannot deactivate: this person leads the following team(s): Sales Team. Reassign the team's head first."`) — silently deactivating a team's head would leave that Team pointing at a login-disabled account, and every member's "own team" scoping (derived from that same `headManagerId`, §11.9) would quietly stop resolving as expected. No guard on a team led by an **inactive** Team (already effectively retired). Reactivate has no equivalent guard — always safe. |
 | PATCH | `/users/:id/reactivate` | Admin only | |
 | PATCH | `/users/:id/manager` | Admin only | Sets or clears (`managerId: null`) a user's manager. A non-null `managerId` must belong to a `manager` or `admin` — same rule enforced at creation time (see below). |
 | PATCH | `/users/:id/reset-password` | Admin only | Admin override for password reset (§7.17), separate from the token-based self-service flow above. Body `{ newPassword? }`. If `newPassword` is supplied, it's set directly and the response's `tempPassword` is `null`. If omitted, the backend **generates a random one-time temp password** and returns it in `data.tempPassword` — the only time it's ever visible in plaintext, nothing persists it anywhere else. Chosen as the default path (a single-click "reset this locked-out user's password" action from the User Management screen) over forcing the admin to invent one every time; an admin who wants an exact password can still supply one. |
@@ -418,7 +418,8 @@ associate caught it (got 200 instead). Fixed with `$and: [{ _id: targetId }, sco
 is a genuinely new class of bug specific to `user` — Leads' ownership scoping filters on a
 separate `ownerId` field, so its filter and lookup key never collide the way `_id` does here.
 
-33 tests, all passing; this bug was the only one found.
+33 tests, all passing; this bug was the only one found. (Grew to 45 with the 2026-07-30 §7.28
+additions below — 8 new tests: the team-head deactivation guard and the `teamId` filter.)
 
 **Confirmed already correct (follow-up check):** `getUserById`'s self-shortcut
 (`if (String(targetId) === String(requestingUser._id)) return requestingUser;`) runs before any
@@ -461,6 +462,13 @@ non-admin role, matching how `permissions.manage` itself is never granted by def
 17 tests (`team.test.js`), all passing — CRUD, membership (add/remove/single-team-membership),
 `headManagerId` validation, and a check that the pre-existing Leads/Customers/Attendance
 own-team-scoping tests are unaffected.
+
+**Filters + delete-preview member count (extended 2026-07-30, §7.28):** `GET /teams` gained
+`type`/`isActive` query params (plain equality matches, combined with the existing query, not a
+replacement of it). No new `GET /teams/:id/delete-preview` endpoint was added — the existing
+`GET /teams/:id` detail response already returns the full derived `members` array, whose
+`.length` the frontend already needs anyway to show a "this team has N members" warning before
+a delete is confirmed; a separate endpoint would have just duplicated that. 3 new tests.
 
 ### Attendance (`/api/v1/attendance`)
 

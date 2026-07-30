@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Table, Button, Popconfirm, Space, message, Tag } from "antd";
+import { useMemo, useState } from "react";
+import { Table, Button, Popconfirm, Space, message, Tag, Select } from "antd";
 import { PlusOutlined, EditOutlined, DeleteOutlined, TeamOutlined } from "@ant-design/icons";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import useTeams from "../hooks/useTeams";
@@ -18,8 +18,28 @@ import TeamMembersModal from "./TeamMembersModal";
  */
 function TeamManagementPage() {
   const { users } = useUserDirectory();
-  const { teams, isLoading, refetch } = useTeams();
+
+  const [typeFilter, setTypeFilter] = useState(undefined);
+  const [activeFilter, setActiveFilter] = useState(undefined);
+  const filters = useMemo(() => ({ type: typeFilter, isActive: activeFilter }), [typeFilter, activeFilter]);
+
+  const { teams, isLoading, refetch } = useTeams(filters);
+  // A second, always-unfiltered fetch purely to compute the Type filter's
+  // own option list — deriving it from the (possibly filtered) `teams`
+  // above would shrink the dropdown's own options as soon as a filter was
+  // applied (e.g. filtering to "Sales" would make every other type
+  // disappear from the Type dropdown itself). Teams is a tiny, rarely-
+  // fetched list, so a second request here is cheap.
+  const { teams: allTeams, refetch: refetchAllTeams } = useTeams();
   const userNameById = new Map(users.map((user) => [user._id, user.name]));
+
+  // Every distinct type actually in use, for the Type filter's own options —
+  // free-text on the create/edit form (team.model.js), so there's no fixed
+  // enum to draw this from instead.
+  const typeOptions = useMemo(() => {
+    const distinctTypes = [...new Set(allTeams.map((team) => team.type).filter(Boolean))];
+    return distinctTypes.map((type) => ({ value: type, label: type }));
+  }, [allTeams]);
 
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingTeam, setEditingTeam] = useState(null);
@@ -41,6 +61,7 @@ function TeamManagementPage() {
       setIsFormOpen(false);
       setEditingTeam(null);
       refetch();
+      refetchAllTeams();
     } finally {
       setIsSubmittingForm(false);
     }
@@ -50,6 +71,7 @@ function TeamManagementPage() {
     await deleteTeam(team._id);
     message.success("Team deleted");
     refetch();
+    refetchAllTeams();
   }
 
   const columns = [
@@ -92,7 +114,20 @@ function TeamManagementPage() {
               setIsFormOpen(true);
             }}
           />
-          <Popconfirm title="Delete this team?" okText="Delete" okType="danger" onConfirm={() => handleDelete(team)}>
+          <Popconfirm
+            title="Delete this team?"
+            // `team.memberCount` is already present on every row from
+            // `GET /teams` itself (team.service.js#listTeams) — no extra
+            // fetch needed just to show this before the admin confirms.
+            description={
+              team.memberCount > 0
+                ? `This team has ${team.memberCount} member${team.memberCount === 1 ? "" : "s"}. Deleting it will not remove them, but they'll lose this team grouping. Continue?`
+                : "This team has no members. Continue?"
+            }
+            okText="Delete"
+            okType="danger"
+            onConfirm={() => handleDelete(team)}
+          >
             <Button type="text" danger icon={<DeleteOutlined />} title="Delete team" aria-label="Delete team" />
           </Popconfirm>
         </Space>
@@ -102,7 +137,29 @@ function TeamManagementPage() {
 
   return (
     <div>
-      <div className="mb-4 flex justify-end">
+      <div className="mb-4 flex items-center justify-between">
+        <Space wrap>
+          <Select
+            allowClear
+            placeholder="All Types"
+            style={{ width: 180 }}
+            value={typeFilter}
+            onChange={setTypeFilter}
+            options={typeOptions}
+          />
+          <Select
+            allowClear
+            placeholder="Active or Inactive"
+            style={{ width: 180 }}
+            value={activeFilter}
+            onChange={setActiveFilter}
+            options={[
+              { value: "true", label: "Active" },
+              { value: "false", label: "Inactive" },
+            ]}
+          />
+        </Space>
+
         <Button
           type="primary"
           icon={<PlusOutlined />}

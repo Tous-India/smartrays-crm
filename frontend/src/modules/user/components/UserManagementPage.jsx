@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Table, Tag, Button, Space, Popconfirm, Typography, message } from "antd";
+import { Table, Tag, Button, Space, Popconfirm, Typography, Select, message } from "antd";
 import useUsers from "../hooks/useUsers";
+import useTeams from "../../team/hooks/useTeams";
 import useSessionStore from "../../../store/sessionStore";
 import { ROUTE_PATHS } from "../../../constants/routePaths.constants";
-import { USER_ROLE_LABELS } from "../constants/user.constants";
+import { USER_ROLES, USER_ROLE_LABELS } from "../constants/user.constants";
 import { createUser, updateUser, deactivateUser, reactivateUser } from "../api/userApi";
 import UserFormModal from "./UserFormModal";
 import AdminResetPasswordModal from "./AdminResetPasswordModal";
@@ -24,7 +25,21 @@ function UserManagementPage() {
   const currentUser = useSessionStore((state) => state.user);
   const isAdmin = currentUser?.role === "admin";
 
-  const { users, isLoading, refetch } = useUsers({});
+  const [roleFilter, setRoleFilter] = useState(undefined);
+  const [teamFilter, setTeamFilter] = useState(undefined);
+  const [activeFilter, setActiveFilter] = useState(undefined);
+
+  const filters = useMemo(
+    () => ({
+      role: roleFilter,
+      teamId: teamFilter,
+      isActive: activeFilter,
+    }),
+    [roleFilter, teamFilter, activeFilter]
+  );
+
+  const { users, isLoading, refetch } = useUsers(filters);
+  const { teams } = useTeams();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formMode, setFormMode] = useState("create");
   const [editingUser, setEditingUser] = useState(null);
@@ -62,9 +77,17 @@ function UserManagementPage() {
   }
 
   async function handleDeactivate(user) {
-    await deactivateUser(user._id);
-    message.success(`${user.name} deactivated`);
-    refetch();
+    try {
+      await deactivateUser(user._id);
+      message.success(`${user.name} deactivated`);
+      refetch();
+    } catch (error) {
+      // Surfaces the backend's team-head guard message verbatim (§7.28,
+      // "Cannot deactivate: this person leads the following team(s)...")
+      // rather than a generic failure — the admin needs to know exactly
+      // which team(s) to reassign before retrying.
+      message.error(error.response?.data?.message || "Failed to deactivate user");
+    }
   }
 
   async function handleReactivate(user) {
@@ -149,6 +172,36 @@ function UserManagementPage() {
           )}
         </Space>
       </div>
+
+      <Space className="mb-4" wrap>
+        <Select
+          allowClear
+          placeholder="All Roles"
+          style={{ width: 160 }}
+          value={roleFilter}
+          onChange={setRoleFilter}
+          options={USER_ROLES.map((role) => ({ value: role, label: USER_ROLE_LABELS[role] }))}
+        />
+        <Select
+          allowClear
+          placeholder="All Departments"
+          style={{ width: 200 }}
+          value={teamFilter}
+          onChange={setTeamFilter}
+          options={teams.map((team) => ({ value: team._id, label: team.name }))}
+        />
+        <Select
+          allowClear
+          placeholder="Active or Inactive"
+          style={{ width: 180 }}
+          value={activeFilter}
+          onChange={setActiveFilter}
+          options={[
+            { value: "true", label: "Active" },
+            { value: "false", label: "Inactive" },
+          ]}
+        />
+      </Space>
 
       <Table rowKey="_id" loading={isLoading} dataSource={users} columns={columns} pagination={{ pageSize: 20 }} />
 

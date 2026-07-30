@@ -100,6 +100,57 @@ describe("TeamManagementPage", () => {
     expect(message.success).toHaveBeenCalledWith("Team deleted");
   });
 
+  it("shows the accurate member count in the delete confirmation before the admin confirms (§7.28)", async () => {
+    renderPage();
+    await screen.findByText("North Sales Team");
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete team" }));
+
+    expect(
+      await screen.findByText(
+        "This team has 1 member. Deleting it will not remove them, but they'll lose this team grouping. Continue?"
+      )
+    ).toBeInTheDocument();
+  });
+
+  it("shows a zero-member message in the delete confirmation for an empty team", async () => {
+    teamApi.listTeams.mockResolvedValue({
+      data: { data: [{ ...SAMPLE_TEAMS[0], memberCount: 0 }] },
+    });
+    renderPage();
+    await screen.findByText("North Sales Team");
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete team" }));
+
+    expect(await screen.findByText("This team has no members. Continue?")).toBeInTheDocument();
+  });
+
+  describe("Filters (§7.28)", () => {
+    it("refetches with the selected type", async () => {
+      renderPage();
+      await screen.findByText("North Sales Team");
+
+      fireEvent.mouseDown(screen.getByText("All Types"));
+      await userEvent.click(await screen.findByTitle("Sales"));
+
+      await waitFor(() => {
+        expect(teamApi.listTeams).toHaveBeenCalledWith(expect.objectContaining({ type: "Sales" }));
+      });
+    });
+
+    it("refetches with the selected active/inactive status", async () => {
+      renderPage();
+      await screen.findByText("North Sales Team");
+
+      fireEvent.mouseDown(screen.getByText("Active or Inactive"));
+      await userEvent.click(await screen.findByTitle("Inactive"));
+
+      await waitFor(() => {
+        expect(teamApi.listTeams).toHaveBeenCalledWith(expect.objectContaining({ isActive: "false" }));
+      });
+    });
+  });
+
   it("opens the members modal and adds a member", async () => {
     teamApi.addTeamMember.mockResolvedValue({ data: {} });
     renderPage();

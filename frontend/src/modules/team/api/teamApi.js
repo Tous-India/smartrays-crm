@@ -5,8 +5,8 @@ import apiClient from "../../../services/apiClient";
  * the `payment`/`lead`/`customer` modules' own `api/*Api.js` pattern.
  */
 
-export function listTeams() {
-  return apiClient.get("/teams");
+export function listTeams(filters) {
+  return apiClient.get("/teams", { params: filters });
 }
 
 export function getTeam(teamId) {

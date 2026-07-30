@@ -3455,6 +3455,50 @@ access is already covered by the existing `SettingsPage.test.jsx` tab-visibility
 
 ---
 
+### 7.28 User/Team Management Filters and Delete-Guards (2026-07-30)
+
+✅ **Built** — extends both the User Management (§7.0b/§7.19) and Team Management (§7.24)
+modules; neither was rebuilt.
+
+**Backend:**
+- **Deactivation team-head guard** (`user.service.js#setUserActiveStatus`) — deactivating a
+  user who currently leads one or more active Teams (`Team.headManagerId === targetId &&
+  isActive: true`) is rejected (400), naming the team(s) in the message. Reactivate has no
+  equivalent guard. Not silently deactivating a team's head matters because every "own team"
+  scope (§11.9) is derived from that same `headManagerId` — a login-disabled head would leave
+  the whole team's scoping silently pointing at a dead account.
+- **`GET /users` gained `teamId`** — resolves to that Team's `headManagerId` and filters by
+  `managerId` matching it, the same derived-membership mechanism every other "own team" query
+  already uses, combined (`$and`) with the pre-existing `role`/`isActive`/`managerId` filters,
+  not a replacement of them. A nonexistent `teamId` matches nothing rather than erroring.
+- **`GET /teams` gained `type`/`isActive`** — plain equality filters, combined with the existing
+  full-listing query.
+- **No new `GET /teams/:id/delete-preview` endpoint** — `GET /teams/:id` already returns the
+  full derived `members` array; its `.length` is the member count the frontend needs to show
+  before a delete is confirmed, so a separate endpoint would only have duplicated that.
+- 11 new backend tests (8 in `user.test.js`, 3 in `team.test.js`). Full backend suite: 570
+  tests, all passing.
+
+**Frontend:**
+- `UserManagementPage.jsx`: Role/Department/Active `Select` filters wired to `useUsers(filters)`
+  (already supported arbitrary query params — no hook change needed); `handleDeactivate` now
+  catches and surfaces the backend's team-head rejection message verbatim via `message.error`,
+  the same pattern already established for Add Customer's own unhandled-rejection fix.
+- `TeamManagementPage.jsx`: Type/Active `Select` filters; `useTeams(filters)` gained an optional
+  param (every existing unfiltered caller — the Department pickers elsewhere — keeps working by
+  simply omitting it); the Type filter's own option list is deliberately derived from a second,
+  always-unfiltered `useTeams()` call so selecting a type doesn't make the other types disappear
+  from that same dropdown's options; the delete `Popconfirm`'s description now shows the live
+  `memberCount` already present on every `GET /teams` row.
+- 9 new frontend tests (4 in `UserManagementPage.test.jsx`, 5 in `TeamManagementPage.test.jsx`).
+  Verified live: a real team headed by an existing manager, confirmed the deactivate attempt was
+  rejected (400 network response, row stayed Active) and the delete confirmation showed the
+  correct member count.
+
+**Known deviations:** none from this task's own stated scope.
+
+---
+
 ## 8. Frontend Route Map (indicative)
 
 ```

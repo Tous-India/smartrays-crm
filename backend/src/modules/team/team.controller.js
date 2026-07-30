@@ -12,7 +12,7 @@ import {
 } from "./team.service.js";
 
 export const list = asyncWrapper(async (req, res) => {
-  const teams = await listTeams();
+  const teams = await listTeams(req.query);
 
   res.status(200).json(new ApiResponse(200, teams, "Teams fetched successfully"));
 });

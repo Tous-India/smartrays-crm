@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { message } from "antd";
 import { MemoryRouter } from "react-router-dom";
@@ -111,6 +111,30 @@ describe("UserManagementPage", () => {
     expect(message.success).toHaveBeenCalledWith("Manager One deactivated");
   });
 
+  it("shows the backend's exact team-head rejection message when deactivation is blocked (§7.28)", async () => {
+    userApi.deactivateUser.mockRejectedValue({
+      response: {
+        data: {
+          message:
+            "Cannot deactivate: this person leads the following team(s): North Sales Team. Reassign the team's head first.",
+        },
+      },
+    });
+    const { container } = renderPage();
+    await screen.findAllByText("Manager One");
+
+    const managerRow = container.querySelector('tr[data-row-key="user-1"]');
+    await userEvent.click(within(managerRow).getByRole("button", { name: "Deactivate" }));
+    await userEvent.click(await screen.findByRole("button", { name: "OK" }));
+
+    await waitFor(() => {
+      expect(message.error).toHaveBeenCalledWith(
+        "Cannot deactivate: this person leads the following team(s): North Sales Team. Reassign the team's head first."
+      );
+    });
+    expect(message.success).not.toHaveBeenCalled();
+  });
+
   it("reactivates an inactive user", async () => {
     userApi.reactivateUser.mockResolvedValue({ data: {} });
     renderPage();
@@ -150,6 +174,67 @@ describe("UserManagementPage", () => {
     expect(screen.queryByRole("button", { name: "New User" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Reset Password" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Deactivate" })).not.toBeInTheDocument();
+  });
+
+  describe("Filters (§7.28)", () => {
+    it("refetches with the selected role", async () => {
+      renderPage();
+      await screen.findAllByText("Manager One");
+
+      fireEvent.mouseDown(screen.getByText("All Roles"));
+      await userEvent.click(await screen.findByTitle("Manager"));
+
+      await waitFor(() => {
+        expect(userApi.listUsers).toHaveBeenLastCalledWith(
+          expect.objectContaining({ role: "manager" })
+        );
+      });
+    });
+
+    it("refetches with the selected department (teamId)", async () => {
+      renderPage();
+      await screen.findAllByText("Manager One");
+
+      fireEvent.mouseDown(screen.getByText("All Departments"));
+      await userEvent.click(await screen.findByTitle("North Sales Team"));
+
+      await waitFor(() => {
+        expect(userApi.listUsers).toHaveBeenLastCalledWith(
+          expect.objectContaining({ teamId: "team-1" })
+        );
+      });
+    });
+
+    it("refetches with the selected active/inactive status", async () => {
+      renderPage();
+      await screen.findAllByText("Manager One");
+
+      fireEvent.mouseDown(screen.getByText("Active or Inactive"));
+      await userEvent.click(await screen.findByTitle("Inactive"));
+
+      await waitFor(() => {
+        expect(userApi.listUsers).toHaveBeenLastCalledWith(
+          expect.objectContaining({ isActive: "false" })
+        );
+      });
+    });
+
+    it("combines multiple filters (AND logic)", async () => {
+      renderPage();
+      await screen.findAllByText("Manager One");
+
+      fireEvent.mouseDown(screen.getByText("All Roles"));
+      await userEvent.click(await screen.findByTitle("Manager"));
+
+      fireEvent.mouseDown(screen.getByText("Active or Inactive"));
+      await userEvent.click(await screen.findByTitle("Active"));
+
+      await waitFor(() => {
+        expect(userApi.listUsers).toHaveBeenLastCalledWith(
+          expect.objectContaining({ role: "manager", isActive: "true" })
+        );
+      });
+    });
   });
 
   describe("New User form (reworked 2026-07-30)", () => {

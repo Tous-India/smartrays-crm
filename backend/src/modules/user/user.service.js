@@ -5,6 +5,7 @@ import { can } from "../../helpers/permission.helper.js";
 import { getTemplatePermissionsForRole } from "../permission/permission.service.js";
 import { resolveCustomerIdByEmailDomain } from "../customer/customer.service.js";
 import User from "./user.model.js";
+import Team from "../team/team.model.js";
 
 const SALT_ROUNDS = 10;
 
@@ -157,8 +158,20 @@ export async function listUsers(filters, requestingUser) {
     filters.isActive !== undefined ? { isActive: filters.isActive === "true" || filters.isActive === true } : {};
   const managerIdFilter = filters.managerId ? { managerId: filters.managerId } : {};
 
+  // `teamId` (§7.28) resolves to that Team's `headManagerId` and filters by
+  // `managerId` matching it — the same derived-membership mechanism every
+  // other "own team" query already uses (§11.9), not a second concept. A
+  // nonexistent teamId matches nothing rather than throwing, the same
+  // forgiving-filter convention `status`/`role` filters elsewhere already
+  // follow.
+  let teamFilter = {};
+  if (filters.teamId) {
+    const team = await Team.findById(filters.teamId);
+    teamFilter = team ? { managerId: team.headManagerId } : { _id: null };
+  }
+
   const combinedFilter = {
-    $and: [scopeFilter, roleFilter, isActiveFilter, managerIdFilter],
+    $and: [scopeFilter, roleFilter, isActiveFilter, managerIdFilter, teamFilter],
   };
 
   return User.find(combinedFilter).sort({ name: 1 });
@@ -260,11 +273,32 @@ export async function updateUser(targetId, payload, requestingUser) {
   return user;
 }
 
+/**
+ * Deactivating (not reactivating — that's always safe, no guard below) a
+ * user who's currently the `headManagerId` of one or more active Teams is
+ * rejected outright (§7.28) — silently deactivating a team's head would
+ * leave that Team pointing at a login-disabled account, and every member's
+ * "own team" scoping (derived from that same headManagerId, §11.9) would
+ * quietly stop resolving as expected. Names the team(s) in the error so the
+ * admin knows exactly what to fix (reassign the head) before retrying.
+ */
 export async function setUserActiveStatus(targetId, isActive) {
   const user = await User.findById(targetId);
 
   if (!user) {
     throw new ApiError(404, "User not found");
+  }
+
+  if (!isActive) {
+    const ledTeams = await Team.find({ headManagerId: targetId, isActive: true }).select("name");
+
+    if (ledTeams.length > 0) {
+      const teamNames = ledTeams.map((team) => team.name).join(", ");
+      throw new ApiError(
+        400,
+        `Cannot deactivate: this person leads the following team(s): ${teamNames}. Reassign the team's head first.`
+      );
+    }
   }
 
   user.isActive = isActive;

@@ -353,6 +353,103 @@ describe("PATCH /users/:id/deactivate and /reactivate", () => {
   });
 });
 
+describe("PATCH /users/:id/deactivate — team-head guard (§7.28)", () => {
+  it("rejects deactivating a user who currently leads an active team, naming it", async () => {
+    const teamResponse = await adminAgent
+      .post("/api/v1/teams")
+      .send({ name: "Sales Team", type: "Sales", headManagerId: manager1._id });
+    expect(teamResponse.status).toBe(201);
+
+    const response = await adminAgent.patch(`/api/v1/users/${manager1._id}/deactivate`);
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toContain("Sales Team");
+    expect(response.body.message).toContain("Reassign the team's head first");
+
+    const stillActive = await adminAgent.get(`/api/v1/users/${manager1._id}`);
+    expect(stillActive.body.data.isActive).toBe(true);
+  });
+
+  it("names every team led by this person when there's more than one", async () => {
+    await adminAgent.post("/api/v1/teams").send({ name: "Sales Team", headManagerId: manager1._id });
+    await adminAgent.post("/api/v1/teams").send({ name: "Install Team", headManagerId: manager1._id });
+
+    const response = await adminAgent.patch(`/api/v1/users/${manager1._id}/deactivate`);
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toContain("Sales Team");
+    expect(response.body.message).toContain("Install Team");
+  });
+
+  it("does not block deactivating a team head if the team itself is inactive", async () => {
+    const teamResponse = await adminAgent
+      .post("/api/v1/teams")
+      .send({ name: "Sales Team", headManagerId: manager1._id });
+    await adminAgent.patch(`/api/v1/teams/${teamResponse.body.data._id}`).send({ isActive: false });
+
+    const response = await adminAgent.patch(`/api/v1/users/${manager1._id}/deactivate`);
+
+    expect(response.status).toBe(200);
+  });
+
+  it("allows deactivating a user who leads no team at all", async () => {
+    const response = await adminAgent.patch(`/api/v1/users/${sales1._id}/deactivate`);
+
+    expect(response.status).toBe(200);
+  });
+
+  it("never blocks reactivating a team head — only deactivate is guarded", async () => {
+    await adminAgent.post("/api/v1/teams").send({ name: "Sales Team", headManagerId: manager1._id });
+
+    // Deactivated directly at the model layer (bypassing the guard) to set
+    // up a scenario the guard itself would never otherwise allow, purely to
+    // prove reactivate has no guard of its own either.
+    const User = (await import("./user.model.js")).default;
+    await User.findByIdAndUpdate(manager1._id, { isActive: false });
+
+    const response = await adminAgent.patch(`/api/v1/users/${manager1._id}/reactivate`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.isActive).toBe(true);
+  });
+});
+
+describe("GET /users?teamId= (§7.28)", () => {
+  it("returns only users whose managerId matches the team's headManagerId", async () => {
+    const teamResponse = await adminAgent
+      .post("/api/v1/teams")
+      .send({ name: "Sales Team", headManagerId: manager1._id });
+    const teamId = teamResponse.body.data._id;
+
+    const response = await adminAgent.get(`/api/v1/users?teamId=${teamId}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.map((user) => user._id).sort()).toEqual(
+      [String(sales1._id), String(sales2._id)].sort()
+    );
+  });
+
+  it("combines teamId with role (AND logic)", async () => {
+    const teamResponse = await adminAgent
+      .post("/api/v1/teams")
+      .send({ name: "Sales Team", headManagerId: manager1._id });
+    const teamId = teamResponse.body.data._id;
+
+    await adminAgent.patch(`/api/v1/users/${sales1._id}`).send({ role: "employee" });
+
+    const response = await adminAgent.get(`/api/v1/users?teamId=${teamId}&role=sales_associate`);
+
+    expect(response.body.data.map((user) => user._id)).toEqual([String(sales2._id)]);
+  });
+
+  it("returns an empty list for a nonexistent teamId rather than erroring", async () => {
+    const response = await adminAgent.get("/api/v1/users?teamId=507f1f77bcf86cd799439011");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toEqual([]);
+  });
+});
+
 describe("PATCH /users/:id/manager", () => {
   it("admin can assign a valid manager", async () => {
     const response = await adminAgent

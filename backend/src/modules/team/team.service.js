@@ -26,8 +26,16 @@ async function findTeamOrThrow(teamId) {
   return team;
 }
 
-export async function listTeams() {
-  const teams = await Team.find().sort({ name: 1 });
+/**
+ * `type`/`isActive` filters (§7.28) — plain equality matches, combined with
+ * the existing full-listing query, not a replacement of it.
+ */
+export async function listTeams(filters = {}) {
+  const typeFilter = filters.type ? { type: filters.type } : {};
+  const isActiveFilter =
+    filters.isActive !== undefined ? { isActive: filters.isActive === "true" || filters.isActive === true } : {};
+
+  const teams = await Team.find({ ...typeFilter, ...isActiveFilter }).sort({ name: 1 });
 
   // One extra query per team for its member count — teams are an
   // infrequently-listed, small admin-facing collection (org structure, not

@@ -1368,3 +1368,21 @@ resolved while Phase 0 is underway.
   (role template loading/switching, user override loading). `frontend/README.md` and
   `.context/final-plan.md` (new §7.26 documenting the earlier same-day sidebar-badges task for
   consistent numbering, and new §7.27) updated.
+- **2026-07-30** — Added filters and delete-guards to User Management and Team Management
+  (§7.28), extending both without rebuilding either. **Deactivation team-head guard:**
+  deactivating a user who currently leads one or more active Teams is now rejected (400),
+  naming the team(s) in the error — silently deactivating a team's head would leave every
+  member's "own team" scoping (§11.9) pointing at a login-disabled account. Reactivate has no
+  equivalent guard. **Filters:** `GET /users` gained `teamId` (resolves to that Team's
+  `headManagerId`, combined with the existing `role`/`isActive`/`managerId` filters);
+  `GET /teams` gained `type`/`isActive`. **No new delete-preview endpoint** — `GET /teams/:id`
+  already returns the full derived `members` array, whose length is the count the frontend
+  needs before confirming a delete. Frontend: Role/Department/Active filters on User
+  Management, Type/Active filters on Team Management, the backend's exact team-head rejection
+  message now surfaces to the admin (not a generic error), and the team delete confirmation
+  shows the live member count. 11 new backend tests (full suite: 570, all passing), 9 new
+  frontend tests; full frontend suite passes (same pre-existing flaky files, confirmed
+  unrelated); `npm run build` succeeds. Verified live via a real browser session (guard
+  rejection confirmed via network response + unchanged row state; delete confirmation's member
+  count confirmed accurate). `backend/README.md`, `frontend/README.md`, and
+  `.context/final-plan.md` (new §7.28) updated.

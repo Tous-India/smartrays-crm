@@ -150,6 +150,42 @@ describe("Team CRUD", () => {
     expect(listed.memberCount).toBe(1);
   });
 
+  it("filters by type (§7.28)", async () => {
+    await adminAgent.post("/api/v1/teams").send({ name: "Sales Team", type: "Sales", headManagerId: String(manager1._id) });
+    await adminAgent.post("/api/v1/teams").send({ name: "Install Team", type: "Installation", headManagerId: String(manager2._id) });
+
+    const response = await adminAgent.get("/api/v1/teams?type=Sales");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.map((t) => t.name)).toEqual(["Sales Team"]);
+  });
+
+  it("filters by isActive (§7.28)", async () => {
+    const active = await adminAgent.post("/api/v1/teams").send({ name: "Active Team", headManagerId: String(manager1._id) });
+    const toDeactivate = await adminAgent
+      .post("/api/v1/teams")
+      .send({ name: "Inactive Team", headManagerId: String(manager2._id) });
+    await adminAgent.patch(`/api/v1/teams/${toDeactivate.body.data._id}`).send({ isActive: false });
+
+    const activeResponse = await adminAgent.get("/api/v1/teams?isActive=true");
+    expect(activeResponse.body.data.map((t) => t._id)).toEqual([active.body.data._id]);
+
+    const inactiveResponse = await adminAgent.get("/api/v1/teams?isActive=false");
+    expect(inactiveResponse.body.data.map((t) => t._id)).toEqual([toDeactivate.body.data._id]);
+  });
+
+  it("combines type and isActive filters (AND logic)", async () => {
+    await adminAgent.post("/api/v1/teams").send({ name: "Sales Active", type: "Sales", headManagerId: String(manager1._id) });
+    const salesInactive = await adminAgent
+      .post("/api/v1/teams")
+      .send({ name: "Sales Inactive", type: "Sales", headManagerId: String(manager2._id) });
+    await adminAgent.patch(`/api/v1/teams/${salesInactive.body.data._id}`).send({ isActive: false });
+
+    const response = await adminAgent.get("/api/v1/teams?type=Sales&isActive=false");
+
+    expect(response.body.data.map((t) => t._id)).toEqual([salesInactive.body.data._id]);
+  });
+
   it("updates name, type, and isActive", async () => {
     const team = await adminAgent
       .post("/api/v1/teams")

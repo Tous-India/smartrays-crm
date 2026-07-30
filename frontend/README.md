@@ -963,6 +963,39 @@ tab-not-route pattern, `PermissionGate`d on `can(user, "teams", "manage")`, admi
   including creating a throwaway test employee first, since the dev database had no employee/
   sales_associate accounts to add to a team until then.
 
+### User/Team Management filters and delete-guards (§7.28, 2026-07-30)
+
+Extends both existing modules — no rebuild of either.
+
+- **`UserManagementPage.jsx` filter controls** — Role, Department (Team), and Active/Inactive
+  `Select`s above the table, all wired straight to `useUsers(filters)` (already supported
+  arbitrary query params passed through to `GET /users`, no hook changes needed). Department
+  resolves to the new `teamId` query param.
+- **Deactivate error surfacing** — `handleDeactivate` now wraps the API call in a try/catch and
+  shows the backend's error message verbatim via `message.error(error.response?.data?.message ||
+  ...)`, the same pattern already established for Add Customer's own unhandled-rejection fix —
+  so the team-head guard's exact message (naming the team(s) to reassign) reaches the admin,
+  not a generic failure toast.
+- **`TeamManagementPage.jsx` filter controls** — Type and Active/Inactive `Select`s. `useTeams`
+  gained an optional `filters` param (`type`/`isActive`) — every existing caller that wants the
+  full unfiltered list (the Department picker in User Management/the New User form) keeps
+  working unchanged by simply omitting it. The Type filter's own option list is deliberately
+  derived from a **second, always-unfiltered** `useTeams()` call, not the (possibly filtered)
+  main list — otherwise selecting "Sales" would make every other type disappear from the Type
+  dropdown itself as soon as it was applied.
+- **Delete confirmation member count** — the `Popconfirm`'s `description` now shows "This team
+  has N member(s). Deleting it will not remove them, but they'll lose this team grouping.
+  Continue?" (or "no members" for an empty team) using `team.memberCount`, which `GET /teams`
+  already returns on every row — no new fetch, no new endpoint.
+- **Testing:** 4 new tests in `UserManagementPage.test.jsx` (team-head rejection message shown
+  verbatim; role/department/active filters each refetch correctly; combined filters use AND
+  logic) and 5 new tests in `TeamManagementPage.test.jsx` (type/active filters refetch
+  correctly; delete confirmation shows the accurate member count, including the zero-member
+  case).
+- **Verified live:** created a real team headed by an existing manager, confirmed the
+  deactivate attempt on that manager was rejected (`400` network response, row stayed Active)
+  and the delete confirmation showed the correct live member count.
+
 ### New User form rework (2026-07-30)
 
 Scoped to **create mode only** — `UserFormModal.jsx`'s Edit mode is unchanged (still the full
