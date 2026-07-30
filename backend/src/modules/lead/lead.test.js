@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import request from "supertest";
 import { startTestDatabase, stopTestDatabase } from "../../../tests/helpers/testDb.js";
 import { getTestApp } from "../../../tests/helpers/testApp.js";
 import { createUserDirectly, loginAsAgent } from "../../../tests/helpers/authHelpers.js";
@@ -7,6 +8,7 @@ import Lead from "./lead.model.js";
 import LeadCall from "./leadCall.model.js";
 import LeadSource from "./leadSource.model.js";
 import Notification from "../notification/notification.model.js";
+import User from "../user/user.model.js";
 
 const FULL_LEADS_PERMISSIONS = { leads: { view: true, create: true, edit: true, delete: true } };
 
@@ -34,6 +36,10 @@ async function clearLeadData() {
 }
 
 beforeAll(async () => {
+  // Must be set before getTestApp()'s dynamic import first evaluates
+  // env.js — see lead.routes.js#verifyWebsiteIntakeToken.
+  process.env.WEBSITE_LEAD_INTAKE_TOKEN = "test-webhook-secret";
+
   await startTestDatabase();
   app = await getTestApp();
 
@@ -945,5 +951,111 @@ describe("Assignment notifications (§6.7/§7.1, Phase 9)", () => {
     const updatedLead = await Lead.findById(leadId);
     expect(updatedLead.followUpReminder24hSentAt).not.toBeNull();
     expect(updatedLead.followUpReminder15mSentAt).not.toBeNull();
+  });
+});
+
+describe("Website lead intake webhook (§7.25)", () => {
+  const VALID_TOKEN = "test-webhook-secret";
+
+  it("rejects a request with no token at all", async () => {
+    const response = await request(app)
+      .post("/api/v1/leads/website-intake")
+      .send({ "name-1": "Web Visitor", "phone-1": "9998887777" });
+
+    expect(response.status).toBe(401);
+  });
+
+  it("rejects a request with the wrong token", async () => {
+    const response = await request(app)
+      .post("/api/v1/leads/website-intake")
+      .set("X-Webhook-Token", "wrong-token")
+      .send({ "name-1": "Web Visitor", "phone-1": "9998887777" });
+
+    expect(response.status).toBe(401);
+  });
+
+  it("creates a lead from a flat Forminator-style payload, with no auth cookie sent", async () => {
+    const response = await request(app)
+      .post("/api/v1/leads/website-intake")
+      .set("X-Webhook-Token", VALID_TOKEN)
+      .send({
+        form_id: 42,
+        form_name: "Get a Quote",
+        "name-1": "Jordan Web Lead",
+        "email-1": "jordan@example.com",
+        "phone-1": "9998887777",
+        "company-name-1": "Jordan Solar Homes",
+        "textarea-1": "Interested in a rooftop quote for a 3kW system.",
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.name).toBe("Jordan Web Lead");
+    expect(response.body.data.email).toBe("jordan@example.com");
+    expect(response.body.data.phone).toBe("9998887777");
+    expect(response.body.data.companyName).toBe("Jordan Solar Homes");
+    expect(response.body.data.source).toBe("Website");
+    expect(response.body.data.clientType).toBe("residential");
+    expect(response.body.data.notes).toContain("Interested in a rooftop quote");
+    expect(response.body.data.notes).toContain("Raw website form submission");
+    // form_name contains the substring "name" but must not be mistaken for
+    // the submitter's own name (the exact false-positive the meta-key
+    // exclusion list guards against).
+    expect(response.body.data.name).not.toBe("Get a Quote");
+
+    const lead = await Lead.findById(response.body.data._id);
+    expect(String(lead.ownerId)).toBeTruthy();
+  });
+
+  it("assigns the created lead to an admin and notifies them", async () => {
+    await Notification.deleteMany({});
+
+    const response = await request(app)
+      .post("/api/v1/leads/website-intake")
+      .set("X-Webhook-Token", VALID_TOKEN)
+      .send({ "full-name-1": "Notify Test", "email-1": "notify@example.com" });
+
+    expect(response.status).toBe(201);
+
+    const lead = await Lead.findById(response.body.data._id);
+    const ownerUser = await User.findById(lead.ownerId);
+    expect(ownerUser.role).toBe("admin");
+
+    const notification = await Notification.findOne({ userId: lead.ownerId, type: "lead_assigned" });
+    expect(notification).not.toBeNull();
+    expect(notification.message).toContain("Notify Test");
+  });
+
+  it("handles Forminator's fields-array entry shape", async () => {
+    const response = await request(app)
+      .post("/api/v1/leads/website-intake")
+      .set("X-Webhook-Token", VALID_TOKEN)
+      .send({
+        fields: [
+          { name: "name-1", value: "Array Shape Lead" },
+          { name: "phone-1", value: "9112233445" },
+        ],
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.name).toBe("Array Shape Lead");
+    expect(response.body.data.phone).toBe("9112233445");
+  });
+
+  it("rejects a submission with no identifiable name or contact info", async () => {
+    const response = await request(app)
+      .post("/api/v1/leads/website-intake")
+      .set("X-Webhook-Token", VALID_TOKEN)
+      .send({ "textarea-1": "just a message, no name or contact field" });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects a name with no phone or email at all", async () => {
+    const response = await request(app)
+      .post("/api/v1/leads/website-intake")
+      .set("X-Webhook-Token", VALID_TOKEN)
+      .send({ "name-1": "Nameless Contact" });
+
+    expect(response.status).toBe(400);
   });
 });

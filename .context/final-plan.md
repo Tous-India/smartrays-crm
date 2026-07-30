@@ -3344,6 +3344,44 @@ User Management/Permissions on `SettingsPage`, admin-only via `PermissionGate`/`
 
 ---
 
+### 7.25 Website Lead-Intake Webhook (2026-07-30)
+
+✅ **Built** — `POST /leads/website-intake`, a new public, unauthenticated endpoint so a
+WordPress "Get a Quote" form (via Forminator's webhook add-on) can post submissions directly
+into Leads, instead of a human re-keying every website inquiry by hand.
+
+**Design decisions (confirmed with the user before building, since this is a public,
+security-sensitive endpoint):**
+- **Payload shape:** the raw Forminator payload, mapped server-side — not a simplified flat
+  shape requiring WordPress-side reconfiguration. Forminator auto-generates field ids
+  (`name-1`, `email-1`, `textarea-1`, ...) per form/site, so there's no fixed, knowable id set
+  to hardcode against.
+- **Auth:** a shared secret via a custom `X-Webhook-Token` header (not a query-string token) —
+  simplest for a server-to-server webhook call.
+- **Abuse protection:** token check only for v1, no added rate-limiting — matches this
+  codebase's existing convention of no rate-limiting middleware anywhere else; revisit only if
+  actually abused.
+
+**Implementation** (`backend/src/modules/lead/`): see `backend/README.md`'s Leads section for
+the full endpoint writeup (auth-fail-closed behavior, field-mapping keyword-matching strategy,
+the three payload shapes handled, and the `ownerId`/`clientType`/`source` defaulting rules for
+a submission with no `requestingUser`). New `WEBSITE_LEAD_INTAKE_TOKEN` env var — optional at
+boot (like the other optional integrations, e.g. geofencing radius), since this is an add-on
+marketing-site integration, not core app functionality; the route itself fails closed (503) if
+it's unset rather than the app refusing to start.
+
+**Testing:** 7 new tests (`lead.test.js`) — missing/wrong token, successful creation from both
+the flat-object and Forminator `fields`-array payload shapes, admin assignment + the existing
+`lead_assigned` notification firing, and two 400 cases (no name/contact at all found; a name
+with neither phone nor email). Full backend suite: 535 tests, all passing.
+
+**Known deviations:** none from this task's own stated scope — the exact field-id keyword list
+is a best-effort mapping given no access to the real WordPress form's configuration; if a real
+submission's fields aren't recognized, the full raw payload is still preserved (never silently
+dropped) in the created lead's `notes`, so nothing is lost even in that case.
+
+---
+
 ## 8. Frontend Route Map (indicative)
 
 ```

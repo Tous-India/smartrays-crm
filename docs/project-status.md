@@ -1304,3 +1304,30 @@ resolved while Phase 0 is underway.
   `npm run build` succeeds. `backend/README.md`, `frontend/README.md`, and
   `.context/final-plan.md` (new §7.24, plus updates to §11.9, the Modules-at-a-Glance table, the
   Key Architectural Decisions list, and the `User`/`Team` schema entries) all updated.
+- **2026-07-30** — Fixed the Leads/Customers/Payments tables' horizontal scrollbar so it's
+  reachable at the viewport's bottom edge on a long list, instead of only at the table's own
+  bottom edge (a previously-unresolved bug). Added `scroll={{x:'max-content'}}` +
+  `sticky={{offsetHeader:48}}` (matching the fixed app header's height) to all three tables.
+  That surfaced a second, real bug: `.app-data-table .ant-table`'s `overflow: hidden` (added
+  earlier for rounded card corners) made the element a CSS scroll container, which became the
+  sticky header's positioning reference instead of the window — permanently shifting it down by
+  `offsetHeader` and overlapping the first body row on Leads/Payments regardless of actual
+  scroll position (confirmed via `getBoundingClientRect`, reproducible even at `scrollY: 0`).
+  Fixed by dropping `overflow: hidden` and rounding the header/last-row corners directly
+  instead, preserving the card look without needing to clip anything. Verified via a live
+  browser session on all three pages, both scrolled and at rest. Ran the Payments test suite
+  (12/12) and the full frontend suite (unrelated pre-existing flakiness only, confirmed via
+  isolation reruns); `npm run build` succeeds. Deployed (frontend only).
+- **2026-07-30** — Added a public, unauthenticated `POST /leads/website-intake` webhook (§7.25)
+  so a WordPress "Get a Quote" form (Forminator's webhook add-on) can post submissions directly
+  into Leads. Gated by a shared secret (`WEBSITE_LEAD_INTAKE_TOKEN`, sent as an `X-Webhook-Token`
+  header) rather than the normal cookie auth — fails closed (503) if the token isn't configured,
+  401 for a wrong/missing one. Since Forminator's field ids aren't knowable ahead of time
+  (auto-generated per form/site), field mapping is best-effort keyword matching over whatever
+  keys the payload contains (name/email/phone/company/message), handling three payload shapes
+  (flat object, `data`-nested, or Forminator's own `fields` array). Defaults: `ownerId` → the
+  longest-tenured admin (no `requestingUser` exists on this path, unlike every other lead-
+  creation route), `clientType` → `"residential"`, `source` → `"Website"`. The full raw payload
+  is always preserved in `notes` so nothing submitted is ever silently lost, even when a field
+  isn't recognized. 7 new tests (`lead.test.js`); full backend suite: 535 tests, all passing.
+  `backend/README.md` and `.context/final-plan.md` (new §7.25) updated.

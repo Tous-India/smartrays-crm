@@ -15,6 +15,7 @@ import {
   listLeadSources,
   importLeadsFromFile,
   exportLeadsToExcel,
+  createLeadFromWebsiteIntake,
 } from "./lead.service.js";
 
 export const create = asyncWrapper(async (req, res) => {
@@ -102,4 +103,10 @@ export const getSources = asyncWrapper(async (req, res) => {
   const sources = await listLeadSources();
 
   res.status(200).json(new ApiResponse(200, sources, "Lead sources fetched successfully"));
+});
+
+export const createFromWebsiteIntake = asyncWrapper(async (req, res) => {
+  const lead = await createLeadFromWebsiteIntake(req.body);
+
+  res.status(201).json(new ApiResponse(201, lead, "Lead created from website submission"));
 });

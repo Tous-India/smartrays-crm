@@ -120,4 +120,11 @@ export const env = {
   smtpUser: process.env.SMTP_USER,
   smtpPassword: process.env.SMTP_PASSWORD,
   smtpFrom: process.env.SMTP_FROM,
+  // Shared secret for the public `POST /leads/website-intake` webhook (the
+  // WordPress/Forminator lead-intake integration) — not required at boot,
+  // like the other optional integrations above. If unset, that route
+  // refuses every request (fail-closed) rather than the server accepting
+  // unauthenticated writes with no way to lock them down. See
+  // lead.routes.js#verifyWebsiteIntakeToken.
+  websiteLeadIntakeToken: process.env.WEBSITE_LEAD_INTAKE_TOKEN,
 };

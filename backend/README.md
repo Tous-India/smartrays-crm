@@ -220,6 +220,46 @@ Verified end-to-end with real HTTP requests across an admin, a manager, two sale
 on that manager's team, and a third sales associate deliberately left off the team — see the
 verification notes below.
 
+**Website lead-intake webhook — `POST /leads/website-intake` (§7.25, added 2026-07-30):** the
+one deliberately public, unauthenticated route on this router (registered before `/:id`, though
+that ordering is moot for `POST` today since there's no colliding `POST /:id` route). Built for
+a WordPress "Get a Quote" form (Forminator's webhook add-on) to post submissions directly into
+Leads. Gated by a shared secret instead of `authenticate`/`authorize`:
+
+- **Auth:** an `X-Webhook-Token` header must match `WEBSITE_LEAD_INTAKE_TOKEN` (see
+  `.env.example`). If that env var is unset, the route refuses every request with `503` rather
+  than accepting unauthenticated writes with no way to lock them down; a wrong token is `401`,
+  identical to a missing one — the response never reveals whether a token is even configured.
+- **Payload:** the raw Forminator payload, whatever shape it arrives in. There is no fixed,
+  knowable set of field ids for the real WordPress form (Forminator auto-generates ids like
+  `name-1`/`email-1`/`textarea-1` per form, and they differ per site), so
+  `lead.service.js#createLeadFromWebsiteIntake` does best-effort keyword matching over the
+  payload's keys (`name`, `email`, `phone`/`mobile`/`whatsapp`, `company`/`business`,
+  `message`/`textarea`/`comment`/`note`/`query`/`requirement`) rather than expecting exact ids.
+  Handles three shapes transparently: a flat `{fieldKey: value}` object, one nested under
+  `data`, or Forminator's own `fields: [{name, value}]` array export shape. A fixed list of
+  known wrapper/meta keys (`form_id`, `form_name`, etc.) is excluded first so, e.g., `form_name`
+  (the FORM's name) is never mistaken for the submitter's own name field.
+- **Required:** a name, and at least a phone or an email — `400` if neither can be found in the
+  payload at all.
+- **`ownerId`:** since there's no `requestingUser` on this path (unlike every other lead-
+  creation route), the lead is assigned to the longest-tenured admin account — the same "no
+  explicit owner → assign to the highest-authority actor available" reasoning `POST /leads`
+  already applies when a non-`sales_associate` creator omits `ownerId`, just with no creator at
+  all to default to here. That admin also gets the existing `lead_assigned` notification, same
+  as any other new-owner assignment.
+- **`clientType`:** defaults to `"residential"` (the field has no schema default and is
+  required) since the public quote form is a direct-to-consumer intake page, not a commercial/
+  industrial inquiry form — overridable if a recognizable value is present in the payload.
+- **`source`:** always `"Website"` (already one of the seeded `LeadSource` defaults).
+- **No data loss on unmapped fields:** the full raw payload is always JSON-serialized into
+  `notes`, underneath whatever message/comment field was matched — nothing submitted is ever
+  silently dropped even when a field isn't recognized by the keyword matcher.
+
+7 new tests (`lead.test.js`, "Website lead intake webhook" describe block) — missing/wrong
+token, successful creation from both the flat and `fields`-array payload shapes, admin
+assignment + notification, and the two "can't identify a name/contact" 400 cases.
+
 ### Live Location Tracking (`/api/v1/location`)
 
 Ties into Attendance but lives in its own `location` module — see `.context/final-plan.md`

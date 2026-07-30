@@ -1,7 +1,7 @@
 import ExcelJS from "exceljs";
 import { Readable } from "stream";
 import ApiError from "../../utils/ApiError.js";
-import Lead, { LEAD_STATUSES } from "./lead.model.js";
+import Lead, { LEAD_STATUSES, CLIENT_TYPES } from "./lead.model.js";
 import LeadCall from "./leadCall.model.js";
 import LeadSource from "./leadSource.model.js";
 import User from "../user/user.model.js";
@@ -694,4 +694,178 @@ async function sendRemindersForWindow({ referenceDate, windowMs, sentAtField, wi
   }
 
   return dueLeads.length;
+}
+
+// --- Website lead-intake webhook (§7.25) ---------------------------------
+
+// Wrapper/meta keys a webhook integration (Forminator's included) commonly
+// sends alongside the actual form fields — excluded before keyword-matching
+// below so e.g. `form_name` (the FORM's name, not the submitter's) never
+// gets mistaken for a "name" field just because it contains that substring.
+const INTAKE_META_KEYS = new Set([
+  "form_id",
+  "form_name",
+  "entry_id",
+  "form_url",
+  "page_url",
+  "submission_id",
+  "date_created",
+  "ip",
+  "user_agent",
+  "referer",
+  "referrer",
+]);
+
+/**
+ * Forminator's webhook add-on (and similar WordPress form plugins) don't
+ * all share one fixed payload shape — some post a flat object of
+ * `field-id: value` pairs at the root, some nest it under `data`, and
+ * Forminator's own raw entry export shape is a `fields: [{name, value}]`
+ * array. Normalizes all three into one flat `{ fieldKey: value }` object so
+ * the keyword-matching below doesn't need to know which shape arrived.
+ */
+function flattenWebsiteIntakePayload(rawPayload) {
+  if (!rawPayload || typeof rawPayload !== "object") {
+    return {};
+  }
+
+  if (Array.isArray(rawPayload.fields)) {
+    const flat = {};
+    rawPayload.fields.forEach((field) => {
+      const key = field?.name || field?.id;
+      if (key) {
+        flat[key] = field.value;
+      }
+    });
+    return flat;
+  }
+
+  if (rawPayload.data && typeof rawPayload.data === "object" && !Array.isArray(rawPayload.data)) {
+    return rawPayload.data;
+  }
+
+  return rawPayload;
+}
+
+/**
+ * Best-effort field mapping: there is no fixed, known set of field ids for
+ * the actual WordPress form (Forminator auto-generates ids like `name-1`,
+ * `email-1`, `textarea-1` per form, and they differ per site/form), so this
+ * matches on whichever key *contains* one of the given keywords rather than
+ * an exact id. `excludeKeys` lets an earlier, more specific match (e.g.
+ * "company") claim a key so a later, broader search (e.g. "name") can't
+ * also match it — see the extraction order below.
+ */
+function extractIntakeField(flatFields, keywords, excludeKeys) {
+  const entry = Object.entries(flatFields).find(([key, value]) => {
+    if (excludeKeys.has(key)) return false;
+    if (INTAKE_META_KEYS.has(key.toLowerCase())) return false;
+    if (value === undefined || value === null || value === "") return false;
+
+    const lowerKey = key.toLowerCase();
+    return keywords.some((keyword) => lowerKey.includes(keyword));
+  });
+
+  return entry || null;
+}
+
+/**
+ * `POST /leads/website-intake` (§7.25) — creates a Lead from a public,
+ * unauthenticated WordPress/Forminator form submission (see
+ * lead.routes.js#verifyWebsiteIntakeToken for the shared-secret gate this
+ * sits behind). There is no `requestingUser` here, unlike every other lead-
+ * creation path, so two things `createLead` normally gets for free have to
+ * be decided explicitly:
+ *
+ * - `ownerId`: assigned to the longest-tenured admin account. Mirrors this
+ *   codebase's existing "no explicit owner → assign to the highest-
+ *   authority actor available" rule (`resolveOwnerIdForCreate` above
+ *   defaults non-sales-associate creators to themselves) — here there's no
+ *   creator at all, so an admin is the natural fallback, and whoever holds
+ *   that role can reassign it from the Leads table like any other lead.
+ * - `clientType`: defaults to "residential" (required, no schema default) —
+ *   the public "Get a Quote" form this endpoint serves is a direct-to-
+ *   consumer intake page, not a commercial/industrial inquiry form. A
+ *   caller that does send a recognizable client-type value can still
+ *   override it (matched the same best-effort way as the other fields).
+ *
+ * Field mapping is necessarily best-effort (see `extractIntakeField` above)
+ * since the real WordPress form's exact field ids aren't knowable ahead of
+ * time. To make sure nothing is ever silently lost even when a field isn't
+ * recognized, the full raw payload is always appended to `notes` as JSON,
+ * underneath whatever message/comment field was matched.
+ */
+export async function createLeadFromWebsiteIntake(rawPayload) {
+  const flatFields = flattenWebsiteIntakePayload(rawPayload);
+  const usedKeys = new Set();
+
+  const companyEntry = extractIntakeField(flatFields, ["company", "business"], usedKeys);
+  if (companyEntry) usedKeys.add(companyEntry[0]);
+
+  const emailEntry = extractIntakeField(flatFields, ["email"], usedKeys);
+  if (emailEntry) usedKeys.add(emailEntry[0]);
+
+  const phoneEntry = extractIntakeField(flatFields, ["phone", "mobile", "whatsapp"], usedKeys);
+  if (phoneEntry) usedKeys.add(phoneEntry[0]);
+
+  const clientTypeEntry = extractIntakeField(flatFields, ["client-type", "clienttype", "property-type"], usedKeys);
+  if (clientTypeEntry) usedKeys.add(clientTypeEntry[0]);
+
+  const messageEntry = extractIntakeField(
+    flatFields,
+    ["message", "textarea", "comment", "note", "query", "requirement"],
+    usedKeys
+  );
+  if (messageEntry) usedKeys.add(messageEntry[0]);
+
+  // Checked last so "company"/"business"/etc. keys already claimed above
+  // are excluded from matching here too (both directions rely on
+  // `usedKeys` — order between company/email/phone/message doesn't matter
+  // to each other, only that name is resolved after all of them).
+  const nameEntry = extractIntakeField(flatFields, ["name"], usedKeys);
+
+  const name = nameEntry ? String(nameEntry[1]).trim() : null;
+  const phone = phoneEntry ? String(phoneEntry[1]).trim() : null;
+  const email = emailEntry ? String(emailEntry[1]).trim() : null;
+
+  if (!name || !(phone || email)) {
+    throw new ApiError(
+      400,
+      "Unable to find a name and a phone or email in the submitted form"
+    );
+  }
+
+  const owner = await User.findOne({ role: "admin" }).sort({ createdAt: 1 });
+  if (!owner) {
+    throw new ApiError(500, "No admin account exists to own website-submitted leads");
+  }
+
+  const rawClientType = clientTypeEntry ? String(clientTypeEntry[1]).trim().toLowerCase() : null;
+  const clientType = CLIENT_TYPES.includes(rawClientType) ? rawClientType : "residential";
+
+  const notesParts = [];
+  if (messageEntry) {
+    notesParts.push(String(messageEntry[1]));
+  }
+  notesParts.push(`Raw website form submission:\n${JSON.stringify(rawPayload, null, 2)}`);
+
+  const lead = await Lead.create({
+    name,
+    email,
+    phone,
+    companyName: companyEntry ? String(companyEntry[1]).trim() : undefined,
+    source: "Website",
+    ownerId: owner._id,
+    clientType,
+    notes: notesParts.join("\n\n---\n"),
+  });
+
+  await createNotification(
+    owner._id,
+    "lead_assigned",
+    `New website lead: ${lead.name}${lead.companyName ? ` (${lead.companyName})` : ""}`,
+    { module: "leads", id: lead._id }
+  );
+
+  return lead;
 }
