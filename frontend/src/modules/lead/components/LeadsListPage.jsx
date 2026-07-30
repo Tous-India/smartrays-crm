@@ -184,7 +184,13 @@ function LeadsListPage({ view }) {
 
   return (
     <div>
-      <PriorityLeadsSection priorityLeads={priorityLeads} />
+      <PriorityLeadsSection
+        priorityLeads={priorityLeads}
+        onLogCall={setLogCallTarget}
+        onRescheduleFollowUp={handleRescheduleFollowUp}
+        onRequestStatusChange={statusFlow.requestStatusChange}
+        onToggleHot={handleToggleHot}
+      />
 
       <LeadFiltersBar
         filters={filters}

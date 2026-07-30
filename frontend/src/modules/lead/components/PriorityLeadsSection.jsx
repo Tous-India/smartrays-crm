@@ -1,6 +1,7 @@
-import { Card, Empty, Tag } from "antd";
-import { FireFilled } from "@ant-design/icons";
+import { Card, Empty, Tag, Space, Button, Tooltip } from "antd";
+import { FireFilled, FireOutlined, PhoneOutlined, CheckCircleOutlined, CloseCircleOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
+import LeadFollowUpCell from "./LeadFollowUpCell";
 
 const URGENCY_STYLES = {
   overdue: { color: "red", label: "Overdue", borderClass: "border-red-200" },
@@ -22,8 +23,34 @@ const URGENCY_STYLES = {
  * visually wrong for a lone card and was reverted back to this fixed-width
  * behavior. No "+N more" cap: this list is bounded by "hot" + "due in the
  * next 3 days", not by total lead count.
+ *
+ * Each card also carries a row of icon-only quick actions — Log Call,
+ * Reschedule, Won, Lost, Mark/Remove Hot — every one of them wired to the
+ * exact same handlers/modals `LeadsListPage` already built for the Table
+ * view (`onLogCall`/`onRescheduleFollowUp`/`onRequestStatusChange`/
+ * `onToggleHot`, passed straight through as props), not new logic: Log Call
+ * opens the same `LogCallModal`, Won/Lost go through the same
+ * `useLeadStatusChangeFlow` (Won opens `ConvertToCustomerModal` — status
+ * only actually changes on a successful conversion; Lost opens
+ * `LostReasonModal`), Reschedule reuses `LeadFollowUpCell` itself
+ * (`iconOnly`) rather than a second date-picking implementation, and hot
+ * toggle calls the same `toggleHotFlag`-based handler the Lead Detail page
+ * uses — deliberately not `updateLead`, which silently no-ops on `isHot`
+ * since that field was never in its updatable-fields allow-list (the exact
+ * bug `LeadDetailPage.jsx` itself already found and fixed). Every handler
+ * this section already receives ends in the same `refetch()` call
+ * `LeadsListPage` uses for the Table/Board views, so a card whose action
+ * changes its qualifying status (e.g. Lost) disappears from this section
+ * exactly like it would from the underlying list — no separate refresh
+ * wiring needed here.
  */
-function PriorityLeadsSection({ priorityLeads }) {
+function PriorityLeadsSection({
+  priorityLeads,
+  onLogCall,
+  onRescheduleFollowUp,
+  onRequestStatusChange,
+  onToggleHot,
+}) {
   const navigate = useNavigate();
 
   return (
@@ -38,7 +65,7 @@ function PriorityLeadsSection({ priorityLeads }) {
           />
         </Card>
       ) : (
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(256px,256px))] gap-3 p-[10px]">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(24%,256px))] gap-3 p-[10px] justify-evenly">
           {priorityLeads.map((lead) => {
             const urgency = lead.followUpUrgency ? URGENCY_STYLES[lead.followUpUrgency] : null;
 
@@ -69,9 +96,69 @@ function PriorityLeadsSection({ priorityLeads }) {
                   )}
                 </div>
                 <div className="text-xs text-gray-500">{lead.companyName || "—"}</div>
-                <div className="mt-1.5 flex items-center gap-1">
-                  {lead.isHot && <Tag color="orange">Hot</Tag>}
-                  {urgency && <Tag color={urgency.color}>{urgency.label}</Tag>}
+                <div className="mt-1.5 flex items-center justify-between gap-1">
+                  <div className="flex items-center gap-1">
+                    {lead.isHot && <Tag color="orange">Hot</Tag>}
+                    {urgency && <Tag color={urgency.color}>{urgency.label}</Tag>}
+                  </div>
+
+                  <Space size={0}>
+                    <Tooltip title="Log Call">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<PhoneOutlined />}
+                        aria-label="Log Call"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onLogCall(lead);
+                        }}
+                      />
+                    </Tooltip>
+                    <LeadFollowUpCell lead={lead} onReschedule={onRescheduleFollowUp} iconOnly />
+                    <Tooltip title="Won">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<CheckCircleOutlined />}
+                        aria-label="Won"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onRequestStatusChange(lead, "won");
+                        }}
+                      />
+                    </Tooltip>
+                    <Tooltip title="Lost">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<CloseCircleOutlined />}
+                        aria-label="Lost"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onRequestStatusChange(lead, "lost");
+                        }}
+                      />
+                    </Tooltip>
+                    <Tooltip title={lead.isHot ? "Remove Hot" : "Mark as Hot"}>
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={
+                          lead.isHot ? (
+                            <FireFilled style={{ color: "#fa8c16" }} />
+                          ) : (
+                            <FireOutlined style={{ color: "#bfbfbf" }} />
+                          )
+                        }
+                        aria-label={lead.isHot ? "Remove Hot" : "Mark as Hot"}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onToggleHot(lead);
+                        }}
+                      />
+                    </Tooltip>
+                  </Space>
                 </div>
               </Card>
             );
