@@ -54,6 +54,18 @@ const URGENCY_STYLES = {
  * changes its qualifying status (e.g. Lost) disappears from this section
  * exactly like it would from the underlying list — no separate refresh
  * wiring needed here.
+ *
+ * Card layout is a strict vertical stack, each row getting the card's full
+ * width rather than sharing it: (1) name + date/time, (2) company, (3) the
+ * Hot/urgency tags, (4) the icon action row, left-aligned, pinned at the
+ * bottom. The tags and the icon row used to share one `justify-between`
+ * line — fine when only one tag was present, but a card with BOTH a Hot
+ * tag AND a follow-up urgency tag at once (the actual worst case: a hot
+ * lead that also has a near-term follow-up) left too little width for the
+ * 5 icon buttons on that same line, overflowing the card's fixed 256px
+ * width. Splitting the tags and the icon row onto their own dedicated rows
+ * fixes this for every combination, since Card has no fixed/max height —
+ * it already grows to fit however many rows are actually present.
  */
 function PriorityLeadsSection({
   priorityLeads,
@@ -107,12 +119,15 @@ function PriorityLeadsSection({
                   )}
                 </div>
                 <div className="text-xs text-gray-500">{lead.companyName || "—"}</div>
-                <div className="mt-1.5 flex items-center justify-between gap-1">
-                  <div className="flex items-center gap-1">
+
+                {(lead.isHot || urgency) && (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1">
                     {lead.isHot && <Tag color="orange">Hot</Tag>}
                     {urgency && <Tag color={urgency.color}>{urgency.label}</Tag>}
                   </div>
+                )}
 
+                <div className="mt-1.5 flex items-center justify-start">
                   <Space size={0}>
                     <Tooltip title="Log Call">
                       <Button
