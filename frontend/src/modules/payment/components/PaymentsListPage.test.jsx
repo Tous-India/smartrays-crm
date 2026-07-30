@@ -16,6 +16,9 @@ vi.mock("antd", async (importOriginal) => {
 vi.mock("../api/paymentApi", () => ({
   listPayments: vi.fn(),
   createPayment: vi.fn(),
+  updatePayment: vi.fn(),
+  deletePayment: vi.fn(),
+  getPaymentAuditLog: vi.fn(),
 }));
 
 vi.mock("../../customer/api/customerApi", () => ({
@@ -72,6 +75,7 @@ describe("PaymentsListPage", () => {
     fetchUserDropdown.mockResolvedValue({
       data: { data: [{ _id: "user-1", name: "Vinay" }, { _id: "user-2", name: "Sam Sales" }] },
     });
+    paymentApi.getPaymentAuditLog.mockResolvedValue({ data: { data: [] } });
     useSessionStore.setState({
       user: { _id: "admin-1", role: "admin", permissions: {} },
       isAuthenticated: true,
@@ -286,6 +290,154 @@ describe("PaymentsListPage", () => {
 
       expect(await screen.findByText("Not authorized")).toBeInTheDocument();
       expect(paymentApi.listPayments).not.toHaveBeenCalled();
+    });
+
+    it("hides Edit/Delete actions (but not View History) for a role with only payments.view", async () => {
+      useSessionStore.setState({
+        user: { _id: "viewer-1", role: "manager", permissions: { payments: { view: true } } },
+        isAuthenticated: true,
+        isLoading: false,
+      });
+
+      renderPage();
+      await screen.findByText("Acme Corp");
+
+      expect(screen.queryByRole("button", { name: "Edit Payment" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Delete Payment" })).not.toBeInTheDocument();
+      expect(screen.getAllByRole("button", { name: "View History" }).length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("Edit Payment modal", () => {
+    it("is pre-filled with the payment's current values", async () => {
+      renderPage();
+      await screen.findByText("Acme Corp");
+
+      const editButtons = screen.getAllByRole("button", { name: "Edit Payment" });
+      await userEvent.click(editButtons[0]);
+
+      expect(await screen.findByRole("dialog", { name: "Edit Payment" })).toBeInTheDocument();
+      expect(screen.getByLabelText("Amount")).toHaveValue("5000");
+      expect(screen.getByLabelText("Notes")).toHaveValue("First installment");
+    });
+
+    it("requires a reason before allowing submit", async () => {
+      renderPage();
+      await screen.findByText("Acme Corp");
+
+      await userEvent.click(screen.getAllByRole("button", { name: "Edit Payment" })[0]);
+      await screen.findByRole("dialog", { name: "Edit Payment" });
+
+      await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      expect(await screen.findByText("A reason is required to edit a payment")).toBeInTheDocument();
+      expect(paymentApi.updatePayment).not.toHaveBeenCalled();
+    });
+
+    it("saves the update with the reason and refreshes the table", async () => {
+      paymentApi.updatePayment.mockResolvedValue({ data: { data: { _id: "pay-1" } } });
+
+      renderPage();
+      await screen.findByText("Acme Corp");
+
+      await userEvent.click(screen.getAllByRole("button", { name: "Edit Payment" })[0]);
+      await screen.findByRole("dialog", { name: "Edit Payment" });
+
+      await userEvent.clear(screen.getByLabelText("Amount"));
+      await userEvent.type(screen.getByLabelText("Amount"), "6000");
+      await userEvent.type(screen.getByLabelText("Reason for edit"), "Client paid an extra installment");
+
+      await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      await waitFor(() => {
+        expect(paymentApi.updatePayment).toHaveBeenCalledWith(
+          "pay-1",
+          expect.objectContaining({ amount: 6000, reason: "Client paid an extra installment" })
+        );
+      });
+      expect(message.success).toHaveBeenCalledWith("Payment updated");
+    });
+  });
+
+  describe("Delete Payment modal", () => {
+    it("requires a reason before allowing submit", async () => {
+      renderPage();
+      await screen.findByText("Acme Corp");
+
+      await userEvent.click(screen.getAllByRole("button", { name: "Delete Payment" })[0]);
+      await screen.findByRole("dialog", { name: "Delete Payment" });
+
+      await userEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+      expect(await screen.findByText("A reason is required to delete a payment")).toBeInTheDocument();
+      expect(paymentApi.deletePayment).not.toHaveBeenCalled();
+    });
+
+    it("deletes with the reason and removes the payment from the table after refetch", async () => {
+      paymentApi.deletePayment.mockResolvedValue({ data: {} });
+      // After the delete, the list refetch reflects the row's removal.
+      paymentApi.listPayments
+        .mockResolvedValueOnce({
+          data: { data: { items: SAMPLE_PAYMENTS, total: 2, page: 1, limit: 20 } },
+        })
+        .mockResolvedValueOnce({
+          data: { data: { items: [SAMPLE_PAYMENTS[1]], total: 1, page: 1, limit: 20 } },
+        });
+
+      renderPage();
+      await screen.findByText("Acme Corp");
+
+      await userEvent.click(screen.getAllByRole("button", { name: "Delete Payment" })[0]);
+      await screen.findByRole("dialog", { name: "Delete Payment" });
+
+      await userEvent.type(screen.getByLabelText("Reason for deletion"), "Duplicate entry");
+      await userEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+      await waitFor(() => {
+        expect(paymentApi.deletePayment).toHaveBeenCalledWith("pay-1", "Duplicate entry");
+      });
+      expect(message.success).toHaveBeenCalledWith("Payment deleted");
+      await waitFor(() => {
+        expect(screen.queryByText("Acme Corp")).not.toBeInTheDocument();
+      });
+    });
+  });
+
+  describe("View History modal", () => {
+    it("fetches and displays the audit log for the selected payment", async () => {
+      paymentApi.getPaymentAuditLog.mockResolvedValue({
+        data: {
+          data: [
+            {
+              action: "edited",
+              reason: "Fixed a typo in the amount",
+              changedBy: "user-1",
+              createdAt: "2026-07-11T00:00:00.000Z",
+              previousValues: { amount: 4000, notes: "old note" },
+            },
+          ],
+        },
+      });
+
+      renderPage();
+      await screen.findByText("Acme Corp");
+
+      await userEvent.click(screen.getAllByRole("button", { name: "View History" })[0]);
+
+      await waitFor(() => {
+        expect(paymentApi.getPaymentAuditLog).toHaveBeenCalledWith("pay-1");
+      });
+      expect(await screen.findByText(/Fixed a typo in the amount/)).toBeInTheDocument();
+      expect(screen.getByText("Edited")).toBeInTheDocument();
+    });
+
+    it("shows an empty state when there's no history yet", async () => {
+      renderPage();
+      await screen.findByText("Acme Corp");
+
+      await userEvent.click(screen.getAllByRole("button", { name: "View History" })[0]);
+
+      expect(await screen.findByText("No edits or deletions yet")).toBeInTheDocument();
     });
   });
 });

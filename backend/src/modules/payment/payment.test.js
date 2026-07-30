@@ -3,6 +3,7 @@ import { startTestDatabase, stopTestDatabase } from "../../../tests/helpers/test
 import { getTestApp } from "../../../tests/helpers/testApp.js";
 import { loginAsAgent } from "../../../tests/helpers/authHelpers.js";
 import Payment from "./payment.model.js";
+import PaymentAuditLog from "./paymentAuditLog.model.js";
 import Customer from "../customer/customer.model.js";
 import Invoice from "../customer/invoice.model.js";
 
@@ -63,6 +64,7 @@ beforeAll(async () => {
 afterEach(async () => {
   await Payment.deleteMany({});
   await Invoice.deleteMany({});
+  await PaymentAuditLog.deleteMany({});
 });
 
 afterAll(async () => {
@@ -401,5 +403,227 @@ describe("GET /payments", () => {
       "End Of Range",
       "Start Of Range",
     ]);
+  });
+});
+
+async function createTestPayment(overrides = {}) {
+  const response = await adminAgent.post("/api/v1/payments").send({
+    manualClientName: "Edit Me Client",
+    date: "2026-07-01",
+    amount: 1000,
+    notes: "Original notes",
+    ...overrides,
+  });
+  return response.body.data;
+}
+
+describe("PATCH /payments/:id — edit with audit trail (§7.9 extension)", () => {
+  it("is admin-only", async () => {
+    const payment = await createTestPayment();
+    const body = { amount: 2000, reason: "Correcting amount" };
+
+    expect((await managerAgent.patch(`/api/v1/payments/${payment._id}`).send(body)).status).toBe(403);
+    expect((await sales1Agent.patch(`/api/v1/payments/${payment._id}`).send(body)).status).toBe(403);
+    expect((await employee1Agent.patch(`/api/v1/payments/${payment._id}`).send(body)).status).toBe(403);
+  });
+
+  it("rejects an edit with no reason", async () => {
+    const payment = await createTestPayment();
+
+    const response = await adminAgent.patch(`/api/v1/payments/${payment._id}`).send({ amount: 2000 });
+
+    expect(response.status).toBe(400);
+
+    const untouched = await Payment.findById(payment._id);
+    expect(untouched.amount).toBe(1000);
+  });
+
+  it("rejects an edit with a blank/whitespace-only reason", async () => {
+    const payment = await createTestPayment();
+
+    const response = await adminAgent
+      .patch(`/api/v1/payments/${payment._id}`)
+      .send({ amount: 2000, reason: "   " });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("applies the update and logs an 'edited' audit entry capturing the previous values", async () => {
+    const payment = await createTestPayment({ amount: 1000, notes: "Original notes" });
+
+    const response = await adminAgent.patch(`/api/v1/payments/${payment._id}`).send({
+      amount: 2500,
+      notes: "Corrected notes",
+      reason: "Client paid more than initially recorded",
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.amount).toBe(2500);
+    expect(response.body.data.notes).toBe("Corrected notes");
+
+    const entries = await PaymentAuditLog.find({ paymentId: payment._id });
+    expect(entries).toHaveLength(1);
+    expect(entries[0].action).toBe("edited");
+    expect(entries[0].reason).toBe("Client paid more than initially recorded");
+    expect(String(entries[0].changedBy)).toBe(String(admin._id));
+    expect(entries[0].previousValues.amount).toBe(1000);
+    expect(entries[0].previousValues.notes).toBe("Original notes");
+  });
+
+  it("does not allow changing customerId/manualClientName/invoiceId through this endpoint", async () => {
+    const payment = await createTestPayment();
+
+    const response = await adminAgent.patch(`/api/v1/payments/${payment._id}`).send({
+      customerId: String(customer1._id),
+      manualClientName: "Should Not Change",
+      reason: "Trying to move this to a different client",
+    });
+
+    expect(response.status).toBe(200);
+    const updated = await Payment.findById(payment._id);
+    expect(updated.manualClientName).toBe("Edit Me Client");
+    expect(updated.customerId).toBeNull();
+  });
+
+  it("404s for a nonexistent payment", async () => {
+    const response = await adminAgent
+      .patch("/api/v1/payments/507f1f77bcf86cd799439011")
+      .send({ amount: 100, reason: "test" });
+
+    expect(response.status).toBe(404);
+  });
+
+  it("404s when trying to edit an already soft-deleted payment", async () => {
+    const payment = await createTestPayment();
+    await adminAgent.delete(`/api/v1/payments/${payment._id}`).send({ reason: "gone" });
+
+    const response = await adminAgent
+      .patch(`/api/v1/payments/${payment._id}`)
+      .send({ amount: 999, reason: "editing a deleted one" });
+
+    expect(response.status).toBe(404);
+  });
+});
+
+describe("DELETE /payments/:id — soft delete with audit trail (§7.9 extension)", () => {
+  it("is admin-only", async () => {
+    const payment = await createTestPayment();
+    const body = { reason: "Duplicate entry" };
+
+    expect((await managerAgent.delete(`/api/v1/payments/${payment._id}`).send(body)).status).toBe(403);
+    expect((await sales1Agent.delete(`/api/v1/payments/${payment._id}`).send(body)).status).toBe(403);
+    expect((await employee1Agent.delete(`/api/v1/payments/${payment._id}`).send(body)).status).toBe(403);
+  });
+
+  it("rejects a delete with no reason", async () => {
+    const payment = await createTestPayment();
+
+    const response = await adminAgent.delete(`/api/v1/payments/${payment._id}`).send({});
+
+    expect(response.status).toBe(400);
+    expect(await Payment.findById(payment._id)).not.toBeNull();
+  });
+
+  it("soft-deletes: the document still exists but is excluded from list/totals", async () => {
+    const payment = await createTestPayment();
+
+    const response = await adminAgent
+      .delete(`/api/v1/payments/${payment._id}`)
+      .send({ reason: "Duplicate entry, recorded twice by mistake" });
+
+    expect(response.status).toBe(200);
+
+    const stillExists = await Payment.findById(payment._id);
+    expect(stillExists).not.toBeNull();
+    expect(stillExists.isDeleted).toBe(true);
+    expect(stillExists.deletionReason).toBe("Duplicate entry, recorded twice by mistake");
+    expect(String(stillExists.deletedBy)).toBe(String(admin._id));
+    expect(stillExists.deletedAt).not.toBeNull();
+
+    const listResponse = await adminAgent.get("/api/v1/payments");
+    expect(listResponse.body.data.total).toBe(0);
+    expect(listResponse.body.data.items).toHaveLength(0);
+  });
+
+  it("logs a 'deleted' audit entry capturing the values as they were at deletion", async () => {
+    const payment = await createTestPayment({ amount: 3000 });
+
+    await adminAgent.delete(`/api/v1/payments/${payment._id}`).send({ reason: "Recorded in error" });
+
+    const entries = await PaymentAuditLog.find({ paymentId: payment._id });
+    expect(entries).toHaveLength(1);
+    expect(entries[0].action).toBe("deleted");
+    expect(entries[0].reason).toBe("Recorded in error");
+    expect(entries[0].previousValues.amount).toBe(3000);
+  });
+
+  it("404s for a nonexistent payment", async () => {
+    const response = await adminAgent
+      .delete("/api/v1/payments/507f1f77bcf86cd799439011")
+      .send({ reason: "test" });
+
+    expect(response.status).toBe(404);
+  });
+
+  it("404s when trying to delete an already-deleted payment", async () => {
+    const payment = await createTestPayment();
+    await adminAgent.delete(`/api/v1/payments/${payment._id}`).send({ reason: "first delete" });
+
+    const response = await adminAgent
+      .delete(`/api/v1/payments/${payment._id}`)
+      .send({ reason: "second delete" });
+
+    expect(response.status).toBe(404);
+  });
+});
+
+describe("GET /payments/:id/audit-log", () => {
+  it("is admin-only", async () => {
+    const payment = await createTestPayment();
+
+    expect((await managerAgent.get(`/api/v1/payments/${payment._id}/audit-log`)).status).toBe(403);
+    expect((await sales1Agent.get(`/api/v1/payments/${payment._id}/audit-log`)).status).toBe(403);
+    expect((await employee1Agent.get(`/api/v1/payments/${payment._id}/audit-log`)).status).toBe(403);
+  });
+
+  it("returns the full edit/delete history for a payment, newest first", async () => {
+    const payment = await createTestPayment({ amount: 1000 });
+
+    await adminAgent.patch(`/api/v1/payments/${payment._id}`).send({ amount: 1500, reason: "First correction" });
+    await adminAgent.patch(`/api/v1/payments/${payment._id}`).send({ amount: 1800, reason: "Second correction" });
+    await adminAgent.delete(`/api/v1/payments/${payment._id}`).send({ reason: "Client cancelled" });
+
+    const response = await adminAgent.get(`/api/v1/payments/${payment._id}/audit-log`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toHaveLength(3);
+    expect(response.body.data.map((entry) => entry.action)).toEqual(["deleted", "edited", "edited"]);
+    expect(response.body.data[0].reason).toBe("Client cancelled");
+    expect(response.body.data[2].previousValues.amount).toBe(1000);
+  });
+
+  it("still returns history for a soft-deleted payment (not 404)", async () => {
+    const payment = await createTestPayment();
+    await adminAgent.delete(`/api/v1/payments/${payment._id}`).send({ reason: "gone" });
+
+    const response = await adminAgent.get(`/api/v1/payments/${payment._id}/audit-log`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toHaveLength(1);
+  });
+
+  it("404s for a payment that never existed", async () => {
+    const response = await adminAgent.get("/api/v1/payments/507f1f77bcf86cd799439011/audit-log");
+
+    expect(response.status).toBe(404);
+  });
+
+  it("returns an empty array for a payment with no edit/delete history yet", async () => {
+    const payment = await createTestPayment();
+
+    const response = await adminAgent.get(`/api/v1/payments/${payment._id}/audit-log`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toEqual([]);
   });
 });

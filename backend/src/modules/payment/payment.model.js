@@ -53,6 +53,32 @@ const paymentSchema = new mongoose.Schema(
       ref: "Invoice",
       default: null,
     },
+    // Soft delete (§7.9 audit-trail extension, 2026-07-30) — chosen over a
+    // hard delete since these are financial records: the document itself is
+    // never actually removed, only excluded from normal list/total queries
+    // (payment.service.js#listPayments filters `isDeleted: { $ne: true }`,
+    // not `isDeleted: false` — existing rows predate this field entirely, so
+    // a strict `false` match would silently exclude every payment recorded
+    // before this change). See paymentAuditLog.model.js for the accompanying
+    // edit/delete history this pairs with.
+    isDeleted: {
+      type: Boolean,
+      default: false,
+    },
+    deletedAt: {
+      type: Date,
+      default: null,
+    },
+    deletedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    deletionReason: {
+      type: String,
+      trim: true,
+      default: null,
+    },
   },
   {
     timestamps: true,

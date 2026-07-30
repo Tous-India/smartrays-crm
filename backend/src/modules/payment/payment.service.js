@@ -1,5 +1,6 @@
 import ApiError from "../../utils/ApiError.js";
 import Payment from "./payment.model.js";
+import PaymentAuditLog from "./paymentAuditLog.model.js";
 import Invoice from "../customer/invoice.model.js";
 
 /**
@@ -113,7 +114,11 @@ export async function listPayments({ from, to, page, limit } = {}) {
     dateFilter.$lt = addOneDay(new Date(to));
   }
 
-  const filter = {};
+  // `$ne: true` (not `isDeleted: false`) — every payment recorded before the
+  // 2026-07-30 audit-trail extension has no `isDeleted` field at all, and a
+  // strict `false` match would exclude every one of those pre-existing rows
+  // rather than only the genuinely soft-deleted ones. See payment.model.js.
+  const filter = { isDeleted: { $ne: true } };
 
   if (Object.keys(dateFilter).length > 0) {
     filter.date = dateFilter;
@@ -133,4 +138,113 @@ export async function listPayments({ from, to, page, limit } = {}) {
   const items = await query;
 
   return { items, total, page: pageNumber, limit: limitNumber };
+}
+
+// --- Edit/delete audit trail (§7.9 extension, 2026-07-30) ----------------
+
+const EDITABLE_PAYMENT_FIELDS = ["amount", "date", "notes", "collectedBy"];
+
+/**
+ * A plain-object snapshot of the fields `PaymentAuditLog.previousValues`
+ * cares about — not the full Mongoose document (which carries internal
+ * bookkeeping this audit trail has no use for).
+ */
+function snapshotPayment(payment) {
+  return {
+    customerId: payment.customerId,
+    manualClientName: payment.manualClientName,
+    date: payment.date,
+    amount: payment.amount,
+    notes: payment.notes,
+    recordedBy: payment.recordedBy,
+    collectedBy: payment.collectedBy,
+    invoiceId: payment.invoiceId,
+  };
+}
+
+async function findActivePaymentOrThrow(paymentId) {
+  const payment = await Payment.findOne({ _id: paymentId, isDeleted: { $ne: true } });
+
+  if (!payment) {
+    throw new ApiError(404, "Payment not found");
+  }
+
+  return payment;
+}
+
+/**
+ * `customerId`/`manualClientName`/`invoiceId` are deliberately NOT editable
+ * through this path — they're the payment's reconciliation identity
+ * (§7.9/§11.3), and re-pointing a payment at a different customer/invoice
+ * after the fact has knock-on effects on that invoice's balance this task
+ * doesn't ask for. Editing here is scoped to correcting a mistaken
+ * amount/date/notes/collectedBy, not moving money between accounts.
+ */
+export async function updatePayment(paymentId, payload, requestingUser) {
+  if (!payload.reason || !payload.reason.trim()) {
+    throw new ApiError(400, "A reason is required to edit a payment");
+  }
+
+  const payment = await findActivePaymentOrThrow(paymentId);
+  const previousValues = snapshotPayment(payment);
+
+  EDITABLE_PAYMENT_FIELDS.forEach((field) => {
+    if (payload[field] !== undefined) {
+      payment[field] = field === "date" ? new Date(payload[field]) : payload[field];
+    }
+  });
+
+  await payment.save();
+
+  await PaymentAuditLog.create({
+    paymentId: payment._id,
+    action: "edited",
+    changedBy: requestingUser._id,
+    reason: payload.reason.trim(),
+    previousValues,
+  });
+
+  return payment;
+}
+
+export async function softDeletePayment(paymentId, reason, requestingUser) {
+  if (!reason || !reason.trim()) {
+    throw new ApiError(400, "A reason is required to delete a payment");
+  }
+
+  const payment = await findActivePaymentOrThrow(paymentId);
+  const previousValues = snapshotPayment(payment);
+
+  payment.isDeleted = true;
+  payment.deletedAt = new Date();
+  payment.deletedBy = requestingUser._id;
+  payment.deletionReason = reason.trim();
+  await payment.save();
+
+  await PaymentAuditLog.create({
+    paymentId: payment._id,
+    action: "deleted",
+    changedBy: requestingUser._id,
+    reason: reason.trim(),
+    previousValues,
+  });
+
+  return payment;
+}
+
+/**
+ * Returns history for a payment regardless of whether it's since been
+ * soft-deleted (deliberately not filtered by `isDeleted` the way
+ * `listPayments`/`findActivePaymentOrThrow` are) — the audit trail's whole
+ * purpose is to remain inspectable after a delete, not just before one.
+ * 404s only if the payment never existed at all.
+ */
+export async function getPaymentAuditLog(paymentId) {
+  const payment = await Payment.findById(paymentId);
+
+  if (!payment) {
+    throw new ApiError(404, "Payment not found");
+  }
+
+  return PaymentAuditLog.find({ paymentId }).sort({ createdAt: -1 });
 }

@@ -1,5 +1,7 @@
-import { Table } from "antd";
+import { Table, Space, Tooltip, Button } from "antd";
+import { EditOutlined, DeleteOutlined, HistoryOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
+import PermissionGate from "../../../routes/PermissionGate";
 
 /**
  * `GET /payments` returns bare Payment documents (no populate) — `customerId`
@@ -12,7 +14,19 @@ import dayjs from "dayjs";
  * Leads-only class into a shared one for this table to reuse rather than
  * duplicating the same CSS under a second name.
  */
-function PaymentsTable({ payments, isLoading, total, page, pageSize, onPageChange, customerNameById, userNameById }) {
+function PaymentsTable({
+  payments,
+  isLoading,
+  total,
+  page,
+  pageSize,
+  onPageChange,
+  customerNameById,
+  userNameById,
+  onEdit,
+  onDelete,
+  onViewHistory,
+}) {
   const columns = [
     {
       title: "Date",
@@ -51,6 +65,38 @@ function PaymentsTable({ payments, isLoading, total, page, pageSize, onPageChang
       title: "Collected By",
       dataIndex: "collectedBy",
       render: (collectedBy) => (collectedBy ? userNameById.get(collectedBy) || "—" : "—"),
+    },
+    {
+      title: "Actions",
+      key: "actions",
+      render: (_, payment) => (
+        <Space size={0}>
+          <Tooltip title="View History">
+            <Button
+              type="text"
+              icon={<HistoryOutlined />}
+              aria-label="View History"
+              onClick={() => onViewHistory(payment)}
+            />
+          </Tooltip>
+          <PermissionGate module="payments" action="edit">
+            <Tooltip title="Edit Payment">
+              <Button type="text" icon={<EditOutlined />} aria-label="Edit Payment" onClick={() => onEdit(payment)} />
+            </Tooltip>
+          </PermissionGate>
+          <PermissionGate module="payments" action="delete">
+            <Tooltip title="Delete Payment">
+              <Button
+                type="text"
+                danger
+                icon={<DeleteOutlined />}
+                aria-label="Delete Payment"
+                onClick={() => onDelete(payment)}
+              />
+            </Tooltip>
+          </PermissionGate>
+        </Space>
+      ),
     },
   ];
 

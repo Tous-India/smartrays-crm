@@ -990,6 +990,41 @@ sets `paid`, an overpayment clamps to 0 and sets `paid`, two sequential partial 
 correctly, an invoiceId from a different customer is rejected, a null-balance or cancelled
 invoice is rejected, a nonexistent invoiceId is rejected).
 
+**Edit/delete audit trail (added 2026-07-30):** since these are financial records, edits and
+deletes are never silent or destructive.
+
+- **Soft delete, not hard delete** — chosen because these are financial records: the document
+  is never actually removed, only excluded from normal list/total queries. `Payment` gained
+  `isDeleted`/`deletedAt`/`deletedBy`/`deletionReason`. `listPayments`'s filter uses
+  `isDeleted: { $ne: true }`, not `isDeleted: false` — every payment recorded before this
+  change has no `isDeleted` field at all, and a strict `false` match would have silently
+  excluded every one of those pre-existing rows, not just the genuinely deleted ones.
+- **A separate `PaymentAuditLog` collection, not an embedded array on `Payment`** — matches
+  this codebase's established pattern for an unbounded, independently-queryable history tied to
+  a parent record (e.g. `LeadCall` for `Lead`). Fields: `paymentId` (not a full snapshot — safe
+  because deletion is soft, so the pointed-at document always still exists), `action`
+  (`"edited"`/`"deleted"`), `changedBy`, `reason` (required), `previousValues` (a snapshot of
+  the payment's fields immediately before this action), and `createdAt` (via `timestamps`,
+  serving as the entry's own timestamp — no separate field needed).
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| PATCH | `/payments/:id` | `payments.edit` | Body: any of `amount`/`date`/`notes`/`collectedBy`, plus a required `reason` (400 if missing/blank). `customerId`/`manualClientName`/`invoiceId` are **not** editable through this endpoint — those are the payment's reconciliation identity (§11.3), and re-pointing a payment at a different customer/invoice after the fact has knock-on effects on that invoice's balance this extension doesn't attempt. 404 if the payment doesn't exist or is already soft-deleted. Logs an `"edited"` `PaymentAuditLog` entry (capturing the pre-edit values) before returning. |
+| DELETE | `/payments/:id` | `payments.delete` | Body `{ reason }` (required, 400 if missing/blank) — sent in the request body, not a query param, the same shape as the edit reason above so both "why" fields are handled identically front-to-back. Soft-deletes (see above) and logs a `"deleted"` audit entry. 404 if the payment doesn't exist or is already deleted. |
+| GET | `/payments/:id/audit-log` | `payments.view` | Full edit/delete history for one payment, newest first. Deliberately **not** filtered by `isDeleted` — works for an already-deleted payment too, since the audit trail's whole point is staying inspectable after a delete. 404 only if the payment never existed at all. |
+
+`PERMISSION_REGISTRY`'s `payments` entry grew from `["view", "create"]` to `["view", "create",
+"edit", "delete"]` — kept as their own actions rather than folded into `create`, matching how
+`leads`/`customers` keep edit/delete distinct from create, even though every role's grant is
+identical today (admin: all four, everyone else: none).
+
+23 new tests (edit: admin-only, requires a reason, applies the update + logs previous values,
+ignores customerId/manualClientName/invoiceId, 404s for nonexistent/already-deleted; delete:
+admin-only, requires a reason, soft-deletes and excludes from list/totals, logs the deleted
+snapshot, 404s for nonexistent/already-deleted; audit log: admin-only, returns full history
+newest-first, still works for a soft-deleted payment, 404s only for a payment that never
+existed, empty array for one with no history yet). Full backend suite: 553 tests, all passing.
+
 ### AMC (`/api/v1/amc`) — Phase 7
 
 See `.context/final-plan.md` §6.6/§7.10. Module folder is `src/modules/amc/`.

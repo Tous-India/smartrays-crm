@@ -6,10 +6,13 @@ import { usePermission } from "../../../hooks/usePermission";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import usePayments from "../hooks/usePayments";
 import useCustomerDirectory from "../hooks/useCustomerDirectory";
-import { createPayment } from "../api/paymentApi";
+import { createPayment, updatePayment, deletePayment } from "../api/paymentApi";
 import { PAYMENT_DATE_FILTER_OPTIONS, computePaymentDateRange } from "../utils/paymentDateFilters";
 import PaymentsTable from "./PaymentsTable";
 import RecordPaymentModal from "./RecordPaymentModal";
+import EditPaymentModal from "./EditPaymentModal";
+import DeletePaymentModal from "./DeletePaymentModal";
+import PaymentAuditLogModal from "./PaymentAuditLogModal";
 
 const PAGE_SIZE = 20;
 
@@ -27,6 +30,11 @@ function PaymentsListPage() {
   const [page, setPage] = useState(1);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [editingPayment, setEditingPayment] = useState(null);
+  const [isEditSubmitting, setIsEditSubmitting] = useState(false);
+  const [deletingPayment, setDeletingPayment] = useState(null);
+  const [isDeleteSubmitting, setIsDeleteSubmitting] = useState(false);
+  const [historyPayment, setHistoryPayment] = useState(null);
 
   const { users } = useUserDirectory();
   const { customers } = useCustomerDirectory();
@@ -60,6 +68,32 @@ function PaymentsListPage() {
     }
   }
 
+  async function handleEditPayment(payload) {
+    setIsEditSubmitting(true);
+
+    try {
+      await updatePayment(editingPayment._id, payload);
+      message.success("Payment updated");
+      setEditingPayment(null);
+      refetch();
+    } finally {
+      setIsEditSubmitting(false);
+    }
+  }
+
+  async function handleDeletePayment(reason) {
+    setIsDeleteSubmitting(true);
+
+    try {
+      await deletePayment(deletingPayment._id, reason);
+      message.success("Payment deleted");
+      setDeletingPayment(null);
+      refetch();
+    } finally {
+      setIsDeleteSubmitting(false);
+    }
+  }
+
   if (!canView) {
     return <Result status="403" title="Not authorized" subTitle="You do not have permission to view payments." />;
   }
@@ -89,6 +123,9 @@ function PaymentsListPage() {
         onPageChange={setPage}
         customerNameById={customerNameById}
         userNameById={userNameById}
+        onEdit={setEditingPayment}
+        onDelete={setDeletingPayment}
+        onViewHistory={setHistoryPayment}
       />
 
       <RecordPaymentModal
@@ -97,6 +134,30 @@ function PaymentsListPage() {
         onSubmit={handleRecordPayment}
         isSubmitting={isSubmitting}
         users={users}
+      />
+
+      <EditPaymentModal
+        open={Boolean(editingPayment)}
+        payment={editingPayment}
+        onCancel={() => setEditingPayment(null)}
+        onSubmit={handleEditPayment}
+        isSubmitting={isEditSubmitting}
+        users={users}
+      />
+
+      <DeletePaymentModal
+        open={Boolean(deletingPayment)}
+        payment={deletingPayment}
+        onCancel={() => setDeletingPayment(null)}
+        onSubmit={handleDeletePayment}
+        isSubmitting={isDeleteSubmitting}
+      />
+
+      <PaymentAuditLogModal
+        open={Boolean(historyPayment)}
+        payment={historyPayment}
+        onCancel={() => setHistoryPayment(null)}
+        userNameById={userNameById}
       />
     </div>
   );

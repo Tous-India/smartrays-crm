@@ -1052,7 +1052,11 @@ and §7.9/§11.3). `Invoice.status`'s enum gained a new value, `partially_paid` 
 and `paid`) — the original 4-value enum (`draft`/`sent`/`paid`/`cancelled`) had no status to
 represent "some money has come in, but the balance isn't zero yet"; without it, applying a
 partial payment would have had nowhere correct to leave the invoice's status. See §7.9 for the
-full reconciliation logic.
+full reconciliation logic. **Extended 2026-07-30 (§7.9)** with an edit/delete audit trail:
+`isDeleted`/`deletedAt`/`deletedBy`/`deletionReason` (soft delete, chosen since these are
+financial records — never truly destroyed, only excluded from list/total queries), plus a new
+sibling `PaymentAuditLog` collection (`paymentId`, `action`, `changedBy`, `reason`,
+`previousValues`) recording every edit/delete. See §7.9 for the full design.
 **`AMC`** — customerId, amount, startDate, renewalDate, status (`active`/`expired`), createdFromFlow (`new_customer`/`existing_customer`).
 ✅ **Built (§7.10, Phase 7)** exactly as documented — no fields added or changed. No automation
 on renewal (`status` is purely admin-set via `PATCH /amc/:id`, nothing flips it to `expired`
@@ -2140,6 +2144,41 @@ invoicing):**
 **Validation:** exactly one of `customerId`/`manualClientName` must be provided (never both,
 never neither); `invoiceId` can only be provided alongside a `customerId` (an invoice always
 belongs to a real customer, so a manual-only payment has nothing to link to).
+
+**Edit/delete audit trail (extended 2026-07-30):** confirmed with the user before building,
+since these are financial records —
+```
+PATCH  /payments/:id             {amount?, date?, notes?, collectedBy?, reason}   ✅ built
+DELETE /payments/:id             {reason}                                        ✅ built
+GET    /payments/:id/audit-log                                                   ✅ built
+```
+- **Soft delete, not hard** — `Payment` gained `isDeleted`/`deletedAt`/`deletedBy`/
+  `deletionReason`. `listPayments`'s filter is `isDeleted: { $ne: true }`, not `isDeleted:
+  false` — every payment recorded before this change has no `isDeleted` field at all, and a
+  strict `false` match would have silently excluded all of them.
+- **A separate `PaymentAuditLog` collection, not an embedded array** — matches this codebase's
+  established pattern (e.g. `LeadCall` for `Lead`) for an unbounded, independently-queryable
+  history. Stores `paymentId` (not a full snapshot — safe since deletion is soft, so the
+  pointed-at document always still exists), `action`, `changedBy`, `reason` (required),
+  `previousValues` (the payment's fields immediately before this action).
+- `reason` is required on both PATCH and DELETE (400 if missing/blank), sent in the request
+  body on both (not a query param for DELETE) for a consistent shape front-to-back.
+- `customerId`/`manualClientName`/`invoiceId` are **not** editable via `PATCH` — a payment's
+  reconciliation identity doesn't change through this path, since re-pointing it at a different
+  customer/invoice has invoice-balance knock-on effects out of scope here.
+- The audit-log endpoint deliberately ignores `isDeleted` — a deleted payment's history stays
+  inspectable, which is the entire point of an audit trail.
+- `PERMISSION_REGISTRY`'s `payments` entry: `["view", "create"]` → `["view", "create", "edit",
+  "delete"]`.
+- 23 new tests. Full backend suite: 553 tests, all passing.
+
+**Frontend (§7.22 extended):** an Actions column (History/Edit/Delete icons) on `PaymentsTable`
+drives `EditPaymentModal` (amount/date/notes/collectedBy + required "Reason for edit" —
+customerId/manualClientName/invoiceId read-only, matching the backend), `DeletePaymentModal` (a
+small dedicated modal, not a bare `Popconfirm`, since a delete needs a typed reason), and
+`PaymentAuditLogModal` ("View History," read-only). No per-row "has history" badge on the main
+table — noted as a reasonable future addition, not built now (would need either an N+1 request
+per row or a backend list-shape change). 20 tests total (`PaymentsListPage.test.jsx`).
 
 ### 7.10 AMC
 

@@ -76,7 +76,10 @@ export const PERMISSION_REGISTRY = {
   // Added (§7.9, Phase 7). Admin only per §5's matrix — every other role is
   // "–", so no manager/sales_associate/employee/customer default exists at
   // all for this module (unlike every ownership-scoped module above).
-  payments: ["view", "create"],
+  // `edit`/`delete` added 2026-07-30 for the audit-trail extension — kept
+  // as their own actions rather than folded into `create`, matching how
+  // leads/customers keep edit/delete distinct from create.
+  payments: ["view", "create", "edit", "delete"],
   // Added (§7.10, Phase 7). Only two actions — §5's matrix lists "amc.view/edit"
   // as one combined row, no separate create action (creating an AMC record is
   // gated by `edit`, the same "manage" reasoning `customers.edit` already

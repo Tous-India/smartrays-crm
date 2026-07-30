@@ -1331,3 +1331,26 @@ resolved while Phase 0 is underway.
   is always preserved in `notes` so nothing submitted is ever silently lost, even when a field
   isn't recognized. 7 new tests (`lead.test.js`); full backend suite: 535 tests, all passing.
   `backend/README.md` and `.context/final-plan.md` (new §7.25) updated.
+- **2026-07-30** — Added an edit/delete audit trail to Payments, since these are financial
+  records. **Soft delete, not hard** — `Payment` gained `isDeleted`/`deletedAt`/`deletedBy`/
+  `deletionReason`; `listPayments` now filters `isDeleted: { $ne: true }` (not `isDeleted:
+  false`, which would have silently excluded every payment recorded before this change, none of
+  which have the field at all). **A separate `PaymentAuditLog` collection, not an embedded
+  array** — matches this codebase's `LeadCall`-style pattern for an unbounded, independently-
+  queryable history: `paymentId`, `action` (`edited`/`deleted`), `changedBy`, `reason`
+  (required), `previousValues` (a snapshot before the change). New endpoints: `PATCH /payments/
+  :id` (amount/date/notes/collectedBy + required reason; customerId/manualClientName/invoiceId
+  are deliberately not editable this way — that's the payment's reconciliation identity, not a
+  data-entry mistake to fix), `DELETE /payments/:id` (required reason, sent in the body, same
+  shape as the edit reason), `GET /payments/:id/audit-log` (full history, still works after a
+  delete). `PERMISSION_REGISTRY`'s `payments` entry grew to include `edit`/`delete`. 23 new
+  backend tests; full suite: 553 tests, all passing. **Frontend:** an Actions column (History/
+  Edit/Delete icons, PermissionGate'd) drives `EditPaymentModal`, `DeletePaymentModal` (a small
+  dedicated modal, not a bare Popconfirm, since a delete needs a typed reason), and
+  `PaymentAuditLogModal` ("View History"). No per-row "has history" badge on the table — noted
+  as a reasonable future addition rather than built now. 20 tests total
+  (`PaymentsListPage.test.jsx`); full frontend suite passes (same pre-existing timing-flaky
+  files, confirmed unrelated via isolation reruns); `npm run build` succeeds. Verified live via
+  a real browser session (edit, reason-required validation, view history, delete, row
+  disappearing from the list). `backend/README.md`, `frontend/README.md`, and
+  `.context/final-plan.md` (§6.6/§7.9 extended) updated.

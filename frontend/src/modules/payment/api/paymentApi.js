@@ -16,3 +16,15 @@ export function listPayments(filters) {
 export function createPayment(payload) {
   return apiClient.post("/payments", payload);
 }
+
+export function updatePayment(paymentId, payload) {
+  return apiClient.patch(`/payments/${paymentId}`, payload);
+}
+
+export function deletePayment(paymentId, reason) {
+  return apiClient.delete(`/payments/${paymentId}`, { data: { reason } });
+}
+
+export function getPaymentAuditLog(paymentId) {
+  return apiClient.get(`/payments/${paymentId}/audit-log`);
+}
