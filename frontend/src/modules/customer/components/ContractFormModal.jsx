@@ -34,17 +34,17 @@ const TERM_YEARS_OPTIONS = [1, 2, 3].map((years) => ({ value: years, label: `${y
  * which is exactly the hook used here to tell "the admin typed/picked this"
  * apart from "the form computed this for them".
  *
- * Layout: `Row`/`Col` 2-fields-per-row, matching the compact-form pattern
- * already established on Add Lead/Add Customer/Convert to Customer, rather
- * than the one-field-per-row stack this form had before. Type stays
- * full-width on its own row — it's the one field that changes what the
- * rest of the form even shows (Yearly's three extra fields), so it reads
- * better as the form's first, primary decision than paired with something
- * else. Amount + Label share a row. Term has no natural pairing partner
- * (Start Date and Expiry Date belong together instead, per this task's own
- * instruction) — sitting alone would look like a mistake at full width, so
- * it takes the left half of its own row rather than stretching to fill it.
- * Start Date + Expiry Date share a row, side by side.
+ * Layout: `Row`/`Col`, matching the compact-form pattern already
+ * established on Add Lead/Add Customer/Convert to Customer, rather than
+ * the one-field-per-row stack this form had before. Row 1: Type, alone,
+ * full width — it's the one field that changes what the rest of the form
+ * even shows (Yearly's three extra fields), so it reads better as the
+ * form's first, primary decision than paired with something else. Row 2:
+ * Amount + Label, paired. Row 3 (Yearly only): Term, alone, full width —
+ * no natural pairing partner (Start Date and Expiry Date belong together
+ * instead, per this task's own instruction), so it gets its own full-width
+ * row rather than sharing one or sitting in a half-empty row. Row 4
+ * (Yearly only): Start Date + Expiry Date, paired.
  */
 function ContractFormModal({ open, mode, initialContract, onCancel, onSubmit, isSubmitting }) {
   const [form] = Form.useForm();
@@ -155,13 +155,9 @@ function ContractFormModal({ open, mode, initialContract, onCancel, onSubmit, is
 
         {isYearly && (
           <>
-            <Row gutter={16}>
-              <Col span={12}>
-                <Form.Item label="Term" name="termYears">
-                  <Select options={TERM_YEARS_OPTIONS} placeholder="Select term" />
-                </Form.Item>
-              </Col>
-            </Row>
+            <Form.Item label="Term" name="termYears">
+              <Select options={TERM_YEARS_OPTIONS} placeholder="Select term" />
+            </Form.Item>
             <Row gutter={16}>
               <Col span={12}>
                 <Form.Item label="Start Date" name="startDate">
