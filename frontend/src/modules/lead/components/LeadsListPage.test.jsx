@@ -128,6 +128,29 @@ describe("LeadsListPage — Table view", () => {
     expect(await screen.findByText('Mark "Jane Doe" as Lost')).toBeInTheDocument();
     expect(leadApi.changeLeadStatus).not.toHaveBeenCalled();
   });
+
+  it("selecting Export Leads from the combined menu triggers the same export call as before", async () => {
+    leadApi.exportLeads.mockResolvedValue({ data: new Blob() });
+    renderLeadsListPage();
+    await screen.findByText("Jane Doe");
+
+    await userEvent.click(screen.getByRole("button", { name: /Import\/Export/ }));
+    await userEvent.click(await screen.findByText("Export Leads"));
+
+    await waitFor(() => {
+      expect(leadApi.exportLeads).toHaveBeenCalled();
+    });
+  });
+
+  it("selecting Import Leads from the combined menu opens the same Import wizard as before", async () => {
+    renderLeadsListPage();
+    await screen.findByText("Jane Doe");
+
+    await userEvent.click(screen.getByRole("button", { name: /Import\/Export/ }));
+    await userEvent.click(await screen.findByText("Import Leads"));
+
+    expect(await screen.findByText("Import Leads", { selector: ".ant-modal-title" })).toBeInTheDocument();
+  });
 });
 
 describe("LeadsListPage — permission gating (UI convenience only, backend is the real gate)", () => {
@@ -140,7 +163,7 @@ describe("LeadsListPage — permission gating (UI convenience only, backend is t
     });
   });
 
-  it("hides New Lead/Import for a role with no leads.create grant", async () => {
+  it("hides New Lead, and hides the Import option from the combined Import/Export menu, for a role with no leads.create grant", async () => {
     useSessionStore.setState({
       user: { _id: "employee-1", role: "employee", permissions: { leads: { view: true } } },
       isAuthenticated: true,
@@ -153,9 +176,16 @@ describe("LeadsListPage — permission gating (UI convenience only, backend is t
     // Ant Design's Button computes its accessible name from the icon's
     // aria-label plus the visible text (e.g. "plus New Lead").
     expect(screen.queryByRole("button", { name: /New Lead/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Import/ })).not.toBeInTheDocument();
-    // view is granted, so Export still shows.
-    expect(screen.getByRole("button", { name: /Export/ })).toBeInTheDocument();
+
+    // view is granted (but not create), so the combined button still shows,
+    // opening to only the Export option — Import is absent from the menu.
+    const importExportButton = screen.getByRole("button", { name: /Import\/Export/ });
+    expect(importExportButton).toBeInTheDocument();
+
+    await userEvent.click(importExportButton);
+
+    expect(await screen.findByText("Export Leads")).toBeInTheDocument();
+    expect(screen.queryByText("Import Leads")).not.toBeInTheDocument();
   });
 
   it("shows a read-only status tag instead of an editable dropdown for a role with no leads.edit grant", async () => {
@@ -172,7 +202,7 @@ describe("LeadsListPage — permission gating (UI convenience only, backend is t
     expect(within(row).queryByTitle("New")).not.toBeInTheDocument();
   });
 
-  it("shows the full action set for an admin (bypasses all permission checks)", async () => {
+  it("shows the full action set for an admin (bypasses all permission checks), including both options in the combined Import/Export menu", async () => {
     useSessionStore.setState({
       user: { _id: "admin-1", role: "admin", permissions: {} },
       isAuthenticated: true,
@@ -183,7 +213,13 @@ describe("LeadsListPage — permission gating (UI convenience only, backend is t
     await screen.findByText("Jane Doe");
 
     expect(screen.getByRole("button", { name: /New Lead/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Import/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Export/ })).toBeInTheDocument();
+
+    const importExportButton = screen.getByRole("button", { name: /Import\/Export/ });
+    expect(importExportButton).toBeInTheDocument();
+
+    await userEvent.click(importExportButton);
+
+    expect(await screen.findByText("Export Leads")).toBeInTheDocument();
+    expect(screen.getByText("Import Leads")).toBeInTheDocument();
   });
 });

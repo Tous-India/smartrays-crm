@@ -1,6 +1,7 @@
-import { Input, Select, Segmented, Button, Space } from "antd";
-import { PlusOutlined, UploadOutlined, DownloadOutlined } from "@ant-design/icons";
+import { Input, Select, Segmented, Button, Space, Dropdown } from "antd";
+import { PlusOutlined, UploadOutlined, DownloadOutlined, DownOutlined } from "@ant-design/icons";
 import PermissionGate from "../../../routes/PermissionGate";
+import { usePermission } from "../../../hooks/usePermission";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import { FOLLOW_UP_FILTER_OPTIONS, CLIENT_TYPE_OPTIONS } from "../constants/lead.constants";
 
@@ -9,6 +10,19 @@ import { FOLLOW_UP_FILTER_OPTIONS, CLIENT_TYPE_OPTIONS } from "../constants/lead
  * section (search/owner/follow-up), plus the Table/Board view toggle and the
  * New Lead / Import / Export actions — all permission-gated per the leads
  * PERMISSION_REGISTRY entries (create/view).
+ *
+ * Import and Export were two separate buttons; combined here into one
+ * "Import/Export" `Dropdown` menu button rather than a Modal/Popover — a
+ * dropdown reads as the lighter-weight pattern for "one button, pick one of
+ * two named actions" (no extra confirm step, opens/closes on the same
+ * click), and this codebase already uses AntD `Dropdown` for menu-style
+ * choices elsewhere. Selecting either option calls the exact same
+ * `onImport`/`onExport` handlers as before — this only consolidates the
+ * entry point, neither flow's own behavior changed. Each option is still
+ * independently permission-gated (`leads.view` for Export, `leads.create`
+ * for Import) exactly as the two separate buttons were, so a role holding
+ * only one of the two grants still sees just that one option; the button
+ * itself only renders at all if at least one grant is held.
  */
 function LeadFiltersBar({
   filters,
@@ -21,6 +35,21 @@ function LeadFiltersBar({
   isExporting,
 }) {
   const { users } = useUserDirectory();
+  const canExport = usePermission("leads", "view");
+  const canImport = usePermission("leads", "create");
+
+  const importExportItems = [
+    canExport && { key: "export", label: "Export Leads", icon: <DownloadOutlined /> },
+    canImport && { key: "import", label: "Import Leads", icon: <UploadOutlined /> },
+  ].filter(Boolean);
+
+  function handleImportExportClick({ key }) {
+    if (key === "export") {
+      onExport();
+    } else if (key === "import") {
+      onImport();
+    }
+  }
 
   const ownerOptions = [
     { value: "", label: "All owners" },
@@ -80,16 +109,13 @@ function LeadFiltersBar({
 
       <div className="shrink-0 lg:ml-auto">
         <Space size="small">
-          <PermissionGate module="leads" action="view">
-            <Button icon={<DownloadOutlined />} onClick={onExport} loading={isExporting}>
-              Export
-            </Button>
-          </PermissionGate>
-          <PermissionGate module="leads" action="create">
-            <Button icon={<UploadOutlined />} onClick={onImport}>
-              Import
-            </Button>
-          </PermissionGate>
+          {importExportItems.length > 0 && (
+            <Dropdown menu={{ items: importExportItems, onClick: handleImportExportClick }} trigger={["click"]}>
+              <Button loading={isExporting}>
+                Import/Export <DownOutlined />
+              </Button>
+            </Dropdown>
+          )}
           <PermissionGate module="leads" action="create">
             <Button type="primary" icon={<PlusOutlined />} onClick={onNewLead}>
               New Lead
