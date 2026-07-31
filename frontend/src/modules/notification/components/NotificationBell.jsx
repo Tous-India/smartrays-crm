@@ -100,7 +100,7 @@ function NotificationBell() {
       placement="bottomRight"
       dropdownRender={() => panel}
     >
-      <Badge count={unreadCount} size="small" overflowCount={99}>
+      <Badge count={unreadCount} size="small" overflowCount={99} className="mx-1.25">
         <Button
           type="text"
           shape="circle"

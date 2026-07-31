@@ -197,6 +197,91 @@ describe("GET /notifications and mark-read endpoints", () => {
   });
 });
 
+describe("GET /notifications?type= (§7.29, 2026-07-31 — sidebar badge filtering)", () => {
+  it("filters to a single type", async () => {
+    await Notification.create({ userId: user1._id, type: "lead_created", message: "Lead created" });
+    await Notification.create({ userId: user1._id, type: "leave_requested", message: "Leave requested" });
+
+    const response = await user1Agent.get("/api/v1/notifications?type=lead_created");
+
+    expect(response.body.data.map((notification) => notification.message)).toEqual(["Lead created"]);
+  });
+
+  it("filters to a comma-separated list of types", async () => {
+    await Notification.create({ userId: user1._id, type: "leave_requested", message: "Requested" });
+    await Notification.create({ userId: user1._id, type: "leave_approved", message: "Approved" });
+    await Notification.create({ userId: user1._id, type: "leave_declined", message: "Declined" });
+    await Notification.create({ userId: user1._id, type: "lead_created", message: "Not a leave one" });
+
+    const response = await user1Agent.get(
+      "/api/v1/notifications?type=leave_requested,leave_approved,leave_declined"
+    );
+
+    expect(response.body.data.map((notification) => notification.message).sort()).toEqual([
+      "Approved",
+      "Declined",
+      "Requested",
+    ]);
+  });
+
+  it("combines type and unreadOnly filters — used by the sidebar badge count", async () => {
+    await Notification.create({
+      userId: user1._id,
+      type: "lead_created",
+      message: "Already read",
+      isRead: true,
+    });
+    await Notification.create({ userId: user1._id, type: "lead_created", message: "Still unread" });
+    await Notification.create({ userId: user1._id, type: "leave_requested", message: "Unread but wrong type" });
+
+    const response = await user1Agent.get("/api/v1/notifications?unreadOnly=true&type=lead_created,lead_assigned");
+
+    expect(response.body.data.map((notification) => notification.message)).toEqual(["Still unread"]);
+  });
+
+  it("with no type param at all, behaves exactly as before (no type filter)", async () => {
+    await Notification.create({ userId: user1._id, type: "lead_created", message: "A" });
+    await Notification.create({ userId: user1._id, type: "leave_requested", message: "B" });
+
+    const response = await user1Agent.get("/api/v1/notifications");
+
+    expect(response.body.data).toHaveLength(2);
+  });
+});
+
+describe("PATCH /notifications/read-all?type= (§7.29 — nav-click mark-as-read)", () => {
+  it("marks only the given type(s) as read, leaving other unread notifications untouched", async () => {
+    const leadNotification = await Notification.create({
+      userId: user1._id,
+      type: "lead_created",
+      message: "Lead",
+    });
+    const leaveNotification = await Notification.create({
+      userId: user1._id,
+      type: "leave_requested",
+      message: "Leave",
+    });
+
+    const response = await user1Agent.patch("/api/v1/notifications/read-all?type=lead_created,lead_assigned");
+
+    expect(response.status).toBe(200);
+    expect((await Notification.findById(leadNotification._id)).isRead).toBe(true);
+    expect((await Notification.findById(leaveNotification._id)).isRead).toBe(false);
+  });
+
+  it("stays scoped to the caller even with a type filter applied", async () => {
+    const otherUsersNotification = await Notification.create({
+      userId: user2._id,
+      type: "lead_created",
+      message: "Not mine",
+    });
+
+    await user1Agent.patch("/api/v1/notifications/read-all?type=lead_created");
+
+    expect((await Notification.findById(otherUsersNotification._id)).isRead).toBe(false);
+  });
+});
+
 describe("createNotification push delivery", () => {
   it("attempts a push to every active subscription for the user", async () => {
     await PushSubscription.create({

@@ -5,6 +5,7 @@ import mongoose from "mongoose";
 // this codebase — adding a new notification type later is a one-line change
 // here, not a schema migration.
 const NOTIFICATION_TYPES = [
+  "lead_created",
   "lead_assigned",
   "lead_follow_up_due",
   "ticket_assigned",

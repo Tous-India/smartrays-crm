@@ -2694,12 +2694,20 @@ new `User.pushSubscriptions` array (§6.1/§6.7) — kept in sync, though `PushS
 - **Leads** (`lead.service.js`) — exactly the spec's own requirement. `notifyLeadAssignment`
   (shared by `createLead` and `updateLead`) fires whenever a lead's `ownerId` ends up set to
   someone other than whoever made the change — assigning a lead to yourself needs no
-  notification telling you what you just did.
+  notification telling you what you just did. **Extended 2026-07-31 (§7.29):** a new
+  `lead_created` type, distinct from `lead_assigned` — a broadcast to every admin plus the lead's
+  owner (deduplicated), fired on creation regardless of who created it or whether they assigned
+  it to themselves. See §7.29 below for the full write-up and the reason it's a separate type
+  rather than folded into `lead_assigned`.
 - **Tickets** (`ticket.service.js#assignTicket`) — **a deliberate small addition beyond §7.8's
   literal scope**, stated here explicitly as an addition rather than a silent scope expansion.
   Made because the Notification infrastructure is fully generic and Ticket already has an
   `assign` action ready to hang a notification off of. Skipped when an admin/manager assigns a
   ticket to themselves, the same self-notify guard as Leads.
+
+**`GET /notifications`/`PATCH /notifications/read-all` both gained an optional `type` filter
+(comma-separated, 2026-07-31, §7.29)** — see §7.29 for the full write-up; this is what lets the
+Leads/Leave sidebar badges (§7.26) reuse this exact module instead of their own tracking system.
 
 **`src/cron/leadFollowUpReminderCron.js`** — the other literal Leads requirement. Runs every 5
 minutes (`*/5 * * * *`) — far more frequent than the monthly payroll cron, since "24h before"
@@ -3460,6 +3468,12 @@ STANDING RULE only called for a frontend/README.md update, not this file — add
 part of §7.27's own doc pass for consistent numbering). 6 new backend tests + 10 new frontend
 tests (`useSidebarBadgeCounts.test.js` + `MainLayout.test.jsx`).
 
+**Superseded 2026-07-31 (§7.29) — reworked to be notification-driven, not replaced with a second
+system alongside it.** The `GET /leads/count`/`GET /leave/pending-count` endpoints described
+above are still live and tested, but the sidebar badges no longer call them — see §7.29 for the
+reworked design (unread-notification-count-by-type, reusing the existing Notification module
+entirely) and the reasoning for retiring the admin-only gate on the Leave badge specifically.
+
 ### 7.27 Permissions Management Frontend (2026-07-30)
 
 ✅ **Built** — the first real frontend for the `permission` module (§7.12), replacing the
@@ -3520,6 +3534,67 @@ modules; neither was rebuilt.
   correct member count.
 
 **Known deviations:** none from this task's own stated scope.
+
+---
+
+### 7.29 Notification-Driven Leads/Leave Sidebar Badges (2026-07-31)
+
+✅ **Built** — reworks the §7.26 sidebar badges to reuse the existing Notification module (§7.16)
+entirely, rather than the parallel `GET /leads/count`/`GET /leave/pending-count` tracking system
+that task built. Neither the Notification module nor `MainLayout.jsx` was rebuilt from scratch.
+
+**Backend:**
+- **New `lead_created` notification type** (`lead.service.js`), distinct from the existing
+  `lead_assigned`. `notifyLeadCreation(lead)` broadcasts to every admin plus the lead's owner
+  (deduplicated via a `Set`), fired on every lead creation regardless of who created it — a
+  deliberate difference from `notifyLeadAssignment`'s self-notify skip, since "a new lead entered
+  the pipeline" is useful to every admin including the one who happened to create it, unlike a
+  personal "you were assigned this" ping. Wired into both `createLead` (manual add) and
+  `createLeadFromWebsiteIntake` (§7.25) — the two don't share an implementation, so both call it
+  independently; the website-intake path's existing `lead_assigned` notification to its
+  owner-admin is untouched, `lead_created` is purely additive on top of it.
+- **`GET /notifications`/`PATCH /notifications/read-all` both gained an optional, comma-separated
+  `type` query param** — `notification.service.js#listNotifications`/`markAllRead` now accept a
+  `types` array, `notification.controller.js` parses `?type=a,b,c` into that array. Deliberately
+  reuses these two existing endpoints rather than adding a dedicated count endpoint or a
+  dedicated type-scoped mark-read endpoint — the sidebar badge is just this same list, filtered,
+  with the caller taking `.length`.
+- **Test coverage:** 4 new tests in `lead.test.js` (every admin notified on creation, the owner
+  also notified when not already an admin, no double-notify when an admin is also the owner,
+  still fires for an admin creating their own lead) + 1 for the website-intake path (broadcasts
+  to all admins without disturbing the existing `lead_assigned` notification). 6 new tests in
+  `notification.test.js` (single-type filter, comma-separated multi-type filter, combined with
+  `unreadOnly`, no-type-param behaves as before, type-scoped mark-read leaves other types/other
+  users untouched).
+
+**Frontend:**
+- **`useSidebarBadgeCounts`** (`src/hooks/`) rewritten to wrap `listNotificationsByType`/
+  `markNotificationsReadByType` (`modules/notification/api/notificationApi.js`) instead of the
+  old `getLeadCount`/`getPendingLeaveCount` calls. Exports `LEADS_NOTIFICATION_TYPES` (`
+  lead_created`, `lead_assigned`) and `LEAVE_NOTIFICATION_TYPES` (`leave_requested`,
+  `leave_approved`, `leave_declined`) so the hook's own mark-read calls and `MainLayout.jsx`'s nav
+  items always agree on exactly which types each badge means.
+- **Leave badge is no longer admin-only** — a deliberate reversal of §7.26's explicit admin-only
+  gate, made because the badge is now naturally self-scoped by the Notification module itself:
+  `leave_requested` only ever notifies admins, `leave_approved`/`leave_declined` only ever notify
+  the employee whose request was decided, so the same badge is already correct for both roles
+  without a role gate.
+- **Mark-as-read on nav click** — clicking the Leads or Leave nav item (`onNavigate` on the
+  `<Link>` in `MainLayout.jsx`) fires the type-scoped mark-read and zeroes that badge's count
+  locally, immediately rather than waiting for the next 60-second poll.
+- **5px horizontal badge margin** (`mx-1.25`) applied consistently to all three badge instances
+  (bell icon, Leads, Leave) for even spacing, previously inconsistent.
+- **Test coverage:** `useSidebarBadgeCounts.test.js` rewritten (8 tests) and `MainLayout.test.jsx`'s
+  badge describe block rewritten (7 tests) — see `frontend/README.md`'s "Sidebar count badges"
+  section for the full list.
+
+**Explicitly deferred, not built:** an Attendance badge. This task's pattern would extend to one
+cleanly, but nothing in Attendance currently creates a notification at all — that's new backend
+scope this task didn't ask for.
+
+**Known deviations:** none from this task's own stated scope, beyond the two deliberate design
+calls stated above (which types count toward each badge; removing the Leave badge's admin-only
+gate) — both called out explicitly rather than silently decided.
 
 ---
 

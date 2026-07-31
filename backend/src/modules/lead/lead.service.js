@@ -32,6 +32,37 @@ async function notifyLeadAssignment(lead, requestingUser) {
   );
 }
 
+/**
+ * "Lead created" notification (§7.29, 2026-07-31) — a distinct broadcast
+ * from `notifyLeadAssignment` above: that one is a personal "you were
+ * assigned this" ping (skipped when you assigned it to yourself); this one
+ * is "a new lead entered the pipeline at all," always sent to every admin
+ * (deliberately including one who created it themselves — an admin still
+ * benefits from the same "new lead" feed everyone else sees, unlike the
+ * self-assignment case, which really would be telling someone what they
+ * just did) plus the lead's owner, deduplicated so an admin who also
+ * happens to be the owner gets exactly one `lead_created` notification, not
+ * two. Shared by both `createLead` (manual add) and
+ * `createLeadFromWebsiteIntake` below — neither reuses the other, so this
+ * is called from both rather than assuming one funnels through the other.
+ */
+async function notifyLeadCreation(lead) {
+  const admins = await User.find({ role: "admin" }).select("_id");
+  const recipientIds = new Set(admins.map((admin) => String(admin._id)));
+
+  if (lead.ownerId) {
+    recipientIds.add(String(lead.ownerId));
+  }
+
+  const message = `New lead created: ${lead.name}${lead.companyName ? ` (${lead.companyName})` : ""}`;
+
+  await Promise.all(
+    [...recipientIds].map((userId) =>
+      createNotification(userId, "lead_created", message, { module: "leads", id: lead._id })
+    )
+  );
+}
+
 const DEFAULT_LEAD_SOURCES = [
   "Website",
   "Meta Ads",
@@ -130,6 +161,7 @@ export async function createLead(payload, requestingUser) {
   });
 
   await notifyLeadAssignment(lead, requestingUser);
+  await notifyLeadCreation(lead);
 
   return lead;
 }
@@ -891,6 +923,7 @@ export async function createLeadFromWebsiteIntake(rawPayload) {
     `New website lead: ${lead.name}${lead.companyName ? ` (${lead.companyName})` : ""}`,
     { module: "leads", id: lead._id }
   );
+  await notifyLeadCreation(lead);
 
   return lead;
 }

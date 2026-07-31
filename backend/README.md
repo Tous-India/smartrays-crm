@@ -1340,9 +1340,9 @@ planned (not yet built) infrastructure.
 |---|---|---|---|
 | POST | `/notifications/subscribe` | Authenticated, no module permission | Body `{ endpoint, keys: { p256dh, auth } }` — the browser's Push API subscription object, verbatim. Upserts by `endpoint` (not `userId`) — re-subscribing an already-known endpoint (e.g. a shared device logged in as a different user) re-associates it rather than erroring on a duplicate key. Links the subscription's id onto `User.pushSubscriptions`. |
 | POST | `/notifications/unsubscribe` | Authenticated, no module permission | Body `{ endpoint }`. Deactivates (`isActive: false`) rather than deleting — the same row can be re-activated by a later re-subscribe. A silent no-op for an endpoint that doesn't belong to the caller (or doesn't exist), since "make sure this isn't subscribed anymore" is the actual intent regardless. POST, not DELETE — this codebase avoids REST-purist endpoints where a body is more convenient (see `PATCH /leads/:id/hot`), and DELETE-with-a-body is friction for no benefit here. |
-| GET | `/notifications?unreadOnly=true` | Authenticated, no module permission | Always scoped to the caller — there is no cross-user access anywhere in this module, the same "self data needs no grant" shape as `GET /auth/me`/`GET /attendance/me`. |
+| GET | `/notifications?unreadOnly=true&type=lead_created,lead_assigned` | Authenticated, no module permission | Always scoped to the caller — there is no cross-user access anywhere in this module, the same "self data needs no grant" shape as `GET /auth/me`/`GET /attendance/me`. **`type` added 2026-07-31 (§7.29):** an optional comma-separated `NOTIFICATION_TYPES` filter. Added specifically so the Leads/Leave sidebar badges (see `frontend/README.md`) can reuse this exact endpoint — `unreadOnly=true&type=...` and take `.length` — rather than a dedicated count endpoint. |
 | PATCH | `/notifications/:id/read` | Authenticated, no module permission | 404 (not 403) for a notification that isn't the caller's — matching the Leads/Location/User/Payroll out-of-scope precedent. |
-| PATCH | `/notifications/read-all` | Authenticated, no module permission | Marks every one of the caller's own unread notifications read; doesn't touch anyone else's. |
+| PATCH | `/notifications/read-all?type=lead_created,lead_assigned` | Authenticated, no module permission | Marks every one of the caller's own unread notifications read; doesn't touch anyone else's. **`type` added 2026-07-31 (§7.29):** optional, same comma-separated filter as the list endpoint above — scopes the bulk mark-read to just those types, so clicking the Leads sidebar nav item can clear only that badge without touching an unrelated unread Leave notification (or the bell dropdown's own unscoped "Mark all as read", which omits `type` entirely). |
 
 **No `PERMISSION_REGISTRY` entry at all** — every action here is inherently self-scoped (your
 own subscriptions, your own notifications), so a permission grant would be redundant, the same
@@ -1384,6 +1384,19 @@ re-activate.
   one specific already-known recipient), `leave_approved`/`leave_declined` (the requester only,
   on `PATCH /leave/:id/approve`/`/decline`). Every path skips self-notification the same way
   Leads' assignment notification does. See the Leave section above for the full write-up.
+- **Lead creation (`lead.service.js`, added 2026-07-31, §7.29)** — a new `lead_created`
+  `NOTIFICATION_TYPES` value, distinct from the existing `lead_assigned`. Where
+  `notifyLeadAssignment` is a personal "you were assigned this" ping (skipped when you assign a
+  lead to yourself), the new `notifyLeadCreation(lead)` helper is a broadcast: every admin
+  (`User.find({ role: "admin" })`), **plus** the lead's owner if one was set — deduplicated via a
+  `Set` so an admin who's also the owner gets exactly one `lead_created` notification, not two.
+  Deliberately fires even when the creator is themselves an admin (unlike the self-assignment
+  skip) — the intent is "a new lead entered the pipeline," which every admin benefits from seeing
+  regardless of who created it. Called from both `createLead` (manual add) and
+  `createLeadFromWebsiteIntake` (§7.25) — the two don't share an implementation, so this is called
+  from both rather than assuming one funnels through the other; the website-intake path keeps its
+  existing single `lead_assigned` notification to its owner-admin unchanged, and the new
+  `lead_created` broadcast is purely additive on top of it.
 
 **`src/cron/leadFollowUpReminderCron.js`** — the other literal Leads requirement ("push 24h and
 15min before follow-up, via cron"). Runs every 5 minutes (`*/5 * * * *`, much finer-grained than

@@ -1039,40 +1039,59 @@ rework the "New User" form specifically and an admin still needs to view/edit ex
   with name+type, and selecting a Department produces the correct `managerId` in the submitted
   payload (with `departmentTeamId` itself absent from it).
 
-### Sidebar count badges (§7.26, 2026-07-30)
+### Sidebar count badges (§7.26, 2026-07-30; reworked to be notification-driven §7.29, 2026-07-31)
 
 `MainLayout.jsx`'s Leads and Leave nav items each get a small AntD `Badge` next to their label,
 showing a live count — the first badges on any sidebar item; establishes the pattern for
 Tickets/AMC or any future module's badge.
 
-- **Leads badge** — count of leads with `status: "new"`, via the new `GET /leads/count`
-  endpoint (a lightweight `countDocuments`, not the full list — see `backend/README.md`'s Leads
-  section). Scoped identically to `GET /leads` itself (admin org-wide, manager their team,
-  everyone else their own) via the same shared `buildLeadFilter` helper, so the badge can never
-  disagree with what the Leads list itself would show for that caller.
-- **Leave badge** — count of `status: "pending"` leave requests, via the new
-  `GET /leave/pending-count` endpoint. **Admin-only, a hard role gate** (`requireAdmin` at the
-  route), not a `leave.view_all` permission grant — this task's own spec was explicit that this
-  stays admin-only even if a permission override later extended `view_all` to a manager. Not
-  rendered at all for a non-admin (not even a `0`), and the count is never even fetched for one
-  — `useSidebarBadgeCounts` skips the request entirely when `isAdmin` is false, not just the
-  badge.
-- **`useSidebarBadgeCounts`** (`src/hooks/`) — the shared hook backing both badges. Polls every
-  60 seconds (the same cadence as the notification bell's own poll, `useNotifications.js`), each
-  count fetched and caught independently so one failing never blocks or breaks the other — a
-  transient error just leaves that badge showing its last-known value until the next tick.
-  `Badge`'s own default behavior (no `showZero`) already hides the badge at count `0`, so no
-  extra logic was needed for that.
-- **Pattern for a future Tickets/AMC badge:** add a lightweight `GET .../count` endpoint to that
-  module (reusing its existing scoping helper, the same way `getLeadCount` reuses
-  `buildLeadFilter`), a thin API wrapper, extend `useSidebarBadgeCounts` with one more polled
-  count (or compose a second small hook alongside it), and add a `badgeCount` field to that nav
-  item's entry in `MainLayout.jsx`'s `allItems` array.
-- **Testing:** `useSidebarBadgeCounts.test.js` (6 tests, `renderHook` + `vi.useFakeTimers`,
-  matching `useCheckedInHeartbeatLoop.test.js`'s established polling-hook test pattern) —
-  correct scoping call, gated fetching per role, refetch on the poll interval, and a failed poll
-  not clobbering the last-known count. 4 new tests in `MainLayout.test.jsx` — badge shows the
-  right count, hides at 0, Leave badge admin-only (never fetched for a non-admin at all).
+**Reworked 2026-07-31 (§7.29) to reuse the existing Notification module entirely, replacing the
+original record-count approach** — each badge is now just the caller's own unread-notification
+count, filtered by type, via the same `GET /notifications` endpoint the bell dropdown already
+uses (`?unreadOnly=true&type=...`), not a parallel `GET /leads/count`/`GET /leave/pending-count`
+tracking system. The old endpoints and this hook's original shape are gone, not kept alongside.
+
+- **Leads badge** — unread count where `type` is `lead_created` (the new admin/owner broadcast,
+  see `backend/README.md`'s Notifications section) **or** `lead_assigned` (the pre-existing
+  personal "you were assigned this" ping) — either one means "there's a lead you haven't looked
+  at yet." Gated by `canViewLeads` the same as before (the fetch is skipped entirely, not just
+  the badge, when the caller can't view Leads at all).
+- **Leave badge** — unread count where `type` is `leave_requested`/`leave_approved`/
+  `leave_declined`. **No longer admin-only** — a deliberate change from the original §7.26
+  design, made because this badge is now naturally self-scoped by the Notification module
+  itself: `leave_requested` only ever notifies admins (a request to review), while
+  `leave_approved`/`leave_declined` only ever notify the employee whose request was decided — so
+  the same badge is meaningfully non-zero for an admin (pending requests) or an employee (their
+  own outcome), with no role gate needed to make that correct.
+- **Marks-as-read on nav click** — clicking either nav item (a real navigation, not just seeing
+  the badge) fires `PATCH /notifications/read-all?type=...` scoped to that badge's own types
+  (`clearLeadsBadge`/`clearLeaveBadge` in the hook), zeroing the local count immediately rather
+  than waiting for the next poll tick. Clicking Leads never touches an unread Leave notification
+  and vice versa — each is its own type-scoped call, not the bell's unscoped "Mark all as read."
+- **`useSidebarBadgeCounts`** (`src/hooks/`) — the shared hook backing both badges, now wrapping
+  `listNotificationsByType`/`markNotificationsReadByType` (`modules/notification/api/
+  notificationApi.js`) instead of the old per-module count APIs. Exports
+  `LEADS_NOTIFICATION_TYPES`/`LEAVE_NOTIFICATION_TYPES` so `MainLayout.jsx` and this hook's own
+  mark-read calls always agree on exactly which types each badge means — one list, not two that
+  could drift. Still polls every 60 seconds (unchanged cadence), each count fetched and caught
+  independently so one failing never blocks or breaks the other.
+- **5px horizontal badge margin** (`mx-1.25`, the closest Tailwind scale value to 5px) applied
+  consistently to all three badge instances — the bell icon (`NotificationBell.jsx`) and both
+  sidebar badges — for even spacing; previously inconsistent across the three.
+- **Attendance badge — explicitly deferred, not built.** This task's own notification-reuse
+  pattern (unread-count-by-type + type-scoped mark-read-on-nav-click) would extend cleanly to an
+  Attendance badge if one's ever wanted, but nothing in Attendance currently creates a
+  notification at all (no `NOTIFICATION_TYPES` value, no `createNotification` call anywhere in
+  `attendance.service.js`) — that's new backend scope this task didn't ask for, so it's called
+  out here as a deliberate gap rather than silently expanded into.
+- **Testing:** `useSidebarBadgeCounts.test.js` (8 tests) — correct type-filtered fetch calls for
+  both badges, Leads fetch gated by `canViewLeads`, Leave fetch **not** gated by role, refetch on
+  the poll interval, a failed poll not clobbering the last-known count, and both
+  `clearLeadsBadge`/`clearLeaveBadge` calling the right scoped mark-read and zeroing only their
+  own count. `MainLayout.test.jsx`'s badge describe block rewritten to match (7 tests) — correct
+  type-filtered counts on each nav item, Leads badge hides at 0, Leave badge now shown for a
+  non-admin too, and clicking either nav item fires the correctly-scoped mark-read without
+  affecting the other badge.
 
 ### Permissions Management module (`src/modules/permission/`, §7.27, 2026-07-30)
 

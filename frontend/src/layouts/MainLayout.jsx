@@ -111,8 +111,9 @@ function MainLayout() {
   }, [user]);
 
   const canViewLeads = can(user, "leads", "view");
-  const isAdmin = user?.role === "admin";
-  const { newLeadsCount, pendingLeaveCount } = useSidebarBadgeCounts({ canViewLeads, isAdmin });
+  const { newLeadsCount, pendingLeaveCount, clearLeadsBadge, clearLeaveBadge } = useSidebarBadgeCounts({
+    canViewLeads,
+  });
 
   const menuItems = useMemo(() => {
     const allItems = [
@@ -122,10 +123,12 @@ function MainLayout() {
         label: "Leads",
         icon: <RiseOutlined />,
         show: canViewLeads,
-        // Count of leads with status "new", scoped the same way the Leads
-        // list itself is (admin org-wide, manager team, sales_associate
-        // own) — see `GET /leads/count` (§7.26).
+        // Unread `lead_created`/`lead_assigned` notification count (§7.29 —
+        // replaces the earlier `GET /leads/count` record-count approach,
+        // §7.26, with the Notification module itself as the source of
+        // truth). Clicking this nav item marks those types read.
         badgeCount: newLeadsCount,
+        onNavigate: clearLeadsBadge,
       },
       {
         key: ROUTE_PATHS.CUSTOMERS,
@@ -145,12 +148,15 @@ function MainLayout() {
         label: "Leave",
         icon: <FileDoneOutlined />,
         show: true,
-        // Admin-only count of pending-approval leave requests (§7.26) — not
-        // shown at all (not even a 0) to any non-admin role; `badgeCount`
-        // stays 0 for them since `useSidebarBadgeCounts` never even fetches
-        // it without `isAdmin`, but the `isAdmin` check here is what
-        // actually prevents rendering the badge itself.
-        badgeCount: isAdmin ? pendingLeaveCount : 0,
+        // Unread leave-notification count (§7.29 — replaces the earlier
+        // admin-only pending-request count, §7.26). No role gate needed
+        // anymore: `leave_requested` notifications only ever go to admins
+        // (a request to review) and `leave_approved`/`leave_declined` only
+        // ever go to the employee whose request was decided, so this is
+        // already self-scoped by the Notification module itself — an admin
+        // sees pending requests, an employee sees their own outcome.
+        badgeCount: pendingLeaveCount,
+        onNavigate: clearLeaveBadge,
       },
       {
         key: ROUTE_PATHS.LOCATION,
@@ -187,9 +193,9 @@ function MainLayout() {
       key: item.key,
       icon: item.icon,
       label: (
-        <Link to={item.key} className="flex items-center justify-between">
+        <Link to={item.key} className="flex items-center justify-between" onClick={item.onNavigate}>
           <span>{item.label}</span>
-          {Boolean(item.badgeCount) && <Badge count={item.badgeCount} size="small" />}
+          {Boolean(item.badgeCount) && <Badge count={item.badgeCount} size="small" className="mx-1.25" />}
         </Link>
       ),
     }));
@@ -212,7 +218,7 @@ function MainLayout() {
     }
 
     return items;
-  }, [user, canViewSettings, canViewLeads, isAdmin, newLeadsCount, pendingLeaveCount]);
+  }, [user, canViewSettings, canViewLeads, newLeadsCount, pendingLeaveCount, clearLeadsBadge, clearLeaveBadge]);
 
   const allKnownKeys = useMemo(() => menuItems.map((item) => item.key), [menuItems]);
 

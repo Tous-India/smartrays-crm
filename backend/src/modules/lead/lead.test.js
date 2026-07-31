@@ -14,7 +14,7 @@ const FULL_LEADS_PERMISSIONS = { leads: { view: true, create: true, edit: true, 
 
 let app;
 let adminAgent, managerAgent, sales1Agent, sales2Agent, sales3Agent, noPermAgent;
-let manager1, sales1, sales2, sales3;
+let admin, manager1, sales1, sales2, sales3;
 
 function buildLeadPayload(overrides = {}) {
   return {
@@ -43,7 +43,7 @@ beforeAll(async () => {
   await startTestDatabase();
   app = await getTestApp();
 
-  await createUserDirectly({
+  admin = await createUserDirectly({
     name: "Admin",
     email: "admin@test.local",
     password: "AdminPass123!",
@@ -946,7 +946,59 @@ describe("Assignment notifications (§6.7/§7.1, Phase 9)", () => {
 
     expect(await Notification.countDocuments({ type: "lead_assigned" })).toBe(0);
   });
+});
 
+describe("Lead creation notifications (§7.29, 2026-07-31)", () => {
+  it("notifies every admin (not just the owner) when a lead is created", async () => {
+    const response = await sales1Agent.post("/api/v1/leads").send(buildLeadPayload());
+
+    expect(response.status).toBe(201);
+
+    const adminNotification = await Notification.findOne({ userId: admin._id, type: "lead_created" });
+    expect(adminNotification).not.toBeNull();
+    expect(adminNotification.message).toContain(response.body.data.name);
+    expect(String(adminNotification.relatedEntity.id)).toBe(String(response.body.data._id));
+    expect(adminNotification.relatedEntity.module).toBe("leads");
+  });
+
+  it("also notifies the assigned owner in addition to admins, when the owner isn't already an admin", async () => {
+    await managerAgent.post("/api/v1/leads").send(buildLeadPayload({ ownerId: sales1._id }));
+
+    const ownerNotification = await Notification.findOne({ userId: sales1._id, type: "lead_created" });
+    expect(ownerNotification).not.toBeNull();
+  });
+
+  it("does not double-notify an admin who is also the lead's owner", async () => {
+    await adminAgent.post("/api/v1/leads").send(buildLeadPayload({ ownerId: admin._id }));
+
+    expect(await Notification.countDocuments({ userId: admin._id, type: "lead_created" })).toBe(1);
+  });
+
+  it("still fires for an admin creating their own lead (a deliberate broadcast, unlike the personal lead_assigned ping)", async () => {
+    await adminAgent.post("/api/v1/leads").send(buildLeadPayload());
+
+    expect(await Notification.countDocuments({ userId: admin._id, type: "lead_created" })).toBe(1);
+  });
+});
+
+describe("Lead creation notifications — website intake (§7.29)", () => {
+  it("notifies every admin, in addition to the existing lead_assigned notification to the owner admin", async () => {
+    const response = await request(app)
+      .post("/api/v1/leads/website-intake")
+      .set("X-Webhook-Token", "test-webhook-secret")
+      .send({ "name-1": "Website Lead", "phone-1": "9998887777" });
+
+    expect(response.status).toBe(201);
+
+    const createdNotification = await Notification.findOne({ userId: admin._id, type: "lead_created" });
+    expect(createdNotification).not.toBeNull();
+    // The existing lead_assigned notification to the owner admin is untouched,
+    // not replaced by the new lead_created broadcast.
+    expect(await Notification.countDocuments({ userId: admin._id, type: "lead_assigned" })).toBe(1);
+  });
+});
+
+describe("Follow-up reminder SentAt reset on followUpDate change", () => {
   it("resets both follow-up reminder SentAt fields when followUpDate changes", async () => {
     const createResponse = await sales1Agent.post("/api/v1/leads").send(
       buildLeadPayload({ followUpDate: new Date(Date.now() + 60 * 60 * 1000).toISOString() })

@@ -1,15 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import useSidebarBadgeCounts from "./useSidebarBadgeCounts";
-import * as leadApi from "../modules/lead/api/leadApi";
-import * as leaveApi from "../modules/leave/api/leaveApi";
+import * as notificationApi from "../modules/notification/api/notificationApi";
 
-vi.mock("../modules/lead/api/leadApi", () => ({
-  getLeadCount: vi.fn(),
-}));
-
-vi.mock("../modules/leave/api/leaveApi", () => ({
-  getPendingLeaveCount: vi.fn(),
+vi.mock("../modules/notification/api/notificationApi", () => ({
+  listNotificationsByType: vi.fn(),
+  markNotificationsReadByType: vi.fn(),
 }));
 
 const POLL_INTERVAL_MS = 60000;
@@ -18,11 +14,20 @@ function advance(ms) {
   return act(() => vi.advanceTimersByTimeAsync(ms));
 }
 
+function mockCountsByType({ leads = 0, leave = 0 } = {}) {
+  notificationApi.listNotificationsByType.mockImplementation((types) => {
+    if (types.includes("lead_created")) {
+      return Promise.resolve({ data: { data: Array.from({ length: leads }) } });
+    }
+    return Promise.resolve({ data: { data: Array.from({ length: leave }) } });
+  });
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
-  leadApi.getLeadCount.mockResolvedValue({ data: { data: { count: 0 } } });
-  leaveApi.getPendingLeaveCount.mockResolvedValue({ data: { data: { count: 0 } } });
+  mockCountsByType();
+  notificationApi.markNotificationsReadByType.mockResolvedValue({ data: {} });
 });
 
 afterEach(() => {
@@ -30,65 +35,95 @@ afterEach(() => {
 });
 
 describe("useSidebarBadgeCounts", () => {
-  it("fetches the new-leads count scoped by the caller (server-side), not client-filtered", async () => {
-    leadApi.getLeadCount.mockResolvedValue({ data: { data: { count: 4 } } });
+  it("fetches the unread lead_created/lead_assigned count when canViewLeads is true", async () => {
+    mockCountsByType({ leads: 4 });
 
-    const { result } = renderHook(() => useSidebarBadgeCounts({ canViewLeads: true, isAdmin: false }));
+    const { result } = renderHook(() => useSidebarBadgeCounts({ canViewLeads: true }));
     await advance(0);
 
-    expect(leadApi.getLeadCount).toHaveBeenCalledWith({ status: "new" });
+    expect(notificationApi.listNotificationsByType).toHaveBeenCalledWith(
+      ["lead_created", "lead_assigned"],
+      { unreadOnly: true }
+    );
     expect(result.current.newLeadsCount).toBe(4);
   });
 
   it("does not fetch the leads count at all when canViewLeads is false", async () => {
-    renderHook(() => useSidebarBadgeCounts({ canViewLeads: false, isAdmin: false }));
+    renderHook(() => useSidebarBadgeCounts({ canViewLeads: false }));
     await advance(0);
 
-    expect(leadApi.getLeadCount).not.toHaveBeenCalled();
+    expect(notificationApi.listNotificationsByType).not.toHaveBeenCalledWith(
+      ["lead_created", "lead_assigned"],
+      { unreadOnly: true }
+    );
   });
 
-  it("fetches the pending leave count only when isAdmin is true", async () => {
-    leaveApi.getPendingLeaveCount.mockResolvedValue({ data: { data: { count: 2 } } });
+  it("always fetches the unread leave-notification count, regardless of canViewLeads", async () => {
+    mockCountsByType({ leave: 2 });
 
-    const { result } = renderHook(() => useSidebarBadgeCounts({ canViewLeads: false, isAdmin: true }));
+    const { result } = renderHook(() => useSidebarBadgeCounts({ canViewLeads: false }));
     await advance(0);
 
-    expect(leaveApi.getPendingLeaveCount).toHaveBeenCalled();
+    expect(notificationApi.listNotificationsByType).toHaveBeenCalledWith(
+      ["leave_requested", "leave_approved", "leave_declined"],
+      { unreadOnly: true }
+    );
     expect(result.current.pendingLeaveCount).toBe(2);
   });
 
-  it("does not fetch the pending leave count at all for a non-admin", async () => {
-    renderHook(() => useSidebarBadgeCounts({ canViewLeads: true, isAdmin: false }));
-    await advance(0);
-
-    expect(leaveApi.getPendingLeaveCount).not.toHaveBeenCalled();
-  });
-
   it("refetches both counts on the polling interval", async () => {
-    renderHook(() => useSidebarBadgeCounts({ canViewLeads: true, isAdmin: true }));
+    renderHook(() => useSidebarBadgeCounts({ canViewLeads: true }));
     await advance(0);
 
-    expect(leadApi.getLeadCount).toHaveBeenCalledTimes(1);
-    expect(leaveApi.getPendingLeaveCount).toHaveBeenCalledTimes(1);
+    expect(notificationApi.listNotificationsByType).toHaveBeenCalledTimes(2);
 
     await advance(POLL_INTERVAL_MS);
-    expect(leadApi.getLeadCount).toHaveBeenCalledTimes(2);
-    expect(leaveApi.getPendingLeaveCount).toHaveBeenCalledTimes(2);
+    expect(notificationApi.listNotificationsByType).toHaveBeenCalledTimes(4);
 
     await advance(POLL_INTERVAL_MS);
-    expect(leadApi.getLeadCount).toHaveBeenCalledTimes(3);
-    expect(leaveApi.getPendingLeaveCount).toHaveBeenCalledTimes(3);
+    expect(notificationApi.listNotificationsByType).toHaveBeenCalledTimes(6);
   });
 
   it("leaves the last-known count in place if a poll fails, rather than throwing", async () => {
-    leadApi.getLeadCount.mockResolvedValueOnce({ data: { data: { count: 3 } } });
+    mockCountsByType({ leads: 3 });
 
-    const { result } = renderHook(() => useSidebarBadgeCounts({ canViewLeads: true, isAdmin: false }));
+    const { result } = renderHook(() => useSidebarBadgeCounts({ canViewLeads: true }));
     await advance(0);
     expect(result.current.newLeadsCount).toBe(3);
 
-    leadApi.getLeadCount.mockRejectedValueOnce(new Error("network error"));
+    notificationApi.listNotificationsByType.mockRejectedValueOnce(new Error("network error"));
     await expect(advance(POLL_INTERVAL_MS)).resolves.not.toThrow();
     expect(result.current.newLeadsCount).toBe(3);
+  });
+
+  it("clearLeadsBadge marks lead_created/lead_assigned as read and zeroes the count immediately", async () => {
+    mockCountsByType({ leads: 5 });
+
+    const { result } = renderHook(() => useSidebarBadgeCounts({ canViewLeads: true }));
+    await advance(0);
+    expect(result.current.newLeadsCount).toBe(5);
+
+    await act(() => result.current.clearLeadsBadge());
+
+    expect(notificationApi.markNotificationsReadByType).toHaveBeenCalledWith(["lead_created", "lead_assigned"]);
+    expect(result.current.newLeadsCount).toBe(0);
+  });
+
+  it("clearLeaveBadge marks leave notifications as read and zeroes the count immediately, without touching the leads count", async () => {
+    mockCountsByType({ leads: 5, leave: 3 });
+
+    const { result } = renderHook(() => useSidebarBadgeCounts({ canViewLeads: true }));
+    await advance(0);
+    expect(result.current.pendingLeaveCount).toBe(3);
+
+    await act(() => result.current.clearLeaveBadge());
+
+    expect(notificationApi.markNotificationsReadByType).toHaveBeenCalledWith([
+      "leave_requested",
+      "leave_approved",
+      "leave_declined",
+    ]);
+    expect(result.current.pendingLeaveCount).toBe(0);
+    expect(result.current.newLeadsCount).toBe(5);
   });
 });

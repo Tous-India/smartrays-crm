@@ -6,7 +6,7 @@
 > persistent memory/brain), alongside the original raw notes in `.context/smartrays.md`
 > and `.context/leads-customer-functional-spec.md`.
 
-**Last updated:** 2026-07-29 (later)
+**Last updated:** 2026-07-31
 
 ---
 
@@ -1426,3 +1426,43 @@ resolved while Phase 0 is underway.
   successful `DELETE /users/:id` — 200 — removing the row, surviving a hard refresh).
   `backend/README.md`, `frontend/README.md`, and `.context/final-plan.md` (§7.0b extended with
   the hard-delete reversal writeup) updated.
+- **2026-07-31** — Icon-only Edit/Reset Password in User Management (`EditOutlined`/
+  `LockOutlined`, matching the existing Deactivate/Reactivate/Delete pattern — `KeyOutlined` was
+  tried first but reads like a magnifying glass at this size). Re-diagnosed a reported "Deactivate
+  does nothing" regression: the button, API call, and team-head guard all worked correctly (a
+  real 400/200 confirmed via network tab) — the actual bug was that this app runs React 19, which
+  dropped the legacy `ReactDOM.render` API every static `message.xxx()`/`notification.xxx()` call
+  across the ENTIRE app depends on internally (AntD v5 only officially supports React 16-18), so
+  every toast was silently failing to render — confirmed on a plain "User created" success toast
+  too, not just error toasts. Fixed by wrapping the app root in AntD's `<App>` component and
+  migrating all 18 affected files from the static `message` import to the hook-based
+  `App.useApp()`. Added `frontend/src/App.test.jsx` as a real regression test proving the failure
+  mode and the fix — existing tests couldn't have caught this since they only assert a mocked
+  message function was *called*, never that anything actually rendered. Full backend suite passes
+  (3 pre-existing, unrelated failures in `leave.test.js` — a month-boundary bug in the test's own
+  relative-date helper, `isoDate(1)` crossing into August since the system date was July 31).
+  Frontend suite passes (same 5 pre-existing flaky tests as before, confirmed unrelated).
+  `npm run build` succeeds. Verified live via a real browser session — the previously-invisible
+  error toast now renders with the exact guard message. Deployed frontend only (no backend
+  changes needed). **The Department-as-a-Settings-tab part of this task was put on hold** — the
+  user pointed out Settings already has a "Teams" tab (contradicting the task's premise that only
+  User Management/Permissions existed) and asked for a fuller explanation before proceeding; no
+  doc updates were made for this task since none were requested (unlike other same-day tasks).
+- **2026-07-31** — Notification-driven Leads/Leave sidebar badges (§7.29) — reworks the §7.26
+  badges to reuse the existing Notification module entirely instead of a parallel tracking
+  system. New `lead_created` notification type (broadcast to every admin + the lead's owner,
+  deduplicated, fired on both the manual-add and website-intake creation paths). `GET
+  /notifications`/`PATCH /notifications/read-all` both gained an optional comma-separated `type`
+  filter, reused directly by the sidebar badges rather than adding a dedicated count endpoint.
+  Leave badge's admin-only gate was removed — it's naturally self-scoped by the Notification
+  module itself now (admins see pending requests via `leave_requested`, employees see their own
+  outcome via `leave_approved`/`leave_declined`). Clicking either nav item marks that badge's
+  types read immediately. 5px horizontal margin applied consistently across all three badge
+  instances (bell, Leads, Leave). An Attendance badge was explicitly considered and deferred —
+  nothing in Attendance creates a notification today, and adding that was out of this task's
+  scope. 5 new backend tests in `lead.test.js`, 6 in `notification.test.js`; full backend suite
+  passes (same pre-existing, unrelated `leave.test.js` date-boundary failures). `useSidebarBadgeCounts.test.js`
+  and `MainLayout.test.jsx`'s badge tests rewritten for the new notification-based shape; full
+  frontend suite passes (same pre-existing flaky tests, confirmed unrelated); `npm run build`
+  succeeds. `backend/README.md`, `frontend/README.md`, and `.context/final-plan.md` (new §7.29,
+  §7.26 marked superseded) updated.

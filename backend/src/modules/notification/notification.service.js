@@ -108,9 +108,25 @@ export async function unsubscribe(userId, endpoint) {
  * user's notifications anywhere in this module, the same "self data" shape
  * as `GET /attendance/me`/`GET /auth/me` (no permission tier needed; seeing
  * your own notifications needs no grant).
+ *
+ * `types` (added §7.29, 2026-07-31 — the Leads/Leave sidebar badge feature)
+ * — an optional array of `NOTIFICATION_TYPES` values, filtering to just
+ * those types. This is deliberately the SAME endpoint the bell dropdown
+ * already uses, not a new one: the sidebar badges are just this same list,
+ * filtered by type, with the caller taking `.length` — see
+ * `frontend/README.md`'s badge section for why a dedicated count endpoint
+ * wasn't added.
  */
-export async function listNotifications(userId, unreadOnly = false) {
-  const filter = unreadOnly ? { userId, isRead: false } : { userId };
+export async function listNotifications(userId, unreadOnly = false, types = null) {
+  const filter = { userId };
+
+  if (unreadOnly) {
+    filter.isRead = false;
+  }
+
+  if (types && types.length > 0) {
+    filter.type = { $in: types };
+  }
 
   return Notification.find(filter).sort({ createdAt: -1 });
 }
@@ -133,6 +149,19 @@ export async function markRead(notificationId, userId) {
   return notification;
 }
 
-export async function markAllRead(userId) {
-  await Notification.updateMany({ userId, isRead: false }, { isRead: true });
+/**
+ * `types` (added §7.29) — scopes the bulk mark-read to just those types,
+ * e.g. the Leads sidebar nav click marking only `lead_created`/`lead_assigned`
+ * as read without touching an unrelated unread Leave notification. Omitted
+ * (or empty), this is the original unscoped "mark everything read" the bell
+ * dropdown's "Mark all as read" button already relies on.
+ */
+export async function markAllRead(userId, types = null) {
+  const filter = { userId, isRead: false };
+
+  if (types && types.length > 0) {
+    filter.type = { $in: types };
+  }
+
+  await Notification.updateMany(filter, { isRead: true });
 }

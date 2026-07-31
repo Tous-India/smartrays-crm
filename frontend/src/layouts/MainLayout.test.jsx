@@ -5,8 +5,17 @@ import { MemoryRouter, Routes, Route } from "react-router-dom";
 import MainLayout from "./MainLayout";
 import useSessionStore from "../store/sessionStore";
 import * as userApi from "../modules/user/api/userApi";
-import * as leadApi from "../modules/lead/api/leadApi";
-import * as leaveApi from "../modules/leave/api/leaveApi";
+import * as notificationApi from "../modules/notification/api/notificationApi";
+
+vi.mock("antd", async (importOriginal) => {
+  const actual = await importOriginal();
+  // Components read `message` via `App.useApp()` (§7.28 message-rendering
+  // fix — the static import silently fails to render under React 19), not
+  // the static export, so the mock has to intercept the hook too.
+  const mockMessage = { success: vi.fn(), error: vi.fn() };
+  actual.App.useApp = () => ({ message: mockMessage });
+  return { ...actual, message: mockMessage };
+});
 
 vi.mock("../modules/user/api/userApi", () => ({
   updateUser: vi.fn(),
@@ -14,16 +23,10 @@ vi.mock("../modules/user/api/userApi", () => ({
 
 vi.mock("../modules/notification/api/notificationApi", () => ({
   listNotifications: vi.fn().mockResolvedValue({ data: { data: [] } }),
+  listNotificationsByType: vi.fn(),
   markNotificationRead: vi.fn(),
   markAllNotificationsRead: vi.fn(),
-}));
-
-vi.mock("../modules/lead/api/leadApi", () => ({
-  getLeadCount: vi.fn(),
-}));
-
-vi.mock("../modules/leave/api/leaveApi", () => ({
-  getPendingLeaveCount: vi.fn(),
+  markNotificationsReadByType: vi.fn(),
 }));
 
 function renderLayout(initialPath = "/dashboard") {
@@ -33,6 +36,7 @@ function renderLayout(initialPath = "/dashboard") {
         <Route element={<MainLayout />}>
           <Route path="/dashboard" element={<div>Dashboard Content</div>} />
           <Route path="/leads" element={<div>Leads Content</div>} />
+          <Route path="/leave" element={<div>Leave Content</div>} />
         </Route>
       </Routes>
     </MemoryRouter>
@@ -51,8 +55,8 @@ const ADMIN_USER = {
 describe("MainLayout — nav composition and Settings gating", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    leadApi.getLeadCount.mockResolvedValue({ data: { data: { count: 0 } } });
-    leaveApi.getPendingLeaveCount.mockResolvedValue({ data: { data: { count: 0 } } });
+    notificationApi.listNotificationsByType.mockResolvedValue({ data: { data: [] } });
+    notificationApi.markNotificationsReadByType.mockResolvedValue({ data: {} });
     useSessionStore.setState({ user: ADMIN_USER, isAuthenticated: true, isLoading: false });
   });
 
@@ -92,26 +96,37 @@ describe("MainLayout — nav composition and Settings gating", () => {
   });
 });
 
-describe("MainLayout — Leads/Leave sidebar count badges (§7.26)", () => {
+describe("MainLayout — Leads/Leave sidebar notification badges (§7.29, 2026-07-31)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    notificationApi.markNotificationsReadByType.mockResolvedValue({ data: {} });
   });
 
-  it("shows the new-leads count badge on the Leads nav item for an admin", async () => {
-    leadApi.getLeadCount.mockResolvedValue({ data: { data: { count: 5 } } });
-    leaveApi.getPendingLeaveCount.mockResolvedValue({ data: { data: { count: 0 } } });
+  function mockCountsByType({ leads = 0, leave = 0 } = {}) {
+    notificationApi.listNotificationsByType.mockImplementation((types) => {
+      if (types.includes("lead_created")) {
+        return Promise.resolve({ data: { data: Array.from({ length: leads }) } });
+      }
+      return Promise.resolve({ data: { data: Array.from({ length: leave }) } });
+    });
+  }
+
+  it("shows the unread lead_created/lead_assigned notification count on the Leads nav item", async () => {
+    mockCountsByType({ leads: 5 });
     useSessionStore.setState({ user: ADMIN_USER, isAuthenticated: true, isLoading: false });
 
     renderLayout();
 
     const leadsItem = await screen.findByRole("menuitem", { name: /Leads/ });
     expect(within(leadsItem).getByText("5")).toBeInTheDocument();
-    expect(leadApi.getLeadCount).toHaveBeenCalledWith({ status: "new" });
+    expect(notificationApi.listNotificationsByType).toHaveBeenCalledWith(
+      ["lead_created", "lead_assigned"],
+      { unreadOnly: true }
+    );
   });
 
   it("hides the Leads badge entirely when the count is 0", async () => {
-    leadApi.getLeadCount.mockResolvedValue({ data: { data: { count: 0 } } });
-    leaveApi.getPendingLeaveCount.mockResolvedValue({ data: { data: { count: 0 } } });
+    mockCountsByType({ leads: 0 });
     useSessionStore.setState({ user: ADMIN_USER, isAuthenticated: true, isLoading: false });
 
     renderLayout();
@@ -120,20 +135,22 @@ describe("MainLayout — Leads/Leave sidebar count badges (§7.26)", () => {
     expect(within(leadsItem).queryByText("0")).not.toBeInTheDocument();
   });
 
-  it("shows the pending-leave count badge on the Leave nav item for an admin", async () => {
-    leadApi.getLeadCount.mockResolvedValue({ data: { data: { count: 0 } } });
-    leaveApi.getPendingLeaveCount.mockResolvedValue({ data: { data: { count: 3 } } });
+  it("shows the unread leave-notification count on the Leave nav item for an admin", async () => {
+    mockCountsByType({ leave: 3 });
     useSessionStore.setState({ user: ADMIN_USER, isAuthenticated: true, isLoading: false });
 
     renderLayout();
 
     const leaveItem = await screen.findByRole("menuitem", { name: /Leave/ });
     expect(within(leaveItem).getByText("3")).toBeInTheDocument();
+    expect(notificationApi.listNotificationsByType).toHaveBeenCalledWith(
+      ["leave_requested", "leave_approved", "leave_declined"],
+      { unreadOnly: true }
+    );
   });
 
-  it("never shows the Leave badge for a non-admin, and never even fetches the pending count", async () => {
-    leadApi.getLeadCount.mockResolvedValue({ data: { data: { count: 0 } } });
-    leaveApi.getPendingLeaveCount.mockResolvedValue({ data: { data: { count: 7 } } });
+  it("also shows the Leave badge for a non-admin (their own leave_approved/leave_declined notifications) — no role gate", async () => {
+    mockCountsByType({ leave: 2 });
     useSessionStore.setState({
       user: { _id: "manager-1", name: "Manager One", role: "manager", permissions: { leads: { view: true } } },
       isAuthenticated: true,
@@ -143,16 +160,53 @@ describe("MainLayout — Leads/Leave sidebar count badges (§7.26)", () => {
     renderLayout();
 
     const leaveItem = await screen.findByRole("menuitem", { name: /Leave/ });
-    expect(within(leaveItem).queryByText("7")).not.toBeInTheDocument();
-    expect(leaveApi.getPendingLeaveCount).not.toHaveBeenCalled();
+    expect(within(leaveItem).getByText("2")).toBeInTheDocument();
+  });
+
+  it("clicking the Leads nav item marks lead_created/lead_assigned notifications as read", async () => {
+    mockCountsByType({ leads: 5 });
+    useSessionStore.setState({ user: ADMIN_USER, isAuthenticated: true, isLoading: false });
+
+    renderLayout();
+    const leadsItem = await screen.findByRole("menuitem", { name: /Leads/ });
+    await within(leadsItem).getByText("5");
+
+    await userEvent.click(within(leadsItem).getByRole("link"));
+
+    await waitFor(() => {
+      expect(notificationApi.markNotificationsReadByType).toHaveBeenCalledWith([
+        "lead_created",
+        "lead_assigned",
+      ]);
+    });
+  });
+
+  it("clicking the Leave nav item marks leave notifications as read, without touching the Leads badge", async () => {
+    mockCountsByType({ leads: 5, leave: 3 });
+    useSessionStore.setState({ user: ADMIN_USER, isAuthenticated: true, isLoading: false });
+
+    renderLayout();
+    const leaveItem = await screen.findByRole("menuitem", { name: /Leave/ });
+
+    await userEvent.click(within(leaveItem).getByRole("link"));
+
+    await waitFor(() => {
+      expect(notificationApi.markNotificationsReadByType).toHaveBeenCalledWith([
+        "leave_requested",
+        "leave_approved",
+        "leave_declined",
+      ]);
+    });
+    const leadsItem = screen.getByRole("menuitem", { name: /Leads/ });
+    expect(within(leadsItem).getByText("5")).toBeInTheDocument();
   });
 });
 
 describe("MainLayout — sidebar footer profile menu", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    leadApi.getLeadCount.mockResolvedValue({ data: { data: { count: 0 } } });
-    leaveApi.getPendingLeaveCount.mockResolvedValue({ data: { data: { count: 0 } } });
+    notificationApi.listNotificationsByType.mockResolvedValue({ data: { data: [] } });
+    notificationApi.markNotificationsReadByType.mockResolvedValue({ data: {} });
     useSessionStore.setState({ user: ADMIN_USER, isAuthenticated: true, isLoading: false });
   });
 
