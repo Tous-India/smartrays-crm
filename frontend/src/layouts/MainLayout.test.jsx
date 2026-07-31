@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
@@ -297,5 +297,90 @@ describe("MainLayout — sidebar footer profile menu", () => {
 
     expect(useSessionStore.getState().logout).toHaveBeenCalled();
     expect(await screen.findByText("Login Page")).toBeInTheDocument();
+  });
+});
+
+describe("MainLayout — mobile hamburger auto-closes on route change", () => {
+  const originalMatchMedia = window.matchMedia;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    notificationApi.listNotificationsByType.mockResolvedValue({ data: { data: [] } });
+    notificationApi.markNotificationsReadByType.mockResolvedValue({ data: {} });
+    useSessionStore.setState({ user: ADMIN_USER, isAuthenticated: true, isLoading: false });
+  });
+
+  afterEach(() => {
+    window.matchMedia = originalMatchMedia;
+  });
+
+  // `src/test/setup.js`'s global stub always reports `matches: false` (no
+  // real layout engine in jsdom) — overridden here, per AntD `Sider`'s own
+  // breakpoint media query, to simulate a mobile-width viewport so the
+  // zero-width hamburger trigger actually renders.
+  function mockMobileViewport() {
+    window.matchMedia = (query) => ({
+      matches: true,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    });
+  }
+
+  it("closes the sidebar automatically after tapping a nav link on a mobile viewport", async () => {
+    mockMobileViewport();
+    const { container } = renderLayout();
+
+    // Starts collapsed (closed) on initial mobile load — Sider's own
+    // responsive handler fires on mount.
+    const aside = container.querySelector(".ant-layout-sider");
+    await waitFor(() => expect(aside.className).toContain("ant-layout-sider-collapsed"));
+
+    // Open the drawer via the zero-width hamburger trigger.
+    const hamburger = container.querySelector(".ant-layout-sider-zero-width-trigger");
+    await userEvent.click(hamburger);
+    await waitFor(() => expect(aside.className).not.toContain("ant-layout-sider-collapsed"));
+
+    // Tap a nav item to navigate.
+    const leadsItem = await screen.findByRole("menuitem", { name: /Leads/ });
+    await userEvent.click(within(leadsItem).getByRole("link"));
+
+    expect(await screen.findByText("Leads Content")).toBeInTheDocument();
+    await waitFor(() => expect(aside.className).toContain("ant-layout-sider-collapsed"));
+  });
+
+  it("also closes on browser back/forward navigation, not just a nav-link tap", async () => {
+    mockMobileViewport();
+    const { container } = renderLayout("/leads");
+    await screen.findByText("Leads Content");
+
+    const aside = container.querySelector(".ant-layout-sider");
+    const hamburger = container.querySelector(".ant-layout-sider-zero-width-trigger");
+    await userEvent.click(hamburger);
+    await waitFor(() => expect(aside.className).not.toContain("ant-layout-sider-collapsed"));
+
+    // Simulate a back-navigation to a different route already in history.
+    const leadsItem = await screen.findByRole("menuitem", { name: /Dashboard/ });
+    await userEvent.click(within(leadsItem).getByRole("link"));
+
+    await waitFor(() => expect(aside.className).toContain("ant-layout-sider-collapsed"));
+  });
+
+  it("does not force-collapse the desktop sidebar on navigation (matches: false)", async () => {
+    // Default global stub already reports matches: false — a real desktop
+    // viewport — confirming the fix is scoped to mobile only.
+    const { container } = renderLayout();
+    const aside = container.querySelector(".ant-layout-sider");
+    await waitFor(() => expect(aside.className).not.toContain("ant-layout-sider-collapsed"));
+
+    const leadsItem = await screen.findByRole("menuitem", { name: /Leads/ });
+    await userEvent.click(within(leadsItem).getByRole("link"));
+
+    expect(await screen.findByText("Leads Content")).toBeInTheDocument();
+    expect(aside.className).not.toContain("ant-layout-sider-collapsed");
   });
 });

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { Layout, Menu, Avatar, Button, Badge } from "antd";
 import {
@@ -103,6 +103,28 @@ function MainLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
+
+  // Mobile hamburger/drawer state — lifted up from `Sider`'s own default
+  // uncontrolled `collapsed` state (an AntD `Sider` with `breakpoint="lg"`
+  // and `collapsedWidth="0"` manages this internally otherwise) so a route
+  // change can force it closed below. `isMobileViewport` mirrors the
+  // Sider's own internal `below` flag via `onBreakpoint`, so the
+  // auto-close effect only ever fires on a mobile-width viewport — without
+  // it, forcing `collapsed` to `true` on every navigation would also
+  // collapse the full desktop sidebar to width 0 on every route change.
+  const [collapsed, setCollapsed] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+
+  useEffect(() => {
+    if (isMobileViewport) {
+      setCollapsed(true);
+    }
+    // Watches `location.pathname` specifically (not the whole `location`
+    // object) so this only fires on a real route change, not on every
+    // search-param/hash update within the same page — covers nav-link
+    // taps, browser back/forward, and programmatic `navigate()` calls
+    // alike, since all of them update `location.pathname` the same way.
+  }, [location.pathname, isMobileViewport]);
 
   const canViewSettings = useMemo(() => {
     return (
@@ -245,6 +267,9 @@ function MainLayout() {
         width={SIDER_WIDTH}
         breakpoint="lg"
         collapsedWidth="0"
+        collapsed={collapsed}
+        onCollapse={setCollapsed}
+        onBreakpoint={setIsMobileViewport}
         className="app-sider"
         style={{
           position: "fixed",
