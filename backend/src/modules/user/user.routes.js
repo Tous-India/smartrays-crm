@@ -10,6 +10,7 @@ import {
   reactivate,
   changeManager,
   resetPassword,
+  hardDelete,
 } from "./user.controller.js";
 import {
   validateUpdateUserInput,
@@ -48,5 +49,12 @@ userRouter.patch(
   validateAdminResetPasswordInput,
   resetPassword
 );
+
+// Guarded, permanent hard-delete (§7.28) — admin only, same gate as the
+// other account-lifecycle actions above. All the real guards (active-status,
+// team-head, reason-required) live in user.service.js#hardDeleteUser so
+// their rejection order is exact and unit-testable, not split across a
+// validation middleware and the service.
+userRouter.delete("/:id", authenticate, requireAdmin, hardDelete);
 
 export default userRouter;

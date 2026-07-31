@@ -8,6 +8,7 @@ import {
   setUserActiveStatus,
   assignManager,
   adminResetPassword,
+  hardDeleteUser,
 } from "./user.service.js";
 
 export const list = asyncWrapper(async (req, res) => {
@@ -50,6 +51,12 @@ export const changeManager = asyncWrapper(async (req, res) => {
   const user = await assignManager(req.params.id, req.body.managerId);
 
   res.status(200).json(new ApiResponse(200, user, "Manager assigned successfully"));
+});
+
+export const hardDelete = asyncWrapper(async (req, res) => {
+  await hardDeleteUser(req.params.id, req.body.reason, req.user);
+
+  res.status(200).json(new ApiResponse(200, null, "User permanently deleted"));
 });
 
 export const resetPassword = asyncWrapper(async (req, res) => {

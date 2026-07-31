@@ -1,14 +1,16 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Table, Tag, Button, Space, Popconfirm, Typography, Select, message } from "antd";
+import { Table, Tag, Button, Space, Popconfirm, Tooltip, Typography, Select, message } from "antd";
+import { StopOutlined, CheckCircleOutlined, DeleteOutlined } from "@ant-design/icons";
 import useUsers from "../hooks/useUsers";
 import useTeams from "../../team/hooks/useTeams";
 import useSessionStore from "../../../store/sessionStore";
 import { ROUTE_PATHS } from "../../../constants/routePaths.constants";
 import { USER_ROLES, USER_ROLE_LABELS } from "../constants/user.constants";
-import { createUser, updateUser, deactivateUser, reactivateUser } from "../api/userApi";
+import { createUser, updateUser, deactivateUser, reactivateUser, deleteUser } from "../api/userApi";
 import UserFormModal from "./UserFormModal";
 import AdminResetPasswordModal from "./AdminResetPasswordModal";
+import DeleteUserModal from "./DeleteUserModal";
 
 const { Title } = Typography;
 
@@ -45,6 +47,8 @@ function UserManagementPage() {
   const [editingUser, setEditingUser] = useState(null);
   const [isSubmittingForm, setIsSubmittingForm] = useState(false);
   const [resetPasswordTarget, setResetPasswordTarget] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   function openCreateForm() {
     setFormMode("create");
@@ -96,6 +100,24 @@ function UserManagementPage() {
     refetch();
   }
 
+  async function handleDelete(reason) {
+    setIsDeleting(true);
+
+    try {
+      await deleteUser(deleteTarget._id, reason);
+      message.success(`${deleteTarget.name} permanently deleted`);
+      setDeleteTarget(null);
+      refetch();
+    } catch (error) {
+      // Surfaces the backend's exact guard message (still-active, still a
+      // team head, missing reason) verbatim — same reasoning as
+      // handleDeactivate's error surfacing above.
+      message.error(error.response?.data?.message || "Failed to delete user");
+    } finally {
+      setIsDeleting(false);
+    }
+  }
+
   const managerNameById = new Map(users.map((user) => [user._id, user.name]));
 
   const columns = [
@@ -141,15 +163,33 @@ function UserManagementPage() {
                 title={`Deactivate ${user.name}?`}
                 onConfirm={() => handleDeactivate(user)}
               >
-                <Button size="small" danger>
-                  Deactivate
-                </Button>
+                <Tooltip title="Deactivate">
+                  <Button danger type="text" size="small" icon={<StopOutlined />} aria-label="Deactivate" />
+                </Tooltip>
               </Popconfirm>
             )}
             {isAdmin && !user.isActive && (
-              <Button size="small" onClick={() => handleReactivate(user)}>
-                Reactivate
-              </Button>
+              <Tooltip title="Reactivate">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<CheckCircleOutlined />}
+                  aria-label="Reactivate"
+                  onClick={() => handleReactivate(user)}
+                />
+              </Tooltip>
+            )}
+            {isAdmin && !user.isActive && (
+              <Tooltip title="Delete">
+                <Button
+                  danger
+                  type="text"
+                  size="small"
+                  icon={<DeleteOutlined />}
+                  aria-label="Delete"
+                  onClick={() => setDeleteTarget(user)}
+                />
+              </Tooltip>
             )}
           </Space>
         );
@@ -218,6 +258,14 @@ function UserManagementPage() {
         open={Boolean(resetPasswordTarget)}
         targetUser={resetPasswordTarget}
         onCancel={() => setResetPasswordTarget(null)}
+      />
+
+      <DeleteUserModal
+        open={Boolean(deleteTarget)}
+        user={deleteTarget}
+        onCancel={() => setDeleteTarget(null)}
+        onSubmit={handleDelete}
+        isSubmitting={isDeleting}
       />
     </div>
   );

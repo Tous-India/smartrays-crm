@@ -22,6 +22,7 @@ vi.mock("../api/userApi", () => ({
   reactivateUser: vi.fn(),
   adminResetPassword: vi.fn(),
   createUser: vi.fn(),
+  deleteUser: vi.fn(),
 }));
 
 vi.mock("../../../hooks/useUserDirectory", () => ({
@@ -147,6 +148,66 @@ describe("UserManagementPage", () => {
       expect(userApi.reactivateUser).toHaveBeenCalledWith("user-2");
     });
     expect(message.success).toHaveBeenCalledWith("Sales One reactivated");
+  });
+
+  describe("Delete (§7.28 guarded hard-delete, 2026-07-30)", () => {
+    it("only shows the Delete icon for an already-Inactive user, never an Active one", async () => {
+      const { container } = renderPage();
+      await screen.findAllByText("Manager One");
+
+      const managerRow = container.querySelector('tr[data-row-key="user-1"]');
+      const salesRow = container.querySelector('tr[data-row-key="user-2"]');
+
+      expect(within(managerRow).queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+      expect(within(salesRow).getByRole("button", { name: "Delete" })).toBeInTheDocument();
+    });
+
+    it("opens a confirmation modal requiring a reason, and does not call deleteUser until one is provided", async () => {
+      renderPage();
+      await screen.findByText("Sales One");
+
+      const salesRow = screen.getByText("Sales One").closest("tr");
+      await userEvent.click(within(salesRow).getByRole("button", { name: "Delete" }));
+
+      const dialog = await screen.findByRole("dialog", { name: "Delete User" });
+      expect(
+        within(dialog).getByText(
+          "This permanently deletes Sales One. Their name will no longer resolve in past records (leads, attendance, payments, etc.) — this cannot be undone."
+        )
+      ).toBeInTheDocument();
+
+      await userEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+      expect(userApi.deleteUser).not.toHaveBeenCalled();
+      expect(await within(dialog).findByText("A reason is required to permanently delete a user")).toBeInTheDocument();
+    });
+
+    it("deletes the user once a reason is supplied, and removes them from the list", async () => {
+      userApi.deleteUser.mockResolvedValue({ data: {} });
+      renderPage();
+      await screen.findByText("Sales One");
+
+      // The post-delete refetch() call resolves with this trimmed list — set
+      // up before the delete click so it's already in place by the time the
+      // component's own refetch() actually fires.
+      userApi.listUsers.mockResolvedValue({ data: { data: [SAMPLE_USERS[0]] } });
+
+      const salesRow = screen.getByText("Sales One").closest("tr");
+      await userEvent.click(within(salesRow).getByRole("button", { name: "Delete" }));
+
+      const dialog = await screen.findByRole("dialog", { name: "Delete User" });
+      await userEvent.type(within(dialog).getByLabelText("Reason for deletion"), "Left the company");
+      await userEvent.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+      await waitFor(() => {
+        expect(userApi.deleteUser).toHaveBeenCalledWith("user-2", "Left the company");
+      });
+      expect(message.success).toHaveBeenCalledWith("Sales One permanently deleted");
+
+      await waitFor(() => {
+        expect(screen.queryByText("Sales One")).not.toBeInTheDocument();
+      });
+    });
   });
 
   it("opens the admin reset-password modal and shows the generated temp password", async () => {

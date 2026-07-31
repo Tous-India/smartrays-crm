@@ -224,11 +224,14 @@ genuinely compact enough to be useful at a glance.
 
 ##### User Management (§7.0b)
 - **Data model:** no dedicated collection — reads/writes `User` (§6.1) directly, same as `auth`.
+  **Added 2026-07-30 (§7.28):** `DeletedUserAuditLog` — a new, separate collection, written once
+  per hard-delete (see below); the only place a deleted user's data survives afterward.
 - **API surface:** `/users/dropdown`, `/users` (list), `/users/:id` (get/update),
   `/users/:id/deactivate`, `/users/:id/reactivate`, `/users/:id/manager` — full list at §7.0b.
+  **Added 2026-07-30 (§7.28):** `DELETE /users/:id` — guarded, permanent hard-delete.
 - **Permission requirements:** `users.view_team`/`view_all` for list/get-others; account-
-  lifecycle actions (`deactivate`/`reactivate`/`manager`) are `requireAdmin`, matching how
-  account creation itself is gated in `auth` (§7.0).
+  lifecycle actions (`deactivate`/`reactivate`/`manager`/**`delete`**) are `requireAdmin`,
+  matching how account creation itself is gated in `auth` (§7.0).
 - **Key invariants:** self-access to your own record is always allowed regardless of any grant,
   and a no-grant caller still gets a self-only `200` from the list endpoint rather than a `403`
   (deliberately different from a no-grant lookup of *someone else's* specific id, which stays
@@ -239,11 +242,32 @@ genuinely compact enough to be useful at a glance.
   create/update/reassign.
 - **Known deviations:** none from the ask — `POST /auth/register` remains the sole HTTP entry
   point for account creation; no `POST /users` was added (see §7.0b for why).
-- **Test coverage:** 33 tests (31 from the original build + 2 added 2026-07-13 for `baseSalary`,
-  §7.7). Found and fixed one real bug during the build: a plain object
+- **Test coverage:** 50 tests (31 from the original build + 2 for `baseSalary` §7.7 + 8 for the
+  team-head deactivation guard §7.28 + 5 for the 2026-07-30 hard-delete addition below, + 4 for
+  the `teamId` filter). Found and fixed one real bug during the original build: a plain object
   spread in `getUserById` let the scope filter's `_id` key silently clobber the explicit
   `_id: targetId` constraint, so a manager could fetch an unaffiliated user's record instead of
   getting the expected 404 — fixed with `$and` instead of a spread. Caught by a test.
+
+**Guarded hard-delete (`DELETE /users/:id`, added 2026-07-30, §7.28) — a real reversal of this
+module's own earlier "no hard delete" stance**, not a variation on it. Every deviations note
+above and every design decision through 2026-07-13 assumed deactivate/reactivate (a reversible
+flag flip) was the *only* account-lifecycle end-state — there was never a delete endpoint, and
+nothing in the original write-up even considered one. That assumption no longer holds: an admin
+can now explicitly, permanently delete an account, with three conditions gating it in this exact
+order — the account must already be deactivated (`isActive: false`), it must not currently be
+any Team's `headManagerId` (defensive; should already be unreachable via the deactivate guard),
+and a `reason` is mandatory (no undo exists once this runs). The reasoning for allowing this now,
+where it was explicitly not built before: an admin-stated need to actually remove long-departed
+accounts from the roster view, not just hide them behind an Inactive filter forever. A full
+snapshot is written to the new `DeletedUserAuditLog` collection immediately before the delete —
+the only place that data survives — and nothing elsewhere is cascade-deleted or rewritten: every
+other module's existing "resolve an id to a name, fall back to `—`" convention (Leads' owner,
+Attendance, Payments' collector, etc.) already displays a deleted user's old records gracefully,
+so there's nothing to fix up there. See `backend/README.md`'s User Management section for the
+full guard write-up and `frontend/README.md`'s "User Management Action column rework" section for
+the UI side (icon-only Deactivate/Reactivate, a Delete icon shown only on Inactive rows, a
+dedicated confirmation modal requiring a reason).
 
 ##### Leads (§7.1)
 - **Data model:** `Lead`, `LeadCall`, `LeadSource` — §6.2.

@@ -1386,3 +1386,43 @@ resolved while Phase 0 is underway.
   rejection confirmed via network response + unchanged row state; delete confirmation's member
   count confirmed accurate). `backend/README.md`, `frontend/README.md`, and
   `.context/final-plan.md` (new §7.28) updated.
+- **2026-07-30** — Fixed two Notification bell issues. Mark-as-read (single and "mark all")
+  was found to already clear/decrease the badge count immediately on inspection — `useNotifications
+  .js` optimistically updates local state right after each API call succeeds and `unreadCount` is
+  recomputed fresh every render, no polling wait involved; live verification confirmed this
+  already worked, so nothing was broken there. **Visual fix:** removed the bell's hand-tuned
+  `offset={[-2, 2]}` (which sat the badge uncomfortably close to the header's top edge) and
+  added `overflowCount={99}`, letting AntD's own default positioning logic place it and showing
+  "99+" instead of an ever-widening pill for very large counts. The sidebar Leads/Leave badges
+  were checked too — they use AntD's standalone (non-overlay) `Badge` rendering, a different code
+  path with no equivalent clipping risk; confirmed fine as-is. 2 new assertions added to
+  `NotificationBell.test.jsx` (badge clears after both mark-as-read paths); full frontend suite
+  passes (same pre-existing flaky files, confirmed unrelated); `npm run build` succeeds. Verified
+  live via a real browser session (10 synthetic notifications seeded to test 2-digit rendering,
+  then cleaned up afterward).
+- **2026-07-30** — User Management Action column rework (§7.28) — a real reversal of this
+  module's earlier "no hard delete" decision (see `.context/final-plan.md`'s §7.0b writeup for
+  the dated reasoning). **Part 1, verified first:** Deactivate/Reactivate were already working
+  correctly end-to-end (a live deactivate attempt on a team head returned a real 400 from the
+  existing team-head guard; a deactivate/reactivate round-trip on a non-team-head user returned
+  200 and persisted through a hard refresh) — nothing here was actually broken. **Part 2:**
+  Deactivate/Reactivate converted to icon-only buttons, reusing the exact icon+Tooltip pattern
+  from `CustomerStatusToggleButton.jsx` (`StopOutlined`/`CheckCircleOutlined`), `aria-label`
+  preserved so existing tests kept passing unchanged. **Part 3 (backend):** new guarded
+  `DELETE /users/:id` (admin only) — rejects an active user, rejects (defensively) a deactivated
+  team head, requires a `reason`, then writes a full snapshot to a new `DeletedUserAuditLog`
+  collection (distinct from `PaymentAuditLog` — this one needs the full document, since the
+  parent User won't exist afterward) before actually deleting. Deliberately no cascade-delete —
+  every other module's existing id-to-name Map-lookup-with-`—`-fallback already displays a
+  deleted user's old records gracefully; verified directly (a Lead owned by a just-deleted user
+  is still readable via `GET /leads`, `ownerId` unchanged). 5 new backend tests; full suite: 575,
+  all passing. **Part 4 (frontend):** a Delete icon (only rendered for an already-Inactive user)
+  opens `DeleteUserModal.jsx` — a dedicated modal mirroring `DeletePaymentModal.jsx`'s pattern,
+  required reason field, explicit "this cannot be undone" warning naming the affected record
+  types. 3 new frontend tests; full frontend suite passes (same pre-existing flaky files,
+  confirmed unrelated); `npm run build` succeeds. Verified live via a real browser session
+  (icon-only rendering confirmed with no visible button text, Delete icon confirmed absent on
+  an Active row and present on an Inactive one, empty-reason validation shown, and a real
+  successful `DELETE /users/:id` — 200 — removing the row, surviving a hard refresh).
+  `backend/README.md`, `frontend/README.md`, and `.context/final-plan.md` (§7.0b extended with
+  the hard-delete reversal writeup) updated.

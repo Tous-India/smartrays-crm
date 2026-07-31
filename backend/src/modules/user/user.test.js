@@ -532,3 +532,100 @@ describe("PATCH /users/:id/reset-password (admin override, §7.17)", () => {
     expect(response.status).toBe(403);
   });
 });
+
+describe("DELETE /users/:id — guarded hard-delete (§7.28, 2026-07-30)", () => {
+  it("rejects deleting a user who is still active", async () => {
+    const response = await adminAgent
+      .delete(`/api/v1/users/${sales1._id}`)
+      .send({ reason: "No longer with the company" });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toContain("deactivate this user first");
+
+    const stillThere = await adminAgent.get(`/api/v1/users/${sales1._id}`);
+    expect(stillThere.status).toBe(200);
+  });
+
+  it("rejects deleting without a reason, even for an already-deactivated user", async () => {
+    await adminAgent.patch(`/api/v1/users/${sales1._id}/deactivate`);
+
+    const response = await adminAgent.delete(`/api/v1/users/${sales1._id}`).send({});
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toContain("reason is required");
+
+    const stillThere = await adminAgent.get(`/api/v1/users/${sales1._id}`);
+    expect(stillThere.status).toBe(200);
+  });
+
+  it("rejects deleting a deactivated user who still leads an active team (defensive — should be unreachable via the normal deactivate guard)", async () => {
+    await adminAgent.post("/api/v1/teams").send({ name: "Sales Team", headManagerId: manager1._id });
+
+    // Deactivated directly at the model layer, bypassing the deactivate
+    // guard — the only way to reach this otherwise-impossible state, the
+    // same technique the reactivate guard test above uses.
+    const User = (await import("./user.model.js")).default;
+    await User.findByIdAndUpdate(manager1._id, { isActive: false });
+
+    const response = await adminAgent
+      .delete(`/api/v1/users/${manager1._id}`)
+      .send({ reason: "Leaving the company" });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toContain("Sales Team");
+
+    const stillThere = await adminAgent.get(`/api/v1/users/${manager1._id}`);
+    expect(stillThere.status).toBe(200);
+  });
+
+  it("blocks a non-admin from hard-deleting anyone", async () => {
+    await adminAgent.patch(`/api/v1/users/${sales1._id}/deactivate`);
+
+    const response = await sales1Agent.delete(`/api/v1/users/${sales1._id}`).send({ reason: "Test" });
+
+    expect(response.status).toBe(403);
+  });
+
+  it("permanently deletes an inactive, non-team-head user, logs a full snapshot audit entry, and existing records referencing them resolve gracefully rather than crashing", async () => {
+    const leadResponse = await adminAgent
+      .post("/api/v1/leads")
+      .send({
+        name: "Referencing Lead",
+        email: "reflead@example.com",
+        phone: "1234567890",
+        companyName: "Ref Co",
+        source: "Website",
+        clientType: "residential",
+        ownerId: String(sales1._id),
+      });
+    expect(leadResponse.status).toBe(201);
+
+    await adminAgent.patch(`/api/v1/users/${sales1._id}/deactivate`);
+
+    const deleteResponse = await adminAgent
+      .delete(`/api/v1/users/${sales1._id}`)
+      .send({ reason: "Left the company 2026-07-30" });
+
+    expect(deleteResponse.status).toBe(200);
+
+    const goneCheck = await adminAgent.get(`/api/v1/users/${sales1._id}`);
+    expect(goneCheck.status).toBe(404);
+
+    const DeletedUserAuditLog = (await import("./deletedUserAuditLog.model.js")).default;
+    const entries = await DeletedUserAuditLog.find({ deletedUserId: sales1._id });
+    expect(entries).toHaveLength(1);
+    expect(entries[0].reason).toBe("Left the company 2026-07-30");
+    expect(entries[0].snapshot.email).toBe("sales1@test.local");
+    expect(entries[0].snapshot.name).toBe("Sales One");
+
+    // The Lead this deleted user owned must still be readable, not crash —
+    // the frontend's Map-lookup-with-"—"-fallback pattern is what actually
+    // displays it gracefully, this just proves the backend keeps serving
+    // the record untouched (no cascade-delete, no FK-style failure).
+    const leadsAfterDelete = await adminAgent.get("/api/v1/leads");
+    expect(leadsAfterDelete.status).toBe(200);
+    const stillPresent = leadsAfterDelete.body.data.find((lead) => lead._id === leadResponse.body.data._id);
+    expect(stillPresent).toBeTruthy();
+    expect(stillPresent.ownerId).toBe(String(sales1._id));
+  });
+});

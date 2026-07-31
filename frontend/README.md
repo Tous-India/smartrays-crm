@@ -1115,6 +1115,50 @@ there before. Admin-only, gated the same way as the other Settings tabs — a pl
   `SettingsPage.test.jsx` tab-visibility tests (permissions.manage gates the tab itself) — no
   separate gating logic needed inside this module.
 
+### User Management Action column rework (§7.28, 2026-07-30)
+
+`UserManagementPage.jsx`'s Actions column, extended again (following the filters/delete-guards
+work above) — icon-only lifecycle buttons plus a new guarded, permanent Delete.
+
+- **Deactivate/Reactivate verified end-to-end first** — same network-tab rigor as the earlier
+  Customer status-persistence investigation. Both already worked correctly: a live deactivate
+  attempt on a team head returned a real `400` (the existing team-head guard firing correctly),
+  and a deactivate/reactivate round-trip on a non-team-head user returned `200`, updated the row,
+  and persisted through a hard refresh. Nothing here was actually broken — the column rework
+  below is a pure UI change, not a bug fix.
+- **Icon-only Deactivate/Reactivate** — reuses the exact icon+`Tooltip` pattern already
+  established by `customer/components/CustomerStatusToggleButton.jsx` (`StopOutlined`/
+  `CheckCircleOutlined`, `type="text"`, wrapped in a `Tooltip`, `aria-label` kept identical to
+  the old visible-text version so existing `getByRole("button", { name: /Deactivate/ })`-style
+  test queries still match unchanged). The `Popconfirm` around Deactivate is unchanged.
+- **Guarded hard-delete — a deliberate reversal of the earlier "no hard delete for Users"
+  decision** (see `.context/final-plan.md` §6.1/§7.0 for the dated reasoning). New `DELETE
+  /users/:id` (backend, admin only — see `backend/README.md`'s User Management section for the
+  exact guard order and the new `DeletedUserAuditLog` collection). The Delete icon (`DeleteOutlined`,
+  same icon-only+`Tooltip` treatment) only ever renders for an already-**Inactive** user — there is
+  no way to reach it from an Active row at all, matching the backend's own first guard.
+- **`DeleteUserModal.jsx`** — a dedicated modal, not a bare `Popconfirm`, mirroring
+  `payment/components/DeletePaymentModal.jsx`'s exact pattern: a required `reason` field (client-
+  side validated, so the backend's own reason-required guard is never actually hit from this UI
+  in the normal case) and explicit warning copy — *"This permanently deletes {name}. Their name
+  will no longer resolve in past records (leads, attendance, payments, etc.) — this cannot be
+  undone."*
+- **No cascade cleanup needed** — existing records referencing a deleted user's id (Lead owner,
+  Attendance, Payment collector, etc.) already resolve an unknown id to `"—"` via the same
+  Map-lookup-with-fallback convention used throughout this app (e.g. this same page's own
+  `managerNameById`), so nothing elsewhere needed to change.
+- **Testing:** 3 new tests in `UserManagementPage.test.jsx` — Delete icon only shows on an
+  Inactive row, never an Active one; the modal blocks submission and shows the validation
+  message until a reason is typed; a successful delete calls `deleteUser(id, reason)`, shows the
+  success toast, and the row disappears from the list on the next `refetch()`. Existing
+  Deactivate/Reactivate tests needed no changes — the preserved `aria-label` keeps them passing
+  unchanged.
+- **Verified live:** the full flow was driven through a real browser session against the dev
+  servers — icon-only buttons render with no visible "Deactivate"/"Reactivate" text, the Delete
+  icon appears only on the Inactive test row, submitting the modal empty shows the validation
+  message, and submitting it with a reason returns a real `200` from `DELETE /users/:id`, removes
+  the row, and the deletion survives a hard refresh.
+
 ---
 
 ## Env Vars

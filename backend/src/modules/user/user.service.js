@@ -6,6 +6,7 @@ import { getTemplatePermissionsForRole } from "../permission/permission.service.
 import { resolveCustomerIdByEmailDomain } from "../customer/customer.service.js";
 import User from "./user.model.js";
 import Team from "../team/team.model.js";
+import DeletedUserAuditLog from "./deletedUserAuditLog.model.js";
 
 const SALT_ROUNDS = 10;
 
@@ -305,6 +306,70 @@ export async function setUserActiveStatus(targetId, isActive) {
   await user.save();
 
   return user;
+}
+
+/**
+ * Guarded, permanent hard-delete (§7.28, 2026-07-30 — a deliberate reversal
+ * of the earlier "no hard delete for Users" decision; see final-plan.md
+ * §6.1/§7.0 for the dated reasoning). Deactivate (soft, reversible) remains
+ * the default lifecycle action for every other case — this exists only for
+ * an admin who explicitly wants a deactivated account gone for good.
+ *
+ * Guards run in this exact order:
+ *   1. Reject outright if the user is still `isActive: true` — hard-delete
+ *      is only ever a step AFTER deactivation, never a shortcut around it.
+ *   2. Reject if the user is currently a Team's `headManagerId`. In
+ *      practice this should be unreachable — `setUserActiveStatus` already
+ *      refuses to deactivate a team head, and guard #1 above means only an
+ *      already-deactivated user reaches this point — but it's cheap
+ *      defense-in-depth against any future path that flips `isActive` to
+ *      false without going through that guard.
+ *   3. Require a non-empty `reason` — there is no undo after this, so a
+ *      reason is mandatory, not optional context.
+ * Only once all three pass is a full snapshot of the user document written
+ * to `DeletedUserAuditLog` (the only place this data survives), and only
+ * then is the User document actually removed.
+ *
+ * Deliberately does NOT cascade-delete or fix up this user's id anywhere
+ * else (Lead.ownerId, Attendance, Payment.collectedBy, etc.) — every one of
+ * those already resolves an unknown/missing user id to "—" via the same
+ * Map-lookup-with-fallback pattern used throughout the app (e.g. this same
+ * file's `managerNameById` on the frontend), so those records keep
+ * displaying gracefully rather than crashing; there's nothing to fix up.
+ */
+export async function hardDeleteUser(targetId, reason, requestingUser) {
+  const user = await User.findById(targetId);
+
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  if (user.isActive) {
+    throw new ApiError(400, "Cannot delete an active user — deactivate this user first");
+  }
+
+  const ledTeams = await Team.find({ headManagerId: targetId, isActive: true }).select("name");
+
+  if (ledTeams.length > 0) {
+    const teamNames = ledTeams.map((team) => team.name).join(", ");
+    throw new ApiError(
+      400,
+      `Cannot delete: this person leads the following team(s): ${teamNames}. Reassign the team's head first.`
+    );
+  }
+
+  if (!reason || !reason.trim()) {
+    throw new ApiError(400, "A reason is required to permanently delete a user");
+  }
+
+  await DeletedUserAuditLog.create({
+    deletedUserId: user._id,
+    deletedBy: requestingUser._id,
+    reason: reason.trim(),
+    snapshot: user.toObject(),
+  });
+
+  await User.deleteOne({ _id: targetId });
 }
 
 /**

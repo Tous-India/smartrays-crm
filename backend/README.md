@@ -371,6 +371,7 @@ that was missing until now — `User` was previously a shared model only, import
 | PATCH | `/users/:id/reactivate` | Admin only | |
 | PATCH | `/users/:id/manager` | Admin only | Sets or clears (`managerId: null`) a user's manager. A non-null `managerId` must belong to a `manager` or `admin` — same rule enforced at creation time (see below). |
 | PATCH | `/users/:id/reset-password` | Admin only | Admin override for password reset (§7.17), separate from the token-based self-service flow above. Body `{ newPassword? }`. If `newPassword` is supplied, it's set directly and the response's `tempPassword` is `null`. If omitted, the backend **generates a random one-time temp password** and returns it in `data.tempPassword` — the only time it's ever visible in plaintext, nothing persists it anywhere else. Chosen as the default path (a single-click "reset this locked-out user's password" action from the User Management screen) over forcing the admin to invent one every time; an admin who wants an exact password can still supply one. |
+| DELETE | `/users/:id` | Admin only | **Guarded, permanent hard-delete (added 2026-07-30, §7.28) — see the writeup below.** Body `{ reason }`. |
 
 **Permissions** — deliberately **two** tiers (`view_team`, `view_all`), not three like `location`.
 There's no plain `users.view` grant in `PERMISSION_REGISTRY` because a user's own record is
@@ -419,7 +420,40 @@ is a genuinely new class of bug specific to `user` — Leads' ownership scoping 
 separate `ownerId` field, so its filter and lookup key never collide the way `_id` does here.
 
 33 tests, all passing; this bug was the only one found. (Grew to 45 with the 2026-07-30 §7.28
-additions below — 8 new tests: the team-head deactivation guard and the `teamId` filter.)
+additions below — 8 new tests: the team-head deactivation guard and the `teamId` filter. Grew
+again to 50 the same day with the hard-delete tests below.)
+
+**Guarded hard-delete (`DELETE /users/:id`, added 2026-07-30, §7.28) — a deliberate reversal of
+the earlier "Users are never hard-deleted, only deactivated" decision.** See
+`.context/final-plan.md` §6.1/§7.0 for the dated reasoning. Deactivate remains the default,
+reversible lifecycle action for every other case; this exists only for an admin who explicitly
+wants an already-deactivated account gone for good. `user.service.js#hardDeleteUser` runs three
+guards **in this exact order**, each independently tested:
+
+1. **Reject if the user is still `isActive: true`** (400) — hard-delete is only ever a step
+   *after* deactivation, never a shortcut around it.
+2. **Reject if the user is currently a Team's `headManagerId`** (400, naming the team(s), same
+   message shape as the deactivate guard). In practice this should be unreachable —
+   `setUserActiveStatus` already refuses to deactivate a team head, and guard #1 above means only
+   an already-deactivated user ever reaches this point — but it's kept as cheap defense-in-depth
+   against any future path that flips `isActive` without going through that guard.
+3. **Require a non-empty `reason`** (400) — there is no undo after this, so a reason is mandatory,
+   not optional context.
+
+Only once all three pass is a full snapshot of the User document written to a new
+`DeletedUserAuditLog` collection (`deletedUserAuditLog.model.js`) — the **only** place that data
+survives afterward — and only then is the User document actually removed. This is a distinct
+collection from `PaymentAuditLog` (payment module), not a reuse of it: `PaymentAuditLog.
+previousValues` only needs the fields that changed, since the parent Payment survives a soft
+delete, but here the parent User will not exist afterward, so `DeletedUserAuditLog.snapshot` must
+be the full document.
+
+**Deliberately does NOT cascade-delete or fix up this user's id anywhere else** (`Lead.ownerId`,
+`Attendance`, `Payment.collectedBy`, etc.) — every one of those already resolves an unknown/
+missing user id to `"—"` via the same Map-lookup-with-fallback pattern used throughout the
+frontend, so those records keep displaying gracefully rather than crashing; there's nothing to
+fix up. Verified directly in `user.test.js`: a Lead owned by a just-deleted user is still
+fetchable via `GET /leads` with its `ownerId` unchanged, not stripped or erroring.
 
 **Confirmed already correct (follow-up check):** `getUserById`'s self-shortcut
 (`if (String(targetId) === String(requestingUser._id)) return requestingUser;`) runs before any
@@ -1557,7 +1591,7 @@ plain Mongoose schema files have no such dependency.
   reset, then assert against the new template values), unknown module/action keys rejected with
   a clear 400, and every one of the 7 endpoints in this module individually confirmed to reject
   a non-admin with 403.
-- **User** (33 tests): `managerId` validation at creation time (rejected for a non-manager/admin
+- **User** (50 tests): `managerId` validation at creation time (rejected for a non-manager/admin
   target, rejected for a nonexistent id, accepted for both `manager` and `admin`), the dropdown
   endpoint (accessible with no `users.*` grant, excludes deactivated users, returns only
   `_id`/`name`/`role` — explicitly asserting `passwordHash` and `permissions` are absent, not just
@@ -1575,7 +1609,12 @@ plain Mongoose schema files have no such dependency.
   can't deactivate a team member), manager assignment (valid assignment, invalid target
   rejected, clearing with `managerId: null`, non-admin blocked), and (added 2026-07-13, §7.7
   Payroll prerequisite) `baseSalary`: a non-admin is blocked (403) from setting their own, and
-  an admin setting it succeeds and never leaks it on a plain `GET /users` list fetch.
+  an admin setting it succeeds and never leaks it on a plain `GET /users` list fetch. Plus the
+  2026-07-30 §7.28 additions: the team-head deactivation guard (8 tests) and (5 tests) the
+  guarded hard-delete — rejects an active user, rejects with no reason, rejects a deactivated
+  team head (defensive), blocks a non-admin, and the success path (deletes the user, writes one
+  `DeletedUserAuditLog` entry with the full snapshot and exact reason, and a Lead this user owned
+  is still readable afterward with its `ownerId` unchanged).
 - **Attendance** (32 tests): check-in creates an open record and rejects a second one while the
   first is still open (409), rejects missing coords (400), always attributes the record to the
   authenticated user regardless of any `employeeId` sent in the body, and lets two different
