@@ -27,7 +27,14 @@ vi.mock("../api/teamApi", () => ({
   getTeamMembers: vi.fn(),
   addTeamMember: vi.fn(),
   removeTeamMember: vi.fn(),
+  getTeamTypes: vi.fn(),
 }));
+
+const SAMPLE_TEAM_TYPES = [
+  { _id: "type-1", name: "Sales", isActive: true },
+  { _id: "type-2", name: "Installation", isActive: true },
+  { _id: "type-3", name: "Technical", isActive: true },
+];
 
 vi.mock("../../../hooks/useUserDirectory", () => ({
   useUserDirectory: () => ({ users: SAMPLE_USERS, isLoading: false }),
@@ -59,6 +66,7 @@ describe("TeamManagementPage", () => {
     vi.clearAllMocks();
     teamApi.listTeams.mockResolvedValue({ data: { data: SAMPLE_TEAMS } });
     teamApi.getTeamMembers.mockResolvedValue({ data: { data: [] } });
+    teamApi.getTeamTypes.mockResolvedValue({ data: { data: SAMPLE_TEAM_TYPES } });
   });
 
   it("renders the team list with name/type/head/member count/status", async () => {
@@ -89,6 +97,73 @@ describe("TeamManagementPage", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "Edit Team" });
     expect(within(dialog).getByDisplayValue("North Sales Team")).toBeInTheDocument();
+  });
+
+  describe("Type dropdown (§7.30, 2026-07-31 — admin-managed list, not free text)", () => {
+    it("the create form's Type field is a dropdown populated from GET /team-types", async () => {
+      renderPage();
+      await screen.findByText("North Sales Team");
+
+      await userEvent.click(screen.getByRole("button", { name: /Create Team/ }));
+      const dialog = await screen.findByRole("dialog", { name: "Create Team" });
+
+      fireEvent.mouseDown(within(dialog).getByText("Select a type (optional)"));
+
+      expect(await screen.findByTitle("Sales")).toBeInTheDocument();
+      expect(screen.getByTitle("Installation")).toBeInTheDocument();
+      expect(screen.getByTitle("Technical")).toBeInTheDocument();
+    });
+
+    it("excludes a deactivated team type from the create form's dropdown", async () => {
+      teamApi.getTeamTypes.mockResolvedValue({
+        data: { data: [...SAMPLE_TEAM_TYPES, { _id: "type-4", name: "Retired Type", isActive: false }] },
+      });
+      renderPage();
+      await screen.findByText("North Sales Team");
+
+      await userEvent.click(screen.getByRole("button", { name: /Create Team/ }));
+      const dialog = await screen.findByRole("dialog", { name: "Create Team" });
+      fireEvent.mouseDown(within(dialog).getByText("Select a type (optional)"));
+
+      await screen.findByTitle("Sales");
+      expect(screen.queryByTitle("Retired Type")).not.toBeInTheDocument();
+    });
+
+    it("the edit form still shows a legacy team's now-deactivated type, labeled inactive, rather than blanking it", async () => {
+      teamApi.getTeamTypes.mockResolvedValue({
+        data: { data: [{ _id: "type-9", name: "Sales", isActive: false }] },
+      });
+      renderPage();
+      await screen.findByText("North Sales Team");
+
+      await userEvent.click(screen.getByRole("button", { name: "Edit team" }));
+      const dialog = await screen.findByRole("dialog", { name: "Edit Team" });
+
+      expect(await within(dialog).findByText("Sales (inactive)")).toBeInTheDocument();
+    });
+
+    it("selecting a type on create submits its name in the payload", async () => {
+      teamApi.createTeam.mockResolvedValue({ data: {} });
+      renderPage();
+      await screen.findByText("North Sales Team");
+
+      await userEvent.click(screen.getByRole("button", { name: /Create Team/ }));
+      const dialog = await screen.findByRole("dialog", { name: "Create Team" });
+
+      await userEvent.type(within(dialog).getByLabelText("Name"), "Install Team");
+      fireEvent.mouseDown(within(dialog).getByText("Select a type (optional)"));
+      await userEvent.click(await screen.findByTitle("Installation"));
+      fireEvent.mouseDown(within(dialog).getByText("Select a manager or admin"));
+      await userEvent.click((await screen.findAllByText("Manager One")).at(-1));
+
+      await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      await waitFor(() => {
+        expect(teamApi.createTeam).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "Installation" })
+        );
+      });
+    });
   });
 
   it("deletes a team after confirming", async () => {

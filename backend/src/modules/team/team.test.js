@@ -93,13 +93,29 @@ describe("Team CRUD", () => {
     expect(response.body.data.isActive).toBe(true);
   });
 
-  it("accepts free-text type, not a fixed enum", async () => {
+  it("rejects a type that doesn't match an existing, active team type (§7.30)", async () => {
     const response = await adminAgent
       .post("/api/v1/teams")
       .send({ name: "Random Team", type: "Something Made Up", headManagerId: String(manager1._id) });
 
+    expect(response.status).toBe(400);
+  });
+
+  it("accepts a type matching one of the seeded defaults (§7.30)", async () => {
+    const response = await adminAgent
+      .post("/api/v1/teams")
+      .send({ name: "Tech Team", type: "Technical", headManagerId: String(manager1._id) });
+
     expect(response.status).toBe(201);
-    expect(response.body.data.type).toBe("Something Made Up");
+    expect(response.body.data.type).toBe("Technical");
+  });
+
+  it("no type at all is still accepted — type remains optional (§7.30)", async () => {
+    const response = await adminAgent
+      .post("/api/v1/teams")
+      .send({ name: "No Type Team", headManagerId: String(manager1._id) });
+
+    expect(response.status).toBe(201);
   });
 
   it("rejects a headManagerId that isn't a manager or admin", async () => {
@@ -189,16 +205,30 @@ describe("Team CRUD", () => {
   it("updates name, type, and isActive", async () => {
     const team = await adminAgent
       .post("/api/v1/teams")
-      .send({ name: "Old Name", type: "Old Type", headManagerId: String(manager1._id) });
+      .send({ name: "Old Name", type: "Sales", headManagerId: String(manager1._id) });
 
     const response = await adminAgent
       .patch(`/api/v1/teams/${team.body.data._id}`)
-      .send({ name: "New Name", type: "New Type", isActive: false });
+      .send({ name: "New Name", type: "Installation", isActive: false });
 
     expect(response.status).toBe(200);
     expect(response.body.data.name).toBe("New Name");
-    expect(response.body.data.type).toBe("New Type");
+    expect(response.body.data.type).toBe("Installation");
     expect(response.body.data.isActive).toBe(false);
+  });
+
+  it("rejects updating to a type that doesn't match an existing, active team type (§7.30)", async () => {
+    const team = await adminAgent
+      .post("/api/v1/teams")
+      .send({ name: "A Team", type: "Sales", headManagerId: String(manager1._id) });
+
+    const response = await adminAgent
+      .patch(`/api/v1/teams/${team.body.data._id}`)
+      .send({ type: "Not A Real Type" });
+
+    expect(response.status).toBe(400);
+    // Rejected, not silently applied.
+    expect((await adminAgent.get(`/api/v1/teams/${team.body.data._id}`)).body.data.type).toBe("Sales");
   });
 
   it("reassigns the head to a different valid manager", async () => {
@@ -315,5 +345,91 @@ describe("Team membership (derived via User.managerId, no stored member list)", 
 
     const teamMembers = await adminAgent.get(`/api/v1/teams/${team.body.data._id}/members`);
     expect(teamMembers.body.data).toHaveLength(0);
+  });
+});
+
+describe("Team types (§7.30, 2026-07-31 — admin-managed, structural mirror of LeadSource + real validation)", () => {
+  it("seeds the three defaults on first read", async () => {
+    const response = await adminAgent.get("/api/v1/team-types");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.map((t) => t.name).sort()).toEqual(["Installation", "Sales", "Technical"]);
+    expect(response.body.data.every((t) => t.isActive)).toBe(true);
+  });
+
+  it("any authenticated user can read the list, not just an admin", async () => {
+    const response = await nonAdminAgent.get("/api/v1/team-types");
+
+    expect(response.status).toBe(200);
+  });
+
+  it("admin can create a new team type", async () => {
+    const response = await adminAgent.post("/api/v1/team-types").send({ name: "Management" });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.name).toBe("Management");
+    expect(response.body.data.isActive).toBe(true);
+  });
+
+  it("a non-admin cannot create a team type", async () => {
+    const response = await nonAdminAgent.post("/api/v1/team-types").send({ name: "Management" });
+
+    expect(response.status).toBe(403);
+  });
+
+  it("rejects creating a duplicate-named team type", async () => {
+    await adminAgent.get("/api/v1/team-types"); // trigger the seed
+    const response = await adminAgent.post("/api/v1/team-types").send({ name: "Sales" });
+
+    expect(response.status).toBe(409);
+  });
+
+  it("rejects creating with no name", async () => {
+    const response = await adminAgent.post("/api/v1/team-types").send({});
+
+    expect(response.status).toBe(400);
+  });
+
+  it("admin can rename a team type and toggle isActive", async () => {
+    const created = await adminAgent.post("/api/v1/team-types").send({ name: "Draft Name" });
+
+    const response = await adminAgent
+      .patch(`/api/v1/team-types/${created.body.data._id}`)
+      .send({ name: "Final Name", isActive: false });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.name).toBe("Final Name");
+    expect(response.body.data.isActive).toBe(false);
+  });
+
+  it("a non-admin cannot update a team type", async () => {
+    const created = await adminAgent.post("/api/v1/team-types").send({ name: "Draft Name" });
+
+    const response = await nonAdminAgent
+      .patch(`/api/v1/team-types/${created.body.data._id}`)
+      .send({ name: "Hijacked" });
+
+    expect(response.status).toBe(403);
+  });
+
+  it("deactivating a team type blocks it from being selected for a NEW team, but an existing team keeps its type value and still displays it", async () => {
+    const salesType = (await adminAgent.get("/api/v1/team-types")).body.data.find((t) => t.name === "Sales");
+
+    const existingTeam = await adminAgent
+      .post("/api/v1/teams")
+      .send({ name: "Legacy Sales Team", type: "Sales", headManagerId: String(manager1._id) });
+    expect(existingTeam.status).toBe(201);
+
+    await adminAgent.patch(`/api/v1/team-types/${salesType._id}`).send({ isActive: false });
+
+    // The existing team's own type value is completely untouched.
+    const stillThere = await adminAgent.get(`/api/v1/teams/${existingTeam.body.data._id}`);
+    expect(stillThere.body.data.type).toBe("Sales");
+
+    // But a brand-new team can no longer be created with the now-inactive type.
+    const newTeamResponse = await adminAgent
+      .post("/api/v1/teams")
+      .send({ name: "New Sales Team", type: "Sales", headManagerId: String(manager2._id) });
+    expect(newTeamResponse.status).toBe(400);
   });
 });

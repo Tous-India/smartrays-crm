@@ -942,7 +942,14 @@ tab-not-route pattern, `PermissionGate`d on `can(user, "teams", "manage")`, admi
   here and passed down to both modals rather than each fetching its own copy.
 - **`TeamFormModal.jsx`** — create/edit; head picker (`headManagerId`) filtered client-side to
   `role === "manager" || "admin"` from the same lightweight lookup every other "assign to"
-  picker in this app already uses.
+  picker in this app already uses. **`type` field reworked 2026-07-31 (§7.30)** from a free-text
+  `Input` to a `Select` populated from the new `useTeamTypes` hook (`GET /team-types`) — the
+  direct mirror of how the Lead form's Source field already consumes `useLeadSources`, since
+  `Team.type` is now validated server-side against that same admin-managed list. Filtered to
+  `isActive` types only, **except** an existing team's own type value stays in the option list
+  (labeled `"{name} (inactive)"`) even if it's since been deactivated — otherwise opening the
+  edit form for a legacy team would silently blank out its type the moment the modal opens,
+  purely because that type is no longer offered for *new* teams.
 - **`TeamMembersModal.jsx`** — member list is always re-fetched fresh from `GET /teams/:id/
   members` on open, never derived/cached client-side (mirrors the backend's own "always live,
   never stored" design, see backend/README.md's Teams section). The add-picker is filtered to
@@ -962,6 +969,18 @@ tab-not-route pattern, `PermissionGate`d on `can(user, "teams", "manage")`, admi
   live through a real browser session against the dev servers, not just the unit tests above —
   including creating a throwaway test employee first, since the dev database had no employee/
   sales_associate accounts to add to a team until then.
+- **`useTeamTypes.js` (`src/modules/team/hooks/`, added 2026-07-31, §7.30)** — a structural
+  mirror of `useLeadSources.js`: fetches `GET /team-types` once per mount, no refetch exposed
+  (nothing in this app's frontend edits team types — see below for why no management UI exists).
+  4 new tests in `TeamManagementPage.test.jsx` (create form's Type dropdown populated from the
+  real list, a deactivated type excluded from it, an existing team's now-inactive type still
+  shown in the edit form labeled `"(inactive)"`, and selecting a type submits its name in the
+  create payload) — 17 total in that file now.
+- **No Team Types admin management screen was built** — per this task's own explicit
+  instruction not to build more UI for Team Types than the equivalent LeadSource feature has,
+  and LeadSource has none (it's only ever consumed as a dropdown, never managed from a screen).
+  The backend's `POST`/`PATCH /team-types` endpoints exist and are tested (see
+  `backend/README.md`), but nothing in this frontend calls them yet.
 
 ### User/Team Management filters and delete-guards (§7.28, 2026-07-30)
 

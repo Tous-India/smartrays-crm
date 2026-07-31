@@ -20,9 +20,16 @@ const teamSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
-    // Free text, not a rigid enum ("Sales", "Technical", "Installation", ...)
-    // — so an admin isn't blocked from naming a new kind of team as the org
-    // grows, unlike e.g. Contract's fixed `type` enum.
+    // References TeamType.name (an admin-managed config list, §7.30,
+    // 2026-07-31), a plain String rather than an ObjectId — the same
+    // storage shape leadSource.model.js uses for Lead.source, chosen so an
+    // existing Team whose type is later deactivated in TeamType still
+    // displays its type string normally rather than a broken/dangling
+    // reference. Unlike Lead.source (never actually validated against
+    // LeadSource), this field IS validated against the active TeamType list
+    // on create/update — see team.service.js#ensureValidTeamType. Still
+    // optional, not a rigid enum on the schema itself — an admin can always
+    // add a new TeamType as the org grows, without a migration.
     type: {
       type: String,
       trim: true,

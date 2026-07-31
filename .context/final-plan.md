@@ -3359,8 +3359,9 @@ relabeling anywhere in the frontend, matching §11.1's existing resolution that 
 "Executive" are one role for v1.
 
 **Backend — `backend/src/modules/team/`:**
-- **`Team` model** — `name` (required), `type` (free text, not an enum — an admin can name a new
-  kind of team as the org grows without a schema change), `headManagerId` (ObjectId → User,
+- **`Team` model** — `name` (required), `type` (originally free text, converted to an
+  admin-managed list validated against `TeamType` on 2026-07-31 — see §7.30), `headManagerId`
+  (ObjectId → User,
   required, must resolve to a `manager` or `admin` — enforced via the now-exported
   `user.service.js#ensureValidManagerId`, reused rather than duplicated), `isActive` (default
   `true`). **Deliberately no stored `memberIds` array** — see §11.9's reversal note for why.
@@ -3595,6 +3596,62 @@ scope this task didn't ask for.
 **Known deviations:** none from this task's own stated scope, beyond the two deliberate design
 calls stated above (which types count toward each badge; removing the Leave badge's admin-only
 gate) — both called out explicitly rather than silently decided.
+
+---
+
+### 7.30 Team Type — Admin-Managed List (2026-07-31)
+
+✅ **Built** — converts `Team.type` from free text (§7.24) to an admin-managed list, a direct
+structural mirror of `LeadSource` (§6.2/§7.1) with real CRUD and validation LeadSource itself
+doesn't actually have.
+
+**Before building, read LeadSource's actual implementation rather than assuming it matched the
+task's own framing — it didn't, and this was surfaced to the user before proceeding rather than
+guessed:** LeadSource has no admin CRUD endpoints at all (`GET /lead-sources` only, lazily
+seeded), and `Lead.source` is never validated against it — a plain, unvalidated String, just a
+shared convention for dropdown labels. The task's own concrete requirements (admin-managed CRUD
+endpoints, `Team.type` validated against the active list) directly conflicted with "mirror
+LeadSource exactly, don't diverge." **Asked the user which to build; confirmed: full admin CRUD
++ real validation**, deliberately diverging from LeadSource's literal shape where the two
+conflicted, while still mirroring its storage/seeding pattern where they didn't.
+
+**Backend:**
+- **New `TeamType` model** (`teamType.model.js`) — same shape as `LeadSource` (`name` unique,
+  `isActive`).
+- **`team.service.js#listTeamTypes()`** — lazy-seeds `["Sales", "Installation", "Technical"]` on
+  first call, the same on-demand pattern as `listLeadSources`. Self-seeding: called internally by
+  `ensureValidTeamType` too, not just the read endpoint, so the defaults exist regardless of
+  which entry point runs first (a team creation is just as valid a "first caller" as `GET
+  /team-types` itself).
+- **`ensureValidTeamType(type)`** — the one place `Team.type` is validated against the active
+  `TeamType` list, called from both `createTeam` and `updateTeam`. A no-op for an empty/undefined
+  type, keeping the field optional exactly as before.
+- **New endpoints:** `GET /team-types` (any authenticated user, matching LeadSource's own
+  low-sensitivity read access), `POST`/`PATCH /team-types` (`teams.manage`, admin-gated like the
+  rest of the Team module) — neither exists for LeadSource, the deliberate divergence above.
+- **`Team.type` stays a plain String on the schema** — storing `TeamType.name` directly, the same
+  storage shape `Lead.source` uses for `LeadSource.name`, not an ObjectId. An existing Team whose
+  type is later deactivated keeps displaying its type string normally; only a **new** create/
+  update is blocked from selecting it.
+- **15 new backend tests** (`team.test.js`), 2 existing tests rewritten (not just patched) since
+  their premise directly changed: `"accepts free-text type, not a fixed enum"` → `"rejects a type
+  that doesn't match an existing, active team type"`; the update test's made-up type strings
+  (`"Old Type"`/`"New Type"`) replaced with real seeded names, since arbitrary strings are now
+  correctly rejected.
+
+**Frontend:**
+- **`TeamFormModal.jsx`'s `type` field** — free-text `Input` → `Select` populated from the new
+  `useTeamTypes` hook (a structural mirror of `useLeadSources`), filtered to `isActive`. An
+  existing team's own (possibly since-deactivated) type value stays selectable/visible in the
+  edit form, labeled `"(inactive)"`, rather than silently blanking out the moment the form opens.
+- **No Team Types admin management screen built** — per the task's own explicit instruction not
+  to build more UI for Team Types than the equivalent LeadSource feature has, and LeadSource has
+  none. The backend CRUD exists and is tested; nothing in the frontend calls
+  `POST`/`PATCH /team-types` yet.
+- **4 new tests** in `TeamManagementPage.test.jsx` (17 total in that file).
+
+**Known deviations:** the two deliberate divergences from LeadSource stated above (admin CRUD,
+real validation) — both confirmed with the user before building, not assumed.
 
 ---
 

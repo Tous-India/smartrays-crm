@@ -39,3 +39,19 @@ export function validateAddMemberInput(req, res, next) {
 
   next();
 }
+
+export function validateCreateTeamTypeInput(req, res, next) {
+  if (!req.body.name || !req.body.name.trim()) {
+    throw new ApiError(400, "name is required");
+  }
+
+  next();
+}
+
+export function validateUpdateTeamTypeInput(req, res, next) {
+  if (req.body.name !== undefined && !req.body.name.trim()) {
+    throw new ApiError(400, "name cannot be empty");
+  }
+
+  next();
+}

@@ -9,6 +9,9 @@ import {
   getTeamMembers,
   addMemberToTeam,
   removeMemberFromTeam,
+  listTeamTypes,
+  createTeamType,
+  updateTeamType,
 } from "./team.service.js";
 
 export const list = asyncWrapper(async (req, res) => {
@@ -57,4 +60,22 @@ export const removeMember = asyncWrapper(async (req, res) => {
   const user = await removeMemberFromTeam(req.params.id, req.params.userId);
 
   res.status(200).json(new ApiResponse(200, user, "Member removed from team"));
+});
+
+export const listTypes = asyncWrapper(async (req, res) => {
+  const types = await listTeamTypes();
+
+  res.status(200).json(new ApiResponse(200, types, "Team types fetched successfully"));
+});
+
+export const createType = asyncWrapper(async (req, res) => {
+  const type = await createTeamType(req.body);
+
+  res.status(201).json(new ApiResponse(201, type, "Team type created successfully"));
+});
+
+export const updateType = asyncWrapper(async (req, res) => {
+  const type = await updateTeamType(req.params.id, req.body);
+
+  res.status(200).json(new ApiResponse(200, type, "Team type updated successfully"));
 });

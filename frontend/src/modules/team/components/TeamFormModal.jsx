@@ -1,17 +1,41 @@
 import { useEffect } from "react";
 import { Modal, Form, Input, Select } from "antd";
+import useTeamTypes from "../hooks/useTeamTypes";
 
 /**
- * Create/edit a Team — name, free-text type, and a head (manager or admin
- * only, filtered client-side from the same lightweight `users` list every
- * other "assign to" picker in this app already fetches via
- * `useUserDirectory`, per this task's own instruction to reuse it rather
- * than a new lookup). `type` is a plain text input, not a Select against a
- * fixed list — Team.type is deliberately free text (team.model.js) so an
- * admin isn't blocked from naming a new kind of team as the org grows.
+ * Create/edit a Team — name, type, and a head (manager or admin only,
+ * filtered client-side from the same lightweight `users` list every other
+ * "assign to" picker in this app already fetches via `useUserDirectory`, per
+ * this task's own instruction to reuse it rather than a new lookup).
+ *
+ * `type` is a `Select` against the admin-managed `GET /team-types` list
+ * (§7.30, 2026-07-31), the same `useLeadSources`-populated-dropdown pattern
+ * the Lead form already uses for its own Source field — a reversal of the
+ * earlier free-text `Input` here, since `Team.type` is now validated
+ * server-side against that same list (`team.service.js#ensureValidTeamType`).
+ * Filtered to `isActive` types only — an admin managing the list elsewhere
+ * can retire a type without it still being offered for new teams, while an
+ * existing team keeps whatever type value it already has.
  */
 function TeamFormModal({ open, mode, initialTeam, users, onCancel, onSubmit, isSubmitting }) {
   const [form] = Form.useForm();
+  const { types } = useTeamTypes();
+  const typeOptions = types
+    .filter((type) => type.isActive)
+    .map((type) => ({ value: type.name, label: type.name }));
+
+  // An existing team's own type value stays selectable/visible in the
+  // dropdown even if that type has since been deactivated elsewhere —
+  // otherwise editing a legacy team would silently blank out its type the
+  // moment this form opens, purely because it's no longer offered for NEW
+  // teams.
+  if (
+    mode === "edit" &&
+    initialTeam?.type &&
+    !typeOptions.some((option) => option.value === initialTeam.type)
+  ) {
+    typeOptions.push({ value: initialTeam.type, label: `${initialTeam.type} (inactive)` });
+  }
 
   useEffect(() => {
     if (open) {
@@ -53,7 +77,7 @@ function TeamFormModal({ open, mode, initialTeam, users, onCancel, onSubmit, isS
         </Form.Item>
 
         <Form.Item label="Type" name="type">
-          <Input placeholder='e.g. "Sales", "Technical", "Installation" (optional)' />
+          <Select allowClear showSearch optionFilterProp="label" options={typeOptions} placeholder="Select a type (optional)" />
         </Form.Item>
 
         <Form.Item

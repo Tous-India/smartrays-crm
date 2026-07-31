@@ -36,3 +36,9 @@ export function addTeamMember(teamId, userId) {
 export function removeTeamMember(teamId, userId) {
   return apiClient.delete(`/teams/${teamId}/members/${userId}`);
 }
+
+// GET /team-types (§7.30) — the admin-managed team type list, lazily seeded
+// server-side on first fetch, the same pattern as `getLeadSources` above.
+export function getTeamTypes() {
+  return apiClient.get("/team-types");
+}

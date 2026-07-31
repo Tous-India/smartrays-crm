@@ -1,7 +1,81 @@
 import ApiError from "../../utils/ApiError.js";
 import Team from "./team.model.js";
+import TeamType from "./teamType.model.js";
 import User from "../user/user.model.js";
 import { ensureValidManagerId, assignManager } from "../user/user.service.js";
+
+const DEFAULT_TEAM_TYPES = ["Sales", "Installation", "Technical"];
+
+/**
+ * Admin-managed team type list (§7.30, 2026-07-31) — a structural mirror of
+ * `lead.service.js#listLeadSources`' lazy-seed-on-first-read behavior:
+ * seeds the three defaults once, the first time this is ever called, rather
+ * than a separate seed script. Returns every type (active and inactive) —
+ * the frontend's admin management screen needs to see inactive ones too,
+ * unlike the Team form's dropdown, which filters to active itself.
+ */
+export async function listTeamTypes() {
+  const existingCount = await TeamType.countDocuments();
+
+  if (existingCount === 0) {
+    await TeamType.insertMany(DEFAULT_TEAM_TYPES.map((name) => ({ name })));
+  }
+
+  return TeamType.find().sort({ name: 1 });
+}
+
+export async function createTeamType({ name }) {
+  const existing = await TeamType.findOne({ name });
+
+  if (existing) {
+    throw new ApiError(409, "A team type with this name already exists");
+  }
+
+  return TeamType.create({ name });
+}
+
+export async function updateTeamType(teamTypeId, payload) {
+  const teamType = await TeamType.findById(teamTypeId);
+
+  if (!teamType) {
+    throw new ApiError(404, "Team type not found");
+  }
+
+  ["name", "isActive"].forEach((field) => {
+    if (payload[field] !== undefined) {
+      teamType[field] = payload[field];
+    }
+  });
+
+  await teamType.save();
+
+  return teamType;
+}
+
+/**
+ * Validates `Team.type` against the active team type list — the one place
+ * this rule lives, called from both `createTeam` and `updateTeam` below, the
+ * same "one shared validator, not duplicated ad hoc" reasoning as
+ * `ensureValidManagerId`. A no-op for an empty/undefined type — `type`
+ * itself stays optional, matching this field's pre-existing behavior before
+ * this validation was added.
+ */
+export async function ensureValidTeamType(type) {
+  if (!type) {
+    return;
+  }
+
+  // Self-seeding: a team creation is a perfectly valid first-ever caller,
+  // not just `GET /team-types` — this way the defaults exist regardless of
+  // which entry point happens to run first.
+  await listTeamTypes();
+
+  const teamType = await TeamType.findOne({ name: type, isActive: true });
+
+  if (!teamType) {
+    throw new ApiError(400, "type must match the name of an existing, active team type");
+  }
+}
 
 /**
  * Derived member list — see team.model.js's own docblock for why this is
@@ -58,6 +132,7 @@ export async function getTeamById(teamId) {
 
 export async function createTeam({ name, type, headManagerId }) {
   await ensureValidManagerId(headManagerId);
+  await ensureValidTeamType(type);
 
   return Team.create({ name, type, headManagerId });
 }
@@ -68,6 +143,10 @@ export async function updateTeam(teamId, payload) {
   if (payload.headManagerId !== undefined) {
     await ensureValidManagerId(payload.headManagerId);
     team.headManagerId = payload.headManagerId;
+  }
+
+  if (payload.type !== undefined) {
+    await ensureValidTeamType(payload.type);
   }
 
   ["name", "type", "isActive"].forEach((field) => {

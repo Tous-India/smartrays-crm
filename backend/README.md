@@ -504,6 +504,48 @@ replacement of it). No new `GET /teams/:id/delete-preview` endpoint was added �
 `.length` the frontend already needs anyway to show a "this team has N members" warning before
 a delete is confirmed; a separate endpoint would have just duplicated that. 3 new tests.
 
+**`Team.type` converted to an admin-managed list (added 2026-07-31, §7.30) — a direct structural
+mirror of `LeadSource`, but with real CRUD and validation LeadSource itself doesn't have.** New
+`TeamType` model (`teamType.model.js`) — same shape as `leadSource.model.js` (`name` unique,
+`isActive`), same lazy-seed-on-first-read behavior (`team.service.js#listTeamTypes`, seeding
+"Sales"/"Installation"/"Technical" the first time it's ever called — including indirectly, via
+`ensureValidTeamType` itself, not just via the read endpoint). **Deliberately diverges from
+LeadSource in two ways, both confirmed with the user before building rather than assumed:**
+LeadSource has no admin CRUD endpoints at all (read-only) and `Lead.source` is never actually
+validated against it (a plain unvalidated String); this feature adds both — real
+`POST`/`PATCH /team-types` endpoints and `team.service.js#ensureValidTeamType` rejecting a
+`Team.type` that doesn't match an existing, active `TeamType.name`.
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| GET | `/team-types` | Authenticated (any role) | Low-sensitivity shared config list, same reasoning as `GET /lead-sources` — any authenticated user can read it. Returns every type, active and inactive (unlike the Team form's own dropdown, which filters to active client-side) — an admin-facing management view needs to see inactive ones too. |
+| POST | `/team-types` | `teams.manage` | Body `{ name }`. Rejects a duplicate name with **409** (checked explicitly, not just relying on the schema's unique-index error, matching `createUser`'s own duplicate-email handling). |
+| PATCH | `/team-types/:id` | `teams.manage` | Body `{ name?, isActive? }` — either or both. Deactivating a type doesn't touch any existing `Team.type` value already set to it; it only blocks that name from passing `ensureValidTeamType` for a **new** create/update going forward. |
+
+`Team.type` **stays a plain String on the schema** (no change to `team.model.js`'s field type) —
+storing the `TeamType`'s `name` directly, the same storage shape `Lead.source` already uses for
+`LeadSource.name`, not an ObjectId reference. Chosen specifically so an existing Team whose type
+is later deactivated keeps displaying its type string normally, with no dangling/broken
+reference to resolve. `ensureValidTeamType(type)` is the one place this rule is enforced, called
+from both `createTeam` and `updateTeam` (only when `type` is actually being set) — a no-op for
+an empty/undefined `type`, since the field remains optional exactly as before this change.
+
+**No admin management UI was built on the frontend** — per this task's own explicit instruction
+not to build more UI for Team Types than the equivalent LeadSource feature has, and LeadSource
+has none either (it's consumed as a dropdown only). The Team Create/Edit form's `type` field
+changed from a free-text `Input` to a `Select` populated from `GET /team-types` (filtered to
+`isActive`), the direct frontend equivalent of how the Lead form's Source field already consumes
+`useLeadSources`. See `frontend/README.md`'s Teams section for the frontend write-up.
+
+15 new backend tests (`team.test.js`) — seeding, read access for a non-admin, create/update
+admin-gating, duplicate-name rejection, missing-name rejection, and the key edge case: an
+existing team keeps displaying a type value after that type is deactivated elsewhere, while a
+**new** team can no longer be created with it. Two existing tests were rewritten, not just
+patched around — `"accepts free-text type, not a fixed enum"` asserted the exact behavior this
+task reverses, so it's now `"rejects a type that doesn't match an existing, active team type"`;
+`"updates name, type, and isActive"` used made-up type strings (`"Old Type"`/`"New Type"`) that
+would now be rejected, so both were changed to real seeded names (`"Sales"`/`"Installation"`).
+
 ### Attendance (`/api/v1/attendance`)
 
 See `.context/final-plan.md` §6.5/§7.4 for the full design writeup. Started as a minimal

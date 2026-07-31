@@ -1466,3 +1466,24 @@ resolved while Phase 0 is underway.
   frontend suite passes (same pre-existing flaky tests, confirmed unrelated); `npm run build`
   succeeds. `backend/README.md`, `frontend/README.md`, and `.context/final-plan.md` (new §7.29,
   §7.26 marked superseded) updated.
+- **2026-07-31** — Converted `Team.type` from free text to an admin-managed list (§7.30),
+  mirroring `LeadSource`. Read LeadSource's actual implementation first rather than assuming it
+  matched the task's own framing — it didn't: LeadSource has no admin CRUD at all and
+  `Lead.source` is never validated against it, but the task explicitly wanted both for Team.
+  Surfaced this contradiction and asked the user rather than guessing; confirmed: build full
+  admin CRUD + real validation, deliberately diverging from LeadSource where the two conflicted.
+  New `TeamType` model (mirrors `LeadSource`'s shape), lazy-seeded with Sales/Installation/
+  Technical (self-seeding — triggered by either `GET /team-types` or the first team creation,
+  whichever runs first). New `POST`/`PATCH /team-types` (admin-gated); `GET /team-types` open to
+  any authenticated user. `Team.type` stays a plain String (storing the name, same shape
+  `Lead.source` uses), validated on create/update against the active list — an existing team
+  keeps its type displayed normally even after that type is deactivated, only new/updated teams
+  are blocked from selecting it. Frontend: the Create/Edit Team form's Type field changed from
+  free-text to a `Select` populated from a new `useTeamTypes` hook; no admin management screen
+  built, matching the task's own instruction not to build more UI than LeadSource has. 15 new
+  backend tests (2 existing tests rewritten since their premise directly changed); full backend
+  suite passes (same pre-existing, unrelated `leave.test.js` failures). 4 new frontend tests;
+  full frontend suite passes (same pre-existing flaky tests); `npm run build` succeeds. Verified
+  live via a real browser session (Type dropdown shows the three seeded defaults, a team created
+  and saved with a selected type persisted correctly). `backend/README.md`, `frontend/README.md`,
+  and `.context/final-plan.md` (new §7.30) updated.
