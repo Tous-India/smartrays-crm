@@ -17,7 +17,11 @@ import { Card, Spin, Alert, Empty } from "antd";
  */
 function WidgetCard({ title, isLoading, error, isEmpty, emptyDescription = "No data yet", children }) {
   return (
-    <Card size="small" title={<span className="text-sm font-medium">{title}</span>} className="h-full">
+    <Card
+      size="small"
+      title={<span className="text-sm font-medium">{title}</span>}
+      className="app-dashboard-widget-card h-full"
+    >
       {isLoading ? (
         <div className="flex justify-center py-4">
           <Spin size="small" />

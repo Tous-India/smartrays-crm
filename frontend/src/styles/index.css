@@ -111,6 +111,23 @@
 }
 
 /*
+ * Dashboard stat-card shadow (2026-07-31) — same soft, navy-tinted
+ * `rgba(17, 12, 46, 0.15)` shadow color as `.app-elevated-card` just above
+ * (that's the requested value), but scaled way down: `.app-elevated-card`'s
+ * 48px offset / 100px blur is proportioned for the large Customer Detail
+ * section cards, not these compact `WidgetCard` dashboard tiles — at their
+ * scale that value reads as a dark halo far bigger than the card itself.
+ * Applied via `WidgetCard.jsx`'s shared shell (`className=
+ * "app-dashboard-widget-card"`), not per-widget, so all 8 stat cards
+ * (Leads Pipeline, Follow-ups Due, Hot Leads, Customer Overview, Recently
+ * Added Customers, Present Today, Payments This Month, Payroll Status)
+ * pick it up identically.
+ */
+.app-dashboard-widget-card {
+  box-shadow: rgba(17, 12, 46, 0.15) 0px 12px 32px 0px;
+}
+
+/*
  * Coexistence fix, not a revert of a separate concurrent session's own
  * in-progress (uncommitted) `.ant-layout-header` rule, which this file may
  * or may not currently have depending on that session's progress - that
