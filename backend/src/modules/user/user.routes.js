@@ -7,6 +7,7 @@ import {
   getOne,
   update,
   deactivate,
+  deactivationImpact,
   reactivate,
   changeManager,
   resetPassword,
@@ -39,6 +40,13 @@ userRouter.patch("/:id", authenticate, validateUpdateUserInput, update);
 // Account-lifecycle actions are requireAdmin, matching how account creation
 // (POST /auth/register) is gated — a plain role check, not a can() module
 // permission, since these aren't "view" tiers a manager could partially hold.
+//
+// Checked before the deactivate itself (§7.31) — the frontend calls this
+// first to know whether to show the reassignment modal at all, but nothing
+// stops an admin calling `PATCH /:id/deactivate` directly without ever
+// checking impact first; the deactivate endpoint re-validates everything
+// itself regardless (`setUserActiveStatus`), this is purely informational.
+userRouter.get("/:id/deactivation-impact", authenticate, requireAdmin, deactivationImpact);
 userRouter.patch("/:id/deactivate", authenticate, requireAdmin, deactivate);
 userRouter.patch("/:id/reactivate", authenticate, requireAdmin, reactivate);
 userRouter.patch("/:id/manager", authenticate, requireAdmin, validateAssignManagerInput, changeManager);

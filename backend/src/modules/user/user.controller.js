@@ -6,6 +6,7 @@ import {
   listUsersForDropdown,
   updateUser,
   setUserActiveStatus,
+  getDeactivationImpact,
   assignManager,
   adminResetPassword,
   hardDeleteUser,
@@ -36,9 +37,15 @@ export const update = asyncWrapper(async (req, res) => {
 });
 
 export const deactivate = asyncWrapper(async (req, res) => {
-  const user = await setUserActiveStatus(req.params.id, false);
+  const user = await setUserActiveStatus(req.params.id, false, req.body);
 
   res.status(200).json(new ApiResponse(200, user, "User deactivated successfully"));
+});
+
+export const deactivationImpact = asyncWrapper(async (req, res) => {
+  const impact = await getDeactivationImpact(req.params.id);
+
+  res.status(200).json(new ApiResponse(200, impact, "Deactivation impact fetched successfully"));
 });
 
 export const reactivate = asyncWrapper(async (req, res) => {

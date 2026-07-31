@@ -16,8 +16,18 @@ export function updateUser(id, payload) {
   return apiClient.patch(`/users/${id}`, payload);
 }
 
-export function deactivateUser(id) {
-  return apiClient.patch(`/users/${id}/deactivate`);
+// `reassignments` (§7.31) — optional `{ reassignTeamsTo, reassignLeadsTo }`,
+// only ever needed when `getDeactivationImpact` below returned something to
+// resolve. Omitted entirely, this behaves exactly as it did before that
+// feature existed.
+export function deactivateUser(id, reassignments) {
+  return apiClient.patch(`/users/${id}/deactivate`, reassignments);
+}
+
+// GET /users/:id/deactivation-impact (§7.31) — what needs reassigning
+// before this person can be deactivated (led teams, active-lead count).
+export function getDeactivationImpact(id) {
+  return apiClient.get(`/users/${id}/deactivation-impact`);
 }
 
 export function reactivateUser(id) {

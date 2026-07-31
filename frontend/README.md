@@ -1168,7 +1168,9 @@ work above) — icon-only lifecycle buttons plus a new guarded, permanent Delete
   established by `customer/components/CustomerStatusToggleButton.jsx` (`StopOutlined`/
   `CheckCircleOutlined`, `type="text"`, wrapped in a `Tooltip`, `aria-label` kept identical to
   the old visible-text version so existing `getByRole("button", { name: /Deactivate/ })`-style
-  test queries still match unchanged). The `Popconfirm` around Deactivate is unchanged.
+  test queries still match unchanged). **The `Popconfirm` around Deactivate was later removed
+  entirely (§7.31, 2026-07-31)** — see that section below for why (an async impact check has to
+  run before any confirmation UI can even be decided).
 - **Guarded hard-delete — a deliberate reversal of the earlier "no hard delete for Users"
   decision** (see `.context/final-plan.md` §6.1/§7.0 for the dated reasoning). New `DELETE
   /users/:id` (backend, admin only — see `backend/README.md`'s User Management section for the
@@ -1196,6 +1198,50 @@ work above) — icon-only lifecycle buttons plus a new guarded, permanent Delete
   icon appears only on the Inactive test row, submitting the modal empty shows the validation
   message, and submitting it with a reason returns a real `200` from `DELETE /users/:id`, removes
   the row, and the deletion survives a hard refresh.
+
+### Deactivate reworked to guided reassignment (§7.31, 2026-07-31)
+
+Reverses the §7.28 hard-block guard: clicking Deactivate no longer immediately shows a plain
+confirm (or, for a team head, an immediate rejection) — it checks
+`GET /users/:id/deactivation-impact` first and only then decides which UI to show.
+
+- **`handleDeactivateClick`** (`UserManagementPage.jsx`) replaces the old `Popconfirm`-wrapped
+  button entirely — an async check has to run before there's anything to confirm, which a
+  `Popconfirm`'s open-on-click model can't express. Nothing to reassign → `modal.confirm(...)`
+  (via `App.useApp()`, the same hook-based pattern `message` already needed — see §7.28's
+  message-rendering fix) shows the exact same `"Deactivate {name}?"` text the `Popconfirm` used
+  to, so the no-reassignment path looks and behaves identically to before. Something to
+  reassign → `DeactivationReassignModal` instead.
+- **`DeactivationReassignModal.jsx`** — one `Select` per led team (`"New head for \"{name}\" ({N}
+  member(s))"`, filtered to `manager`/`admin`, excluding the person being deactivated themselves
+  from their own replacement-head options) and, if they own active leads, one more `Select`
+  (`"Reassign {N} active lead(s) to"`, filtered to `sales_associate`/`employee`/`manager`). Uses
+  `useUserDirectory` for both pickers' option lists — the same shared, active-users-only lookup
+  every other "assign to" picker in this app already uses. The Deactivate button inside this
+  modal is blocked by AntD `Form`'s own required-field validation until every picker has a
+  value — no separate "is everything filled in" boolean tracked by hand.
+- **Failure keeps the modal open** — `handleReassignSubmit` calls `deactivateUser` directly
+  (not through the plain-confirm path's `handleDeactivate`, which swallows its own errors and
+  would otherwise close the modal even on failure) and only closes it on success, surfacing the
+  backend's exact rejection message verbatim on failure — e.g. a race where something changed
+  between the impact check and this submit.
+- **Testing:** 6 new tests in `UserManagementPage.test.jsx` — impact checked first and the
+  no-reassignment path deactivates directly with no modal shown; the modal opens instead when a
+  team needs a new head; submission is blocked until the head is picked, then submits
+  `{ reassignTeamsTo, reassignLeadsTo }` correctly; the lead-owner picker shows when active leads
+  exist; both pickers show together when the person has both, each still independently required;
+  the modal stays open and surfaces the exact error on a post-reassignment failure. The existing
+  `useUserDirectory` mock in this test file had to become a `vi.fn()` (rather than a plain arrow
+  function) so these new tests could override its return value with real, role-tagged users to
+  pick from — every other existing test in the file is unaffected by that change (still gets the
+  same empty-list default).
+- **Verified live:** a real browser session against the dev servers — created a temporary
+  employee and a temporary open lead so a real user ("Testing User," who already headed a real
+  team) had both a team and an active lead needing reassignment, drove the full flow (modal
+  opens naming both, submitting empty is blocked, filling in both pickers and submitting
+  succeeds), then confirmed directly in the database that the team's `headManagerId` and the
+  lead's `ownerId` both actually changed to the picked users and the person was deactivated —
+  then restored the original state and removed the temporary data.
 
 ---
 

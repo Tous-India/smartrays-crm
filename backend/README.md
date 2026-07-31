@@ -367,7 +367,8 @@ that was missing until now — `User` was previously a shared model only, import
 | GET | `/users` | Authenticated (no route-level gate) | Full roster list, scoped in the service, not the route: `view_all` sees everyone; `view_team` sees direct reports + self; **no grant at all still returns 200 with a 1-item list containing just the caller** (`fallbackToSelf`, see below) rather than 403 — a plain "list my stuff" request always succeeds. Filters: `role`, `isActive`, `managerId`, and (added 2026-07-30, §7.28) `teamId`. |
 | GET | `/users/:id` | Authenticated (self always allowed) | A user can always fetch their own record regardless of any grant, matching `GET /auth/me`. Looking up **someone else's** specific id with no `users.*` grant is still a 403 (deliberately not narrowed to self the way the list is — see below); **404** (not 403) if the target exists but is outside scope for a caller who does hold a grant, matching the Leads/Location precedent. |
 | PATCH | `/users/:id` | Authenticated (self or admin) | Self can update `name`/`email`/`phone` only. Admin can additionally update `role`/`managerId`/`isActive`/**`baseSalary`** (added 2026-07-13, §7.7 Payroll prerequisite) on **anyone's** record, including their own. A non-admin sending a privileged field on their own record gets 403, not a silent drop. Enforced in **two layers**: `user.validation.js` rejects it before the controller even runs, and `user.service.js#updateUser` enforces the identical rule again — deliberate defense in depth, not accidental duplication. |
-| PATCH | `/users/:id/deactivate` | Admin only | **Team-head guard added 2026-07-30 (§7.28):** rejected (400) if this user is currently the `headManagerId` of one or more active Teams, naming the team(s) in the error message (e.g. `"Cannot deactivate: this person leads the following team(s): Sales Team. Reassign the team's head first."`) — silently deactivating a team's head would leave that Team pointing at a login-disabled account, and every member's "own team" scoping (derived from that same `headManagerId`, §11.9) would quietly stop resolving as expected. No guard on a team led by an **inactive** Team (already effectively retired). Reactivate has no equivalent guard — always safe. |
+| GET | `/users/:id/deactivation-impact` | Admin only | **Added 2026-07-31 (§7.31).** Returns `{ teamsLed, ownedLeadsCount }` — what needs reassigning before this person can be deactivated. `teamsLed` is every active Team they head, each with `name` + a live `memberCount` (same derivation as `listTeams`'s own). `ownedLeadsCount` is their still-open Lead count (`status` not `won`/`lost` — a closed lead needs no new owner). Purely informational: the frontend calls this first to decide whether to show the reassignment modal, but nothing stops calling `PATCH /:id/deactivate` directly without it — that endpoint re-validates everything itself regardless. |
+| PATCH | `/users/:id/deactivate` | Admin only | **Reworked 2026-07-31 (§7.31) — no longer hard-blocks a team head or lead owner (a genuine reversal of the 2026-07-30 guard, §7.28); guides a reassignment through instead.** Body accepts optional `{ reassignTeamsTo: { teamId: newHeadUserId, ... }, reassignLeadsTo: userId }`. With nothing to reassign, behaves exactly as before. Otherwise: every led team needs an entry in `reassignTeamsTo` and, if there's at least one open lead, `reassignLeadsTo` is required — anything missing is rejected (400) naming exactly what's unresolved (e.g. `"Cannot deactivate: this person leads the following team(s) needing a new head: Sales Team; and owns 3 active lead(s) needing a new owner. Provide reassignment info to continue."`). Once everything required is present, every new head is validated (`ensureValidManagerId`) and the new lead owner confirmed to exist — **all validation before any write** — then applied in order (team heads, then lead owners, then the deactivation itself). **Not wrapped in a Mongo transaction** — this app's dev/test database (`mongodb-memory-server`, standalone, no replica set) doesn't support multi-document transactions at all, only the production Atlas cluster does, so a transaction here would break the entire test suite while working fine in production; the validate-everything-before-writing-anything order is the accepted tradeoff instead. Reactivate has no guard of its own — always safe, unchanged. |
 | PATCH | `/users/:id/reactivate` | Admin only | |
 | PATCH | `/users/:id/manager` | Admin only | Sets or clears (`managerId: null`) a user's manager. A non-null `managerId` must belong to a `manager` or `admin` — same rule enforced at creation time (see below). |
 | PATCH | `/users/:id/reset-password` | Admin only | Admin override for password reset (§7.17), separate from the token-based self-service flow above. Body `{ newPassword? }`. If `newPassword` is supplied, it's set directly and the response's `tempPassword` is `null`. If omitted, the backend **generates a random one-time temp password** and returns it in `data.tempPassword` — the only time it's ever visible in plaintext, nothing persists it anywhere else. Chosen as the default path (a single-click "reset this locked-out user's password" action from the User Management screen) over forcing the admin to invent one every time; an admin who wants an exact password can still supply one. |
@@ -421,7 +422,8 @@ separate `ownerId` field, so its filter and lookup key never collide the way `_i
 
 33 tests, all passing; this bug was the only one found. (Grew to 45 with the 2026-07-30 §7.28
 additions below — 8 new tests: the team-head deactivation guard and the `teamId` filter. Grew
-again to 50 the same day with the hard-delete tests below.)
+again to 50 the same day with the hard-delete tests below. Grew to 62 on 2026-07-31 when §7.31
+reworked the deactivation guard itself into guided reassignment — see below.)
 
 **Guarded hard-delete (`DELETE /users/:id`, added 2026-07-30, §7.28) — a deliberate reversal of
 the earlier "Users are never hard-deleted, only deactivated" decision.** See
@@ -462,6 +464,42 @@ permission check at all, so a user with **no** `users.*` grant can always fetch 
 pair in `user.test.js`: self-fetch with no grant succeeds (200), a *different* user's id with no
 grant still 403s (proving the self-bypass wasn't accidentally broadened into `GET /users`' list-
 level `fallbackToSelf` behavior above).
+
+**Guided reassignment on deactivate (§7.31, 2026-07-31) — a genuine reversal of the 2026-07-30
+hard-block guard (§7.28), not a variation on it.** The earlier guard simply refused to
+deactivate a team head at all, forcing the admin to go reassign the team elsewhere first and
+retry. Now `PATCH /users/:id/deactivate` does the reassignment itself, in the same call: no
+longer just teams either — a lead owner's still-open Leads are in scope too (`CLOSED_LEAD_STATUSES
+= ["won", "lost"]`, shared between `getDeactivationImpact` and `setUserActiveStatus` so the two
+can never disagree on what counts as "still open"). See the `GET /users/:id/deactivation-impact`
+and reworked `PATCH /users/:id/deactivate` rows in the table above for the full request/response
+shape and guard behavior.
+
+**Why no Mongo transaction, checked rather than assumed:** this app's local/CI database
+(`tests/helpers/testDb.js` → `mongodb-memory-server`, a standalone instance, no `replSet`
+option) does not support multi-document transactions at all — only the production Atlas cluster
+does. Wrapping the reassignment + deactivation in `session.withTransaction()` would work in
+production but break every test for this feature. Instead: validate everything (every new head
+via `ensureValidManagerId`, the new lead owner's existence) **before writing anything**, then
+apply in a fixed order — team heads, then lead owners, then the deactivation itself — so the
+only way a write can fail partway is a genuine infrastructure error (not a validation one, since
+that already happened), and even then the user is never left deactivated without their teams/
+leads having actually been reassigned first.
+
+**12 new tests (§7.31)** — `GET /users/:id/deactivation-impact`: admin-only, empty impact for
+someone with nothing to reassign, correct `teamsLed` name/memberCount, `ownedLeadsCount`
+correctly excludes won/lost, 404 for a nonexistent user. `PATCH /users/:id/deactivate`: works
+unchanged with nothing to reassign; an inactive team's head still isn't counted; rejects with no
+reassignment info naming the team(s); rejects when only some led teams are covered; succeeds
+once every team has a valid new head; rejects an invalid new head (not manager/admin); rejects
+with no `reassignLeadsTo` when active leads exist, stating the count; succeeds once provided,
+moving every open lead's `ownerId`; won/lost leads are never touched and never block
+deactivation; rejects a `reassignLeadsTo` that doesn't resolve to a real user; requires BOTH
+team and lead reassignment when the person has both, naming both in the rejection. One
+pre-existing hard-delete test needed updating (not just patching around) since its own lead
+fixture would now block the deactivate step it depends on — changed that lead's status to
+`"won"` before deactivating, which is also more realistic for what that test is actually
+checking (a closed lead surviving its owner's deletion, not an open one silently reassigned).
 
 ### Teams (`/api/v1/teams`) — added 2026-07-30
 
@@ -1646,7 +1684,7 @@ plain Mongoose schema files have no such dependency.
   reset, then assert against the new template values), unknown module/action keys rejected with
   a clear 400, and every one of the 7 endpoints in this module individually confirmed to reject
   a non-admin with 403.
-- **User** (50 tests): `managerId` validation at creation time (rejected for a non-manager/admin
+- **User** (62 tests): `managerId` validation at creation time (rejected for a non-manager/admin
   target, rejected for a nonexistent id, accepted for both `manager` and `admin`), the dropdown
   endpoint (accessible with no `users.*` grant, excludes deactivated users, returns only
   `_id`/`name`/`role` — explicitly asserting `passwordHash` and `permissions` are absent, not just

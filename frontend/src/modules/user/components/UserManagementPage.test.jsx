@@ -16,7 +16,13 @@ vi.mock("antd", async (importOriginal) => {
   // fix — the static import silently fails to render under React 19), not
   // the static export, so the mock has to intercept the hook too.
   const mockMessage = { success: vi.fn(), error: vi.fn() };
-  actual.App.useApp = () => ({ message: mockMessage });
+  // `modal.confirm` (§7.31 — used when nothing needs reassignment) invokes
+  // its own `onOk` synchronously here rather than rendering a real AntD
+  // Modal, matching how this test suite already treats `message` — the
+  // point under test is "was the right callback wired up," not AntD's own
+  // modal-rendering internals.
+  const mockModal = { confirm: (config) => config.onOk() };
+  actual.App.useApp = () => ({ message: mockMessage, modal: mockModal });
   return { ...actual, message: mockMessage };
 });
 
@@ -28,11 +34,17 @@ vi.mock("../api/userApi", () => ({
   adminResetPassword: vi.fn(),
   createUser: vi.fn(),
   deleteUser: vi.fn(),
+  getDeactivationImpact: vi.fn(),
 }));
 
+// A `vi.fn()`, not a plain arrow function — the reassignment-modal tests
+// (§7.31) need real user options to pick from, unlike every other test in
+// this file, which doesn't care what this hook returns. `mockReturnValue`
+// per-test overrides the default empty list below.
+const mockUseUserDirectory = vi.fn(() => ({ users: [], isLoading: false }));
 vi.mock("../../../hooks/useUserDirectory", () => ({
-  useUserDirectory: () => ({ users: [], isLoading: false }),
-  default: () => ({ users: [], isLoading: false }),
+  useUserDirectory: (...args) => mockUseUserDirectory(...args),
+  default: (...args) => mockUseUserDirectory(...args),
 }));
 
 const SAMPLE_TEAMS = [
@@ -79,6 +91,10 @@ describe("UserManagementPage", () => {
     vi.clearAllMocks();
     useSessionStore.setState({ user: ADMIN_USER, isAuthenticated: true, isLoading: false });
     userApi.listUsers.mockResolvedValue({ data: { data: SAMPLE_USERS } });
+    userApi.getDeactivationImpact.mockResolvedValue({
+      data: { data: { teamsLed: [], ownedLeadsCount: 0 } },
+    });
+    mockUseUserDirectory.mockReturnValue({ users: [], isLoading: false });
   });
 
   it("renders the roster with role/status/manager columns", async () => {
@@ -102,43 +118,180 @@ describe("UserManagementPage", () => {
     expect(screen.getByRole("dialog", { name: "New User" })).toBeInTheDocument();
   });
 
-  it("deactivates an active user after confirming", async () => {
-    userApi.deactivateUser.mockResolvedValue({ data: {} });
-    const { container } = renderPage();
-    await screen.findAllByText("Manager One");
+  describe("Deactivate (§7.31, 2026-07-31 — guided reassignment, reverses the earlier hard-block guard §7.28)", () => {
+    it("checks impact first, and deactivates directly (no reassignment modal) when nothing needs reassigning", async () => {
+      userApi.deactivateUser.mockResolvedValue({ data: {} });
+      const { container } = renderPage();
+      await screen.findAllByText("Manager One");
 
-    const managerRow = container.querySelector('tr[data-row-key="user-1"]');
-    await userEvent.click(within(managerRow).getByRole("button", { name: "Deactivate" }));
-    await userEvent.click(await screen.findByRole("button", { name: "OK" }));
+      const managerRow = container.querySelector('tr[data-row-key="user-1"]');
+      await userEvent.click(within(managerRow).getByRole("button", { name: "Deactivate" }));
 
-    await waitFor(() => {
-      expect(userApi.deactivateUser).toHaveBeenCalledWith("user-1");
+      await waitFor(() => {
+        expect(userApi.getDeactivationImpact).toHaveBeenCalledWith("user-1");
+      });
+      await waitFor(() => {
+        expect(userApi.deactivateUser).toHaveBeenCalledWith("user-1", undefined);
+      });
+      expect(message.success).toHaveBeenCalledWith("Manager One deactivated");
+      expect(screen.queryByRole("dialog", { name: "Reassign Before Deactivating" })).not.toBeInTheDocument();
     });
-    expect(message.success).toHaveBeenCalledWith("Manager One deactivated");
-  });
 
-  it("shows the backend's exact team-head rejection message when deactivation is blocked (§7.28)", async () => {
-    userApi.deactivateUser.mockRejectedValue({
-      response: {
+    it("opens the reassignment modal instead of deactivating directly when the person leads a team", async () => {
+      userApi.getDeactivationImpact.mockResolvedValue({
         data: {
-          message:
-            "Cannot deactivate: this person leads the following team(s): North Sales Team. Reassign the team's head first.",
+          data: {
+            teamsLed: [{ _id: "team-1", name: "North Sales Team", memberCount: 3 }],
+            ownedLeadsCount: 0,
+          },
         },
-      },
-    });
-    const { container } = renderPage();
-    await screen.findAllByText("Manager One");
+      });
+      const { container } = renderPage();
+      await screen.findAllByText("Manager One");
 
-    const managerRow = container.querySelector('tr[data-row-key="user-1"]');
-    await userEvent.click(within(managerRow).getByRole("button", { name: "Deactivate" }));
-    await userEvent.click(await screen.findByRole("button", { name: "OK" }));
+      const managerRow = container.querySelector('tr[data-row-key="user-1"]');
+      await userEvent.click(within(managerRow).getByRole("button", { name: "Deactivate" }));
 
-    await waitFor(() => {
-      expect(message.error).toHaveBeenCalledWith(
-        "Cannot deactivate: this person leads the following team(s): North Sales Team. Reassign the team's head first."
-      );
+      const dialog = await screen.findByRole("dialog", { name: "Reassign Before Deactivating" });
+      expect(within(dialog).getByText(/North Sales Team/)).toBeInTheDocument();
+      expect(userApi.deactivateUser).not.toHaveBeenCalled();
     });
-    expect(message.success).not.toHaveBeenCalled();
+
+    it("disables submission until the new team head is picked, then submits the reassignment", async () => {
+      // A second manager, distinct from Manager One (the one being
+      // deactivated) — the modal excludes the person being deactivated
+      // from their own replacement-head options.
+      mockUseUserDirectory.mockReturnValue({
+        users: [
+          { _id: "user-1", name: "Manager One", role: "manager" },
+          { _id: "user-3", name: "Manager Two", role: "manager" },
+        ],
+        isLoading: false,
+      });
+      userApi.getDeactivationImpact.mockResolvedValue({
+        data: {
+          data: {
+            teamsLed: [{ _id: "team-1", name: "North Sales Team", memberCount: 3 }],
+            ownedLeadsCount: 0,
+          },
+        },
+      });
+      userApi.deactivateUser.mockResolvedValue({ data: {} });
+      const { container } = renderPage();
+      await screen.findAllByText("Manager One");
+
+      const managerRow = container.querySelector('tr[data-row-key="user-1"]');
+      await userEvent.click(within(managerRow).getByRole("button", { name: "Deactivate" }));
+
+      const dialog = await screen.findByRole("dialog", { name: "Reassign Before Deactivating" });
+      await userEvent.click(within(dialog).getByRole("button", { name: "Deactivate" }));
+      // Required field left empty — rejected client-side, never even calls the API.
+      expect(userApi.deactivateUser).not.toHaveBeenCalled();
+
+      fireEvent.mouseDown(within(dialog).getByText("Select a manager or admin"));
+      await userEvent.click(await screen.findByText("Manager Two"));
+      await userEvent.click(within(dialog).getByRole("button", { name: "Deactivate" }));
+
+      await waitFor(() => {
+        expect(userApi.deactivateUser).toHaveBeenCalledWith("user-1", {
+          reassignTeamsTo: { "team-1": "user-3" },
+          reassignLeadsTo: undefined,
+        });
+      });
+      expect(message.success).toHaveBeenCalledWith("Manager One deactivated");
+    });
+
+    it("also shows a lead-owner picker when the person owns active leads, in addition to any team pickers", async () => {
+      userApi.getDeactivationImpact.mockResolvedValue({
+        data: { data: { teamsLed: [], ownedLeadsCount: 4 } },
+      });
+      const { container } = renderPage();
+      await screen.findAllByText("Manager One");
+
+      const managerRow = container.querySelector('tr[data-row-key="user-1"]');
+      await userEvent.click(within(managerRow).getByRole("button", { name: "Deactivate" }));
+
+      const dialog = await screen.findByRole("dialog", { name: "Reassign Before Deactivating" });
+      expect(within(dialog).getByText(/Reassign 4 active lead\(s\) to/)).toBeInTheDocument();
+    });
+
+    it("shows both a team-head picker AND a lead-owner picker when the person has both", async () => {
+      mockUseUserDirectory.mockReturnValue({
+        users: [
+          { _id: "user-1", name: "Manager One", role: "manager" },
+          { _id: "user-3", name: "Manager Two", role: "manager" },
+        ],
+        isLoading: false,
+      });
+      userApi.getDeactivationImpact.mockResolvedValue({
+        data: {
+          data: {
+            teamsLed: [{ _id: "team-1", name: "North Sales Team", memberCount: 3 }],
+            ownedLeadsCount: 2,
+          },
+        },
+      });
+      const { container } = renderPage();
+      await screen.findAllByText("Manager One");
+
+      const managerRow = container.querySelector('tr[data-row-key="user-1"]');
+      await userEvent.click(within(managerRow).getByRole("button", { name: "Deactivate" }));
+
+      const dialog = await screen.findByRole("dialog", { name: "Reassign Before Deactivating" });
+      expect(within(dialog).getByText(/North Sales Team/)).toBeInTheDocument();
+      expect(within(dialog).getByText(/Reassign 2 active lead\(s\) to/)).toBeInTheDocument();
+
+      // Submitting with only the team head filled in — lead owner still
+      // required — is rejected client-side.
+      fireEvent.mouseDown(within(dialog).getByText("Select a manager or admin"));
+      await userEvent.click(await screen.findByText("Manager Two"));
+      await userEvent.click(within(dialog).getByRole("button", { name: "Deactivate" }));
+      expect(userApi.deactivateUser).not.toHaveBeenCalled();
+    });
+
+    it("shows the backend's exact rejection message if deactivation still fails after reassignment (e.g. a race)", async () => {
+      mockUseUserDirectory.mockReturnValue({
+        users: [
+          { _id: "user-1", name: "Manager One", role: "manager" },
+          { _id: "user-3", name: "Manager Two", role: "manager" },
+        ],
+        isLoading: false,
+      });
+      userApi.getDeactivationImpact.mockResolvedValue({
+        data: {
+          data: {
+            teamsLed: [{ _id: "team-1", name: "North Sales Team", memberCount: 3 }],
+            ownedLeadsCount: 0,
+          },
+        },
+      });
+      userApi.deactivateUser.mockRejectedValue({
+        response: {
+          data: {
+            message: "Cannot deactivate: this person leads the following team(s) needing a new head: Other Team.",
+          },
+        },
+      });
+      const { container } = renderPage();
+      await screen.findAllByText("Manager One");
+
+      const managerRow = container.querySelector('tr[data-row-key="user-1"]');
+      await userEvent.click(within(managerRow).getByRole("button", { name: "Deactivate" }));
+
+      const dialog = await screen.findByRole("dialog", { name: "Reassign Before Deactivating" });
+      fireEvent.mouseDown(within(dialog).getByText("Select a manager or admin"));
+      await userEvent.click(await screen.findByText("Manager Two"));
+      await userEvent.click(within(dialog).getByRole("button", { name: "Deactivate" }));
+
+      await waitFor(() => {
+        expect(message.error).toHaveBeenCalledWith(
+          "Cannot deactivate: this person leads the following team(s) needing a new head: Other Team."
+        );
+      });
+      expect(message.success).not.toHaveBeenCalled();
+      // Stays open on failure, not silently dismissed.
+      expect(screen.getByRole("dialog", { name: "Reassign Before Deactivating" })).toBeInTheDocument();
+    });
   });
 
   it("reactivates an inactive user", async () => {

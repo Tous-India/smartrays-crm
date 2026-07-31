@@ -6,7 +6,14 @@ import { getTemplatePermissionsForRole } from "../permission/permission.service.
 import { resolveCustomerIdByEmailDomain } from "../customer/customer.service.js";
 import User from "./user.model.js";
 import Team from "../team/team.model.js";
+import Lead from "../lead/lead.model.js";
 import DeletedUserAuditLog from "./deletedUserAuditLog.model.js";
+
+// Leads in either of these statuses are historically closed — they don't
+// need reassignment before their owner can be deactivated, only leads still
+// actually open do. Shared by both `getDeactivationImpact` and
+// `setUserActiveStatus` below so the two can never disagree on what counts.
+const CLOSED_LEAD_STATUSES = ["won", "lost"];
 
 const SALT_ROUNDS = 10;
 
@@ -275,15 +282,77 @@ export async function updateUser(targetId, payload, requestingUser) {
 }
 
 /**
- * Deactivating (not reactivating — that's always safe, no guard below) a
- * user who's currently the `headManagerId` of one or more active Teams is
- * rejected outright (§7.28) — silently deactivating a team's head would
- * leave that Team pointing at a login-disabled account, and every member's
- * "own team" scoping (derived from that same headManagerId, §11.9) would
- * quietly stop resolving as expected. Names the team(s) in the error so the
- * admin knows exactly what to fix (reassign the head) before retrying.
+ * What needs reassigning before `targetId` can be deactivated (§7.31,
+ * 2026-07-31) — `GET /users/:id/deactivation-impact`. Two independent
+ * things can block a clean deactivation: leading one or more active Teams,
+ * and owning one or more still-open Leads (`CLOSED_LEAD_STATUSES` excluded
+ * — a won/lost lead is historically closed, nobody needs to "take over" it).
+ * `memberCount` per team mirrors `team.service.js#listTeams`'s own derived
+ * count exactly, so this never disagrees with what the Teams screen itself
+ * would show.
  */
-export async function setUserActiveStatus(targetId, isActive) {
+export async function getDeactivationImpact(targetId) {
+  const user = await User.findById(targetId);
+
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  const ledTeams = await Team.find({ headManagerId: targetId, isActive: true }).select("name headManagerId");
+  const teamsLed = await Promise.all(
+    ledTeams.map(async (team) => ({
+      _id: team._id,
+      name: team.name,
+      memberCount: await User.countDocuments({ managerId: team.headManagerId }),
+    }))
+  );
+
+  const ownedLeadsCount = await Lead.countDocuments({
+    ownerId: targetId,
+    status: { $nin: CLOSED_LEAD_STATUSES },
+  });
+
+  return { teamsLed, ownedLeadsCount };
+}
+
+/**
+ * Deactivating (not reactivating — that's always safe, no guard below) a
+ * user who currently leads one or more active Teams or owns one or more
+ * still-open Leads no longer hard-blocks the way it used to (§7.28) — a
+ * deliberate reversal (§7.31, 2026-07-31): instead of forcing the admin to
+ * go reassign things elsewhere first, this same call can carry
+ * `reassignments.reassignTeamsTo` (`{ teamId: newHeadUserId, ... }`, one
+ * entry per led team) and `reassignments.reassignLeadsTo` (a single userId
+ * every still-open lead's `ownerId` moves to), and does the reassignment
+ * itself before deactivating.
+ *
+ * With nothing to reassign (no led teams, no open leads), this behaves
+ * exactly as before — no reassignment info needed, straight to deactivated.
+ *
+ * When something DOES need reassigning: every led team must have an entry
+ * in `reassignTeamsTo`, and if there's at least one open lead,
+ * `reassignLeadsTo` must be supplied — anything missing is rejected (400)
+ * naming exactly what's still unresolved, the same clear-error-naming-
+ * specifics principle the old hard-block guard used. Only once everything
+ * required is present is each new head validated (`ensureValidManagerId`)
+ * and the new lead owner confirmed to exist — ALL validation happens before
+ * ANY write, so an invalid id can never leave a half-applied reassignment.
+ *
+ * Order of writes once validated: team-head reassignment, then lead-owner
+ * reassignment, then the deactivation itself — chosen so a failure partway
+ * through (an infrastructure error, not a validation one, since validation
+ * already happened) never leaves the user deactivated without their
+ * teams/leads actually having been reassigned first. **Not wrapped in a
+ * Mongo transaction** — checked first: this app's dev/test database
+ * (`mongodb-memory-server`, standalone, no replica set — see
+ * `tests/helpers/testDb.js`) does not support multi-document transactions
+ * at all, only the production Atlas cluster does, so wrapping this in
+ * `session.withTransaction()` would break the entire test suite for this
+ * feature while working fine in production — an inconsistency worse than
+ * the (small, validated-before-write) risk this ordered-writes approach
+ * accepts instead.
+ */
+export async function setUserActiveStatus(targetId, isActive, reassignments = {}) {
   const user = await User.findById(targetId);
 
   if (!user) {
@@ -291,13 +360,61 @@ export async function setUserActiveStatus(targetId, isActive) {
   }
 
   if (!isActive) {
-    const ledTeams = await Team.find({ headManagerId: targetId, isActive: true }).select("name");
+    const { reassignTeamsTo = {}, reassignLeadsTo } = reassignments;
 
-    if (ledTeams.length > 0) {
-      const teamNames = ledTeams.map((team) => team.name).join(", ");
+    const ledTeams = await Team.find({ headManagerId: targetId, isActive: true }).select("name");
+    const ownedLeadsCount = await Lead.countDocuments({
+      ownerId: targetId,
+      status: { $nin: CLOSED_LEAD_STATUSES },
+    });
+
+    const unresolvedTeams = ledTeams.filter((team) => !reassignTeamsTo[String(team._id)]);
+    const needsLeadReassignment = ownedLeadsCount > 0 && !reassignLeadsTo;
+
+    if (unresolvedTeams.length > 0 || needsLeadReassignment) {
+      const parts = [];
+
+      if (unresolvedTeams.length > 0) {
+        parts.push(
+          `leads the following team(s) needing a new head: ${unresolvedTeams.map((team) => team.name).join(", ")}`
+        );
+      }
+
+      if (needsLeadReassignment) {
+        parts.push(`owns ${ownedLeadsCount} active lead(s) needing a new owner`);
+      }
+
       throw new ApiError(
         400,
-        `Cannot deactivate: this person leads the following team(s): ${teamNames}. Reassign the team's head first.`
+        `Cannot deactivate: this person ${parts.join("; and ")}. Provide reassignment info to continue.`
+      );
+    }
+
+    // Everything required is present — validate it's all actually valid
+    // before writing anything.
+    for (const team of ledTeams) {
+      await ensureValidManagerId(reassignTeamsTo[String(team._id)]);
+    }
+
+    let newLeadOwner = null;
+
+    if (ownedLeadsCount > 0) {
+      newLeadOwner = await User.findById(reassignLeadsTo);
+
+      if (!newLeadOwner) {
+        throw new ApiError(400, "reassignLeadsTo does not match an existing user");
+      }
+    }
+
+    // Validated — now apply, in the order described above.
+    for (const team of ledTeams) {
+      await Team.updateOne({ _id: team._id }, { headManagerId: reassignTeamsTo[String(team._id)] });
+    }
+
+    if (newLeadOwner) {
+      await Lead.updateMany(
+        { ownerId: targetId, status: { $nin: CLOSED_LEAD_STATUSES } },
+        { ownerId: newLeadOwner._id }
       );
     }
   }

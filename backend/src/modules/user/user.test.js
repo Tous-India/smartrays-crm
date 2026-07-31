@@ -6,7 +6,7 @@ import { createUserDirectly, loginAsAgent } from "../../../tests/helpers/authHel
 
 let app;
 let adminAgent, managerAgent, sales1Agent, sales2Agent, sales3Agent;
-let manager1, sales1, sales2, sales3;
+let admin, manager1, sales1, sales2, sales3;
 
 beforeAll(async () => {
   await startTestDatabase();
@@ -24,7 +24,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await clearAllCollections();
 
-  await createUserDirectly({
+  admin = await createUserDirectly({
     name: "Admin",
     email: "admin@test.local",
     password: "AdminPass123!",
@@ -353,35 +353,65 @@ describe("PATCH /users/:id/deactivate and /reactivate", () => {
   });
 });
 
-describe("PATCH /users/:id/deactivate — team-head guard (§7.28)", () => {
-  it("rejects deactivating a user who currently leads an active team, naming it", async () => {
+describe("GET /users/:id/deactivation-impact (§7.31, 2026-07-31)", () => {
+  it("is admin only", async () => {
+    const response = await managerAgent.get(`/api/v1/users/${manager1._id}/deactivation-impact`);
+    expect(response.status).toBe(403);
+  });
+
+  it("returns an empty impact for a user with no led teams and no active leads", async () => {
+    const response = await adminAgent.get(`/api/v1/users/${sales1._id}/deactivation-impact`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.teamsLed).toEqual([]);
+    expect(response.body.data.ownedLeadsCount).toBe(0);
+  });
+
+  it("returns each led team with its name and member count", async () => {
+    // sales1 and sales2 both already report to manager1 from the fixture
+    // setup (managerId: manager1._id) — a team headed by manager1 derives
+    // its member count from exactly that, so it's 2 without adding anyone.
     const teamResponse = await adminAgent
       .post("/api/v1/teams")
-      .send({ name: "Sales Team", type: "Sales", headManagerId: manager1._id });
+      .send({ name: "Sales Team", headManagerId: manager1._id });
+
+    const response = await adminAgent.get(`/api/v1/users/${manager1._id}/deactivation-impact`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.teamsLed).toHaveLength(1);
+    expect(response.body.data.teamsLed[0].name).toBe("Sales Team");
+    expect(response.body.data.teamsLed[0].memberCount).toBe(2);
     expect(teamResponse.status).toBe(201);
-
-    const response = await adminAgent.patch(`/api/v1/users/${manager1._id}/deactivate`);
-
-    expect(response.status).toBe(400);
-    expect(response.body.message).toContain("Sales Team");
-    expect(response.body.message).toContain("Reassign the team's head first");
-
-    const stillActive = await adminAgent.get(`/api/v1/users/${manager1._id}`);
-    expect(stillActive.body.data.isActive).toBe(true);
   });
 
-  it("names every team led by this person when there's more than one", async () => {
-    await adminAgent.post("/api/v1/teams").send({ name: "Sales Team", headManagerId: manager1._id });
-    await adminAgent.post("/api/v1/teams").send({ name: "Install Team", headManagerId: manager1._id });
+  it("counts only still-open leads, excluding won/lost", async () => {
+    const Lead = (await import("../lead/lead.model.js")).default;
+    await Lead.create({ name: "Open 1", ownerId: manager1._id, clientType: "residential", status: "new" });
+    await Lead.create({ name: "Open 2", ownerId: manager1._id, clientType: "residential", status: "contacted" });
+    await Lead.create({ name: "Won", ownerId: manager1._id, clientType: "residential", status: "won" });
+    await Lead.create({ name: "Lost", ownerId: manager1._id, clientType: "residential", status: "lost" });
 
-    const response = await adminAgent.patch(`/api/v1/users/${manager1._id}/deactivate`);
+    const response = await adminAgent.get(`/api/v1/users/${manager1._id}/deactivation-impact`);
 
-    expect(response.status).toBe(400);
-    expect(response.body.message).toContain("Sales Team");
-    expect(response.body.message).toContain("Install Team");
+    expect(response.status).toBe(200);
+    expect(response.body.data.ownedLeadsCount).toBe(2);
   });
 
-  it("does not block deactivating a team head if the team itself is inactive", async () => {
+  it("404s for a nonexistent user", async () => {
+    const response = await adminAgent.get("/api/v1/users/000000000000000000000001/deactivation-impact");
+    expect(response.status).toBe(404);
+  });
+});
+
+describe("PATCH /users/:id/deactivate — guided reassignment (§7.31, 2026-07-31, reverses the earlier hard-block guard §7.28)", () => {
+  it("allows deactivating a user who leads no team and owns no active leads, exactly as before", async () => {
+    const response = await adminAgent.patch(`/api/v1/users/${sales1._id}/deactivate`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.isActive).toBe(false);
+  });
+
+  it("does not count an inactive team's head as needing reassignment", async () => {
     const teamResponse = await adminAgent
       .post("/api/v1/teams")
       .send({ name: "Sales Team", headManagerId: manager1._id });
@@ -392,18 +422,155 @@ describe("PATCH /users/:id/deactivate — team-head guard (§7.28)", () => {
     expect(response.status).toBe(200);
   });
 
-  it("allows deactivating a user who leads no team at all", async () => {
-    const response = await adminAgent.patch(`/api/v1/users/${sales1._id}/deactivate`);
+  it("rejects with no reassignment info, naming the team(s) needing a new head", async () => {
+    const teamResponse = await adminAgent
+      .post("/api/v1/teams")
+      .send({ name: "Sales Team", headManagerId: manager1._id });
+    expect(teamResponse.status).toBe(201);
 
-    expect(response.status).toBe(200);
+    const response = await adminAgent.patch(`/api/v1/users/${manager1._id}/deactivate`);
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toContain("Sales Team");
+    expect(response.body.message).toContain("needing a new head");
+
+    const stillActive = await adminAgent.get(`/api/v1/users/${manager1._id}`);
+    expect(stillActive.body.data.isActive).toBe(true);
   });
 
-  it("never blocks reactivating a team head — only deactivate is guarded", async () => {
+  it("names every team led by this person when there's more than one, and rejects if only some are covered", async () => {
+    const team1 = await adminAgent.post("/api/v1/teams").send({ name: "Sales Team", headManagerId: manager1._id });
+    await adminAgent.post("/api/v1/teams").send({ name: "Install Team", headManagerId: manager1._id });
+
+    const uncovered = await adminAgent
+      .patch(`/api/v1/users/${manager1._id}/deactivate`)
+      .send({ reassignTeamsTo: { [team1.body.data._id]: sales3._id } });
+
+    // sales3 isn't a manager/admin anyway, but more importantly Install Team
+    // isn't covered at all — rejected before even validating sales3's role.
+    expect(uncovered.status).toBe(400);
+    expect(uncovered.body.message).toContain("Install Team");
+  });
+
+  it("succeeds once every led team has a valid new head, reassigning the team(s) and deactivating", async () => {
+    const teamResponse = await adminAgent
+      .post("/api/v1/teams")
+      .send({ name: "Sales Team", headManagerId: manager1._id });
+
+    const response = await adminAgent
+      .patch(`/api/v1/users/${manager1._id}/deactivate`)
+      .send({ reassignTeamsTo: { [teamResponse.body.data._id]: admin._id } });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.isActive).toBe(false);
+
+    const team = await adminAgent.get(`/api/v1/teams/${teamResponse.body.data._id}`);
+    expect(team.body.data.headManagerId).toBe(String(admin._id));
+  });
+
+  it("rejects a new team head that isn't a manager or admin", async () => {
+    const teamResponse = await adminAgent
+      .post("/api/v1/teams")
+      .send({ name: "Sales Team", headManagerId: manager1._id });
+
+    const response = await adminAgent
+      .patch(`/api/v1/users/${manager1._id}/deactivate`)
+      .send({ reassignTeamsTo: { [teamResponse.body.data._id]: sales1._id } });
+
+    expect(response.status).toBe(400);
+
+    const stillActive = await adminAgent.get(`/api/v1/users/${manager1._id}`);
+    expect(stillActive.body.data.isActive).toBe(true);
+  });
+
+  it("rejects with no reassignLeadsTo when the person owns active leads, stating the count", async () => {
+    const Lead = (await import("../lead/lead.model.js")).default;
+    await Lead.create({ name: "Open 1", ownerId: manager1._id, clientType: "residential", status: "new" });
+    await Lead.create({ name: "Open 2", ownerId: manager1._id, clientType: "residential", status: "contacted" });
+
+    const response = await adminAgent.patch(`/api/v1/users/${manager1._id}/deactivate`);
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toContain("owns 2 active lead(s)");
+    expect(response.body.message).toContain("needing a new owner");
+  });
+
+  it("succeeds once reassignLeadsTo is provided, moving every open lead's ownerId and deactivating", async () => {
+    const Lead = (await import("../lead/lead.model.js")).default;
+    const open1 = await Lead.create({ name: "Open 1", ownerId: manager1._id, clientType: "residential", status: "new" });
+    const open2 = await Lead.create({
+      name: "Open 2",
+      ownerId: manager1._id,
+      clientType: "residential",
+      status: "contacted",
+    });
+
+    const response = await adminAgent
+      .patch(`/api/v1/users/${manager1._id}/deactivate`)
+      .send({ reassignLeadsTo: String(sales1._id) });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.isActive).toBe(false);
+
+    expect((await Lead.findById(open1._id)).ownerId.toString()).toBe(String(sales1._id));
+    expect((await Lead.findById(open2._id)).ownerId.toString()).toBe(String(sales1._id));
+  });
+
+  it("leaves won/lost leads untouched — they're never reassigned and never block deactivation", async () => {
+    const Lead = (await import("../lead/lead.model.js")).default;
+    const won = await Lead.create({ name: "Won", ownerId: manager1._id, clientType: "residential", status: "won" });
+    const lost = await Lead.create({ name: "Lost", ownerId: manager1._id, clientType: "residential", status: "lost" });
+
+    // No reassignLeadsTo supplied at all — should succeed since these two
+    // don't count as "active".
+    const response = await adminAgent.patch(`/api/v1/users/${manager1._id}/deactivate`);
+
+    expect(response.status).toBe(200);
+    expect((await Lead.findById(won._id)).ownerId.toString()).toBe(String(manager1._id));
+    expect((await Lead.findById(lost._id)).ownerId.toString()).toBe(String(manager1._id));
+  });
+
+  it("rejects a reassignLeadsTo that doesn't match an existing user", async () => {
+    const Lead = (await import("../lead/lead.model.js")).default;
+    await Lead.create({ name: "Open 1", ownerId: manager1._id, clientType: "residential", status: "new" });
+
+    const response = await adminAgent
+      .patch(`/api/v1/users/${manager1._id}/deactivate`)
+      .send({ reassignLeadsTo: "000000000000000000000001" });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("requires BOTH team and lead reassignment when the person has both, naming both in the rejection", async () => {
+    const Lead = (await import("../lead/lead.model.js")).default;
+    const teamResponse = await adminAgent
+      .post("/api/v1/teams")
+      .send({ name: "Sales Team", headManagerId: manager1._id });
+    await Lead.create({ name: "Open 1", ownerId: manager1._id, clientType: "residential", status: "new" });
+
+    const teamOnly = await adminAgent
+      .patch(`/api/v1/users/${manager1._id}/deactivate`)
+      .send({ reassignTeamsTo: { [teamResponse.body.data._id]: admin._id } });
+    expect(teamOnly.status).toBe(400);
+    expect(teamOnly.body.message).toContain("active lead");
+
+    const both = await adminAgent
+      .patch(`/api/v1/users/${manager1._id}/deactivate`)
+      .send({
+        reassignTeamsTo: { [teamResponse.body.data._id]: admin._id },
+        reassignLeadsTo: String(sales1._id),
+      });
+
+    expect(both.status).toBe(200);
+    expect(both.body.data.isActive).toBe(false);
+  });
+
+  it("never blocks reactivating a team head — only deactivate has any guard", async () => {
     await adminAgent.post("/api/v1/teams").send({ name: "Sales Team", headManagerId: manager1._id });
 
-    // Deactivated directly at the model layer (bypassing the guard) to set
-    // up a scenario the guard itself would never otherwise allow, purely to
-    // prove reactivate has no guard of its own either.
+    // Deactivated directly at the model layer (bypassing the deactivate
+    // flow entirely) to set up a scenario that flow would never otherwise
+    // allow, purely to prove reactivate has no guard of its own either.
     const User = (await import("./user.model.js")).default;
     await User.findByIdAndUpdate(manager1._id, { isActive: false });
 
@@ -599,6 +766,13 @@ describe("DELETE /users/:id — guarded hard-delete (§7.28, 2026-07-30)", () =>
         ownerId: String(sales1._id),
       });
     expect(leadResponse.status).toBe(201);
+
+    // Closed (won), not left "active" — a still-open lead would now require
+    // reassignment before deactivation (§7.31), which would move this
+    // lead's ownerId away from sales1 and defeat the point of this test
+    // (proving a lead that still references the since-deleted user resolves
+    // gracefully, not that it gets reassigned away first).
+    await adminAgent.patch(`/api/v1/leads/${leadResponse.body.data._id}/status`).send({ status: "won" });
 
     await adminAgent.patch(`/api/v1/users/${sales1._id}/deactivate`);
 

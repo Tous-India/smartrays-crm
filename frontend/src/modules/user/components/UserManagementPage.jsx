@@ -1,16 +1,25 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Table, Tag, Button, Space, Popconfirm, Tooltip, Typography, Select, App } from "antd";
+import { Table, Tag, Button, Space, Tooltip, Typography, Select, App } from "antd";
 import { EditOutlined, LockOutlined, StopOutlined, CheckCircleOutlined, DeleteOutlined } from "@ant-design/icons";
 import useUsers from "../hooks/useUsers";
 import useTeams from "../../team/hooks/useTeams";
+import useUserDirectory from "../../../hooks/useUserDirectory";
 import useSessionStore from "../../../store/sessionStore";
 import { ROUTE_PATHS } from "../../../constants/routePaths.constants";
 import { USER_ROLES, USER_ROLE_LABELS } from "../constants/user.constants";
-import { createUser, updateUser, deactivateUser, reactivateUser, deleteUser } from "../api/userApi";
+import {
+  createUser,
+  updateUser,
+  deactivateUser,
+  reactivateUser,
+  deleteUser,
+  getDeactivationImpact,
+} from "../api/userApi";
 import UserFormModal from "./UserFormModal";
 import AdminResetPasswordModal from "./AdminResetPasswordModal";
 import DeleteUserModal from "./DeleteUserModal";
+import DeactivationReassignModal from "./DeactivationReassignModal";
 
 const { Title } = Typography;
 
@@ -24,7 +33,7 @@ const { Title } = Typography;
  * whatever `GET /users` returns, no client-side filtering by role.
  */
 function UserManagementPage() {
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const currentUser = useSessionStore((state) => state.user);
   const isAdmin = currentUser?.role === "admin";
 
@@ -43,6 +52,7 @@ function UserManagementPage() {
 
   const { users, isLoading, refetch } = useUsers(filters);
   const { teams } = useTeams();
+  const { users: userDirectory } = useUserDirectory();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formMode, setFormMode] = useState("create");
   const [editingUser, setEditingUser] = useState(null);
@@ -50,6 +60,9 @@ function UserManagementPage() {
   const [resetPasswordTarget, setResetPasswordTarget] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [reassignTarget, setReassignTarget] = useState(null);
+  const [reassignImpact, setReassignImpact] = useState(null);
+  const [isReassigning, setIsReassigning] = useState(false);
 
   function openCreateForm() {
     setFormMode("create");
@@ -81,17 +94,63 @@ function UserManagementPage() {
     }
   }
 
-  async function handleDeactivate(user) {
+  async function handleDeactivate(user, reassignments) {
     try {
-      await deactivateUser(user._id);
+      await deactivateUser(user._id, reassignments);
       message.success(`${user.name} deactivated`);
       refetch();
     } catch (error) {
-      // Surfaces the backend's team-head guard message verbatim (§7.28,
-      // "Cannot deactivate: this person leads the following team(s)...")
-      // rather than a generic failure — the admin needs to know exactly
-      // which team(s) to reassign before retrying.
+      // Surfaces the backend's guard message verbatim (§7.31, "Cannot
+      // deactivate: this person leads the following team(s) needing a new
+      // head...") rather than a generic failure — this can still fire even
+      // after the impact check below, e.g. a race where something changed
+      // between checking impact and confirming.
       message.error(error.response?.data?.message || "Failed to deactivate user");
+    }
+  }
+
+  /**
+   * Clicking Deactivate always checks impact first (§7.31, 2026-07-31 — a
+   * reversal of the earlier hard-block guard, §7.28). Nothing to reassign →
+   * the exact same plain confirm this always showed. Something to
+   * reassign → `DeactivationReassignModal` instead of the confirm, and
+   * `handleDeactivate` isn't called until that modal's own submit provides
+   * the reassignment info.
+   */
+  async function handleDeactivateClick(user) {
+    const response = await getDeactivationImpact(user._id);
+    const impact = response.data.data;
+
+    if (impact.teamsLed.length === 0 && impact.ownedLeadsCount === 0) {
+      modal.confirm({
+        title: `Deactivate ${user.name}?`,
+        okText: "Deactivate",
+        okButtonProps: { danger: true },
+        onOk: () => handleDeactivate(user),
+      });
+      return;
+    }
+
+    setReassignTarget(user);
+    setReassignImpact(impact);
+  }
+
+  async function handleReassignSubmit(reassignments) {
+    setIsReassigning(true);
+
+    try {
+      await deactivateUser(reassignTarget._id, reassignments);
+      message.success(`${reassignTarget.name} deactivated`);
+      setReassignTarget(null);
+      setReassignImpact(null);
+      refetch();
+    } catch (error) {
+      // Left open on failure (e.g. a race between the impact check and this
+      // submit) — the same verbatim-guard-message surfacing as the plain
+      // no-reassignment path, so the admin sees exactly what's still wrong.
+      message.error(error.response?.data?.message || "Failed to deactivate user");
+    } finally {
+      setIsReassigning(false);
     }
   }
 
@@ -172,14 +231,16 @@ function UserManagementPage() {
               </Tooltip>
             )}
             {isAdmin && user.isActive && user._id !== currentUser?._id && (
-              <Popconfirm
-                title={`Deactivate ${user.name}?`}
-                onConfirm={() => handleDeactivate(user)}
-              >
-                <Tooltip title="Deactivate">
-                  <Button danger type="text" size="small" icon={<StopOutlined />} aria-label="Deactivate" />
-                </Tooltip>
-              </Popconfirm>
+              <Tooltip title="Deactivate">
+                <Button
+                  danger
+                  type="text"
+                  size="small"
+                  icon={<StopOutlined />}
+                  aria-label="Deactivate"
+                  onClick={() => handleDeactivateClick(user)}
+                />
+              </Tooltip>
             )}
             {isAdmin && !user.isActive && (
               <Tooltip title="Reactivate">
@@ -279,6 +340,19 @@ function UserManagementPage() {
         onCancel={() => setDeleteTarget(null)}
         onSubmit={handleDelete}
         isSubmitting={isDeleting}
+      />
+
+      <DeactivationReassignModal
+        open={Boolean(reassignTarget)}
+        user={reassignTarget}
+        impact={reassignImpact}
+        users={userDirectory}
+        onCancel={() => {
+          setReassignTarget(null);
+          setReassignImpact(null);
+        }}
+        onSubmit={handleReassignSubmit}
+        isSubmitting={isReassigning}
       />
     </div>
   );

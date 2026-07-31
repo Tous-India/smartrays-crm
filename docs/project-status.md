@@ -1487,3 +1487,30 @@ resolved while Phase 0 is underway.
   live via a real browser session (Type dropdown shows the three seeded defaults, a team created
   and saved with a selected type persisted correctly). `backend/README.md`, `frontend/README.md`,
   and `.context/final-plan.md` (new §7.30) updated.
+- **2026-07-31** — Reworked the Deactivate flow (§7.31) — a genuine reversal of the earlier
+  hard-block team-head guard (§7.28): instead of refusing to deactivate a team head outright, the
+  admin can now reassign in the same request. Scope grew beyond teams too — a lead owner's
+  still-open leads (not won/lost) now also need a new owner before deactivation. New `GET
+  /users/:id/deactivation-impact` (what needs reassigning: led teams with member counts, active
+  lead count); `PATCH /users/:id/deactivate`'s body now optionally accepts
+  `{ reassignTeamsTo, reassignLeadsTo }` — everything required must be present and valid (each
+  new head checked via the existing manager/admin rule, the new lead owner confirmed to exist)
+  before anything is written, then applied in order: team heads, lead owners, deactivation.
+  **Checked, not assumed, whether Mongo transactions were available** — the dev/test database
+  (mongodb-memory-server, no replica set) doesn't support them, only production Atlas does, so a
+  validate-everything-first-then-apply-in-order approach was used instead of a transaction that
+  would've broken the whole test suite for this feature. Frontend: clicking Deactivate now
+  checks impact first — nothing to reassign shows the exact same plain confirm as before (via
+  `App.useApp()`'s `modal.confirm`, replacing the old `Popconfirm`, since an async check has to
+  run before there's anything to confirm); something to reassign opens a new
+  `DeactivationReassignModal` (a `Select` per led team, plus a lead-owner `Select` when needed,
+  submission blocked until every picker is filled). 12 new backend tests (one existing hard-delete
+  test needed its own lead fixture changed to a closed status, since an open one would now
+  correctly block that test's own deactivate step); full backend suite passes (same pre-existing,
+  unrelated `leave.test.js` date-boundary failures). 6 new frontend tests; full frontend suite
+  passes (same pre-existing flaky tests); `npm run build` succeeds. Verified live via a real
+  browser session — created a temporary employee and a temporary open lead so a real team head
+  had both a team and an active lead needing reassignment, drove the full modal flow, confirmed
+  in the database that the team's head and the lead's owner both actually changed and the person
+  was deactivated, then restored the original state. `backend/README.md`, `frontend/README.md`,
+  and `.context/final-plan.md` (§7.0b extended, new §7.31) updated.

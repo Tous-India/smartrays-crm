@@ -229,6 +229,9 @@ genuinely compact enough to be useful at a glance.
 - **API surface:** `/users/dropdown`, `/users` (list), `/users/:id` (get/update),
   `/users/:id/deactivate`, `/users/:id/reactivate`, `/users/:id/manager` — full list at §7.0b.
   **Added 2026-07-30 (§7.28):** `DELETE /users/:id` — guarded, permanent hard-delete.
+  **Added 2026-07-31 (§7.31):** `GET /users/:id/deactivation-impact` — what needs reassigning
+  before deactivation; `PATCH /users/:id/deactivate`'s body now optionally accepts
+  `{ reassignTeamsTo, reassignLeadsTo }`.
 - **Permission requirements:** `users.view_team`/`view_all` for list/get-others; account-
   lifecycle actions (`deactivate`/`reactivate`/`manager`/**`delete`**) are `requireAdmin`,
   matching how account creation itself is gated in `auth` (§7.0).
@@ -242,9 +245,10 @@ genuinely compact enough to be useful at a glance.
   create/update/reassign.
 - **Known deviations:** none from the ask — `POST /auth/register` remains the sole HTTP entry
   point for account creation; no `POST /users` was added (see §7.0b for why).
-- **Test coverage:** 50 tests (31 from the original build + 2 for `baseSalary` §7.7 + 8 for the
+- **Test coverage:** 62 tests (31 from the original build + 2 for `baseSalary` §7.7 + 8 for the
   team-head deactivation guard §7.28 + 5 for the 2026-07-30 hard-delete addition below, + 4 for
-  the `teamId` filter). Found and fixed one real bug during the original build: a plain object
+  the `teamId` filter + 12 for the 2026-07-31 guided-reassignment rework, §7.31 below). Found and
+  fixed one real bug during the original build: a plain object
   spread in `getUserById` let the scope filter's `_id` key silently clobber the explicit
   `_id: targetId` constraint, so a manager could fetch an unaffiliated user's record instead of
   getting the expected 404 — fixed with `$and` instead of a spread. Caught by a test.
@@ -268,6 +272,26 @@ so there's nothing to fix up there. See `backend/README.md`'s User Management se
 full guard write-up and `frontend/README.md`'s "User Management Action column rework" section for
 the UI side (icon-only Deactivate/Reactivate, a Delete icon shown only on Inactive rows, a
 dedicated confirmation modal requiring a reason).
+
+**Deactivate reworked to guided reassignment (§7.31, 2026-07-31) — a genuine reversal of the
+2026-07-30 team-head hard-block guard (§7.28), not a variation on it.** That guard simply
+refused to deactivate a team head outright, naming the team(s) and requiring the admin to go
+reassign elsewhere first, then retry the exact same deactivate call. Now `PATCH /users/:id/
+deactivate` does the reassignment itself, in the same request — and the scope grew beyond teams
+too: a lead owner's still-open Leads (`status` not `won`/`lost`) now also need a new owner before
+deactivation, not just a team's head. A new `GET /users/:id/deactivation-impact` tells the
+frontend what's needed (`teamsLed` with member counts, `ownedLeadsCount`) so it can show a
+reassignment modal before the final confirm rather than a hard rejection after clicking. With
+nothing to reassign, deactivation behaves exactly as it always did — this only changes the path
+for someone who currently leads a team or owns open leads. **Checked, not assumed, whether to
+wrap the reassignment + deactivation in a Mongo transaction:** this app's dev/test database
+(`mongodb-memory-server`, standalone, no replica set) doesn't support multi-document transactions
+at all, only the production Atlas cluster does — so validate-everything-before-writing-anything,
+then apply in a fixed order (team heads, lead owners, deactivation), was used instead of a
+transaction that would break the entire test suite for this feature. See `backend/README.md`'s
+User Management section for the full guard write-up and `frontend/README.md`'s "Deactivate
+reworked to guided reassignment" section for the UI side (`DeactivationReassignModal.jsx`, one
+`Select` per led team plus a single lead-owner `Select` when needed).
 
 ##### Leads (§7.1)
 - **Data model:** `Lead`, `LeadCall`, `LeadSource` — §6.2.
