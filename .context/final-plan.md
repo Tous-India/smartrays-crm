@@ -3690,6 +3690,88 @@ conflicted, while still mirroring its storage/seeding pattern where they didn't.
 **Known deviations:** the two deliberate divergences from LeadSource stated above (admin CRUD,
 real validation) — both confirmed with the user before building, not assumed.
 
+### 7.32 Single User/Employee Detail Page (2026-07-31)
+
+✅ **Built** — the first dedicated detail view for Users, consolidating data currently scattered
+across Attendance, Leave, Teams, Leads, Payroll, and Permissions onto one page, reusing every
+underlying endpoint/hook rather than duplicating logic.
+
+**Route:** `/settings/users/:id` (`ROUTE_PATHS.USER_DETAIL`), a real standalone route (not a
+`SettingsPage` tab). Clicking a user row in User Management's table navigates here (`onRow`/
+`onCell` click-through pattern copied from `LeadsTable.jsx`, stopping propagation on the Actions
+column). **Both paths kept, not one replacing the other:** the list's own quick Edit modal still
+works exactly as before; the detail page is an additional, fuller view, and its own Edit button
+opens the identical `UserFormModal`.
+
+**Shared lifecycle extraction (eliminates duplication, not just button markup):**
+- **`useUserLifecycleActions({ refetch, onDeleted })`** (new hook, no JSX) — encapsulates every
+  create/edit/reset-password/guarded-deactivate-with-reassignment/reactivate/guarded-hard-delete
+  handler and its modal-open state. `onDeleted` (optional) is called instead of `refetch()` after
+  a delete — the detail page uses it to navigate back to the list, since there's nothing left on
+  this page to refetch.
+- **`<UserLifecycleModals actions={actions} userDirectory={userDirectory} />`** (new component) —
+  renders the four modals (`UserFormModal`, `AdminResetPasswordModal`, `DeleteUserModal`,
+  `DeactivationReassignModal`) wired to that hook's state.
+- **`UserManagementPage.jsx` itself was refactored to use both**, replacing what had been its own
+  copy of this logic — the list page and the detail page now share one implementation instead of
+  carrying two copies that could drift.
+- **`UserActionButtons.jsx`** (new, extracted from the list's previously-inline Actions column) —
+  the exact same Edit/Reset Password/Deactivate/Reactivate/Delete icon+Tooltip buttons, same
+  `aria-label`s, used by both the list's Actions column and the detail page's header.
+
+**Sections built, each in its own `WidgetCard`-based card (§7.x Dashboard-widget isolation
+pattern reused directly, cross-module import — not a second shell built) so one section's fetch
+failing never blanks the rest of the page:**
+
+| Card | Reuses |
+|---|---|
+| Header | `UserActionButtons`, role/status labels already used by the list table |
+| Basic Info | `getUser` (new thin wrapper over an endpoint that already existed); baseSalary intentionally omitted — see below |
+| Attendance Summary | `getMyAttendance`/`getTeamAttendance` + `AttendanceSummaryStats`'s own summary calc, scoped client-side to one employee (self-view uses `getMyAttendance` directly; viewing someone else fetches team-wide and filters, since `GET /attendance/team` has no `employeeId` filter) |
+| Leave | `useLeaveBalance(user._id)` → `GET /leave/balance?employeeId=` |
+| Team | `useTeams()` (fetched once at the page level, passed down — an infrequently-changing reference list, same treatment `UserManagementPage` already gives it), derives led-team vs. member-of-team client-side |
+| Owned Leads (sales_associate/manager only) | `listLeads({ owner: user._id })`, filtered client-side to exclude `["won", "lost"]` — `GET /leads/count` only supports one exact status match, not a `$nin` |
+| Permissions | `getPermissionRegistry` + `getUserPermissions` + `getRoleTemplate` in parallel, diffed client-side to a compact override summary (not the full matrix); "Manage overrides" links to the new `?userId=` deep link below |
+| Payroll History (admin-only) | `listPayroll({ scope: "all" })` (no month, unlike `PayrollStatusWidget`'s single-month fetch), filtered client-side by `employeeId` — `GET /payroll` has no `employeeId` filter at all |
+
+**Permissions page deep link (small addition, as scoped):** `PermissionManagementPage.jsx` now
+reads `?userId=` via `useSearchParams()`, defaults `activeKey` to the "User Overrides" tab when
+present, and passes it to `UserOverridesTab` as `initialUserId` (a `useState` initializer, not
+`useEffect`-synced, so a later prop change never yanks the picker away from a manually-selected
+user). Adding `useSearchParams()` broke `PermissionManagementPage.test.jsx` in its entirety (all 8
+tests — that file had never needed a `<MemoryRouter>` wrapper before); fixed by wrapping every
+render call in a `renderPage()` helper.
+
+**baseSalary asked, not assumed:** `User.baseSalary`'s `select: false` schema default means no
+existing endpoint anywhere in the app actually returns a real user's stored salary — the Basic
+Info card can't show a real figure without a small backend change. Asked the user; **confirmed:
+frontend only, omit the real salary for now**, since the deploy instruction only covered frontend.
+
+**Two real, pre-existing bugs found and fixed along the way, neither part of the original ask:**
+- **dayjs object vs. formatted-string API param mismatch** — the Attendance card initially passed
+  a raw `dayjs()` object straight to `getMyAttendance`/`getTeamAttendance`, which axios serializes
+  to a full ISO string the backend's month parser rejects with 400 (found via a live smoke test,
+  not the unit suite, since the mocked API doesn't care what shape its argument is). Fixed by
+  keeping both a `CURRENT_MONTH` (dayjs object, for `AttendanceSummaryStats`'s real dayjs-method
+  calls) and `CURRENT_MONTH_STRING = CURRENT_MONTH.format("YYYY-MM")` (string, for the two API
+  calls) — matching `CheckInOutWidget.jsx`'s own established convention.
+- **`useLeaveBalance` had no `.catch()` at all** — unlike its sibling attendance hooks, a real
+  failure left `balance` stuck at `null` with no way to distinguish "still loading" from "failed,"
+  and produced a genuine unhandled-rejection warning. Fixed by adding `error` state + `.catch()`;
+  the hook now returns `{ balance, isLoading, error }`. `LeaveBalanceCard.jsx` (the one other
+  consumer) is unaffected — it only destructures `{ balance, isLoading }`.
+
+**Testing:** 12 new tests in `UserDetailPage.test.jsx` (independent section-failure isolation,
+permission-gating per section, deep-link href, the guarded-deactivate/delete flows via the shared
+hook); 2 new tests in `UserManagementPage.test.jsx` (row-click navigation, action-button clicks
+inside a row don't also navigate — both scoped via `tr[data-row-key="…"]` to disambiguate
+duplicate visible text across rows); 2 new tests in `PermissionManagementPage.test.jsx` (deep-link
+pre-selects the tab/user). Full frontend suite re-run: no new regressions, only the
+already-established baseline of pre-existing flaky AntD-Select-heavy tests in untouched files.
+`npm run build` succeeds. Live-verified end-to-end in a real browser: deep link, full guarded
+deactivate→reactivate cycle (a real `modal.confirm()` needs an actual follow-up click on the
+rendered dialog, unlike the mocked version in unit tests), self-view section omissions.
+
 ---
 
 ## 8. Frontend Route Map (indicative)

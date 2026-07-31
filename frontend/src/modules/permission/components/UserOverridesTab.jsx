@@ -18,11 +18,18 @@ import PermissionMatrix from "./PermissionMatrix";
  * other picker in this app already uses without issue, so there's no
  * reason to introduce a second, heavier search mechanism just for this
  * one picker.
+ *
+ * `initialUserId` (added 2026-07-31, §7.32) — preselects a user on mount,
+ * for `PermissionManagementPage`'s own `?userId=` deep-link. Only ever
+ * applied once: this is deliberately `useState`'s initializer, not a
+ * `useEffect` synced to the prop, so a later change to the prop (there
+ * isn't one today, but there's no reason to fight it if one existed) never
+ * yanks the picker away from whatever the admin has since selected by hand.
  */
-function UserOverridesTab({ registry }) {
+function UserOverridesTab({ registry, initialUserId = null }) {
   const { message } = App.useApp();
   const { users } = useUserDirectory();
-  const [selectedUserId, setSelectedUserId] = useState(null);
+  const [selectedUserId, setSelectedUserId] = useState(initialUserId);
   const [permissions, setPermissions] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);

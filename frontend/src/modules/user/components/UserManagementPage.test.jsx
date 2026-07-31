@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, within, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { message } from "antd";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Routes, Route } from "react-router-dom";
 import UserManagementPage from "./UserManagementPage";
 import useSessionStore from "../../../store/sessionStore";
 import * as userApi from "../api/userApi";
@@ -107,6 +107,41 @@ describe("UserManagementPage", () => {
     // Sales One's manager column resolves to Manager One's name.
     const salesRow = screen.getByText("Sales One").closest("tr");
     expect(within(salesRow).getByText("Manager One")).toBeInTheDocument();
+  });
+
+  it("navigates to the User Detail page when a row is clicked (§7.32)", async () => {
+    render(
+      <MemoryRouter initialEntries={["/settings/users"]}>
+        <Routes>
+          <Route path="/settings/users" element={<UserManagementPage />} />
+          <Route path="/settings/users/:id" element={<div>User Detail Page</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+    await screen.findAllByText("Manager One");
+
+    const managerRow = document.querySelector('tr[data-row-key="user-1"]');
+    await userEvent.click(within(managerRow).getByText("Manager One"));
+
+    expect(await screen.findByText("User Detail Page")).toBeInTheDocument();
+  });
+
+  it("does not navigate when an action button inside the row is clicked (§7.32)", async () => {
+    render(
+      <MemoryRouter initialEntries={["/settings/users"]}>
+        <Routes>
+          <Route path="/settings/users" element={<UserManagementPage />} />
+          <Route path="/settings/users/:id" element={<div>User Detail Page</div>} />
+        </Routes>
+      </MemoryRouter>
+    );
+    await screen.findAllByText("Manager One");
+
+    const managerRow = document.querySelector('tr[data-row-key="user-1"]');
+    await userEvent.click(within(managerRow).getByRole("button", { name: "Edit" }));
+
+    expect(screen.queryByText("User Detail Page")).not.toBeInTheDocument();
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
   });
 
   it("shows a New User button for admin and opens the create form", async () => {

@@ -1,9 +1,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, within, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { message } from "antd";
 import PermissionManagementPage from "./PermissionManagementPage";
 import * as permissionApi from "../api/permissionApi";
+
+// `useSearchParams` (added 2026-07-31, §7.32 — the `?userId=` deep-link)
+// needs a Router context that wasn't required here before.
+function renderPage(initialEntries = ["/settings/permissions"]) {
+  return render(
+    <MemoryRouter initialEntries={initialEntries}>
+      <PermissionManagementPage />
+    </MemoryRouter>
+  );
+}
 
 vi.mock("antd", async (importOriginal) => {
   const actual = await importOriginal();
@@ -62,7 +73,7 @@ describe("PermissionManagementPage", () => {
       data: { data: { role: "admin", permissions: {} } },
     });
 
-    render(<PermissionManagementPage />);
+    renderPage();
 
     expect(await screen.findByText("leads")).toBeInTheDocument();
     expect(screen.getByText("payments")).toBeInTheDocument();
@@ -77,7 +88,7 @@ describe("PermissionManagementPage", () => {
     it("defaults to Manager (not Admin — admin bypasses all permission checks, so its template is meaningless)", async () => {
       permissionApi.getRoleTemplate.mockResolvedValue({ data: { data: MANAGER_TEMPLATE } });
 
-      render(<PermissionManagementPage />);
+      renderPage();
 
       await waitFor(() => {
         expect(permissionApi.getRoleTemplate).toHaveBeenCalledWith("manager");
@@ -91,7 +102,7 @@ describe("PermissionManagementPage", () => {
         Promise.resolve({ data: { data: role === "manager" ? MANAGER_TEMPLATE : SALES_TEMPLATE } })
       );
 
-      render(<PermissionManagementPage />);
+      renderPage();
       await waitFor(() => expect(permissionApi.getRoleTemplate).toHaveBeenCalledWith("manager"));
 
       // Switch to Executive (displayed label for the `employee` role) via
@@ -112,7 +123,7 @@ describe("PermissionManagementPage", () => {
         data: { data: { ...MANAGER_TEMPLATE, permissions: { leads: { view: true, create: true, delete: true } } } },
       });
 
-      render(<PermissionManagementPage />);
+      renderPage();
       await screen.findByText("leads");
 
       await userEvent.click(screen.getByRole("checkbox", { name: "leads delete" }));
@@ -132,7 +143,7 @@ describe("PermissionManagementPage", () => {
     it("excludes admin from the user picker (2026-07-31 fix — same reasoning as Role Defaults' role exclusion)", async () => {
       permissionApi.getRoleTemplate.mockResolvedValue({ data: { data: { role: "admin", permissions: {} } } });
 
-      render(<PermissionManagementPage />);
+      renderPage();
       await screen.findByText("leads");
 
       await userEvent.click(screen.getByRole("tab", { name: "Individual User Overrides" }));
@@ -155,7 +166,7 @@ describe("PermissionManagementPage", () => {
         data: { data: { permissions: { leads: { view: true, create: true } } } },
       });
 
-      render(<PermissionManagementPage />);
+      renderPage();
       await screen.findByText("leads");
 
       await userEvent.click(screen.getByRole("tab", { name: "Individual User Overrides" }));
@@ -196,7 +207,7 @@ describe("PermissionManagementPage", () => {
         data: { data: { permissions: { leads: { view: true, create: true } } } },
       });
 
-      render(<PermissionManagementPage />);
+      renderPage();
       await screen.findByText("leads");
 
       await userEvent.click(screen.getByRole("tab", { name: "Individual User Overrides" }));
@@ -236,7 +247,7 @@ describe("PermissionManagementPage", () => {
         data: { data: { permissions: { leads: { view: true, create: true } } } },
       });
 
-      render(<PermissionManagementPage />);
+      renderPage();
       await screen.findByText("leads");
 
       await userEvent.click(screen.getByRole("tab", { name: "Individual User Overrides" }));
@@ -260,6 +271,20 @@ describe("PermissionManagementPage", () => {
       });
       expect(message.success).toHaveBeenCalledWith("Reset to the role's current default");
       expect(await screen.findByRole("checkbox", { name: "leads create" })).toBeChecked();
+    });
+
+    it("deep-links straight to this tab with a user preselected via ?userId= (§7.32)", async () => {
+      permissionApi.getRoleTemplate.mockResolvedValue({ data: { data: { role: "admin", permissions: {} } } });
+      permissionApi.getUserPermissions.mockResolvedValue({ data: { data: { leads: { view: true } } } });
+
+      renderPage(["/settings/permissions?userId=user-1"]);
+
+      // Lands on User Overrides directly — Role Defaults' own content
+      // ("leads" as a row) is NOT what should appear first.
+      expect(await screen.findByText("Manager One (Manager)")).toBeInTheDocument();
+      await waitFor(() => {
+        expect(permissionApi.getUserPermissions).toHaveBeenCalledWith("user-1");
+      });
     });
   });
 });

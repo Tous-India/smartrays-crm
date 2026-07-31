@@ -1514,3 +1514,25 @@ resolved while Phase 0 is underway.
   in the database that the team's head and the lead's owner both actually changed and the person
   was deactivated, then restored the original state. `backend/README.md`, `frontend/README.md`,
   and `.context/final-plan.md` (§7.0b extended, new §7.31) updated.
+- **2026-07-31** — Built the first Single Employee/User Detail Page (§7.32), consolidating data
+  previously scattered across Attendance, Leave, Teams, Leads, Payroll, and Permissions onto one
+  page at the new route `/settings/users/:id`. A user-management table row now navigates here on
+  click; the list's existing quick Edit modal is unchanged and still works — this page is an
+  additional view, not a replacement. Every section (Header, Basic Info, Attendance Summary,
+  Leave, Team, Owned Leads, Permissions, Payroll History) is its own independently-loading/
+  erroring card (same isolation contract as a Dashboard widget), permission-gated, and reuses an
+  existing endpoint or hook rather than duplicating logic — including a genuinely shared
+  `useUserLifecycleActions`/`UserLifecycleModals` extraction that `UserManagementPage.jsx` itself
+  was refactored to use too, eliminating what would otherwise have been a second copy of its
+  create/edit/reset-password/guarded-deactivate/reactivate/delete logic. Added a small `?userId=`
+  deep-link addition to the Permissions page so the new Permissions card's "Manage overrides"
+  button lands directly on the right user's Individual Overrides tab. Found and fixed two
+  pre-existing bugs along the way: a dayjs-object-vs-formatted-string mismatch that made the
+  Attendance card's API calls 400, and a missing `.catch()` in `useLeaveBalance` that left failed
+  fetches indistinguishable from still-loading. `baseSalary` asked, not assumed: no existing
+  endpoint returns a real value (`select: false` everywhere) and the user confirmed frontend-only
+  for now rather than a backend change. 12 new page tests plus 2 in `UserManagementPage.test.jsx`
+  and 2 in `PermissionManagementPage.test.jsx`; full frontend suite passes (same pre-existing
+  flaky tests); `npm run build` succeeds. Verified live via a real browser session: deep link,
+  full deactivate→reactivate cycle, self-view section omissions. `frontend/README.md` and
+  `.context/final-plan.md` (new §7.32) updated.

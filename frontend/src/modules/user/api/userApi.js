@@ -12,6 +12,14 @@ export function listUsers(filters) {
   return apiClient.get("/users", { params: filters });
 }
 
+// GET /users/:id (§7.32) — already existed for the roster's own scoping
+// rules (self always allowed, otherwise view_team/view_all), just never had
+// a frontend wrapper before since UserManagementPage only ever needed the
+// list endpoint. Backs the new User Detail page's header + Basic Info card.
+export function getUser(id) {
+  return apiClient.get(`/users/${id}`);
+}
+
 export function updateUser(id, payload) {
   return apiClient.patch(`/users/${id}`, payload);
 }

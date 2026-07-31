@@ -26,6 +26,7 @@ import PaymentsPage from "../pages/PaymentsPage";
 import AmcPage from "../pages/AmcPage";
 import ReportsPage from "../pages/ReportsPage";
 import SettingsPage from "../pages/SettingsPage";
+import UserDetailPage from "../pages/UserDetailPage";
 import PortalHomePage from "../pages/PortalHomePage";
 import NotFoundPage from "../pages/NotFoundPage";
 
@@ -77,6 +78,7 @@ export const router = createBrowserRouter(
           <Route path="settings" element={<Navigate to="settings/users" replace />} />
           <Route path="settings/permissions" element={<SettingsPage />} />
           <Route path="settings/users" element={<SettingsPage />} />
+          <Route path="settings/users/:id" element={<UserDetailPage />} />
           <Route path="settings/teams" element={<SettingsPage />} />
         </Route>
 

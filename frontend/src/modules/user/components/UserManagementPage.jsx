@@ -1,25 +1,15 @@
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { Table, Tag, Button, Space, Tooltip, Typography, Select, App } from "antd";
-import { EditOutlined, LockOutlined, StopOutlined, CheckCircleOutlined, DeleteOutlined } from "@ant-design/icons";
+import { Link, useNavigate } from "react-router-dom";
+import { Table, Tag, Button, Space, Typography, Select } from "antd";
 import useUsers from "../hooks/useUsers";
 import useTeams from "../../team/hooks/useTeams";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import useSessionStore from "../../../store/sessionStore";
 import { ROUTE_PATHS } from "../../../constants/routePaths.constants";
 import { USER_ROLES, USER_ROLE_LABELS } from "../constants/user.constants";
-import {
-  createUser,
-  updateUser,
-  deactivateUser,
-  reactivateUser,
-  deleteUser,
-  getDeactivationImpact,
-} from "../api/userApi";
-import UserFormModal from "./UserFormModal";
-import AdminResetPasswordModal from "./AdminResetPasswordModal";
-import DeleteUserModal from "./DeleteUserModal";
-import DeactivationReassignModal from "./DeactivationReassignModal";
+import useUserLifecycleActions from "../hooks/useUserLifecycleActions";
+import UserLifecycleModals from "./UserLifecycleModals";
+import UserActionButtons from "./UserActionButtons";
 
 const { Title } = Typography;
 
@@ -31,9 +21,14 @@ const { Title } = Typography;
  * everyone, manager sees their own team) is entirely server-side
  * (`user.service.js#resolveVisibleUserFilter`) — this page renders
  * whatever `GET /users` returns, no client-side filtering by role.
+ *
+ * All account-lifecycle logic (create/edit, reset password, guarded
+ * deactivate-with-reassignment, reactivate, guarded hard-delete) and its
+ * modals live in `useUserLifecycleActions`/`UserLifecycleModals` (§7.32) —
+ * shared with the User Detail page rather than a second copy here.
  */
 function UserManagementPage() {
-  const { message, modal } = App.useApp();
+  const navigate = useNavigate();
   const currentUser = useSessionStore((state) => state.user);
   const isAdmin = currentUser?.role === "admin";
 
@@ -53,130 +48,7 @@ function UserManagementPage() {
   const { users, isLoading, refetch } = useUsers(filters);
   const { teams } = useTeams();
   const { users: userDirectory } = useUserDirectory();
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [formMode, setFormMode] = useState("create");
-  const [editingUser, setEditingUser] = useState(null);
-  const [isSubmittingForm, setIsSubmittingForm] = useState(false);
-  const [resetPasswordTarget, setResetPasswordTarget] = useState(null);
-  const [deleteTarget, setDeleteTarget] = useState(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [reassignTarget, setReassignTarget] = useState(null);
-  const [reassignImpact, setReassignImpact] = useState(null);
-  const [isReassigning, setIsReassigning] = useState(false);
-
-  function openCreateForm() {
-    setFormMode("create");
-    setEditingUser(null);
-    setIsFormOpen(true);
-  }
-
-  function openEditForm(user) {
-    setFormMode("edit");
-    setEditingUser(user);
-    setIsFormOpen(true);
-  }
-
-  async function handleSubmitForm(values) {
-    setIsSubmittingForm(true);
-
-    try {
-      if (formMode === "create") {
-        await createUser(values);
-        message.success("User created");
-      } else {
-        await updateUser(editingUser._id, values);
-        message.success("User updated");
-      }
-      setIsFormOpen(false);
-      refetch();
-    } finally {
-      setIsSubmittingForm(false);
-    }
-  }
-
-  async function handleDeactivate(user, reassignments) {
-    try {
-      await deactivateUser(user._id, reassignments);
-      message.success(`${user.name} deactivated`);
-      refetch();
-    } catch (error) {
-      // Surfaces the backend's guard message verbatim (§7.31, "Cannot
-      // deactivate: this person leads the following team(s) needing a new
-      // head...") rather than a generic failure — this can still fire even
-      // after the impact check below, e.g. a race where something changed
-      // between checking impact and confirming.
-      message.error(error.response?.data?.message || "Failed to deactivate user");
-    }
-  }
-
-  /**
-   * Clicking Deactivate always checks impact first (§7.31, 2026-07-31 — a
-   * reversal of the earlier hard-block guard, §7.28). Nothing to reassign →
-   * the exact same plain confirm this always showed. Something to
-   * reassign → `DeactivationReassignModal` instead of the confirm, and
-   * `handleDeactivate` isn't called until that modal's own submit provides
-   * the reassignment info.
-   */
-  async function handleDeactivateClick(user) {
-    const response = await getDeactivationImpact(user._id);
-    const impact = response.data.data;
-
-    if (impact.teamsLed.length === 0 && impact.ownedLeadsCount === 0) {
-      modal.confirm({
-        title: `Deactivate ${user.name}?`,
-        okText: "Deactivate",
-        okButtonProps: { danger: true },
-        onOk: () => handleDeactivate(user),
-      });
-      return;
-    }
-
-    setReassignTarget(user);
-    setReassignImpact(impact);
-  }
-
-  async function handleReassignSubmit(reassignments) {
-    setIsReassigning(true);
-
-    try {
-      await deactivateUser(reassignTarget._id, reassignments);
-      message.success(`${reassignTarget.name} deactivated`);
-      setReassignTarget(null);
-      setReassignImpact(null);
-      refetch();
-    } catch (error) {
-      // Left open on failure (e.g. a race between the impact check and this
-      // submit) — the same verbatim-guard-message surfacing as the plain
-      // no-reassignment path, so the admin sees exactly what's still wrong.
-      message.error(error.response?.data?.message || "Failed to deactivate user");
-    } finally {
-      setIsReassigning(false);
-    }
-  }
-
-  async function handleReactivate(user) {
-    await reactivateUser(user._id);
-    message.success(`${user.name} reactivated`);
-    refetch();
-  }
-
-  async function handleDelete(reason) {
-    setIsDeleting(true);
-
-    try {
-      await deleteUser(deleteTarget._id, reason);
-      message.success(`${deleteTarget.name} permanently deleted`);
-      setDeleteTarget(null);
-      refetch();
-    } catch (error) {
-      // Surfaces the backend's exact guard message (still-active, still a
-      // team head, missing reason) verbatim — same reasoning as
-      // handleDeactivate's error surfacing above.
-      message.error(error.response?.data?.message || "Failed to delete user");
-    } finally {
-      setIsDeleting(false);
-    }
-  }
+  const actions = useUserLifecycleActions({ refetch });
 
   const managerNameById = new Map(users.map((user) => [user._id, user.name]));
 
@@ -203,71 +75,24 @@ function UserManagementPage() {
     {
       title: "Actions",
       key: "actions",
-      render: (_, user) => {
-        const canEdit = isAdmin || user._id === currentUser?._id;
-
-        return (
-          <Space wrap>
-            {canEdit && (
-              <Tooltip title="Edit">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<EditOutlined />}
-                  aria-label="Edit"
-                  onClick={() => openEditForm(user)}
-                />
-              </Tooltip>
-            )}
-            {isAdmin && (
-              <Tooltip title="Reset Password">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<LockOutlined />}
-                  aria-label="Reset Password"
-                  onClick={() => setResetPasswordTarget(user)}
-                />
-              </Tooltip>
-            )}
-            {isAdmin && user.isActive && user._id !== currentUser?._id && (
-              <Tooltip title="Deactivate">
-                <Button
-                  danger
-                  type="text"
-                  size="small"
-                  icon={<StopOutlined />}
-                  aria-label="Deactivate"
-                  onClick={() => handleDeactivateClick(user)}
-                />
-              </Tooltip>
-            )}
-            {isAdmin && !user.isActive && (
-              <Tooltip title="Reactivate">
-                <Button
-                  type="text"
-                  size="small"
-                  icon={<CheckCircleOutlined />}
-                  aria-label="Reactivate"
-                  onClick={() => handleReactivate(user)}
-                />
-              </Tooltip>
-            )}
-            {isAdmin && !user.isActive && (
-              <Tooltip title="Delete">
-                <Button
-                  danger
-                  type="text"
-                  size="small"
-                  icon={<DeleteOutlined />}
-                  aria-label="Delete"
-                  onClick={() => setDeleteTarget(user)}
-                />
-              </Tooltip>
-            )}
-          </Space>
-        );
-      },
+      // `onClick` here (not just on each button) is a belt-and-suspenders
+      // stop against the row's own onRow.onClick navigating away underneath
+      // a button press — AntD renders every button as a real nested
+      // element inside this cell, so a bubbled click reaches the row's
+      // handler unless stopped somewhere in between.
+      onCell: () => ({ onClick: (event) => event.stopPropagation() }),
+      render: (_, user) => (
+        <UserActionButtons
+          user={user}
+          currentUser={currentUser}
+          isAdmin={isAdmin}
+          onEdit={actions.openEditForm}
+          onResetPassword={actions.setResetPasswordTarget}
+          onDeactivateClick={actions.handleDeactivateClick}
+          onReactivate={actions.handleReactivate}
+          onDelete={actions.setDeleteTarget}
+        />
+      ),
     },
   ];
 
@@ -280,7 +105,7 @@ function UserManagementPage() {
         <Space>
           <Link to={ROUTE_PATHS.SETTINGS_PERMISSIONS}>Permissions</Link>
           {isAdmin && (
-            <Button type="primary" onClick={openCreateForm}>
+            <Button type="primary" onClick={actions.openCreateForm}>
               New User
             </Button>
           )}
@@ -317,43 +142,28 @@ function UserManagementPage() {
         />
       </Space>
 
-      <Table rowKey="_id" loading={isLoading} dataSource={users} columns={columns} pagination={{ pageSize: 20 }} />
-
-      <UserFormModal
-        open={isFormOpen}
-        mode={formMode}
-        initialUser={editingUser}
-        onCancel={() => setIsFormOpen(false)}
-        onSubmit={handleSubmitForm}
-        isSubmitting={isSubmittingForm}
+      <Table
+        rowKey="_id"
+        loading={isLoading}
+        dataSource={users}
+        columns={columns}
+        pagination={{ pageSize: 20 }}
+        onRow={(user) => ({
+          onClick: (event) => {
+            // AntD portals dropdown/picker popups to <body>, outside the
+            // row's DOM — same guard LeadsTable's own row-click-to-detail
+            // navigation already uses, reused verbatim rather than a
+            // second copy of this exact check.
+            if (event.target.closest(".ant-select-dropdown, .ant-picker-dropdown, .ant-dropdown, .ant-popover")) {
+              return;
+            }
+            navigate(`/settings/users/${user._id}`);
+          },
+          className: "cursor-pointer",
+        })}
       />
 
-      <AdminResetPasswordModal
-        open={Boolean(resetPasswordTarget)}
-        targetUser={resetPasswordTarget}
-        onCancel={() => setResetPasswordTarget(null)}
-      />
-
-      <DeleteUserModal
-        open={Boolean(deleteTarget)}
-        user={deleteTarget}
-        onCancel={() => setDeleteTarget(null)}
-        onSubmit={handleDelete}
-        isSubmitting={isDeleting}
-      />
-
-      <DeactivationReassignModal
-        open={Boolean(reassignTarget)}
-        user={reassignTarget}
-        impact={reassignImpact}
-        users={userDirectory}
-        onCancel={() => {
-          setReassignTarget(null);
-          setReassignImpact(null);
-        }}
-        onSubmit={handleReassignSubmit}
-        isSubmitting={isReassigning}
-      />
+      <UserLifecycleModals actions={actions} userDirectory={userDirectory} />
     </div>
   );
 }

@@ -1243,6 +1243,61 @@ confirm (or, for a team head, an immediate rejection) — it checks
   lead's `ownerId` both actually changed to the picked users and the person was deactivated —
   then restored the original state and removed the temporary data.
 
+### User Detail Page (`src/pages/UserDetailPage.jsx`, §7.32, 2026-07-31)
+
+New route `/settings/users/:id` (`ROUTE_PATHS.USER_DETAIL`) — the first dedicated detail view for
+a single user, consolidating data scattered across Attendance, Leave, Teams, Leads, Payroll, and
+Permissions onto one page. A user-management table row now navigates here on click (`onRow`/
+`onCell` pattern from `LeadsTable.jsx`); the list's existing quick Edit modal is unchanged and
+still works from the table directly — this page is an *additional* view, not a replacement.
+
+Every section is its own `WidgetCard`-based card (reused cross-module from
+`dashboard/widgets/WidgetCard.jsx`, same isolation contract as a Dashboard widget: one section's
+fetch failing shows only that card's own inline error, never blanks the rest of the page) and is
+permission-gated independently:
+
+| Card | Component | Reuses |
+|---|---|---|
+| Header | `UserActionButtons.jsx` (new, extracted from the list's Actions column) | Same Edit/Reset Password/Deactivate/Reactivate/Delete icon+`Tooltip` buttons and `aria-label`s as `UserManagementPage.jsx` |
+| Basic Info | `UserBasicInfoCard.jsx` | `getUser(id)` (new thin wrapper — the backend endpoint already existed). `baseSalary` intentionally omitted: `User.baseSalary` has `select: false` everywhere, so no endpoint currently returns a real value; asked the user, confirmed frontend-only for now, no backend change made |
+| Attendance Summary | `UserAttendanceSummaryCard.jsx` | `getMyAttendance`/`getTeamAttendance` + `AttendanceSummaryStats`'s summary calc, scoped to one employee client-side (self-view calls `getMyAttendance` directly; viewing someone else fetches team-wide via `getTeamAttendance` and filters, since that endpoint has no `employeeId` param) |
+| Leave | `UserLeaveCard.jsx` | `useLeaveBalance(user._id)` → `GET /leave/balance?employeeId=` |
+| Team | `UserTeamCard.jsx` | `useTeams()` (fetched once at the page level and passed down, same as `UserManagementPage` already does — an infrequently-changing reference list); derives led-team vs. member-of-team client-side |
+| Owned Leads (sales_associate/manager only) | `UserOwnedLeadsCard.jsx` | `listLeads({ owner: user._id })`, filtered client-side to exclude `["won", "lost"]` — `GET /leads/count` only supports one exact status, not a `$nin` |
+| Permissions | `UserPermissionsCard.jsx` | `getPermissionRegistry` + `getUserPermissions` + `getRoleTemplate` fetched in parallel, diffed to a compact override summary (not the full matrix); "Manage overrides" links to `/settings/permissions?userId=` |
+| Payroll History (admin-only) | `UserPayrollHistoryCard.jsx` | `listPayroll({ scope: "all" })`, filtered client-side by `employeeId` — `GET /payroll` has no `employeeId` filter at all |
+
+**Shared lifecycle hook, not a second copy of `UserManagementPage`'s logic:**
+`useUserLifecycleActions({ refetch, onDeleted })` (new hook) holds every create/edit/reset-
+password/guarded-deactivate-with-reassignment/reactivate/guarded-hard-delete handler and its modal
+state; `<UserLifecycleModals actions={...} userDirectory={...} />` (new component) renders the
+four wired modals. `UserManagementPage.jsx` was refactored to use both instead of keeping its own
+copy — this page and the list page now share one implementation.
+
+**Permissions deep link:** `PermissionManagementPage.jsx` now reads `?userId=` via
+`useSearchParams()` and pre-selects the "User Overrides" tab with that user, passed to
+`UserOverridesTab` as `initialUserId` (a `useState` initializer, not `useEffect`-synced, so the
+user can still pick someone else afterward without being yanked back).
+
+**Two pre-existing bugs found and fixed while building this:**
+- A raw `dayjs()` object passed straight to `getMyAttendance`/`getTeamAttendance` serializes to a
+  full ISO string over axios, which the backend's month parser rejects with 400 — fixed by keeping
+  both a `dayjs()` object (for `AttendanceSummaryStats`'s own dayjs-method calls) and a separately
+  formatted `"YYYY-MM"` string (for the actual API calls), matching `CheckInOutWidget.jsx`'s
+  existing convention.
+- `useLeaveBalance` (`modules/leave/hooks/useLeaveBalance.js`) had no `.catch()` at all; a failure
+  left `balance` stuck at `null` with no way to tell "loading" from "failed." Added `error` state;
+  the hook now returns `{ balance, isLoading, error }` (its one other consumer,
+  `LeaveBalanceCard.jsx`, is unaffected since it only destructures `{ balance, isLoading }`).
+
+**Testing:** 12 new tests in `UserDetailPage.test.jsx` (per-section failure isolation, permission-
+gating, deep-link href, guarded deactivate/delete flows), 2 new tests in
+`UserManagementPage.test.jsx` (row-click navigation vs. action-button clicks not double-
+navigating), 2 new tests in `PermissionManagementPage.test.jsx` (deep link pre-selects tab/user).
+Full suite re-run clean (only the pre-existing flaky AntD-Select tests in untouched files);
+`npm run build` succeeds. Live-verified in a real browser: deep link, full deactivate→reactivate
+cycle, self-view section omissions.
+
 ---
 
 ## Env Vars

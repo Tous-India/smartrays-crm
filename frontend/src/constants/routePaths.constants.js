@@ -34,5 +34,10 @@ export const ROUTE_PATHS = {
   SETTINGS_PERMISSIONS: "/settings/permissions",
   SETTINGS_USERS: "/settings/users",
   SETTINGS_TEAMS: "/settings/teams",
+  // A real standalone route (not a SettingsPage tab, unlike the three
+  // above) — the first dedicated User Detail view (§7.32), consolidating
+  // data already scattered across Attendance/Leave/Teams/Leads/Payroll/
+  // Permissions onto one page.
+  USER_DETAIL: "/settings/users/:id",
   PORTAL: "/portal",
 };
