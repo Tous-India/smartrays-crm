@@ -226,10 +226,15 @@ that ordering is moot for `POST` today since there's no colliding `POST /:id` ro
 a WordPress "Get a Quote" form (Forminator's webhook add-on) to post submissions directly into
 Leads. Gated by a shared secret instead of `authenticate`/`authorize`:
 
-- **Auth:** an `X-Webhook-Token` header must match `WEBSITE_LEAD_INTAKE_TOKEN` (see
-  `.env.example`). If that env var is unset, the route refuses every request with `503` rather
-  than accepting unauthenticated writes with no way to lock them down; a wrong token is `401`,
-  identical to a missing one — the response never reveals whether a token is even configured.
+- **Auth:** a shared secret matching `WEBSITE_LEAD_INTAKE_TOKEN` (see `.env.example`), accepted
+  from **either** of two sources (both supported since 2026-07-31, §7.33): the `X-Webhook-Token`
+  header (the original method, for any integration that can set custom headers), or a `?token=`
+  query parameter — added because Forminator's built-in Webhook integration only accepts a plain
+  URL, with no way to attach custom headers. Either one alone is sufficient; if both are present,
+  the header takes precedence. If that env var is unset, the route refuses every request with
+  `503` rather than accepting unauthenticated writes with no way to lock them down; a wrong token
+  (from either source) is `401`, identical to a missing one — the response never reveals whether
+  a token is even configured.
 - **Payload:** the raw Forminator payload, whatever shape it arrives in. There is no fixed,
   knowable set of field ids for the real WordPress form (Forminator auto-generates ids like
   `name-1`/`email-1`/`textarea-1` per form, and they differ per site), so
@@ -277,6 +282,12 @@ recognizable value is submitted (this test previously asserted the `"residential
 correct, which is exactly why the defaulting bug went uncaught — it locked in the wrong behavior
 instead of testing for the right one), a valid explicit `clientType` still saves correctly, and
 an unrecognized `clientType` value also leaves it unset rather than defaulting.
+
+**4 more tests added (§7.33, 2026-07-31)** for the `?token=` query-param auth alternative: a
+request with only the query param (no header) succeeds; a request with the wrong query-param
+value is rejected exactly like a wrong header (`401`); a valid header takes precedence over a
+wrong query param present at the same time. The existing "no token at all" test already covers
+the "neither source present" case unchanged.
 
 ### Live Location Tracking (`/api/v1/location`)
 

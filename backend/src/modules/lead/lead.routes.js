@@ -36,19 +36,25 @@ const leadRouter = Router();
 /**
  * Guards `POST /leads/website-intake` (§7.25) — the one deliberately public,
  * unauthenticated route on this router, so it does NOT use `authenticate`.
- * A shared secret sent as `X-Webhook-Token` is the only gate. Fails closed
- * on both sides: if `WEBSITE_LEAD_INTAKE_TOKEN` isn't configured at all, the
- * route refuses every request (503) rather than silently accepting
- * unauthenticated writes with no way to lock them down; a present-but-wrong
- * token is a 401, same as a missing one — never distinguished, so a caller
- * can't use the response to learn whether a token was even configured.
+ * A shared secret is the only gate, accepted from either of two sources
+ * (§7.33, 2026-07-31): the `X-Webhook-Token` header (the original method,
+ * for any integration that can set custom headers) or a `?token=` query
+ * parameter (added because Forminator's built-in Webhook integration only
+ * accepts a plain URL, with no way to attach custom headers). The header
+ * takes precedence when both are present; either one alone is sufficient.
+ * Fails closed on both sides: if `WEBSITE_LEAD_INTAKE_TOKEN` isn't
+ * configured at all, the route refuses every request (503) rather than
+ * silently accepting unauthenticated writes with no way to lock them down;
+ * a present-but-wrong token is a 401, same as a missing one — never
+ * distinguished, so a caller can't use the response to learn whether a
+ * token was even configured.
  */
 function verifyWebsiteIntakeToken(req, res, next) {
   if (!env.websiteLeadIntakeToken) {
     throw new ApiError(503, "Website lead intake is not configured");
   }
 
-  const providedToken = req.headers["x-webhook-token"];
+  const providedToken = req.headers["x-webhook-token"] || req.query.token;
   if (!providedToken || providedToken !== env.websiteLeadIntakeToken) {
     throw new ApiError(401, "Invalid or missing webhook token");
   }

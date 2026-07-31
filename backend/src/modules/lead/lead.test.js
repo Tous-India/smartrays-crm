@@ -1059,6 +1059,35 @@ describe("Website lead intake webhook (§7.25)", () => {
     expect(response.status).toBe(401);
   });
 
+  // §7.33, 2026-07-31: a `?token=` query param is accepted as an alternative
+  // to the header, since Forminator's built-in Webhook integration only
+  // accepts a plain URL with no way to attach custom headers.
+  it("accepts the token via a ?token= query parameter when no header is sent", async () => {
+    const response = await request(app)
+      .post(`/api/v1/leads/website-intake?token=${VALID_TOKEN}`)
+      .send({ "name-1": "Query Token Lead", "phone-1": "9998887780" });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.name).toBe("Query Token Lead");
+  });
+
+  it("rejects a request with the wrong ?token= query parameter", async () => {
+    const response = await request(app)
+      .post("/api/v1/leads/website-intake?token=wrong-token")
+      .send({ "name-1": "Web Visitor", "phone-1": "9998887777" });
+
+    expect(response.status).toBe(401);
+  });
+
+  it("prefers a valid header over a wrong query token when both are present", async () => {
+    const response = await request(app)
+      .post("/api/v1/leads/website-intake?token=wrong-token")
+      .set("X-Webhook-Token", VALID_TOKEN)
+      .send({ "name-1": "Header Precedence Lead", "phone-1": "9998887781" });
+
+    expect(response.status).toBe(201);
+  });
+
   it("creates a lead from a flat Forminator-style payload, with no auth cookie sent", async () => {
     const response = await request(app)
       .post("/api/v1/leads/website-intake")
