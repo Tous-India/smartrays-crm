@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Modal, Form, Input, message } from "antd";
+import { Modal, Form, Input, App } from "antd";
 import { updateUser } from "../api/userApi";
 import useSessionStore from "../../../store/sessionStore";
 
@@ -20,6 +20,7 @@ import useSessionStore from "../../../store/sessionStore";
  * reasoning §4.1 already relies on elsewhere.
  */
 function EditProfileModal({ open, onClose }) {
+  const { message } = App.useApp();
   const [form] = Form.useForm();
   const user = useSessionStore((state) => state.user);
   const refetchSession = useSessionStore((state) => state.refetchSession);

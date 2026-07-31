@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, Select, Space, message } from "antd";
+import { Button, Select, Space, App } from "antd";
 import { DownloadOutlined } from "@ant-design/icons";
 import { generateReport, triggerFileDownload } from "../services/reportApi";
 
@@ -20,6 +20,7 @@ const FORMAT_OPTIONS = [
  * (e.g. Attendance/Transport's `{from, to}`, Leave's `{scope}`).
  */
 function ReportDownloadButton({ module, filters, filenamePrefix }) {
+  const { message } = App.useApp();
   const [format, setFormat] = useState("xlsx");
   const [isDownloading, setIsDownloading] = useState(false);
 

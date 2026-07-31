@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { Table, Tag, Segmented, Space, Button, Popconfirm, DatePicker, message } from "antd";
+import { Table, Tag, Segmented, Space, Button, Popconfirm, DatePicker, App } from "antd";
 import useLeaveList from "../hooks/useLeaveList";
 import LeaveRequestModal from "./LeaveRequestModal";
 import LeaveDeclineModal from "./LeaveDeclineModal";
@@ -29,6 +29,7 @@ import { LEAVE_TYPE_LABELS, LEAVE_STATUS_LABELS, LEAVE_STATUS_COLORS } from "../
  * the same table with no Actions column at all, not a disabled one.
  */
 function LeaveListPage() {
+  const { message } = App.useApp();
   const user = useSessionStore((state) => state.user);
   const { users } = useUserDirectory();
   const isAdmin = user?.role === "admin";

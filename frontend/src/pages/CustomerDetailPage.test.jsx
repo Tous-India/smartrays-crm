@@ -6,6 +6,16 @@ import CustomerDetailPage from "./CustomerDetailPage";
 import useSessionStore from "../store/sessionStore";
 import * as customerApi from "../modules/customer/api/customerApi";
 
+vi.mock("antd", async (importOriginal) => {
+  const actual = await importOriginal();
+  // Components read `message` via `App.useApp()` (§7.28 message-rendering
+  // fix — the static import silently fails to render under React 19), not
+  // the static export, so the mock has to intercept the hook too.
+  const mockMessage = { success: vi.fn(), error: vi.fn() };
+  actual.App.useApp = () => ({ message: mockMessage });
+  return { ...actual, message: mockMessage };
+});
+
 vi.mock("../modules/customer/api/customerApi", () => ({
   getCustomer: vi.fn(),
   updateCustomer: vi.fn(),

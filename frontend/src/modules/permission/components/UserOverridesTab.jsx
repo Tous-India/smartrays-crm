@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Select, Button, Popconfirm, Spin, message } from "antd";
+import { Select, Button, Popconfirm, Spin, App } from "antd";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import { USER_ROLE_LABELS } from "../../user/constants/user.constants";
 import { getUserPermissions, updateUserPermissions, resetUserPermissions } from "../api/permissionApi";
@@ -20,6 +20,7 @@ import PermissionMatrix from "./PermissionMatrix";
  * one picker.
  */
 function UserOverridesTab({ registry }) {
+  const { message } = App.useApp();
   const { users } = useUserDirectory();
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [permissions, setPermissions] = useState(null);

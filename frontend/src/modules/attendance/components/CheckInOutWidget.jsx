@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import dayjs from "dayjs";
-import { Alert, Button, Card, Spin, Tag, Tooltip, message } from "antd";
+import { Alert, Button, Card, Spin, Tag, Tooltip, App } from "antd";
 import { EnvironmentOutlined, ReloadOutlined } from "@ant-design/icons";
 import useMyAttendance from "../hooks/useMyAttendance";
 import useGeolocation from "../hooks/useGeolocation";
@@ -22,6 +22,7 @@ const CURRENT_MONTH = dayjs().format("YYYY-MM");
  * there too would mean guessing at a layout that task hasn't designed yet.
  */
 function CheckInOutWidget() {
+  const { message } = App.useApp();
   const { openRecord, isLoading, refetch } = useMyAttendance(CURRENT_MONTH);
   const geolocation = useGeolocation();
   const [isCapturing, setIsCapturing] = useState(false);

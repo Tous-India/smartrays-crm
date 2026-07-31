@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Select, Alert, Spin, message } from "antd";
+import { Select, Alert, Spin, App } from "antd";
 import dayjs from "dayjs";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import { USER_ROLES, ROLE_PICKER_LABELS } from "../../user/constants/user.constants";
@@ -24,6 +24,7 @@ const SELECTABLE_ROLES = USER_ROLES.filter((role) => role !== "admin");
  * otherwise.
  */
 function RoleDefaultsTab({ registry }) {
+  const { message } = App.useApp();
   const [selectedRole, setSelectedRole] = useState(SELECTABLE_ROLES[0]);
   const [template, setTemplate] = useState(null);
   const [isLoading, setIsLoading] = useState(true);

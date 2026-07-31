@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Drawer, Spin, message, Space, Tag } from "antd";
+import { Drawer, Spin, App, Space, Tag } from "antd";
 import { FireFilled } from "@ant-design/icons";
 import useLeadDetail from "../modules/lead/hooks/useLeadDetail";
 import useLeadStatusChangeFlow from "../modules/lead/hooks/useLeadStatusChangeFlow";
@@ -22,6 +22,7 @@ import { LEAD_STATUS_COLORS, LEAD_STATUS_LABELS } from "../modules/lead/constant
  * `/leads`.
  */
 function LeadDetailPage() {
+  const { message } = App.useApp();
   const { id } = useParams();
   const navigate = useNavigate();
   const { lead, callHistory, isLoading, refetch } = useLeadDetail(id);

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Card, List, Tag, Button, Popconfirm, Space, message } from "antd";
+import { Card, List, Tag, Button, Popconfirm, Space, App } from "antd";
 import { PlusOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import PermissionGate from "../../../routes/PermissionGate";
 import ContactFormModal from "./ContactFormModal";
@@ -10,6 +10,7 @@ import { createContact, updateContact, deleteContact } from "../api/customerApi"
  * remove, primary-contact flag.
  */
 function CustomerContactsSection({ customerId, contacts, onChanged }) {
+  const { message } = App.useApp();
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingContact, setEditingContact] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);

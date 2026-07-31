@@ -5,6 +5,16 @@ import CheckInOutWidget from "./CheckInOutWidget";
 import * as attendanceApi from "../api/attendanceApi";
 import * as locationApi from "../../location/api/locationApi";
 
+vi.mock("antd", async (importOriginal) => {
+  const actual = await importOriginal();
+  // Components read `message` via `App.useApp()` (§7.28 message-rendering
+  // fix — the static import silently fails to render under React 19), not
+  // the static export, so the mock has to intercept the hook too.
+  const mockMessage = { success: vi.fn(), error: vi.fn() };
+  actual.App.useApp = () => ({ message: mockMessage });
+  return { ...actual, message: mockMessage };
+});
+
 vi.mock("../api/attendanceApi", () => ({
   getMyAttendance: vi.fn(),
   checkIn: vi.fn(),

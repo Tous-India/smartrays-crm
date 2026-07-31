@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { message } from "antd";
+import { App } from "antd";
 import CustomersFiltersBar from "./CustomersFiltersBar";
 import CustomersTable from "./CustomersTable";
 import CustomerFormWizard from "./CustomerFormWizard";
@@ -16,6 +16,7 @@ const AUTOMATION_CONTRACT_TYPES = ["monthly", "onetime"];
  * matching the Leads module's convention.
  */
 function CustomersListPage() {
+  const { message } = App.useApp();
   const [searchParams, setSearchParams] = useSearchParams();
   const { users } = useUserDirectory();
 

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Button, Segmented, Result, message } from "antd";
+import { Button, Segmented, Result, App } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import PermissionGate from "../../../routes/PermissionGate";
 import { usePermission } from "../../../hooks/usePermission";
@@ -25,6 +25,7 @@ const PAGE_SIZE = 20;
  * `create` are separate grants.
  */
 function PaymentsListPage() {
+  const { message } = App.useApp();
   const canView = usePermission("payments", "view");
   const [activeFilter, setActiveFilter] = useState("today");
   const [page, setPage] = useState(1);

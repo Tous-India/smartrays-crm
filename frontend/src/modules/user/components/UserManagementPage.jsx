@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Table, Tag, Button, Space, Popconfirm, Tooltip, Typography, Select, message } from "antd";
-import { StopOutlined, CheckCircleOutlined, DeleteOutlined } from "@ant-design/icons";
+import { Table, Tag, Button, Space, Popconfirm, Tooltip, Typography, Select, App } from "antd";
+import { EditOutlined, LockOutlined, StopOutlined, CheckCircleOutlined, DeleteOutlined } from "@ant-design/icons";
 import useUsers from "../hooks/useUsers";
 import useTeams from "../../team/hooks/useTeams";
 import useSessionStore from "../../../store/sessionStore";
@@ -24,6 +24,7 @@ const { Title } = Typography;
  * whatever `GET /users` returns, no client-side filtering by role.
  */
 function UserManagementPage() {
+  const { message } = App.useApp();
   const currentUser = useSessionStore((state) => state.user);
   const isAdmin = currentUser?.role === "admin";
 
@@ -149,14 +150,26 @@ function UserManagementPage() {
         return (
           <Space wrap>
             {canEdit && (
-              <Button size="small" onClick={() => openEditForm(user)}>
-                Edit
-              </Button>
+              <Tooltip title="Edit">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<EditOutlined />}
+                  aria-label="Edit"
+                  onClick={() => openEditForm(user)}
+                />
+              </Tooltip>
             )}
             {isAdmin && (
-              <Button size="small" onClick={() => setResetPasswordTarget(user)}>
-                Reset Password
-              </Button>
+              <Tooltip title="Reset Password">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<LockOutlined />}
+                  aria-label="Reset Password"
+                  onClick={() => setResetPasswordTarget(user)}
+                />
+              </Tooltip>
             )}
             {isAdmin && user.isActive && user._id !== currentUser?._id && (
               <Popconfirm

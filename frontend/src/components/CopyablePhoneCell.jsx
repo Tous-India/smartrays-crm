@@ -1,4 +1,4 @@
-import { Tooltip, Button, message } from "antd";
+import { Tooltip, Button, App } from "antd";
 import { CopyOutlined } from "@ant-design/icons";
 
 /**
@@ -12,6 +12,8 @@ import { CopyOutlined } from "@ant-design/icons";
  * same reasoning as `LeadFormModal`'s `validateFields` fix.
  */
 function CopyablePhoneCell({ phone }) {
+  const { message } = App.useApp();
+
   if (!phone) {
     return null;
   }

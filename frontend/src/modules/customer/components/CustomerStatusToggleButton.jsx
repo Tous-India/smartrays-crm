@@ -1,4 +1,4 @@
-import { Button, Popconfirm, Tooltip, message } from "antd";
+import { Button, Popconfirm, Tooltip, App } from "antd";
 import { StopOutlined, CheckCircleOutlined } from "@ant-design/icons";
 import { updateCustomer } from "../api/customerApi";
 
@@ -27,6 +27,7 @@ import { updateCustomer } from "../api/customerApi";
  * `PATCH /customers/:id` and one place owning the confirmation copy.
  */
 function CustomerStatusToggleButton({ customer, onChanged, size, iconOnly = true }) {
+  const { message } = App.useApp();
   const isActive = customer.customerStatus === "active";
 
   async function handleToggle() {

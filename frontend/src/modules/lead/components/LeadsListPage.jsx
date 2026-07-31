@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { message } from "antd";
+import { App } from "antd";
 import LeadFiltersBar from "./LeadFiltersBar";
 import LeadsTable from "./LeadsTable";
 import LeadBoard from "./LeadBoard";
@@ -27,6 +27,7 @@ import { ROUTE_PATHS } from "../../../constants/routePaths.constants";
  * search/owner/follow-up selection.
  */
 function LeadsListPage({ view }) {
+  const { message } = App.useApp();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { users } = useUserDirectory();

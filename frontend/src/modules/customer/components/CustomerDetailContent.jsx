@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { message } from "antd";
+import { App } from "antd";
 import CustomerHeaderSection from "./CustomerHeaderSection";
 import CustomerEditModal from "./CustomerEditModal";
 import CustomerBillingCard from "./CustomerBillingCard";
@@ -28,6 +28,7 @@ import { usePermission } from "../../../hooks/usePermission";
  * anywhere in the app reaches it right now.
  */
 function CustomerDetailContent({ customer, contacts, contracts, activity, onChanged, onDeleted }) {
+  const { message } = App.useApp();
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
   const canEdit = usePermission("customers", "edit");

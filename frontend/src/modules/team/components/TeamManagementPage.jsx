@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Table, Button, Popconfirm, Space, message, Tag, Select } from "antd";
+import { Table, Button, Popconfirm, Space, App, Tag, Select } from "antd";
 import { PlusOutlined, EditOutlined, DeleteOutlined, TeamOutlined } from "@ant-design/icons";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import useTeams from "../hooks/useTeams";
@@ -17,6 +17,7 @@ import TeamMembersModal from "./TeamMembersModal";
  * both modals rather than each fetching its own copy.
  */
 function TeamManagementPage() {
+  const { message } = App.useApp();
   const { users } = useUserDirectory();
 
   const [typeFilter, setTypeFilter] = useState(undefined);

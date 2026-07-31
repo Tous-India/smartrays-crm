@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Segmented, Button, Tooltip, message } from "antd";
+import { Segmented, Button, Tooltip, App } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import AttendanceTimeline from "./AttendanceTimeline";
 import AttendanceCalendar from "./AttendanceCalendar";
@@ -41,6 +41,7 @@ function AttendanceRecordsSection({
   defaultEmployeeId,
   onChanged,
 }) {
+  const { message } = App.useApp();
   const [viewMode, setViewMode] = useState("list");
   const [photoModalRecord, setPhotoModalRecord] = useState(null);
   const [correctionModal, setCorrectionModal] = useState(null); // { mode, record, employeeId, initialDate } | null

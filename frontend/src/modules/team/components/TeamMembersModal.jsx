@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Modal, List, Select, Button, Popconfirm, message, Space, Tag } from "antd";
+import { Modal, List, Select, Button, Popconfirm, App, Space, Tag } from "antd";
 import { DeleteOutlined } from "@ant-design/icons";
 import { getTeamMembers, addTeamMember, removeTeamMember } from "../api/teamApi";
 
@@ -23,6 +23,7 @@ import { getTeamMembers, addTeamMember, removeTeamMember } from "../api/teamApi"
  * currently under) is shown before every add instead.
  */
 function TeamMembersModal({ open, team, users, onCancel, onChanged }) {
+  const { message } = App.useApp();
   const [members, setMembers] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedUserId, setSelectedUserId] = useState(null);

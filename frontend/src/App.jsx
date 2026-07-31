@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { RouterProvider } from "react-router-dom";
-import { ConfigProvider } from "antd";
+import { ConfigProvider, App as AntApp } from "antd";
 import router from "./routes/router";
 import useSessionStore from "./store/sessionStore";
 
@@ -52,7 +52,16 @@ function App() {
 
   return (
     <ConfigProvider theme={BRAND_THEME}>
-      <RouterProvider router={router} />
+      {/* Without this, every static `message.xxx()`/`notification.xxx()` call
+          across the app (imported directly from "antd", not via a hook) fails
+          to render at all under this custom theme — not just the console's
+          "Static function can not consume context" warning, an actual silent
+          failure. Found 2026-07-31 while diagnosing a reported "Deactivate
+          does nothing" bug: the guard rejection's `message.error(...)` call
+          fired and got the right text, but zero toast ever reached the DOM. */}
+      <AntApp>
+        <RouterProvider router={router} />
+      </AntApp>
     </ConfigProvider>
   );
 }
