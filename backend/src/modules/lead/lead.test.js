@@ -1079,7 +1079,14 @@ describe("Website lead intake webhook (§7.25)", () => {
     expect(response.body.data.phone).toBe("9998887777");
     expect(response.body.data.companyName).toBe("Jordan Solar Homes");
     expect(response.body.data.source).toBe("Website");
-    expect(response.body.data.clientType).toBe("residential");
+    // Genuinely unset, not defaulted to "residential" or anything else
+    // (§7.25, corrected 2026-07-31 — a confirmed design decision this
+    // previously drifted from: whoever qualifies the lead fills this in
+    // via the normal Edit flow, the system never guesses). Checked on the
+    // real persisted document, not just the response body, since a
+    // response-shape quirk alone wouldn't prove the DB write itself is
+    // clean.
+    expect(response.body.data.clientType).toBeUndefined();
     expect(response.body.data.notes).toContain("Interested in a rooftop quote");
     expect(response.body.data.notes).toContain("Raw website form submission");
     // form_name contains the substring "name" but must not be mistaken for
@@ -1089,6 +1096,38 @@ describe("Website lead intake webhook (§7.25)", () => {
 
     const lead = await Lead.findById(response.body.data._id);
     expect(String(lead.ownerId)).toBeTruthy();
+    expect(lead.clientType).toBeFalsy();
+  });
+
+  it("still saves an explicitly provided, valid clientType — the default removal only affects the no-signal case", async () => {
+    const response = await request(app)
+      .post("/api/v1/leads/website-intake")
+      .set("X-Webhook-Token", VALID_TOKEN)
+      .send({
+        "name-1": "Commercial Web Lead",
+        "phone-1": "9998887778",
+        "client-type-1": "commercial",
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.clientType).toBe("commercial");
+
+    const lead = await Lead.findById(response.body.data._id);
+    expect(lead.clientType).toBe("commercial");
+  });
+
+  it("leaves clientType unset for an unrecognized client-type value too, not just a missing field", async () => {
+    const response = await request(app)
+      .post("/api/v1/leads/website-intake")
+      .set("X-Webhook-Token", VALID_TOKEN)
+      .send({
+        "name-1": "Bad Value Lead",
+        "phone-1": "9998887779",
+        "client-type-1": "not_a_real_type",
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.clientType).toBeUndefined();
   });
 
   it("assigns the created lead to an admin and notifies them", async () => {

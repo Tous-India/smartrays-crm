@@ -115,10 +115,20 @@ const leadSchema = new mongoose.Schema(
       default: null,
     },
     // --- Solar-specific fields (.context/final-plan.md solar intake) ------
+    // NOT `required: true` at the schema level (removed 2026-07-31 — see
+    // lead.service.js#createLeadFromWebsiteIntake's own comment for why):
+    // that constraint would make it impossible to create a website-intake
+    // lead with no recognizable client-type signal in the submitted form,
+    // contradicting the confirmed design that this field is deliberately
+    // left unset for those leads until a manager/admin qualifies it via the
+    // normal Edit flow. `POST /leads` (manual creation) still requires it —
+    // enforced at the HTTP-validation layer instead
+    // (`lead.validation.js#validateCreateLeadInput`), the same "required
+    // only for this one path" pattern `lostReason` (required only when
+    // `status: "lost"`) already uses in this same model.
     clientType: {
       type: String,
       enum: CLIENT_TYPES,
-      required: true,
     },
     siteAddress: {
       type: String,

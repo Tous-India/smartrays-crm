@@ -840,11 +840,15 @@ function extractIntakeField(flatFields, keywords, excludeKeys) {
  *   defaults non-sales-associate creators to themselves) — here there's no
  *   creator at all, so an admin is the natural fallback, and whoever holds
  *   that role can reassign it from the Leads table like any other lead.
- * - `clientType`: defaults to "residential" (required, no schema default) —
- *   the public "Get a Quote" form this endpoint serves is a direct-to-
- *   consumer intake page, not a commercial/industrial inquiry form. A
- *   caller that does send a recognizable client-type value can still
- *   override it (matched the same best-effort way as the other fields).
+ * - `clientType`: **left genuinely unset** (2026-07-31 — corrects an earlier
+ *   defaulted-to-"residential" version of this function that contradicted
+ *   this confirmed decision, made possible only because `clientType` used
+ *   to be `required: true` at the schema level; it no longer is, see
+ *   lead.model.js) when the submitted form has no recognizable client-type
+ *   signal — whoever qualifies the lead (admin/manager, via the normal Edit
+ *   Lead flow) fills it in, rather than the system guessing. A caller that
+ *   does send a recognizable client-type value still gets it set directly
+ *   (matched the same best-effort way as the other fields).
  *
  * Field mapping is necessarily best-effort (see `extractIntakeField` above)
  * since the real WordPress form's exact field ids aren't knowable ahead of
@@ -897,8 +901,14 @@ export async function createLeadFromWebsiteIntake(rawPayload) {
     throw new ApiError(500, "No admin account exists to own website-submitted leads");
   }
 
+  // Left genuinely unset (not defaulted to "residential" or anything else)
+  // when the submitted form has no recognizable client-type signal — a
+  // confirmed design decision, not an oversight: whoever qualifies the
+  // lead (admin/manager, via the normal Edit Lead flow) fills this in,
+  // rather than the system guessing. `clientType` is schema-optional
+  // specifically to allow this — see lead.model.js's own comment.
   const rawClientType = clientTypeEntry ? String(clientTypeEntry[1]).trim().toLowerCase() : null;
-  const clientType = CLIENT_TYPES.includes(rawClientType) ? rawClientType : "residential";
+  const clientType = CLIENT_TYPES.includes(rawClientType) ? rawClientType : undefined;
 
   const notesParts = [];
   if (messageEntry) {

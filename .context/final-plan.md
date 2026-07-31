@@ -3460,16 +3460,29 @@ security-sensitive endpoint):**
 
 **Implementation** (`backend/src/modules/lead/`): see `backend/README.md`'s Leads section for
 the full endpoint writeup (auth-fail-closed behavior, field-mapping keyword-matching strategy,
-the three payload shapes handled, and the `ownerId`/`clientType`/`source` defaulting rules for
-a submission with no `requestingUser`). New `WEBSITE_LEAD_INTAKE_TOKEN` env var — optional at
-boot (like the other optional integrations, e.g. geofencing radius), since this is an add-on
-marketing-site integration, not core app functionality; the route itself fails closed (503) if
-it's unset rather than the app refusing to start.
+the three payload shapes handled, and the `ownerId`/`clientType`/`source` rules for a submission
+with no `requestingUser`). New `WEBSITE_LEAD_INTAKE_TOKEN` env var — optional at boot (like the
+other optional integrations, e.g. geofencing radius), since this is an add-on marketing-site
+integration, not core app functionality; the route itself fails closed (503) if it's unset
+rather than the app refusing to start.
 
-**Testing:** 7 new tests (`lead.test.js`) — missing/wrong token, successful creation from both
-the flat-object and Forminator `fields`-array payload shapes, admin assignment + the existing
-`lead_assigned` notification firing, and two 400 cases (no name/contact at all found; a name
-with neither phone nor email). Full backend suite: 535 tests, all passing.
+**`clientType` is confirmed left genuinely unset for a submission with no recognizable
+client-type signal** (corrected 2026-07-31 — the original build here actually defaulted it to
+`"residential"`, which directly contradicted this decision; a test had even locked in that wrong
+behavior as "correct," which is why it went uncaught until reported). Fixed by also removing
+`Lead.clientType`'s `required: true` at the schema level — that constraint was the actual reason
+the incorrect default existed, since `Lead.create` would otherwise throw for a website-intake
+submission with no client-type signal at all. `POST /leads` (manual creation) still requires it,
+enforced instead at the HTTP-validation layer, not the schema.
+
+**Testing:** grew from 7 to 9 tests (`lead.test.js`) with the 2026-07-31 correction above — the
+original 7 (missing/wrong token, successful creation from both the flat-object and Forminator
+`fields`-array payload shapes, admin assignment + the existing `lead_assigned` notification
+firing, and two 400 cases: no name/contact at all found, a name with neither phone nor email)
+plus 2 new: an explicit valid `clientType` still saves correctly, and an unrecognized value also
+leaves it unset rather than defaulting. The existing "creates a lead from a flat payload" test's
+own `clientType` assertion was corrected from asserting `"residential"` to asserting the field is
+genuinely absent, checked on the real persisted document.
 
 **Known deviations:** none from this task's own stated scope — the exact field-id keyword list
 is a best-effort mapping given no access to the real WordPress form's configuration; if a real

@@ -248,17 +248,35 @@ Leads. Gated by a shared secret instead of `authenticate`/`authorize`:
   already applies when a non-`sales_associate` creator omits `ownerId`, just with no creator at
   all to default to here. That admin also gets the existing `lead_assigned` notification, same
   as any other new-owner assignment.
-- **`clientType`:** defaults to `"residential"` (the field has no schema default and is
-  required) since the public quote form is a direct-to-consumer intake page, not a commercial/
-  industrial inquiry form — overridable if a recognizable value is present in the payload.
+- **`clientType`:** **left genuinely unset** if no recognizable value is present in the payload
+  — a confirmed design decision (corrected 2026-07-31, §7.25 — an earlier version of this
+  function defaulted it to `"residential"`, contradicting this decision; see below). Whoever
+  qualifies the lead (admin/manager, via the normal Edit Lead flow) fills it in. Set directly if
+  a recognizable, valid value IS present in the payload.
 - **`source`:** always `"Website"` (already one of the seeded `LeadSource` defaults).
 - **No data loss on unmapped fields:** the full raw payload is always JSON-serialized into
   `notes`, underneath whatever message/comment field was matched — nothing submitted is ever
   silently dropped even when a field isn't recognized by the keyword matcher.
 
-7 new tests (`lead.test.js`, "Website lead intake webhook" describe block) — missing/wrong
+**`Lead.clientType` is no longer `required: true` at the schema level (removed 2026-07-31,
+§7.25)** — that constraint is what actually forced the "default to residential" workaround to
+exist in the first place, since `Lead.create` would otherwise throw for a website-intake
+submission with no client-type signal. `POST /leads` (manual creation) still requires it exactly
+as before — enforced instead at the HTTP-validation layer (`lead.validation.js
+#validateCreateLeadInput`), the same "required only for this one path" pattern `lostReason`
+(required only when `status: "lost"`) already used in this same model. Editing a lead to fill in
+a previously-unset `clientType` via `PATCH /leads/:id` already worked correctly before this fix
+and needed no change — that validation only ever blocks *clearing* an existing value, not setting
+one from empty.
+
+9 new/updated tests (`lead.test.js`, "Website lead intake webhook" describe block) — missing/wrong
 token, successful creation from both the flat and `fields`-array payload shapes, admin
-assignment + notification, and the two "can't identify a name/contact" 400 cases.
+assignment + notification, the two "can't identify a name/contact" 400 cases, `clientType`
+genuinely unset (checked on the real persisted document, not just the response) when no
+recognizable value is submitted (this test previously asserted the `"residential"` default as
+correct, which is exactly why the defaulting bug went uncaught — it locked in the wrong behavior
+instead of testing for the right one), a valid explicit `clientType` still saves correctly, and
+an unrecognized `clientType` value also leaves it unset rather than defaulting.
 
 ### Live Location Tracking (`/api/v1/location`)
 
