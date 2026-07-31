@@ -60,12 +60,17 @@ export function getAuthCookieOptions() {
   return {
     httpOnly: true,
     secure: env.isProduction,
-    // "none" (not "strict") in production: the frontend and backend deploy
-    // to separate Vercel domains, so this cookie is genuinely cross-site —
-    // "strict"/"lax" would simply never be sent back to the backend at all.
-    // Requires `secure: true` (paired above), which browsers enforce for
-    // SameSite=None; Vercel serves everything over HTTPS, so that's met.
-    sameSite: env.isProduction ? "none" : "lax",
+    // "lax" (2026-07-31, corrected from "none") — the frontend now proxies
+    // /api/* to the backend via a Vercel Rewrite (frontend/vercel.json)
+    // instead of the browser calling the backend's own separate domain
+    // directly, so this cookie is genuinely same-site again: the browser
+    // only ever sees requests to its own origin, the backend's actual
+    // domain is invisible to it. "none" was a real but fragile fix for the
+    // cross-site setup this replaces — confirmed via live testing (WebKit/
+    // Safari) that "none" gets silently blocked from storage entirely by
+    // third-party-cookie policies regardless of Secure being set; "lax" has
+    // no such dependency since there is no cross-site cookie anymore.
+    sameSite: "lax",
   };
 }
 
