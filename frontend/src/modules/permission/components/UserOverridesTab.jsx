@@ -73,10 +73,17 @@ function UserOverridesTab({ registry }) {
     }
   }
 
-  const userOptions = users.map((user) => ({
-    value: user._id,
-    label: `${user.name} (${USER_ROLE_LABELS[user.role] || user.role})`,
-  }));
+  // Admin excluded (2026-07-31 fix) — same reasoning as Role Defaults'
+  // SELECTABLE_ROLES filter (RoleDefaultsTab.jsx): admin bypasses every
+  // permission check in code (`can()`'s own admin-bypass, §4.1), so editing
+  // one specific admin's overrides here would be entirely meaningless —
+  // there's nothing `can()` would ever actually consult it for.
+  const userOptions = users
+    .filter((user) => user.role !== "admin")
+    .map((user) => ({
+      value: user._id,
+      label: `${user.name} (${USER_ROLE_LABELS[user.role] || user.role})`,
+    }));
 
   return (
     <div className="flex flex-col gap-6">

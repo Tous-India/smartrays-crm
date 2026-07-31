@@ -30,6 +30,10 @@ vi.mock("../../../services/userDirectoryApi", () => ({
       data: [
         { _id: "user-1", name: "Manager One", role: "manager" },
         { _id: "user-2", name: "Sales One", role: "sales_associate" },
+        // Included specifically so the User Overrides tab's own exclusion
+        // filter (2026-07-31 fix) is what's actually proven, not just an
+        // absent admin in the fixture data making the assertion vacuous.
+        { _id: "admin-1", name: "Site Admin", role: "admin" },
       ],
     },
   }),
@@ -125,6 +129,64 @@ describe("PermissionManagementPage", () => {
   });
 
   describe("User Overrides tab", () => {
+    it("excludes admin from the user picker (2026-07-31 fix — same reasoning as Role Defaults' role exclusion)", async () => {
+      permissionApi.getRoleTemplate.mockResolvedValue({ data: { data: { role: "admin", permissions: {} } } });
+
+      render(<PermissionManagementPage />);
+      await screen.findByText("leads");
+
+      await userEvent.click(screen.getByRole("tab", { name: "Individual User Overrides" }));
+      await waitFor(() => expect(screen.getByText("Select a user")).toBeVisible());
+      fireEvent.mouseDown(screen.getByText("Select a user"));
+
+      expect(await screen.findByTitle("Manager One (Manager)")).toBeInTheDocument();
+      expect(screen.queryByTitle(/Site Admin/)).not.toBeInTheDocument();
+    });
+
+    it("strips a stale permission module no longer in the registry before saving (regression — this is the actual Save-button bug: a real 400 from the backend's validatePermissionsBody, not a toast-rendering issue)", async () => {
+      permissionApi.getRoleTemplate.mockResolvedValue({ data: { data: { role: "admin", permissions: {} } } });
+      // "tasks" was removed from PERMISSION_REGISTRY entirely (§7.3) but this
+      // user's stored permissions document still has it — exactly the real
+      // state found in the dev database while diagnosing this bug.
+      permissionApi.getUserPermissions.mockResolvedValue({
+        data: { data: { leads: { view: true }, tasks: { view: true } } },
+      });
+      permissionApi.updateUserPermissions.mockResolvedValue({
+        data: { data: { permissions: { leads: { view: true, create: true } } } },
+      });
+
+      render(<PermissionManagementPage />);
+      await screen.findByText("leads");
+
+      await userEvent.click(screen.getByRole("tab", { name: "Individual User Overrides" }));
+      await waitFor(() => expect(screen.getByText("Select a user")).toBeVisible());
+      fireEvent.mouseDown(screen.getByText("Select a user"));
+      await userEvent.click(await screen.findByTitle("Manager One (Manager)"));
+
+      await waitFor(() => expect(permissionApi.getUserPermissions).toHaveBeenCalledWith("user-1"));
+
+      // "tasks" isn't a registered module, so it never gets a row/checkbox
+      // at all — confirms the stale key is invisible in the UI, not just
+      // stripped from the save payload.
+      expect(screen.queryByText("tasks")).not.toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("checkbox", { name: "leads create" }));
+      await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+      await waitFor(() => {
+        expect(permissionApi.updateUserPermissions).toHaveBeenCalledWith(
+          "user-1",
+          { leads: { view: true, create: true } }
+        );
+      });
+      // The exact assertion that would have failed before the fix: "tasks"
+      // must be completely absent from what's actually sent, not just
+      // unmodified.
+      const [, sentPermissions] = permissionApi.updateUserPermissions.mock.calls[0];
+      expect(sentPermissions).not.toHaveProperty("tasks");
+      expect(message.success).toHaveBeenCalledWith("User permissions updated");
+    });
+
     it("loads the selected user's actual permissions and saves via PATCH /users/:id/permissions", async () => {
       permissionApi.getRoleTemplate.mockResolvedValue({ data: { data: { role: "admin", permissions: {} } } });
       permissionApi.getUserPermissions.mockResolvedValue({
