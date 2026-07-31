@@ -1128,6 +1128,43 @@ describe("Website lead intake webhook (§7.25)", () => {
     expect(lead.clientType).toBeFalsy();
   });
 
+  it("maps the confirmed real Forminator payload shape (name_1/email_1/phone_1/textarea_1) with no raw JSON dumped into notes", async () => {
+    // Captured verbatim from an actual live submission on the real
+    // "Smartrays contact" WordPress form (2026-07-31) — the primary,
+    // confirmed-correct mapping, not a keyword-matching fallback guess.
+    const response = await request(app)
+      .post("/api/v1/leads/website-intake")
+      .set("X-Webhook-Token", VALID_TOKEN)
+      .send({
+        name_1: "Manawwar saifi",
+        email_1: "manawwarsaifi1010@gmail.com",
+        phone_1: "07015544985",
+        textarea_1: "Website Testing webhook",
+        referer_url: "",
+        _wp_http_referer: "/contact-us/",
+        page_id: "1069",
+        form_type: "default",
+        current_url: "https://smartrayssolutions.com/contact-us/",
+        render_id: "0",
+        form_uid: "6a6c6fc20962b",
+        _forminator_user_ip: null,
+        form_title: "Smartrays contact",
+        entry_time: "2026-07-31 09:50:09",
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.name).toBe("Manawwar saifi");
+    expect(response.body.data.email).toBe("manawwarsaifi1010@gmail.com");
+    expect(response.body.data.phone).toBe("07015544985");
+    // Notes is exactly the visitor's message — not a raw JSON blob — since
+    // every core field resolved via the confirmed primary mapping, leaving
+    // nothing uncertain for the safety-net dump to guard against.
+    expect(response.body.data.notes).toBe("Website Testing webhook");
+
+    const lead = await Lead.findById(response.body.data._id);
+    expect(lead.notes).toBe("Website Testing webhook");
+  });
+
   it("still saves an explicitly provided, valid clientType — the default removal only affects the no-signal case", async () => {
     const response = await request(app)
       .post("/api/v1/leads/website-intake")

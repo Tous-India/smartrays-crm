@@ -771,7 +771,36 @@ const INTAKE_META_KEYS = new Set([
   "user_agent",
   "referer",
   "referrer",
+  // Confirmed from a real, live Forminator submission on the actual
+  // "Smartrays contact" form (2026-07-31) — the guessed names above turned
+  // out not to match Forminator's real export shape at all; kept alongside
+  // them rather than replacing them, since a differently-configured form
+  // could still send either set.
+  "referer_url",
+  "_wp_http_referer",
+  "page_id",
+  "form_type",
+  "current_url",
+  "render_id",
+  "form_uid",
+  "_forminator_user_ip",
+  "form_title",
+  "entry_time",
 ]);
+
+// The PRIMARY, confirmed-correct field mapping for the real "Smartrays
+// contact" Forminator form (captured 2026-07-31 from an actual live
+// submission) — checked by exact key before the keyword-based best-effort
+// matching below, not a guess. The keyword matching remains in place, and
+// is still tried whenever one of these exact keys is missing, as the
+// defensive fallback for any OTHER Forminator form on this site that
+// numbers its fields differently (e.g. `name_2`).
+const PRIMARY_INTAKE_FIELD_KEYS = {
+  name: "name_1",
+  email: "email_1",
+  phone: "phone_1",
+  message: "textarea_1",
+};
 
 /**
  * Forminator's webhook add-on (and similar WordPress form plugins) don't
@@ -827,6 +856,28 @@ function extractIntakeField(flatFields, keywords, excludeKeys) {
 }
 
 /**
+ * Tries the exact, confirmed-correct `PRIMARY_INTAKE_FIELD_KEYS` entry
+ * first; only falls back to the best-effort keyword search above when that
+ * exact key is missing/empty (a different Forminator form on this site
+ * numbering its fields differently). `viaPrimary` tells the caller whether
+ * this value came from the confirmed mapping or a fallback guess — used
+ * below to decide whether the safety-net raw-JSON dump is still needed.
+ */
+function extractPrimaryOrFallbackField(flatFields, primaryKey, keywords, usedKeys) {
+  if (primaryKey && !usedKeys.has(primaryKey)) {
+    const rawValue = flatFields[primaryKey];
+    if (rawValue !== undefined && rawValue !== null && rawValue !== "") {
+      usedKeys.add(primaryKey);
+      return { entry: [primaryKey, rawValue], viaPrimary: true };
+    }
+  }
+
+  const entry = extractIntakeField(flatFields, keywords, usedKeys);
+  if (entry) usedKeys.add(entry[0]);
+  return { entry, viaPrimary: false };
+}
+
+/**
  * `POST /leads/website-intake` (§7.25) — creates a Lead from a public,
  * unauthenticated WordPress/Forminator form submission (see
  * lead.routes.js#verifyWebsiteIntakeToken for the shared-secret gate this
@@ -850,11 +901,19 @@ function extractIntakeField(flatFields, keywords, excludeKeys) {
  *   does send a recognizable client-type value still gets it set directly
  *   (matched the same best-effort way as the other fields).
  *
- * Field mapping is necessarily best-effort (see `extractIntakeField` above)
- * since the real WordPress form's exact field ids aren't knowable ahead of
- * time. To make sure nothing is ever silently lost even when a field isn't
- * recognized, the full raw payload is always appended to `notes` as JSON,
- * underneath whatever message/comment field was matched.
+ * Field mapping for name/email/phone/message tries the exact, confirmed
+ * `PRIMARY_INTAKE_FIELD_KEYS` first (`name_1`/`email_1`/`phone_1`/
+ * `textarea_1` — captured from a real, live submission on the actual
+ * "Smartrays contact" form, 2026-07-31) and only falls back to best-effort
+ * keyword matching (see `extractIntakeField` above) when one of those exact
+ * keys is missing, for any OTHER Forminator form on this site that numbers
+ * its fields differently. `companyName`/`clientType` have no confirmed
+ * primary key yet, so they still go through keyword matching unconditionally.
+ * To make sure nothing is ever silently lost when a field genuinely had to
+ * be guessed, the full raw payload is still appended to `notes` as JSON in
+ * that case — but NOT when every one of name/email/phone/message that had
+ * a value came from the confirmed primary mapping, since there's nothing
+ * uncertain left to guard against.
  */
 export async function createLeadFromWebsiteIntake(rawPayload) {
   const flatFields = flattenWebsiteIntakePayload(rawPayload);
@@ -863,31 +922,54 @@ export async function createLeadFromWebsiteIntake(rawPayload) {
   const companyEntry = extractIntakeField(flatFields, ["company", "business"], usedKeys);
   if (companyEntry) usedKeys.add(companyEntry[0]);
 
-  const emailEntry = extractIntakeField(flatFields, ["email"], usedKeys);
-  if (emailEntry) usedKeys.add(emailEntry[0]);
+  const { entry: emailEntry, viaPrimary: emailViaPrimary } = extractPrimaryOrFallbackField(
+    flatFields,
+    PRIMARY_INTAKE_FIELD_KEYS.email,
+    ["email"],
+    usedKeys
+  );
 
-  const phoneEntry = extractIntakeField(flatFields, ["phone", "mobile", "whatsapp"], usedKeys);
-  if (phoneEntry) usedKeys.add(phoneEntry[0]);
+  const { entry: phoneEntry, viaPrimary: phoneViaPrimary } = extractPrimaryOrFallbackField(
+    flatFields,
+    PRIMARY_INTAKE_FIELD_KEYS.phone,
+    ["phone", "mobile", "whatsapp"],
+    usedKeys
+  );
 
   const clientTypeEntry = extractIntakeField(flatFields, ["client-type", "clienttype", "property-type"], usedKeys);
   if (clientTypeEntry) usedKeys.add(clientTypeEntry[0]);
 
-  const messageEntry = extractIntakeField(
+  const { entry: messageEntry, viaPrimary: messageViaPrimary } = extractPrimaryOrFallbackField(
     flatFields,
+    PRIMARY_INTAKE_FIELD_KEYS.message,
     ["message", "textarea", "comment", "note", "query", "requirement"],
     usedKeys
   );
-  if (messageEntry) usedKeys.add(messageEntry[0]);
 
   // Checked last so "company"/"business"/etc. keys already claimed above
   // are excluded from matching here too (both directions rely on
   // `usedKeys` — order between company/email/phone/message doesn't matter
   // to each other, only that name is resolved after all of them).
-  const nameEntry = extractIntakeField(flatFields, ["name"], usedKeys);
+  const { entry: nameEntry, viaPrimary: nameViaPrimary } = extractPrimaryOrFallbackField(
+    flatFields,
+    PRIMARY_INTAKE_FIELD_KEYS.name,
+    ["name"],
+    usedKeys
+  );
 
   const name = nameEntry ? String(nameEntry[1]).trim() : null;
   const phone = phoneEntry ? String(phoneEntry[1]).trim() : null;
   const email = emailEntry ? String(emailEntry[1]).trim() : null;
+
+  // A guess actually happened only when a field resolved to a real value
+  // via the keyword fallback, not the confirmed primary key — a field with
+  // no value at all (simply absent from this form) isn't a "guess."
+  const anyCoreFieldWasGuessed = [
+    [nameEntry, nameViaPrimary],
+    [emailEntry, emailViaPrimary],
+    [phoneEntry, phoneViaPrimary],
+    [messageEntry, messageViaPrimary],
+  ].some(([entry, viaPrimary]) => entry && !viaPrimary);
 
   if (!name || !(phone || email)) {
     throw new ApiError(
@@ -912,9 +994,13 @@ export async function createLeadFromWebsiteIntake(rawPayload) {
 
   const notesParts = [];
   if (messageEntry) {
-    notesParts.push(String(messageEntry[1]));
+    notesParts.push(String(messageEntry[1]).trim());
   }
-  notesParts.push(`Raw website form submission:\n${JSON.stringify(rawPayload, null, 2)}`);
+  // Safety-net raw-JSON dump, skipped when every core field that had a
+  // value came from the confirmed primary mapping — see the docblock above.
+  if (anyCoreFieldWasGuessed) {
+    notesParts.push(`Raw website form submission:\n${JSON.stringify(rawPayload, null, 2)}`);
+  }
 
   const lead = await Lead.create({
     name,
