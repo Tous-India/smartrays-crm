@@ -1659,3 +1659,40 @@ resolved while Phase 0 is underway.
   coordinates. 19 new/updated tests; full frontend suite passes, no regressions; `npm run build`
   succeeds. Live-verified via Playwright. `frontend/README.md` and `.context/final-plan.md`
   (§7.18 extended) updated.
+- **2026-07-31** — Repositioned the Attendance Summary card on the Single User Detail page
+  (`UserDetailPage.jsx`) to be the second section on the page, directly under the header, spanning
+  the full content width, instead of sharing a row with Basic Info/Team/Leave/Permissions/Payroll —
+  it now reads as the page's primary glance metric rather than competing for a column. Remaining
+  cards keep their existing relative order below it. Frontend suite passes (same pre-existing,
+  unrelated failures); `npm run build` succeeds.
+- **2026-07-31** — Backend: manager gains `leave.view` (§7.5d) and a new `DELETE /leave/:id`
+  endpoint, discovered while building the frontend's role-based Leave tabs (below) — a manager had
+  `view_team` but never plain `view`, so had no way to see their own past leave requests at all
+  (`GET /leave` scope=own requires `leave.view` specifically). `DELETE /leave/:id` reuses the same
+  `ensureCanActOnLeave` team-scoping as approve/decline/mark-unapproved-absence (admin org-wide,
+  manager own-team). Same stale-`RolePermissionTemplate` finding as the earlier §7.5c task, hit
+  again the same day — the already-seeded "manager" template needed a second live `PATCH` to pick
+  up `view`/`delete`; confirmed zero manager accounts exist, so no per-user reset was needed. 6 new
+  tests; full backend suite 660/660 passing, no regressions. `backend/README.md` and
+  `.context/final-plan.md` (§7.5d) updated. Deployed via `cd backend && vercel --prod --yes`.
+- **2026-07-31** — Frontend: restructured the Leave page (role-shaped tabs, wider columns with
+  horizontal scroll, a corrected Team filter, a new Delete action) and removed Attendance's
+  calendar-grid view entirely (§7.5e). Leave: the List/Calendar toggle and `TeamLeaveCalendar.jsx`
+  deleted outright — list/table-only now, no "All" tab ever again. Tabs are role-shaped rather than
+  purely permission-derived: admin gets no tabs at all (a single always-filterable unified view,
+  the same "structurally different view" precedent `AdminAttendanceView` set); everyone else gets
+  tabs from whichever of `leave.view`/`view_team` they hold, with no tab UI at all if only one is
+  held — a manager now sees exactly "Own"/"Team". **A real bug found and fixed, not assumed:** the
+  Admin Team filter was built from a manager-list stand-in (`teamDirectory.filter(role ===
+  "manager")`) that silently excluded any team headed by an admin — exactly this dataset's one real
+  team — which is why it never appeared; rebuilt against the real `Team` entity (`useTeams()`). New
+  Delete action (`DeleteOutlined` icon, `Popconfirm`-confirmed) gated on `usePermission("leave",
+  "delete")`, same per-action pattern as Approve/Decline/Mark Unapproved Absence. Attendance:
+  `AttendanceCalendar.jsx` deleted outright too — confirmed, not assumed, that neither of its two
+  markers (manually-adjusted record, geofence violation) was ever calendar-only, since
+  `AttendanceTimeline` already showed both independently in the list view. 21 new/updated tests;
+  full frontend suite passes, no regressions; `npm run build` succeeds. Live-verified via
+  Playwright: admin sees no tabs and the real "Sale Team" in the Team filter; a manager sees
+  exactly Own/Team and can act on (including delete) their own team's rows; an employee sees no
+  tabs and no Actions column at all; Attendance shows no calendar view anywhere. `frontend/README.md`
+  and `.context/final-plan.md` (§7.18 extended) updated. Deployed via `cd frontend && vercel --prod`.

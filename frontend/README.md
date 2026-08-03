@@ -427,8 +427,8 @@ in later frontend tasks — mirroring how the backend was built phase-by-phase.
 | `auth` (login, session, password reset) | ✅ Built — `POST /auth/login`, `GET /auth/me`, `POST /auth/logout` wired through `sessionStore`. **Password reset added (§7.17, 2026-07-17):** "Forgot password?" link on the login page, a `/forgot-password` request-email page, and a `/reset-password?token=` page — all three (plus login) share a new `AuthLayout` component (`src/components/AuthLayout.jsx`) for the dark-glass background/card treatment. Register/Customer-signup pages still not built (no public UI needed — registration is admin-only, via the User Management module below). |
 | `lead` (Leads) | ✅ **Built — the reference implementation for every module below.** Table View (search/owner/follow-up filters, inline status dropdown, hot toggle, owner reassignment) and Board View (kanban, `@dnd-kit` drag-between-stages) share one page shell (`LeadsListPage`) behind `/leads` and `/leads/board`; Lead Detail (`/leads/:id`) is a real, linkable route rendered as a slide-over (Log Call, Hot toggle, Won, Lost, Convert to Customer, Edit, Delete); an Import wizard (upload → automatic column-matching preview → per-row results) and a filtered Excel export. See `.context/final-plan.md` §7.14's Leads frontend entry for the full write-up, including the one real backend gap found (no lead-specific activity log — the Activity Timeline is assembled client-side from call history + lead fields instead). |
 | `customer` (Customers) | ✅ **Built.** List View (`CustomersListPage`, behind `/customers`) — search/owner/status filters (defaults to active-only, an explicit "Show Inactive" checkbox), sortable columns, row-select + bulk activate/deactivate/delete, and an `Add Customer` wizard (`CustomerFormWizard`) that walks Company Info → Billing → Contracts → Contacts → Project Manager, creating the customer then each staged contract/contact in turn and surfacing the backend's contract automation explicitly in the success toast ("Project + draft Invoice auto-created for: ...") rather than leaving it invisible. Customer Detail (`/customers/:id`, a real full page per leads-customer-functional-spec.md, not a slide-over) renders `CustomerHeaderSection`/`CustomerBillingCard`/`CustomerSiteDetailsCard`/`CustomerContractsSection`/`CustomerContactsSection`/`CustomerInvoicePlaceholder`/`CustomerActivityLog` from one `useCustomerDetail` hook. Every mutating action is gated to the exact backend `customers` permission its endpoint requires. **Credentials Vault UI deliberately removed (2026-07-29)** — see "Credentials Vault removal" below. Tests: `CustomersListPage.test.jsx`, `CustomerDetailPage.test.jsx`, all passing, no real network calls. |
-| `attendance` (Attendance) | ✅ **Built.** `CheckInOutWidget` (`/attendance`, top of the Personal view) — camera capture via native `getUserMedia` + a `<canvas>` snapshot (no library, see below), geolocation via the native `Geolocation` API, both mandatory before Confirm enables (mirroring the backend's server-side-enforced photo requirement, §7.4). Fetches current status on mount rather than assuming — correctly shows "Checked In" + a live elapsed-time counter if the page loads mid-shift, and (see below) resumes the heartbeat/ping loop in that same case. `/attendance` now routes by role (2026-07-31, §7.4 reversal): admin gets `AdminAttendanceView` (org-wide, 5 filters — see the dated write-up below), Manager/Employee/Sales Associate keep `PersonalAttendanceView` unchanged. Both Personal and Team (`/attendance/team`, `TeamAttendanceView`) views render through one shared `AttendanceRecordsSection` — summary stats, a List/Calendar view toggle, and a read-only photo-viewer modal, on top of the original `AttendanceTimeline` table (Check-In/Check-Out/Working Hours/Status) with connectivity gaps (`connectivityGaps[]`, §6.5) rendered as visually distinct red segments on a proportional bar (`ConnectivityGapBar`). **Attendance is UI-read-only for every role, including admin (2026-07-31)** — the admin manual-correction UI (Add Record/Edit) was removed; see the dated write-up below. Team view keeps its employee selector (client-side filter; the backend endpoint has no per-employee filter), gated by `attendance.view_team`/`view_all` via a 403 `Result` in `AttendanceTeamPage.jsx` (not `PermissionGate`, which only expresses a single module+action pair — this needs an OR of two). Every view's report button hits the unified `POST /reports/generate` dispatcher (`module: "attendance"`) via the shared `ReportDownloadButton`/`reportApi.js`. **Extended later** with geofence-violation display — a "Location" column/section/marker alongside every existing connectivity-gap one — see "Geofencing" below for the full write-up. |
-| `leave` (Leave) | ✅ **Built.** `LeaveListPage` (`/leave`) — scope tabs built from whichever `leave.view*` grants the user actually holds (own/team/all), a Request Leave modal (`paid`/`unpaid` only — `unapproved_absence` is never requestable, only via a separate action; hidden entirely for admin, §7.5c), and Approve/Decline/Mark Unapproved Absence actions gated per-action on `leave.approve`/`decline`/`mark_unapproved_absence` (admin org-wide, manager on their own team — reverses the original "admin-only" restriction, §7.5c). The mark-unapproved-absence confirmation shows its 2x-deduction consequence **directly in the `Popconfirm`'s description text**, not a tooltip, since burying it there would fail the whole point of confirming before an irreversible-feeling action. Report download via the same shared `ReportDownloadButton` (`module: "leave"`, `filters: { scope }`). **Extended later** with half-day support, a leave balance card, a Decline action, a team leave calendar view, and (§7.5c) manager parity, a required Reason field, and Admin filters — see "Half-day, balance, decline, calendar & notifications" and "Manager parity, admin exemption, Reason field & Admin filters (§7.5c)" below for the full write-ups. |
+| `attendance` (Attendance) | ✅ **Built.** `CheckInOutWidget` (`/attendance`, top of the Personal view) — camera capture via native `getUserMedia` + a `<canvas>` snapshot (no library, see below), geolocation via the native `Geolocation` API, both mandatory before Confirm enables (mirroring the backend's server-side-enforced photo requirement, §7.4). Fetches current status on mount rather than assuming — correctly shows "Checked In" + a live elapsed-time counter if the page loads mid-shift, and (see below) resumes the heartbeat/ping loop in that same case. `/attendance` now routes by role (2026-07-31, §7.4 reversal): admin gets `AdminAttendanceView` (org-wide, 5 filters — see the dated write-up below), Manager/Employee/Sales Associate keep `PersonalAttendanceView` unchanged. Personal, Team (`/attendance/team`, `TeamAttendanceView`), and Admin views all render through one shared `AttendanceRecordsSection` — summary stats and a read-only photo-viewer modal, on top of the original `AttendanceTimeline` table (Check-In/Check-Out/Working Hours/Status) with connectivity gaps (`connectivityGaps[]`, §6.5) rendered as visually distinct red segments on a proportional bar (`ConnectivityGapBar`). **List/Calendar toggle removed (2026-07-31, §7.5e)** — list/timeline-only now, no calendar view anywhere; see the dated write-up below. **Attendance is UI-read-only for every role, including admin (2026-07-31)** — the admin manual-correction UI (Add Record/Edit) was removed; see the dated write-up below. Team view keeps its employee selector (client-side filter; the backend endpoint has no per-employee filter), gated by `attendance.view_team`/`view_all` via a 403 `Result` in `AttendanceTeamPage.jsx` (not `PermissionGate`, which only expresses a single module+action pair — this needs an OR of two). Every view's report button hits the unified `POST /reports/generate` dispatcher (`module: "attendance"`) via the shared `ReportDownloadButton`/`reportApi.js`. **Extended later** with geofence-violation display — a "Location" column/section/marker alongside every existing connectivity-gap one — see "Geofencing" below for the full write-up. |
+| `leave` (Leave) | ✅ **Built.** `LeaveListPage` (`/leave`) — **list/table only, no calendar view, no "All" tab (2026-07-31, §7.5e)**, tabs are role-shaped (admin: none, a single unified filterable view; manager: Own + Team; everyone else: none, just their own list) — see the dated write-up below. A Request Leave modal (`paid`/`unpaid` only — `unapproved_absence` is never requestable, only via a separate action; hidden entirely for admin, §7.5c), and Approve/Decline/Mark Unapproved Absence/**Delete** (§7.5d/§7.5e) actions gated per-action on `leave.approve`/`decline`/`mark_unapproved_absence`/`delete` (admin org-wide, manager on their own team — reverses the original "admin-only" restriction, §7.5c). The mark-unapproved-absence confirmation shows its 2x-deduction consequence **directly in the `Popconfirm`'s description text**, not a tooltip, since burying it there would fail the whole point of confirming before an irreversible-feeling action; Delete gets the same confirm-first treatment. Report download via the same shared `ReportDownloadButton` (`module: "leave"`, `filters: { scope }`). **Extended later** with half-day support, a leave balance card, a Decline action, manager parity, a required Reason field, and Admin filters (including a corrected Team filter, §7.5e) — see "Half-day, balance, decline, calendar & notifications", "Manager parity, admin exemption, Reason field & Admin filters (§7.5c)", and the dated §7.5e write-up below for the full write-ups. |
 | `location` (Live Map) | ✅ **Built — a new route, `/location`** (§7.4b had no frontend before this task). Live view (`LiveMapView`) re-polls `GET /location/live` every ~12s and plots one marker per visible, currently-checked-in employee; History view (`HistoryMapView`) — an employee + date picker rendering that day's `GET /location/history` ping trail as a polyline. Gated by the existing `location` `PERMISSION_REGISTRY` set (any of `view`/`view_team`/`view_all`), same 403-`Result` pattern as Team Attendance. Uses `GoogleMapView` (`src/components/`) + `useGoogleMapsScript` (`src/hooks/`) — see "Maps & camera dependency decisions" below. Now actually receives pings — see "Heartbeat & location-ping loop" below. |
 | `user` (User Management) | ✅ **Built (§7.19, 2026-07-17)** — a new `/settings/users` route (added since §8's original route map didn't list one; gated on `users.view_all`/`users.view_team`, same as the backend scoping). Roster list (admin sees everyone, manager sees their own team — entirely server-side scoping, no client-side filtering), per-user Edit (name/email/phone/role/managerId/baseSalary via the existing `PATCH /users/:id`), Deactivate/Reactivate, an admin password-reset action (supports both an admin-typed exact password and a backend-generated one-time temp password, shown once), a link to the Permissions module (**now built — see below**, no longer a placeholder), and Create User (admin only, via the existing `POST /auth/register` — no new backend endpoint). **Create ("New User") form reworked 2026-07-30** — see below. |
 | `dashboard` (Dashboard) | ✅ **Built (§7.20/§7.21)** — the `/dashboard` shell, composing widgets by role via a declarative catalog rather than four separate per-role dashboards. Leads + Customers widgets (§7.20), plus 6 operational glance widgets — Attendance/Leave/Tickets/AMC/Payments/Payroll (§7.21) — see "Dashboard widget catalog" below for the full list and how to extend it. |
@@ -569,9 +569,8 @@ weighting `backend/src/modules/report/analytics.service.js#getAttendanceTrend` a
 established for "attendance rate" as a concept in this codebase, rather than inventing a second,
 differently-weighted definition of the same phrase.
 
-**Photo viewer (`AttendancePhotoModal.jsx`).** Clicking a day's record (in either the list row or
-a calendar cell — see below) opens a modal showing the check-in and check-out photos side by
-side, each with its captured `Lat/Lng` coords displayed underneath (a plain text readout, not an
+**Photo viewer (`AttendancePhotoModal.jsx`).** Clicking a day's record in the list row opens a
+modal showing the check-in and check-out photos side by side, each with its captured `Lat/Lng` coords displayed underneath (a plain text readout, not an
 embedded map pin — the task explicitly allowed either, and a full map widget per photo would be
 disproportionate to what this modal needs to show). Gracefully handles a record with no photo at
 all (every manually-created record, and any real record where the photo failed to upload) with a
@@ -581,17 +580,12 @@ list view already uses. Purely a view — the "Edit Record" footer button it use
 admin was removed (2026-07-31, §7.4 reversal — see below); the modal takes no `onEdit` prop at all
 now.
 
-**Calendar-grid view (`AttendanceCalendar.jsx`).** A `Segmented` "List"/"Calendar" toggle sits
-above the table in both Personal and Team views — the existing timeline table is unchanged and
-still the default, this is purely an added option. One cell per day of the selected month,
-color-coded by that day's record status (present = green, absent = red, half_day = amber,
-on_leave = blue, no record = neutral grey — never red, per the working-days reasoning above).
-Clicking a day with a record opens the same `AttendancePhotoModal` a list-row click would; a day
-with no record isn't clickable at all — the create-mode correction modal it used to open (admin
-only) was removed (2026-07-31, §7.4 reversal). A manually-adjusted record's cell gets a small `ExclamationCircleFilled` badge
-in its corner (`data-testid="attendance-manual-marker-{date}"`) so it's never visually confused
-with a real, photo-verified check-in — the same marker (and the same reasoning) `AttendanceTimeline`
-now also shows next to the Status tag in the list view, for the identical reason.
+**Calendar-grid view — removed 2026-07-31 (§7.5e), not an unfinished feature.** This section
+originally documented `AttendanceCalendar.jsx` (a `Segmented` "List"/"Calendar" toggle above the
+table, one cell per day, color-coded by status). See the dated §7.5e write-up below for the full
+removal — the short version: list/timeline-only now, the component was deleted, not hidden, and
+neither of its two markers (manually-adjusted record, geofence violation) was ever calendar-only —
+`AttendanceTimeline` already showed both independently, so nothing needed migrating.
 
 **Admin manual correction UI — removed 2026-07-31 (§7.4 reversal), not an unfinished feature.**
 This section originally documented `AttendanceCorrectionModal.jsx` (an "Edit" action per row/in
@@ -683,17 +677,10 @@ Approve/Mark-Unapproved-Absence — unlike those two, Decline optionally takes a
 `Popconfirm` has no field for. Appears alongside Approve for any `pending` request — originally
 admin-only, since extended to manager-on-their-own-team too (§7.5c below).
 
-**Team leave calendar (`TeamLeaveCalendar.jsx`).** A `Segmented` List/Calendar toggle next to the
-scope tabs (the existing list table is unchanged and still the default) plus a month `DatePicker`
-that scopes the calendar only — purely a client-side filter over the already-loaded
-`leaveRequests` for the selected scope, no new endpoint. **Layout: one row per team member, one
-column per day of the month** — chosen over a single combined day-grid (the shape Attendance's own
-calendar view uses) because a leave request spans a date *range* and several employees can be on
-leave the same day; a single per-day cell would either only show one employee at a time or need to
-stack multiple entries into one cell. A row per employee keeps every person's leave span visually
-distinct as its own colored horizontal run, with no overlap to resolve. Shows **approved** leave
-only, color-coded by type (green paid / blue unpaid / red unapproved-absence), with a tooltip per
-cell naming the type and half-day status.
+**Team leave calendar — removed 2026-07-31 (§7.5e), not an unfinished feature.** This section
+originally documented `TeamLeaveCalendar.jsx` (a `Segmented` List/Calendar toggle, one row per
+team member, one column per day, approved leave color-coded by type). Deleted outright — Leave is
+list/table-only now, no calendar view anywhere; see the dated §7.5e write-up below.
 
 **Notification bell — verified, not assumed (`NotificationBell.jsx`).** The bell's `MODULE_ROUTES`
 map (which `relatedEntity.module` routes to which page on click) only listed `leads`/`tickets`
@@ -790,6 +777,74 @@ task, none in the Leave module); `npm run build` succeeds. Live-verified end-to-
 against isolated dev server instances with temporary admin/manager/employee accounts (two separate
 manager+employee teams, to prove cross-team isolation) — cleaned up (deactivated + hard-deleted)
 after.
+
+### Leave restructure (tabs/columns/filters/delete) & Attendance calendar removal (2026-07-31, §7.5e)
+
+Two changes built together — both simplify an existing view down to list/table-only, and both
+touch `LeaveListPage.jsx`/`AttendanceRecordsSection.jsx` in the same task.
+
+**Leave: role-shaped tabs, no "All" tab, no calendar (`LeaveListPage.jsx`).** The List/Calendar
+toggle and `TeamLeaveCalendar.jsx` are gone entirely — deleted, not hidden (same Credentials Vault
+precedent). Tabs are no longer purely permission-derived the way they were under §7.5c: admin's
+own `can()` bypass would make every scope "available," which is exactly backwards once the goal is
+"admin gets no tabs at all." Instead:
+- **Admin** is branched explicitly (the same "structurally different view" precedent
+  `AdminAttendanceView` already established in §7.4's write-up) — no tabs, a single unified,
+  always-filterable view of every request org-wide.
+- **Everyone else** gets tabs built from whichever of `leave.view`/`view_team` they hold — never
+  `view_all`, which has no tab anymore, full stop. If only one is held, no tab UI renders at all
+  (the same "don't show a lone toggle with one real choice" reasoning already used elsewhere in
+  this app) — a plain employee/sales_associate sees just their own list. A manager, holding both
+  by default (§7.5d's new `view` grant), sees exactly "Own"/"Team".
+
+**Column widths increased, horizontal scroll enabled.** Every column now has an explicit `width`
+and the `Table` gets `scroll={{ x: "max-content" }}` — the same pattern `LeadsTable.jsx`/
+`CustomersTable.jsx` already use, horizontal scroll over squeezed columns.
+
+**Team filter bug fixed — built against the real `Team` entity now.** The original §7.5c Team
+filter derived its options from `teamDirectory.filter(role === "manager")` (a manager-list
+stand-in) rather than the actual `Team` collection — this silently excluded any team headed by an
+admin (a real team in this dataset has exactly that shape: `headManagerId` pointing at an admin
+account, not a "manager"-role user), which was the actual bug behind "the one existing team isn't
+showing up." Now built from `useTeams()` (the real endpoint `UserDetailPage.jsx` already uses),
+filtering leave records by matching `managerIdByEmployeeId.get(employeeId) === team.headManagerId`.
+
+**Delete action, new (`DELETE /leave/:id`, §7.5d/§7.5e).** A `DeleteOutlined` icon button
+(`aria-label="Delete"`, wrapped in a `Tooltip`) in the same Actions column as Approve/Decline/Mark
+Unapproved Absence, gated on `usePermission("leave", "delete")` — same per-action pattern as the
+other three, no extra per-row team check needed for the same reason those don't need one (a
+manager can only ever reach rows already scoped to their own team). A `Popconfirm` ("Delete this
+leave request? This cannot be undone.") gates the actual call — matching the existing
+destructive-action pattern already established for Mark Unapproved Absence in this same table,
+rather than inventing a new confirmation shape.
+
+**Attendance: calendar view removed entirely (`AttendanceRecordsSection.jsx`).** The
+List/Calendar `Segmented` toggle is gone; `AttendanceTimeline` renders unconditionally now.
+`AttendanceCalendar.jsx` is **deleted outright**, not hidden. **Confirmed, not assumed, before
+deleting:** neither the manually-adjusted-record marker nor the geofence-violation marker was ever
+calendar-only — `AttendanceTimeline` already showed both independently (the exclamation badge next
+to the Status tag, and the "Location" column's own `GeofenceViolationBar`), so nothing needed
+migrating into the list view; it was already there.
+
+**A real backend permission gap, found while building the tab restructure, not assumed correct.**
+A manager had `leave.view_team` but never plain `leave.view` — no way to see their OWN past leave
+requests at all, since `GET /leave` (scope=own) requires `leave.view` specifically and manager's
+default template never granted it (only `sales_associate`/`employee` had it). Fixed on the backend
+(`DEFAULT_ROLE_TEMPLATES.manager.leave.view: true`, §7.5d) — see `backend/README.md`'s own §7.5d
+write-up for the full reasoning, the same "stale already-seeded `RolePermissionTemplate` document"
+finding as §7.5c hit again, and the live template patch that came with it.
+
+21 new/updated tests: 12 in `LeaveListPage.test.jsx` (role-based tab visibility, no-tabs-for-admin,
+the real-Team-entity filter fix, Delete gating/confirmation/call), `TeamLeaveCalendar.test.jsx`
+deleted outright, `AttendanceCalendar.test.jsx` deleted outright,
+`AttendanceRecordsSection.test.jsx` updated (asserts no List/Calendar toggle renders at all).
+Full frontend suite passes (the same pre-existing, unrelated failures noted throughout this file,
+none in Leave or Attendance); `npm run build` succeeds. Live-verified via Playwright: an admin
+sees no tabs and the Team filter dropdown lists the real "Sale Team" (previously invisible, headed
+by an admin account); a manager sees exactly "Own"/"Team" and can Approve/Decline/Mark Unapproved
+Absence/Delete on their own team's row (confirmed via horizontal scroll to the Actions column); an
+employee sees no tabs, no Actions column, and no Delete option at all; Attendance shows no
+calendar view anywhere, with the manually-adjusted and geofence markers still visible in the list.
 
 ### Geofencing (`src/modules/attendance/`)
 

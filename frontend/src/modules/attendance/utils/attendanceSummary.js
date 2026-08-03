@@ -8,10 +8,9 @@ const COUNTABLE_STATUSES = ["present", "absent", "half_day", "on_leave"];
  * #computePayrollFields`, counts every calendar day including weekends, for
  * its own pro-rata salary math) — defined here as weekday count (Mon-Fri)
  * instead, deliberately different from Payroll's convention: a day with no
- * Attendance record (a weekend) renders as neutral grey on the calendar
- * grid (`AttendanceCalendar.jsx`), not red/absent, so counting it in this
- * percentage's denominator would make every employee's attendance rate look
- * artificially low for simply having weekends off.
+ * Attendance record (a weekend) is never treated as absent, so counting it
+ * in this percentage's denominator would make every employee's attendance
+ * rate look artificially low for simply having weekends off.
  *
  * `half_day` counts as 0.5 of an attended day, matching the exact weighting
  * `backend/src/modules/report/analytics.service.js#getAttendanceTrend`

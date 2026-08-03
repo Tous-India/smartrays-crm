@@ -130,8 +130,8 @@ Source of Truth rule made concrete, and to mark what's real vs. planned in the d
 | `frontend` (scaffold) | ✅ **Built (Frontend Phase 0, 2026-07-16)** | Vite + Tailwind + Ant Design scaffold, API client, session store, route guards, dashboard/portal layout shells, full §8 route map wired (every route exists; only `/login` and `/` are functionally complete, the rest are placeholders) — see the Frontend Phase 0 LLD entry below and `frontend/README.md` |
 | `lead` (frontend) | ✅ **Built (2026-07-16) — the reference implementation for every later frontend module** | Table View + Board View (`@dnd-kit` kanban) behind one shared page shell, Lead Detail slide-over (real route), Import wizard, filtered export — see §7.15 |
 | `customer` (frontend) | ✅ **Built** | List View (search/owner/status filters, bulk activate/deactivate/delete) + Add Customer wizard (surfaces the backend's contract automation explicitly) + a real Customer Detail full page (billing/site details/contracts/contacts/activity log). Credentials Vault UI deliberately removed 2026-07-29 (backend/data untouched, just not surfaced) — see §7.17 |
-| `attendance` (frontend) | ✅ **Built** | Check-in/out widget (native `getUserMedia`+`<canvas>` camera capture, native `Geolocation`, both mandatory before submit) + Personal/Team timeline views with connectivity gaps rendered as red bar segments + report download via the unified dispatcher — see §7.18. **UI-read-only for every role (2026-07-31)** — admin manual-correction UI removed; `/attendance` redefined for admin as an org-wide, 5-filter view (`AdminAttendanceView`) — see §7.18's dated write-up |
-| `leave` (frontend) | ✅ **Built** | Request modal (hidden for admin, §7.5c) + scope-tabbed list (own/team/all, built from whichever grants the user holds) + Approve/Decline/Mark Unapproved Absence gated per-action (admin org-wide, manager on their own team, §7.5c — reverses the original admin-only restriction), the latter's 2x-deduction consequence shown directly in the confirm prompt — see §7.18. **Extended 2026-07-31 (§7.5c):** required Reason field (request form + expandable Admin-table row + dashboard widget), Employee/Team/Status/Date-range Admin filters |
+| `attendance` (frontend) | ✅ **Built** | Check-in/out widget (native `getUserMedia`+`<canvas>` camera capture, native `Geolocation`, both mandatory before submit) + Personal/Team/Admin timeline views (**list/table only, no calendar anywhere — removed 2026-07-31, §7.5e**) with connectivity gaps rendered as red bar segments + report download via the unified dispatcher — see §7.18. **UI-read-only for every role (2026-07-31)** — admin manual-correction UI removed; `/attendance` redefined for admin as an org-wide, 5-filter view (`AdminAttendanceView`) — see §7.18's dated write-up |
+| `leave` (frontend) | ✅ **Built** | Request modal (hidden for admin, §7.5c) + role-shaped tabs (**no "All" tab, no calendar — removed 2026-07-31, §7.5e**: admin none/unified-filterable, manager Own+Team, everyone else none) + Approve/Decline/Mark Unapproved Absence/**Delete** gated per-action (admin org-wide, manager on their own team, §7.5c/§7.5d), the latter two's consequence shown directly in the confirm prompt — see §7.18. **Extended 2026-07-31 (§7.5c/§7.5e):** required Reason field (request form + expandable Admin-table row + dashboard widget), Employee/Team/Status/Date-range Admin filters (Team filter corrected in §7.5e to use the real `Team` entity), wider columns + horizontal scroll |
 | `location` (frontend) | ✅ **Built — a new route, `/location`, with no prior frontend at all** | Live map (auto-polling `GET /location/live`) + History map (employee+date picker, `GET /location/history` as a polyline) via a generic `GoogleMapView` (native Maps JS SDK, no wrapper library) — see §7.18 |
 | `user` (frontend) | ✅ **Built (§7.19, 2026-07-17)** | `/settings/users` roster list/edit/deactivate/reactivate/admin-password-reset/create, plus self-service + admin-override password reset (`/forgot-password`, `/reset-password`) — see §7.19 |
 | `dashboard` (frontend) | ✅ **Built (§7.20/§7.21)** | `/dashboard` shell composing Leads + Customers widgets (§7.20) plus 6 operational glance widgets — Attendance/Leave/Tickets/AMC/Payments/Payroll (§7.21) — by role via a declarative catalog, each widget independently permission-gated and independently fetching/failing — see §7.20/§7.21 |
@@ -3194,6 +3194,32 @@ the live-location map are completely unaffected — confirmed live against a rea
 updated to assert the removed actions are gone; `AttendanceCorrectionModal.test.jsx` deleted).
 Full frontend suite passes, no regressions; `npm run build` succeeds. Full write-up:
 `frontend/README.md`'s dated 2026-07-31 Attendance section.
+
+**Leave restructure (tabs/columns/filters/delete) & Attendance calendar removal (2026-07-31,
+§7.5e).** Two changes built together. **Leave:** the List/Calendar toggle and
+`TeamLeaveCalendar.jsx` deleted outright — list/table-only, no "All" tab ever again. Tabs are
+role-shaped, not purely permission-derived like §7.5c: admin is branched explicitly (no tabs, a
+single always-filterable unified view — the same "structurally different view" precedent
+`AdminAttendanceView` set); everyone else gets tabs from whichever of `leave.view`/`view_team`
+they hold (never `view_all`), with no tab UI at all if only one is held. Columns widened with
+`scroll={{ x: "max-content" }}` (same pattern as `LeadsTable`/`CustomersTable`). **The Admin Team
+filter's real bug, found and fixed:** it was built from `teamDirectory.filter(role === "manager")`
+— a manager-list stand-in that silently excluded any team headed by an admin (a real team in this
+dataset has exactly that shape), which is why "the one existing team" never appeared. Rebuilt
+against the real `Team` entity (`useTeams()`). **New Delete action** (`DELETE /leave/:id`, §7.5d)
+— a `DeleteOutlined` icon in the same Actions column, gated on `usePermission("leave", "delete")`,
+`Popconfirm`-confirmed, no extra per-row team check needed (same reasoning as the other three
+actions). **Attendance:** `AttendanceCalendar.jsx` deleted outright too — confirmed, not assumed,
+that neither the manually-adjusted-record marker nor the geofence-violation marker was ever
+calendar-only (`AttendanceTimeline` already showed both independently), so nothing needed
+migrating. **A real backend gap, found while building the tab restructure:** manager had
+`view_team` but never `view` — no way to see their own past leave requests — fixed backend-side
+(§7.5d, `DEFAULT_ROLE_TEMPLATES.manager.leave.view: true`, plus the same stale-seeded-template fix
+§7.5c needed, hit again). 21 new/updated tests across `LeaveListPage.test.jsx`,
+`AttendanceRecordsSection.test.jsx`; `TeamLeaveCalendar.test.jsx`/`AttendanceCalendar.test.jsx`
+deleted outright. Full frontend suite passes, no regressions; `npm run build` succeeds.
+Live-verified via Playwright (admin/manager/employee views, the real Team filter, Delete
+role-scoping). Full write-up: `frontend/README.md`'s dated §7.5e section.
 
 ---
 

@@ -13,10 +13,8 @@ import { ATTENDANCE_STATUS_COLORS, ATTENDANCE_STATUS_LABELS } from "../constants
  * client-side from the team fetch) rather than duplicating this table twice.
  *
  * `onRowClick` (opens `AttendancePhotoModal` in the parent) makes a row
- * double as the "click a day's record" entry point the photo viewer needs,
- * the same behavior `AttendanceCalendar`'s day cells offer in the grid view
- * — clicking a record here or there both do the same thing. A manually-
- * adjusted record (§7.4's admin-correction addition) gets a small
+ * double as the "click a day's record" entry point the photo viewer needs.
+ * A manually-adjusted record (§7.4's admin-correction addition) gets a small
  * exclamation badge next to its Status Tag so it's never confused with a
  * real verified check-in at a glance. The per-row Edit action that used to
  * live here was removed — Attendance is UI-read-only for every role now.

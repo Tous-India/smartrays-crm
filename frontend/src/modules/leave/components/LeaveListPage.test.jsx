@@ -6,6 +6,7 @@ import LeaveListPage from "./LeaveListPage";
 import useSessionStore from "../../../store/sessionStore";
 import * as leaveApi from "../api/leaveApi";
 import * as userApi from "../../user/api/userApi";
+import * as teamsHook from "../../team/hooks/useTeams";
 
 vi.mock("antd", async (importOriginal) => {
   const actual = await importOriginal();
@@ -23,6 +24,7 @@ vi.mock("../api/leaveApi", () => ({
   approveLeave: vi.fn(),
   declineLeave: vi.fn(),
   markUnapprovedAbsence: vi.fn(),
+  deleteLeave: vi.fn(),
   getLeaveBalance: vi.fn(),
 }));
 
@@ -35,11 +37,14 @@ vi.mock("../../../hooks/useUserDirectory", () => ({
   }),
 }));
 
-// Only fetched by the Admin (scope=all) filter bar's Team select — a plain
-// empty default keeps every other describe block (which never reaches
-// scope=all) from needing to care about it at all.
+// Only fetched by the Admin filter bar's Team select — a plain empty
+// default keeps every other describe block from needing to care about it.
 vi.mock("../../user/api/userApi", () => ({
   listUsers: vi.fn(),
+}));
+
+vi.mock("../../team/hooks/useTeams", () => ({
+  default: vi.fn(() => ({ teams: [] })),
 }));
 
 const PENDING_LEAVE = {
@@ -60,6 +65,7 @@ beforeEach(() => {
   leaveApi.listLeave.mockResolvedValue({ data: { data: [PENDING_LEAVE] } });
   leaveApi.getLeaveBalance.mockResolvedValue({ data: { data: DEFAULT_BALANCE } });
   userApi.listUsers.mockResolvedValue({ data: { data: [] } });
+  teamsHook.default.mockReturnValue({ teams: [] });
 });
 
 describe("LeaveListPage — request flow", () => {
@@ -72,8 +78,8 @@ describe("LeaveListPage — request flow", () => {
     leaveApi.requestLeave.mockResolvedValue({ data: { data: {} } });
 
     render(<LeaveListPage />);
-    // "own" is this user's default (and only) scope, so no Employee column
-    // is shown — "Paid" (the Type column) is present regardless of scope.
+    // "own" is this user's only scope, so no tabs render at all — "Paid"
+    // (the Type column) is present regardless.
     await screen.findByText("Paid");
 
     await userEvent.click(screen.getByRole("button", { name: "Request Leave" }));
@@ -135,8 +141,77 @@ describe("LeaveListPage — admin exemption from requesting (§7.5c, 2026-07-31)
   });
 });
 
-describe("LeaveListPage — approve/decline/mark-unapproved-absence, permission-gated (§7.5c, 2026-07-31)", () => {
-  it("shows no Actions column at all for a role with none of the three grants", async () => {
+describe("LeaveListPage — role-based tabs (§7.5e, 2026-07-31 — no All tab, no calendar)", () => {
+  it("shows no tabs at all for an employee (view only)", async () => {
+    useSessionStore.setState({
+      user: { _id: "emp-1", role: "employee", permissions: { leave: { view: true } } },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    render(<LeaveListPage />);
+    await screen.findByText("Paid");
+
+    expect(screen.queryByText("Own")).not.toBeInTheDocument();
+    expect(screen.queryByText("Team")).not.toBeInTheDocument();
+    expect(screen.queryByText("All")).not.toBeInTheDocument();
+  });
+
+  it("shows exactly two tabs — Own and Team — for a manager, never All", async () => {
+    useSessionStore.setState({
+      user: {
+        _id: "mgr-1",
+        role: "manager",
+        permissions: { leave: { view: true, view_team: true, approve: true, decline: true, mark_unapproved_absence: true, delete: true } },
+      },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    render(<LeaveListPage />);
+    await screen.findByText("Paid");
+
+    expect(screen.getByText("Own")).toBeInTheDocument();
+    expect(screen.getByText("Team")).toBeInTheDocument();
+    expect(screen.queryByText("All")).not.toBeInTheDocument();
+  });
+
+  it("shows no tabs for admin — a single unified view, with the Admin filter bar always present", async () => {
+    useSessionStore.setState({
+      user: { _id: "admin-1", role: "admin", permissions: {} },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    render(<LeaveListPage />);
+    await screen.findByText("Paid");
+
+    expect(screen.queryByText("Own")).not.toBeInTheDocument();
+    expect(screen.queryByText("Team")).not.toBeInTheDocument();
+    expect(screen.queryByText("All")).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Employee" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Team" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Status" })).toBeInTheDocument();
+  });
+
+  it("never renders a List/Calendar toggle anywhere", async () => {
+    useSessionStore.setState({
+      user: { _id: "admin-1", role: "admin", permissions: {} },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    render(<LeaveListPage />);
+    await screen.findByText("Paid");
+
+    expect(screen.queryByText("Calendar")).not.toBeInTheDocument();
+    expect(screen.queryByText("List")).not.toBeInTheDocument();
+    expect(screen.getByRole("table")).toBeInTheDocument();
+  });
+});
+
+describe("LeaveListPage — approve/decline/mark-unapproved-absence/delete, permission-gated (§7.5c/§7.5d)", () => {
+  it("shows no Actions column at all for a role with none of the four grants", async () => {
     useSessionStore.setState({
       user: { _id: "sales-1", role: "sales_associate", permissions: { leave: { view: true } } },
       isAuthenticated: true,
@@ -149,28 +224,33 @@ describe("LeaveListPage — approve/decline/mark-unapproved-absence, permission-
     expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Decline" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Mark Unapproved Absence" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
   });
 
-  it("shows Approve, Decline, and Mark Unapproved Absence for a manager holding the new default team-scoped grants", async () => {
+  it("shows Approve, Decline, Mark Unapproved Absence, and Delete for a manager holding the default team-scoped grants", async () => {
     useSessionStore.setState({
       user: {
         _id: "mgr-1",
         role: "manager",
-        permissions: { leave: { view_team: true, approve: true, decline: true, mark_unapproved_absence: true } },
+        permissions: {
+          leave: { view: true, view_team: true, approve: true, decline: true, mark_unapproved_absence: true, delete: true },
+        },
       },
       isAuthenticated: true,
       isLoading: false,
     });
 
     render(<LeaveListPage />);
+    await userEvent.click(screen.getByText("Team"));
     await screen.findByText("Employee One");
 
     expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Decline" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Mark Unapproved Absence" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
   });
 
-  it("shows Approve and Mark Unapproved Absence actions for an admin", async () => {
+  it("shows Approve, Mark Unapproved Absence, and Delete actions for an admin", async () => {
     useSessionStore.setState({
       user: { _id: "admin-1", role: "admin", permissions: {} },
       isAuthenticated: true,
@@ -182,6 +262,7 @@ describe("LeaveListPage — approve/decline/mark-unapproved-absence, permission-
 
     expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Mark Unapproved Absence" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
   });
 
   it("shows the 2x-deduction consequence directly in the confirm prompt, not a tooltip, before an admin confirms", async () => {
@@ -251,10 +332,33 @@ describe("LeaveListPage — approve/decline/mark-unapproved-absence, permission-
     });
     expect(message.success).toHaveBeenCalledWith("Leave declined");
   });
+
+  it("lets an admin delete a leave request, with a confirmation dialog first", async () => {
+    useSessionStore.setState({
+      user: { _id: "admin-1", role: "admin", permissions: {} },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    leaveApi.deleteLeave.mockResolvedValue({ data: { data: null } });
+
+    render(<LeaveListPage />);
+    await screen.findByText("Paid");
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete" }));
+    expect(await screen.findByText("Delete this leave request?")).toBeInTheDocument();
+    expect(leaveApi.deleteLeave).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole("button", { name: "Confirm Delete" }));
+
+    await waitFor(() => {
+      expect(leaveApi.deleteLeave).toHaveBeenCalledWith("leave-1");
+    });
+    expect(message.success).toHaveBeenCalledWith("Leave request deleted");
+  });
 });
 
 describe("LeaveListPage — Reason field (§7.5c, 2026-07-31)", () => {
-  it("shows the Reason as an expandable row detail once a Team/All scope is active", async () => {
+  it("shows the Reason as an expandable row detail once Team/All data is being viewed", async () => {
     useSessionStore.setState({
       user: { _id: "admin-1", role: "admin", permissions: {} },
       isAuthenticated: true,
@@ -262,12 +366,6 @@ describe("LeaveListPage — Reason field (§7.5c, 2026-07-31)", () => {
     });
 
     render(<LeaveListPage />);
-    await screen.findByText("Paid");
-    // Admin's default scope is "own" (first tab) — the expandable row (like
-    // the Employee column) only applies once viewing someone else's data.
-    expect(screen.queryByRole("button", { name: "Expand row" })).not.toBeInTheDocument();
-
-    await userEvent.click(screen.getByText("All"));
     await screen.findByText("Employee One");
 
     await userEvent.click(screen.getByRole("button", { name: "Expand row" }));
@@ -275,7 +373,7 @@ describe("LeaveListPage — Reason field (§7.5c, 2026-07-31)", () => {
   });
 });
 
-describe("LeaveListPage — Admin filters (§7.5c, 2026-07-31)", () => {
+describe("LeaveListPage — Admin filters (§7.5c/§7.5e, 2026-07-31)", () => {
   const OTHER_LEAVE = {
     _id: "leave-2",
     employeeId: "emp-2",
@@ -294,35 +392,32 @@ describe("LeaveListPage — Admin filters (§7.5c, 2026-07-31)", () => {
       isLoading: false,
     });
     leaveApi.listLeave.mockResolvedValue({ data: { data: [PENDING_LEAVE, OTHER_LEAVE] } });
+    teamsHook.default.mockReturnValue({
+      teams: [
+        { _id: "team-1", name: "Sales Team", headManagerId: "mgr-1" },
+        { _id: "team-2", name: "Support Team", headManagerId: "mgr-2" },
+      ],
+    });
     userApi.listUsers.mockResolvedValue({
       data: {
         data: [
           { _id: "emp-1", name: "Employee One", role: "employee", managerId: "mgr-1" },
           { _id: "emp-2", name: "Employee Two", role: "employee", managerId: "mgr-2" },
-          { _id: "mgr-1", name: "Manager One", role: "manager", managerId: null },
-          { _id: "mgr-2", name: "Manager Two", role: "manager", managerId: null },
         ],
       },
     });
   });
 
-  it("only shows the filter bar for the Admin (scope=all) list view, not Own/Team or the calendar", async () => {
+  it("the Admin filter bar is always present, immediately — no tab needs clicking first", async () => {
     render(<LeaveListPage />);
-    await screen.findByText("Paid");
-    expect(screen.queryByRole("combobox", { name: "Status" })).not.toBeInTheDocument();
 
-    await userEvent.click(screen.getByText("All"));
     expect(await screen.findByRole("combobox", { name: "Employee" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Team" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Status" })).toBeInTheDocument();
-
-    await userEvent.click(screen.getByText("Calendar"));
-    expect(screen.queryByRole("combobox", { name: "Status" })).not.toBeInTheDocument();
   });
 
   it("filters the table down to one employee's requests via the Employee select", async () => {
     render(<LeaveListPage />);
-    await userEvent.click(screen.getByText("All"));
     await screen.findByText("Employee One");
     expect(screen.getByText("Employee Two")).toBeInTheDocument();
 
@@ -337,13 +432,12 @@ describe("LeaveListPage — Admin filters (§7.5c, 2026-07-31)", () => {
     expect(within(table).queryByText("Employee Two")).not.toBeInTheDocument();
   });
 
-  it("filters the table down to one manager's team via the Team select", async () => {
+  it("filters the table down to one real team via the Team select (§7.5e fix — built against the real Team entity)", async () => {
     render(<LeaveListPage />);
-    await userEvent.click(screen.getByText("All"));
     await screen.findByText("Employee One");
 
     await userEvent.click(screen.getByRole("combobox", { name: "Team" }));
-    await userEvent.click(await screen.findByTitle("Manager Two"));
+    await userEvent.click(await screen.findByTitle("Support Team"));
 
     expect(await screen.findByText("Employee Two")).toBeInTheDocument();
     expect(screen.queryByText("Employee One")).not.toBeInTheDocument();
@@ -351,7 +445,6 @@ describe("LeaveListPage — Admin filters (§7.5c, 2026-07-31)", () => {
 
   it("filters the table down by Status", async () => {
     render(<LeaveListPage />);
-    await userEvent.click(screen.getByText("All"));
     await screen.findByText("Employee One");
 
     await userEvent.click(screen.getByRole("combobox", { name: "Status" }));
@@ -374,27 +467,5 @@ describe("LeaveListPage — leave balance", () => {
 
     expect(await screen.findByText("Your Paid Leave Balance This Month")).toBeInTheDocument();
     expect(leaveApi.getLeaveBalance).toHaveBeenCalledWith(undefined);
-  });
-});
-
-describe("LeaveListPage — calendar view", () => {
-  it("toggles from the list table to the team leave calendar and back", async () => {
-    useSessionStore.setState({
-      user: { _id: "admin-1", role: "admin", permissions: {} },
-      isAuthenticated: true,
-      isLoading: false,
-    });
-
-    render(<LeaveListPage />);
-    await screen.findByText("Paid");
-    expect(screen.getByRole("table")).toBeInTheDocument();
-
-    await userEvent.click(screen.getByText("Calendar"));
-
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
-
-    await userEvent.click(screen.getByText("List"));
-
-    expect(screen.getByRole("table")).toBeInTheDocument();
   });
 });

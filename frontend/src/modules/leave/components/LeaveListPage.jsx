@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { Table, Tag, Segmented, Space, Button, Popconfirm, DatePicker, Select, App } from "antd";
+import { Table, Tag, Segmented, Space, Button, Popconfirm, DatePicker, Select, Tooltip, App } from "antd";
+import { DeleteOutlined } from "@ant-design/icons";
 import useLeaveList from "../hooks/useLeaveList";
 import LeaveRequestModal from "./LeaveRequestModal";
 import LeaveDeclineModal from "./LeaveDeclineModal";
 import LeaveBalanceCard from "./LeaveBalanceCard";
-import TeamLeaveCalendar from "./TeamLeaveCalendar";
 import ReportDownloadButton from "../../../components/ReportDownloadButton";
 import useUserDirectory from "../../../hooks/useUserDirectory";
+import useTeams from "../../team/hooks/useTeams";
 import useSessionStore from "../../../store/sessionStore";
 import { usePermission } from "../../../hooks/usePermission";
 import { can } from "../../../utils/permission.utils";
@@ -17,86 +18,87 @@ import {
   approveLeave as approveLeaveApi,
   declineLeave as declineLeaveApi,
   markUnapprovedAbsence as markUnapprovedAbsenceApi,
+  deleteLeave as deleteLeaveApi,
   getLeaveBalance as getLeaveBalanceApi,
 } from "../api/leaveApi";
 import { LEAVE_TYPE_LABELS, LEAVE_STATUS_LABELS, LEAVE_STATUS_COLORS, LEAVE_STATUSES } from "../constants/leave.constants";
 
 const { RangePicker } = DatePicker;
 
-const EMPTY_ADMIN_FILTERS = { employeeId: "", managerId: "", status: "", dateRange: null };
+const EMPTY_ADMIN_FILTERS = { employeeId: "", teamId: "", status: "", dateRange: null };
 
 /**
- * `/leave` — request + scope-tabbed list, per §7.5. Scope tabs are built
- * from whichever `leave.view*` grants the current user actually holds
- * (own/team/all), mirroring the same "check each scope's own permission"
- * design the backend's `listLeaves` uses rather than assuming a hierarchy.
+ * `/leave` (restructured 2026-07-31, §7.5e) — list/table only now, no
+ * calendar view and no "All" tab (see below). Tabs are role-shaped, not
+ * purely permission-derived like before:
  *
- * Approve/Decline/Mark Unapproved Absence (2026-07-31, §7.5c — reverses the
- * earlier "admin-only, manager can view but not approve" restriction): each
- * button is gated on its own `leave.approve`/`decline`/`mark_unapproved_absence`
- * usePermission check, not a blanket `isAdmin` flag — a manager now holds all
- * three by default. This is safe to drive purely off the held permission
- * (no extra per-row "is this my team?" check needed here): a manager without
- * `leave.view_all` can only ever reach `scope=own`/`scope=team` in the first
- * place, and `scope=team` is already backend-filtered to the manager's own
- * direct reports (`listLeaves`'s own `managerId` scoping) — so every row a
- * manager can see through this UI already IS their own team's, the same
- * "route confirms a grant, a different layer resolves the specific scope"
- * split the backend itself uses (there, the service layer; here, the
- * scope-tab's own existing query).
+ * - **Admin** gets no tabs at all — a single unified, filterable view of
+ *   every request org-wide (the Admin filter bar below), always active.
+ *   This mirrors `AdminAttendanceView`'s own "admin gets a structurally
+ *   different view, branched explicitly" precedent rather than trying to
+ *   force it through the same permission-derived tab logic as everyone
+ *   else, since admin's `can()` bypass would otherwise make every scope
+ *   "available" and defeat the point of removing the All tab.
+ * - **Everyone else** gets tabs built from whichever of `leave.view`/
+ *   `view_team` they actually hold (never `view_all` — that tier has no
+ *   tab anymore, full stop). A manager holds both by default (§7.5d) and
+ *   sees "Own"/"Team"; a plain employee/sales_associate holds only `view`
+ *   and sees no tab UI at all, just their own list — the same "don't show
+ *   a lone toggle with one real choice" reasoning already applied
+ *   elsewhere in this app.
+ *
+ * Approve/Decline/Mark Unapproved Absence/Delete (§7.5c/§7.5d) each gate on
+ * their own `usePermission` check, not a blanket `isAdmin` flag — see the
+ * original §7.5c comment (preserved below) for why no extra per-row "is
+ * this my team?" check is needed on top of that.
  */
 function LeaveListPage() {
   const { message } = App.useApp();
   const user = useSessionStore((state) => state.user);
   const { users } = useUserDirectory();
+  const { teams } = useTeams();
   const isAdmin = user?.role === "admin";
   const canApprove = usePermission("leave", "approve");
   const canDecline = usePermission("leave", "decline");
   const canMarkAbsence = usePermission("leave", "mark_unapproved_absence");
-  const canActOnLeave = canApprove || canDecline || canMarkAbsence;
+  const canDelete = usePermission("leave", "delete");
+  const canActOnLeave = canApprove || canDecline || canMarkAbsence || canDelete;
 
+  // Never includes "all" — the All tab is gone for good (§7.5e). Admin's
+  // own unified view is handled entirely by the `isAdmin` branch below,
+  // not through this permission-derived list.
   const scopeOptions = useMemo(
     () =>
       [
         can(user, "leave", "view") && { value: "own", label: "Own" },
         can(user, "leave", "view_team") && { value: "team", label: "Team" },
-        can(user, "leave", "view_all") && { value: "all", label: "All" },
       ].filter(Boolean),
     [user]
   );
 
   const [scope, setScope] = useState(scopeOptions[0]?.value || "own");
-  const { leaveRequests, isLoading, refetch } = useLeaveList(scope);
+  const effectiveScope = isAdmin ? "all" : scope;
+  const showScopeTabs = !isAdmin && scopeOptions.length > 1;
+
+  const { leaveRequests, isLoading, refetch } = useLeaveList(effectiveScope);
   const [isRequestOpen, setIsRequestOpen] = useState(false);
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
   const [declineTarget, setDeclineTarget] = useState(null);
   const [isSubmittingDecline, setIsSubmittingDecline] = useState(false);
-  const [viewMode, setViewMode] = useState("list");
-  const [calendarMonth, setCalendarMonth] = useState(() => dayjs());
   const [balancesByEmployeeId, setBalancesByEmployeeId] = useState(new Map());
   const [adminFilters, setAdminFilters] = useState(EMPTY_ADMIN_FILTERS);
   const [teamDirectory, setTeamDirectory] = useState([]);
 
-  const isAdminAllScope = isAdmin && scope === "all";
-
   const employeeNameById = useMemo(() => new Map(users.map((directoryUser) => [directoryUser._id, directoryUser.name])), [users]);
-
-  // Admin filters (§7.5c) reset whenever the scope changes away from "all" —
-  // a filter picked on the Admin table shouldn't silently keep narrowing
-  // Own/Team once the caller switches tabs.
-  useEffect(() => {
-    if (!isAdminAllScope) {
-      setAdminFilters(EMPTY_ADMIN_FILTERS);
-    }
-  }, [isAdminAllScope]);
 
   // Full user roster (managerId included, unlike the lightweight
   // `useUserDirectory()` dropdown above) — only fetched for the Admin
   // table's Team filter, which needs to know each employee's manager to
-  // group by. Gated the same way `LeavePendingRequestsWidget` gates its own
-  // effect: no fetch at all unless this specific feature actually needs it.
+  // group by. Gated the same way `LeavePendingRequestsWidget`/
+  // `AdminAttendanceView` gate their own effects: no fetch at all unless
+  // this specific feature actually needs it.
   useEffect(() => {
-    if (!isAdminAllScope) {
+    if (!isAdmin) {
       return undefined;
     }
 
@@ -116,18 +118,23 @@ function LeaveListPage() {
     return () => {
       cancelled = true;
     };
-  }, [isAdminAllScope]);
+  }, [isAdmin]);
 
   const managerIdByEmployeeId = useMemo(
     () => new Map(teamDirectory.map((directoryUser) => [String(directoryUser._id), directoryUser.managerId ? String(directoryUser.managerId) : null])),
     [teamDirectory]
   );
 
-  const managerOptions = useMemo(() => {
-    const managers = teamDirectory.filter((directoryUser) => directoryUser.role === "manager");
-
-    return [{ value: "", label: "All teams" }, ...managers.map((manager) => ({ value: String(manager._id), label: manager.name }))];
-  }, [teamDirectory]);
+  // Built against the real `Team` entity (`useTeams()`), not a manager-list
+  // stand-in — the earlier version of this filter derived "teams" from
+  // `teamDirectory.filter(role === "manager")`, which silently excluded any
+  // team headed by an admin (a real team in this data set has exactly that
+  // shape) and was the actual bug behind "the one existing team isn't
+  // showing up" (§7.5e fix).
+  const teamOptions = useMemo(
+    () => [{ value: "", label: "All teams" }, ...teams.map((team) => ({ value: team._id, label: team.name }))],
+    [teams]
+  );
 
   const filterEmployeeOptions = useMemo(() => {
     const uniqueEmployeeIds = [...new Set(leaveRequests.map((leave) => String(leave.employeeId)))];
@@ -143,13 +150,13 @@ function LeaveListPage() {
     []
   );
 
-  // Client-side, same reasoning as `TeamAttendanceView`'s own employee/status
-  // filters — the backend has no query params for these, and the Admin
+  // Client-side, same reasoning as `TeamAttendanceView`'s/`AdminAttendanceView`'s
+  // own filters — the backend has no query params for these, and the Admin
   // table's dataset (scope=all) is already fully fetched. Overlap check (not
   // a strict startDate match) so a multi-day request showing up under any
   // date the selected range touches, not just its exact start.
   const displayedLeaveRequests = useMemo(() => {
-    if (!isAdminAllScope) {
+    if (!isAdmin) {
       return leaveRequests;
     }
 
@@ -162,8 +169,11 @@ function LeaveListPage() {
         return false;
       }
 
-      if (adminFilters.managerId && managerIdByEmployeeId.get(String(leave.employeeId)) !== adminFilters.managerId) {
-        return false;
+      if (adminFilters.teamId) {
+        const team = teams.find((candidate) => candidate._id === adminFilters.teamId);
+        if (!team || managerIdByEmployeeId.get(String(leave.employeeId)) !== String(team.headManagerId)) {
+          return false;
+        }
       }
 
       if (adminFilters.dateRange?.[0] && adminFilters.dateRange?.[1]) {
@@ -179,14 +189,14 @@ function LeaveListPage() {
 
       return true;
     });
-  }, [leaveRequests, adminFilters, isAdminAllScope, managerIdByEmployeeId]);
+  }, [leaveRequests, adminFilters, isAdmin, teams, managerIdByEmployeeId]);
 
   // Per-row "Paid Leave Balance" (team/all scope only) — batch-fetches the
   // balance of every distinct employee currently listed, reusing the exact
   // same `GET /leave/balance` this page's own top-of-page card calls, rather
   // than re-deriving the quota math client-side.
   useEffect(() => {
-    if (scope === "own") {
+    if (effectiveScope === "own") {
       setBalancesByEmployeeId(new Map());
       return undefined;
     }
@@ -215,7 +225,7 @@ function LeaveListPage() {
     return () => {
       cancelled = true;
     };
-  }, [scope, leaveRequests]);
+  }, [effectiveScope, leaveRequests]);
 
   async function handleRequestLeave(payload) {
     setIsSubmittingRequest(true);
@@ -255,35 +265,47 @@ function LeaveListPage() {
     refetch();
   }
 
+  async function handleDelete(leave) {
+    await deleteLeaveApi(leave._id);
+    message.success("Leave request deleted");
+    refetch();
+  }
+
   const columns = [
-    scope !== "own" && {
+    effectiveScope !== "own" && {
       title: "Employee",
       dataIndex: "employeeId",
+      width: 160,
       render: (employeeId) => employeeNameById.get(String(employeeId)) || "Unknown",
     },
     {
       title: "Start Date",
       dataIndex: "startDate",
+      width: 130,
       render: (date) => dayjs(date).format("DD MMM YYYY"),
     },
     {
       title: "End Date",
       dataIndex: "endDate",
+      width: 130,
       render: (date) => dayjs(date).format("DD MMM YYYY"),
     },
     {
       title: "Type",
       dataIndex: "type",
+      width: 110,
       render: (type) => LEAVE_TYPE_LABELS[type],
     },
     {
       title: "Half Day",
       dataIndex: "isHalfDay",
+      width: 110,
       render: (isHalfDay) => (isHalfDay ? <Tag color="cyan">Half Day</Tag> : "No"),
     },
     {
       title: "Status",
       dataIndex: "status",
+      width: 180,
       render: (status, leave) => (
         <Space direction="vertical" size={0}>
           <Tag color={LEAVE_STATUS_COLORS[status]}>{LEAVE_STATUS_LABELS[status]}</Tag>
@@ -296,11 +318,13 @@ function LeaveListPage() {
     {
       title: "Double Deduction",
       dataIndex: "isDoubleDeduction",
+      width: 150,
       render: (isDoubleDeduction) => (isDoubleDeduction ? <Tag color="red">Yes (2x)</Tag> : "No"),
     },
-    scope !== "own" && {
+    effectiveScope !== "own" && {
       title: "Paid Leave Balance",
       key: "balance",
+      width: 170,
       render: (_, leave) => {
         const balance = balancesByEmployeeId.get(String(leave.employeeId));
         return balance ? `${balance.paidLeaveUsed} / ${balance.paidLeaveLimit} used` : "—";
@@ -309,6 +333,7 @@ function LeaveListPage() {
     canActOnLeave && {
       title: "Actions",
       key: "actions",
+      width: 300,
       render: (_, leave) => (
         <Space>
           {leave.status === "pending" && (
@@ -338,6 +363,19 @@ function LeaveListPage() {
               </Button>
             </Popconfirm>
           )}
+          {canDelete && (
+            <Popconfirm
+              title="Delete this leave request?"
+              description="This cannot be undone."
+              okText="Confirm Delete"
+              okType="danger"
+              onConfirm={() => handleDelete(leave)}
+            >
+              <Tooltip title="Delete">
+                <Button size="small" danger icon={<DeleteOutlined />} aria-label="Delete" />
+              </Tooltip>
+            </Popconfirm>
+          )}
         </Space>
       ),
     },
@@ -349,21 +387,10 @@ function LeaveListPage() {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Space wrap>
-          <Segmented options={scopeOptions} value={scope} onChange={setScope} />
-          <Segmented
-            options={[
-              { value: "list", label: "List" },
-              { value: "calendar", label: "Calendar" },
-            ]}
-            value={viewMode}
-            onChange={setViewMode}
-          />
-          {viewMode === "calendar" && (
-            <DatePicker picker="month" value={calendarMonth} onChange={(value) => value && setCalendarMonth(value)} allowClear={false} />
-          )}
+          {showScopeTabs && <Segmented options={scopeOptions} value={scope} onChange={setScope} />}
         </Space>
         <Space>
-          <ReportDownloadButton module="leave" filters={{ scope }} filenamePrefix="leave" />
+          <ReportDownloadButton module="leave" filters={{ scope: effectiveScope }} filenamePrefix="leave" />
           {/* Admin exemption (§7.5c, 2026-07-31): admin accounts don't
               request leave for themselves — the backend rejects it outright,
               so the button is hidden here rather than surfacing a request
@@ -376,7 +403,7 @@ function LeaveListPage() {
         </Space>
       </div>
 
-      {isAdminAllScope && viewMode === "list" && (
+      {isAdmin && (
         <Space wrap>
           <Select
             aria-label="Employee"
@@ -389,12 +416,12 @@ function LeaveListPage() {
           />
           <Select
             aria-label="Team"
-            value={adminFilters.managerId}
-            options={managerOptions}
+            value={adminFilters.teamId}
+            options={teamOptions}
             style={{ width: 200 }}
             showSearch
             optionFilterProp="label"
-            onChange={(value) => setAdminFilters((previous) => ({ ...previous, managerId: value }))}
+            onChange={(value) => setAdminFilters((previous) => ({ ...previous, teamId: value }))}
           />
           <Select
             aria-label="Status"
@@ -411,31 +438,28 @@ function LeaveListPage() {
         </Space>
       )}
 
-      {viewMode === "calendar" ? (
-        <TeamLeaveCalendar month={calendarMonth} leaveRequests={leaveRequests} employeeNameById={employeeNameById} />
-      ) : (
-        <Table
-          rowKey="_id"
-          columns={columns}
-          dataSource={displayedLeaveRequests}
-          loading={isLoading}
-          expandable={
-            scope !== "own"
-              ? {
-                  // Reason is required on every request (§7.5c) and can run
-                  // long as free text — an expandable row detail keeps the
-                  // table itself scannable, rather than a column that would
-                  // either truncate awkwardly or blow up column width.
-                  expandedRowRender: (leave) => (
-                    <p className="m-0">
-                      <strong>Reason:</strong> {leave.reason}
-                    </p>
-                  ),
-                }
-              : undefined
-          }
-        />
-      )}
+      <Table
+        rowKey="_id"
+        columns={columns}
+        dataSource={displayedLeaveRequests}
+        loading={isLoading}
+        scroll={{ x: "max-content" }}
+        expandable={
+          effectiveScope !== "own"
+            ? {
+                // Reason is required on every request (§7.5c) and can run
+                // long as free text — an expandable row detail keeps the
+                // table itself scannable, rather than a column that would
+                // either truncate awkwardly or blow up column width.
+                expandedRowRender: (leave) => (
+                  <p className="m-0">
+                    <strong>Reason:</strong> {leave.reason}
+                  </p>
+                ),
+              }
+            : undefined
+        }
+      />
 
       <LeaveRequestModal
         open={isRequestOpen}

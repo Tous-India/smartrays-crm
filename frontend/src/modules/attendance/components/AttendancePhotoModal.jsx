@@ -53,8 +53,7 @@ function PhotoSlot({ title, photoUrl, time, coords, showPhoto, showLocation }) {
  * Photos already existed on every Attendance record
  * (`checkIn.photoUrl`/`checkOut.photoUrl`, uploaded to Cloudinary at
  * check-in/out) but had no UI surfacing them anywhere before this — clicking
- * a day's record in either `AttendanceTimeline` (list view) or
- * `AttendanceCalendar` (grid view) opens this same modal. Gracefully
+ * a day's record in `AttendanceTimeline` opens this same modal. Gracefully
  * handles a missing photo (`PhotoSlot`'s own empty state) — the normal case
  * for a manually-created record (§7.4's admin-correction addition), which
  * has no photo/coords at all by design.

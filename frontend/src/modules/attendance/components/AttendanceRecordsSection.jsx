@@ -1,23 +1,23 @@
 import { useState } from "react";
-import { Segmented } from "antd";
 import AttendanceTimeline from "./AttendanceTimeline";
-import AttendanceCalendar from "./AttendanceCalendar";
 import AttendanceSummaryStats from "./AttendanceSummaryStats";
 import AttendancePhotoModal from "./AttendancePhotoModal";
 
-const VIEW_OPTIONS = [
-  { value: "list", label: "List" },
-  { value: "calendar", label: "Calendar" },
-];
-
 /**
- * Everything below the month/employee filters on both `PersonalAttendanceView`
- * and `TeamAttendanceView` — summary stats (§7.4 addition), a List/Calendar
- * view toggle (both reuse the SAME `records` already fetched for the page;
- * neither view replaces the other), and the read-only photo-viewer modal.
- * Built as one shared component rather than duplicating this wiring twice,
- * the same reasoning `AttendanceTimeline` itself already established for the
- * list view alone.
+ * Everything below the month/employee filters on `PersonalAttendanceView`,
+ * `TeamAttendanceView`, and `AdminAttendanceView` — summary stats (§7.4
+ * addition) and the read-only photo-viewer modal, on top of
+ * `AttendanceTimeline`'s table. Built as one shared component rather than
+ * duplicating this wiring three times.
+ *
+ * List/Calendar toggle removed (2026-07-31, §7.5e) — list/timeline-only now,
+ * matching the same simplification applied to Leave the same day.
+ * `AttendanceCalendar.jsx` is deleted outright, not just hidden (Credentials
+ * Vault removal precedent); its two markers (manually-adjusted record,
+ * geofence violation) were never calendar-only — `AttendanceTimeline`
+ * already showed both independently (the exclamation badge next to the
+ * Status tag, and the "Location" column's `GeofenceViolationBar`), so
+ * nothing needed migrating.
  *
  * The admin manual-correction UI (Add Record button, per-row/per-modal Edit
  * action) that used to live here was removed — Attendance is UI-read-only
@@ -34,26 +34,19 @@ function AttendanceRecordsSection({
   showPhotos,
   showLocation,
 }) {
-  const [viewMode, setViewMode] = useState("list");
   const [photoModalRecord, setPhotoModalRecord] = useState(null);
 
   return (
     <div className="flex flex-col gap-4">
       <AttendanceSummaryStats records={records} month={month} />
 
-      <Segmented value={viewMode} onChange={setViewMode} options={VIEW_OPTIONS} />
-
-      {viewMode === "list" ? (
-        <AttendanceTimeline
-          records={records}
-          isLoading={isLoading}
-          showEmployeeColumn={showEmployeeColumn}
-          employeeNameById={employeeNameById}
-          onRowClick={setPhotoModalRecord}
-        />
-      ) : (
-        <AttendanceCalendar month={month} records={records} onDayClick={setPhotoModalRecord} />
-      )}
+      <AttendanceTimeline
+        records={records}
+        isLoading={isLoading}
+        showEmployeeColumn={showEmployeeColumn}
+        employeeNameById={employeeNameById}
+        onRowClick={setPhotoModalRecord}
+      />
 
       <AttendancePhotoModal
         open={Boolean(photoModalRecord)}

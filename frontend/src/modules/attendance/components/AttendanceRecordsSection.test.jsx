@@ -30,16 +30,13 @@ describe("AttendanceRecordsSection — read-only (no correction UI, §7.4 revers
   });
 });
 
-describe("AttendanceRecordsSection — view toggle", () => {
-  it("defaults to the List view and switches to Calendar", async () => {
+describe("AttendanceRecordsSection — list/timeline only (§7.5e, 2026-07-31 — calendar view removed)", () => {
+  it("always renders the table, with no List/Calendar toggle at all", () => {
     renderSection();
 
     expect(screen.getByRole("table")).toBeInTheDocument();
-
-    await userEvent.click(screen.getByText("Calendar"));
-
-    expect(screen.queryByRole("table")).not.toBeInTheDocument();
-    expect(screen.getByTestId("attendance-calendar-day-2026-06-03")).toBeInTheDocument();
+    expect(screen.queryByText("Calendar")).not.toBeInTheDocument();
+    expect(screen.queryByText("List")).not.toBeInTheDocument();
   });
 });
 
@@ -58,14 +55,5 @@ describe("AttendanceRecordsSection — photo viewer", () => {
     expect(await screen.findByText(/Attendance —/)).toBeInTheDocument();
     // Read-only — no Edit Record action inside the modal either.
     expect(screen.queryByRole("button", { name: /Edit Record/ })).not.toBeInTheDocument();
-  });
-
-  it("opens the photo modal from a calendar day with a real record", async () => {
-    renderSection();
-
-    await userEvent.click(screen.getByText("Calendar"));
-    await userEvent.click(screen.getByTestId("attendance-calendar-day-2026-06-03"));
-
-    expect(await screen.findByText(/Attendance —/)).toBeInTheDocument();
   });
 });

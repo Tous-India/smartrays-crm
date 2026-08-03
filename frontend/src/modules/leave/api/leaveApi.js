@@ -30,6 +30,11 @@ export function declineLeave(id, reason) {
   return apiClient.patch(`/leave/${id}/decline`, reason ? { reason } : {});
 }
 
+// §7.5d, 2026-07-31 — admin org-wide, or a manager on their own team.
+export function deleteLeave(id) {
+  return apiClient.delete(`/leave/${id}`);
+}
+
 // `employeeId` omitted fetches the caller's own balance; passed, fetches an
 // employee on the caller's team (manager) or anyone (admin) — see
 // backend/src/modules/leave/leave.service.js#getLeaveBalance.
