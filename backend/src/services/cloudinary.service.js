@@ -8,12 +8,19 @@ cloudinary.config({
 });
 
 /**
- * Uploads a check-in/check-out photo to Cloudinary and returns the secure
- * URL — the binary itself is never stored in MongoDB, only this URL
- * (Attendance.checkIn.photoUrl / checkOut.photoUrl, §6.5/§7.4). Accepts
- * either a base64 data URI string (JSON body) or a raw Buffer (multipart
- * upload via multer) — attendance.controller.js normalizes both shapes into
- * whatever this function receives.
+ * Uploads a check-in/check-out photo to Cloudinary and returns both the
+ * secure URL and the asset's `public_id` — the binary itself is never stored
+ * in MongoDB, only these two values (Attendance.checkIn/checkOut's
+ * `photoUrl`/`photoPublicId`, §6.5/§7.4/§7.4c). Accepts either a base64 data
+ * URI string (JSON body) or a raw Buffer (multipart upload via multer) —
+ * attendance.controller.js normalizes both shapes into whatever this
+ * function receives.
+ *
+ * `public_id` is returned (2026-07-31, §7.4c) alongside the URL — added
+ * specifically so `attendancePhotoCleanupCron.js` can later delete the
+ * actual Cloudinary asset via `deleteCloudinaryAsset` below; `secure_url`
+ * alone doesn't identify an asset for deletion. Every OTHER caller of this
+ * function still only ever needs `secureUrl`.
  */
 export async function uploadAttendancePhoto(photoInput) {
   const uploadSource = Buffer.isBuffer(photoInput)
@@ -25,7 +32,20 @@ export async function uploadAttendancePhoto(photoInput) {
     resource_type: "image",
   });
 
-  return result.secure_url;
+  return { secureUrl: result.secure_url, publicId: result.public_id };
+}
+
+/**
+ * Deletes a single asset from Cloudinary by its `public_id` — used by
+ * `attendancePhotoCleanupCron.js` (§7.4c) to actually free the stored photo
+ * once a record is old enough, not just clear the DB's reference to it.
+ * Callers are expected to handle their own try/catch per-asset (the cron
+ * must survive one asset's failure without stopping the whole batch) — this
+ * function itself doesn't swallow errors, so a real failure is still visible
+ * to whoever calls it.
+ */
+export async function deleteCloudinaryAsset(publicId) {
+  return cloudinary.uploader.destroy(publicId, { resource_type: "image" });
 }
 
 /**

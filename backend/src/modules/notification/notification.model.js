@@ -12,6 +12,13 @@ const NOTIFICATION_TYPES = [
   "leave_requested",
   "leave_approved",
   "leave_declined",
+  // Added 2026-07-31 (§7.4c) — check-in/break-in/break-out/check-out, each
+  // notifying the employee themselves, their manager, and every admin (see
+  // attendance.service.js#notifyAttendanceEvent).
+  "attendance_check_in",
+  "attendance_break_in",
+  "attendance_break_out",
+  "attendance_check_out",
 ];
 
 const notificationSchema = new mongoose.Schema(

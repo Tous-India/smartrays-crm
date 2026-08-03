@@ -5,6 +5,8 @@ import { authorizeAny, requireAdmin } from "../../middlewares/authorize.middlewa
 import {
   checkIn,
   checkOut,
+  breakIn,
+  breakOut,
   heartbeat,
   myAttendance,
   teamAttendance,
@@ -15,6 +17,8 @@ import {
 import {
   validateCheckInInput,
   validateCheckOutInput,
+  validateBreakInInput,
+  validateBreakOutInput,
   validateMonthQuery,
   validateReportQuery,
   validateAdjustAttendanceInput,
@@ -39,6 +43,12 @@ attendanceRouter.post(
   checkOut
 );
 attendanceRouter.post("/heartbeat", authenticate, heartbeat);
+
+// Break In/Out (§7.4c) — plain JSON only, no `upload.single`, since neither
+// takes a photo. Same "no module-permission gate, this is a fact about your
+// own shift" reasoning as check-in/check-out/heartbeat above.
+attendanceRouter.post("/break-in", authenticate, validateBreakInInput, breakIn);
+attendanceRouter.post("/break-out", authenticate, validateBreakOutInput, breakOut);
 
 attendanceRouter.get("/me", authenticate, validateMonthQuery, myAttendance);
 

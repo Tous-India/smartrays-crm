@@ -17,7 +17,7 @@ vi.mock("../../services/googleMaps.service.js", () => ({
   getDistanceKm: vi.fn(async () => FAKE_DISTANCE_KM),
 }));
 vi.mock("../../services/cloudinary.service.js", () => ({
-  uploadAttendancePhoto: vi.fn(async () => "https://fake.cloudinary.test/photo.jpg"),
+  uploadAttendancePhoto: vi.fn(async () => ({ secureUrl: "https://fake.cloudinary.test/photo.jpg", publicId: "fake-public-id" })),
   uploadReportFile: vi.fn(async () => FAKE_REPORT_URL),
 }));
 

@@ -35,7 +35,16 @@ export const PERMISSION_REGISTRY = {
   // via GET /attendance/me with no gate at all, so a "view own" grant would
   // be redundant. This is specifically for viewing OTHER employees' records
   // (GET /attendance/team, GET /attendance/report).
-  attendance: ["view_team", "view_all"],
+  // `view_photos`/`view_location` added 2026-07-31 (§7.4c) — granular,
+  // independent gates on TOP of `view_team`/`view_all` (a manager who can
+  // see the team's records at all doesn't automatically see the sensitive
+  // photo/coords fields within them). Default OFF for the manager role
+  // template — grantable per-manager via the existing Individual User
+  // Overrides page, no default grant added here. Never applies to viewing
+  // your OWN record regardless of either grant — that's a hard rule
+  // enforced in code (attendance.service.js#applyVisibilityRules), not a
+  // permission this registry could express either way.
+  attendance: ["view_team", "view_all", "view_photos", "view_location"],
   // Added 2026-07-13 (§7.5). Mirrors `location`'s three-tier shape exactly —
   // GET /leave?scope=own|team|all checks the matching action per requested
   // scope, unlike location's implicit union-of-grants view. Requesting your

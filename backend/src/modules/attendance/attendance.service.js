@@ -1,17 +1,22 @@
 import ApiError from "../../utils/ApiError.js";
 import { can } from "../../helpers/permission.helper.js";
 import { env } from "../../config/env.js";
-import { uploadAttendancePhoto } from "../../services/cloudinary.service.js";
+import { uploadAttendancePhoto, deleteCloudinaryAsset } from "../../services/cloudinary.service.js";
 import { generateExcelReport, generatePdfReport } from "../../services/report.service.js";
 import { haversineDistanceMeters } from "../../services/geo.service.js";
 import { generateAutoTravelLog } from "../transport/travelLog.service.js";
+import { createNotification } from "../notification/notification.service.js";
 import Attendance from "./attendance.model.js";
 import User from "../user/user.model.js";
 
 /**
- * Opens a new attendance record for "now". Rejects (409) if the employee
- * already has an OPEN record (checked in, not yet checked out) — one open
- * check-in at a time, reused as-is (no date scoping) from
+ * Opens a new attendance record for "now". Rejects (403) if the requesting
+ * user is an admin — admin accounts don't track attendance at all (2026-07-31,
+ * §7.4c); enforced here server-side rather than just hiding the widget on the
+ * frontend, since a frontend-only exemption is trivially bypassed by anyone
+ * hitting this endpoint directly. Rejects (409) if the employee already has
+ * an OPEN record (checked in, not yet checked out) — one open check-in at a
+ * time, reused as-is (no date scoping) from
  * location.service.js#findOpenAttendance,
  * since "open" already implies "not yet closed," regardless of which day it
  * started on. `photo` is uploaded to Cloudinary — never stored as binary in
@@ -19,8 +24,21 @@ import User from "../user/user.model.js";
  * rejects a check-in/check-out with no photo at all) — the whole point of
  * capturing one is to prove physical presence, which isn't actually enforced
  * if the API will silently accept a request without it.
+ *
+ * Notifies (§7.4c) the employee themselves, their manager (if any), and every
+ * admin — see `notifyAttendanceEvent` below. The RESPONSE returned to the
+ * caller has its own photo/coords stripped before it goes back (see
+ * `applyVisibilityRules`) — the employee is viewing their own just-created
+ * record, and "employee never sees own photo/location" is a blanket rule
+ * (§7.4c) with no carve-out for the instant they submit it; the frontend
+ * already has both locally anyway, from its own camera/geolocation capture.
  */
-export async function checkIn(employeeId, coords, photo) {
+export async function checkIn(requestingUser, coords, photo) {
+  if (requestingUser.role === "admin") {
+    throw new ApiError(403, "Admin accounts do not track attendance");
+  }
+
+  const employeeId = requestingUser._id;
   const openRecord = await findOpenAttendance(employeeId);
 
   if (openRecord) {
@@ -28,23 +46,32 @@ export async function checkIn(employeeId, coords, photo) {
   }
 
   const now = new Date();
-  const photoUrl = photo ? await uploadAttendancePhoto(photo) : null;
+  const upload = photo ? await uploadAttendancePhoto(photo) : null;
 
-  return Attendance.create({
+  const record = await Attendance.create({
     employeeId,
     date: startOfDay(now),
-    checkIn: { time: now, coords, photoUrl },
+    checkIn: { time: now, coords, photoUrl: upload?.secureUrl || null, photoPublicId: upload?.publicId || null },
     // The check-in moment itself counts as the first "proof of life" —
     // see applyConnectivityGapIfNeeded.
     lastHeartbeatAt: now,
   });
+
+  await notifyAttendanceEvent(requestingUser, "attendance_check_in", `${requestingUser.name} checked in`, record._id);
+
+  return applyVisibilityRules(record, SELF_VIEW_VISIBILITY);
 }
 
 /**
  * Closes the employee's current open attendance record. Rejects (409) if
- * there's no open record — nothing to check out of. Runs the same
- * connectivity-gap check a heartbeat would (covering any silent period
- * between the last heartbeat and checkout), then computes workingHours.
+ * there's no open record — nothing to check out of. ALSO rejects (409,
+ * 2026-07-31 §7.4c) if the employee is still on break (`breakIn` set,
+ * `breakOut` not) — chosen over auto-closing the break silently, since a
+ * checkout that quietly ends a break the employee forgot about would hide a
+ * real state transition from them; a clear "end your break first" message is
+ * safer and unambiguous. Runs the same connectivity-gap check a heartbeat
+ * would (covering any silent period between the last heartbeat and
+ * checkout), then computes workingHours.
  *
  * Also auto-generates a `TravelLog` (§6.5/§7.6) from this shift's checkIn →
  * checkOut coords — a direct call into `transport/travelLog.service.js`
@@ -53,20 +80,35 @@ export async function checkIn(employeeId, coords, photo) {
  * mean no log gets created), so checkout itself can never fail because
  * travel logging failed.
  */
-export async function checkOut(employeeId, coords, photo) {
+export async function checkOut(requestingUser, coords, photo) {
+  const employeeId = requestingUser._id;
   const openRecord = await findOpenAttendance(employeeId);
 
   if (!openRecord) {
     throw new ApiError(409, "No open check-in found — check in before checking out.");
   }
 
+  if (openRecord.breakIn?.time && !openRecord.breakOut?.time) {
+    throw new ApiError(409, "You're still on break — end your break before checking out.");
+  }
+
   const now = new Date();
   applyConnectivityGapIfNeeded(openRecord, now);
   closeOpenGeofenceViolation(openRecord, now);
 
-  const photoUrl = photo ? await uploadAttendancePhoto(photo) : null;
-  openRecord.checkOut = { time: now, coords, photoUrl };
-  openRecord.workingHours = computeWorkingHours(openRecord.checkIn.time, now, openRecord.connectivityGaps);
+  const upload = photo ? await uploadAttendancePhoto(photo) : null;
+  openRecord.checkOut = {
+    time: now,
+    coords,
+    photoUrl: upload?.secureUrl || null,
+    photoPublicId: upload?.publicId || null,
+  };
+  openRecord.workingHours = computeWorkingHours(
+    openRecord.checkIn.time,
+    now,
+    openRecord.connectivityGaps,
+    breakDurationMs(openRecord)
+  );
 
   await openRecord.save();
 
@@ -77,7 +119,80 @@ export async function checkOut(employeeId, coords, photo) {
     destinationCoords: openRecord.checkOut.coords,
   });
 
-  return openRecord;
+  await notifyAttendanceEvent(requestingUser, "attendance_check_out", `${requestingUser.name} checked out`, openRecord._id);
+
+  return applyVisibilityRules(openRecord, SELF_VIEW_VISIBILITY);
+}
+
+/**
+ * Break In — only valid while checked in, not already on break, and the
+ * shift's one break hasn't already been used (§7.4c: single break per shift,
+ * not an array). No photo requirement (confirmed decision) — `coords` IS
+ * required, matching check-in's own geolocation requirement, enforced in
+ * attendance.validation.js.
+ */
+export async function breakIn(requestingUser, coords) {
+  const employeeId = requestingUser._id;
+  const openRecord = await findOpenAttendance(employeeId);
+
+  if (!openRecord) {
+    throw new ApiError(409, "No open check-in found — check in before starting a break.");
+  }
+
+  if (openRecord.breakIn?.time && !openRecord.breakOut?.time) {
+    throw new ApiError(409, "You're already on break.");
+  }
+
+  if (openRecord.breakIn?.time && openRecord.breakOut?.time) {
+    throw new ApiError(409, "You've already used your one break for this shift.");
+  }
+
+  const now = new Date();
+  openRecord.breakIn = { time: now, coords };
+  await openRecord.save();
+
+  await notifyAttendanceEvent(requestingUser, "attendance_break_in", `${requestingUser.name} started a break`, openRecord._id);
+
+  return applyVisibilityRules(openRecord, SELF_VIEW_VISIBILITY);
+}
+
+/**
+ * Break Out — only valid while genuinely on break (`breakIn` set,
+ * `breakOut` not yet). See `checkOut` above for what happens if checkout is
+ * attempted before this is called.
+ */
+export async function breakOut(requestingUser, coords) {
+  const employeeId = requestingUser._id;
+  const openRecord = await findOpenAttendance(employeeId);
+
+  if (!openRecord) {
+    throw new ApiError(409, "No open check-in found.");
+  }
+
+  if (!openRecord.breakIn?.time || openRecord.breakOut?.time) {
+    throw new ApiError(409, "You're not currently on break.");
+  }
+
+  const now = new Date();
+  openRecord.breakOut = { time: now, coords };
+  await openRecord.save();
+
+  await notifyAttendanceEvent(requestingUser, "attendance_break_out", `${requestingUser.name} ended their break`, openRecord._id);
+
+  return applyVisibilityRules(openRecord, SELF_VIEW_VISIBILITY);
+}
+
+/**
+ * Total break duration in ms for this shift — 0 if no break was taken (or
+ * the break was started but never ended, which `checkOut` above already
+ * rejects before this could ever be called with an open break).
+ */
+function breakDurationMs(attendance) {
+  if (!attendance.breakIn?.time || !attendance.breakOut?.time) {
+    return 0;
+  }
+
+  return attendance.breakOut.time - attendance.breakIn.time;
 }
 
 /**
@@ -203,22 +318,30 @@ function closeOpenGeofenceViolation(attendance, now) {
 
 /**
  * workingHours = gross shift duration MINUS total connectivity-gap duration
- * — a gap means the employee wasn't verifiably working during that window,
- * so it shouldn't count toward their hours (§6.5/§7.4, this task's own
- * stated reasoning). Clamped to 0 in the pathological case where gaps somehow
- * exceed the gross duration. Rounded to 2 decimal places (hours).
+ * MINUS break duration (§7.4c, 2026-07-31 addition) — a gap means the
+ * employee wasn't verifiably working during that window, and a break is time
+ * they were deliberately not working, so neither should count toward their
+ * hours (§6.5/§7.4, this task's own stated reasoning). `breakMs` defaults to
+ * 0 so every OTHER existing caller (createManualAttendance, which has no
+ * break concept at all) is unaffected. Clamped to 0 in the pathological case
+ * where gaps+break somehow exceed the gross duration. Rounded to 2 decimal
+ * places (hours).
  */
-function computeWorkingHours(checkInTime, checkOutTime, connectivityGaps) {
+function computeWorkingHours(checkInTime, checkOutTime, connectivityGaps, breakMs = 0) {
   const grossMs = checkOutTime - checkInTime;
   const gapMs = connectivityGaps.reduce((total, gap) => total + (gap.end - gap.start), 0);
-  const netMs = Math.max(0, grossMs - gapMs);
+  const netMs = Math.max(0, grossMs - gapMs - breakMs);
 
   return Math.round((netMs / 3600000) * 100) / 100;
 }
 
 /**
  * Own attendance history, newest first, optionally narrowed to a single
- * calendar month (`month` as "YYYY-MM").
+ * calendar month (`month` as "YYYY-MM"). Photo/coords are ALWAYS stripped
+ * here (§7.4c) — viewing your own record is a hard no-override case, not
+ * permission-gated, regardless of the viewer's own role/grants (even a
+ * manager or admin viewing THEIR OWN history via this same endpoint gets the
+ * same stripped shape).
  */
 export async function getMyAttendance(employeeId, month) {
   const filter = { employeeId };
@@ -228,7 +351,9 @@ export async function getMyAttendance(employeeId, month) {
     filter.date = { $gte: start, $lt: end };
   }
 
-  return Attendance.find(filter).sort({ date: -1 });
+  const records = await Attendance.find(filter).sort({ date: -1 });
+
+  return records.map((record) => applyVisibilityRules(record, SELF_VIEW_VISIBILITY));
 }
 
 /**
@@ -237,6 +362,12 @@ export async function getMyAttendance(employeeId, month) {
  * team" pattern as everywhere else (§11.9). Own attendance is always visible
  * via GET /attendance/me with no gate at all — this endpoint is specifically
  * for viewing OTHERS', so it's never reached without at least view_team.
+ *
+ * Photo/coords are gated per-viewer (§7.4c, 2026-07-31): admin always sees
+ * both (`can()` bypasses for admin); a manager needs the specific
+ * `attendance.view_photos`/`attendance.view_location` grant for each,
+ * independently — a manager with neither sees plain check-in/check-out
+ * times and nothing else.
  */
 export async function getTeamAttendance(month, requestingUser) {
   const employeeFilter = can(requestingUser, "attendance", "view_all")
@@ -250,7 +381,10 @@ export async function getTeamAttendance(month, requestingUser) {
     filter.date = { $gte: start, $lt: end };
   }
 
-  return Attendance.find(filter).sort({ date: -1 });
+  const records = await Attendance.find(filter).sort({ date: -1 });
+  const visibility = viewerVisibility(requestingUser);
+
+  return records.map((record) => applyVisibilityRules(record, visibility));
 }
 
 // Exported for `report/analytics.service.js`'s Attendance-trend endpoint to
@@ -308,7 +442,7 @@ export async function adjustAttendance(attendanceId, payload, requestingUser) {
 
   record.workingHours =
     record.checkIn.time && record.checkOut.time
-      ? computeWorkingHours(record.checkIn.time, record.checkOut.time, record.connectivityGaps)
+      ? computeWorkingHours(record.checkIn.time, record.checkOut.time, record.connectivityGaps, breakDurationMs(record))
       : null;
 
   record.isManuallyAdjusted = true;
@@ -448,6 +582,162 @@ function buildPdfReport(records) {
       );
     },
   });
+}
+
+/**
+ * Visibility a viewer gets over SOMEONE ELSE's record (§7.4c) — never used
+ * for self-viewing, which is always `SELF_VIEW_VISIBILITY` regardless of the
+ * viewer's own grants. `can()` already returns `true` unconditionally for an
+ * admin (permission.helper.js), so an admin viewer naturally gets both here
+ * with no separate admin-specific branch needed.
+ */
+function viewerVisibility(requestingUser) {
+  return {
+    canSeePhotos: can(requestingUser, "attendance", "view_photos"),
+    canSeeLocation: can(requestingUser, "attendance", "view_location"),
+  };
+}
+
+// Always both false — viewing your OWN record (§7.4c's hard rule, no
+// permission can ever override it) and the shape every check-in/check-out/
+// break-in/break-out response is stripped through before it goes back to
+// the employee who just performed the action.
+const SELF_VIEW_VISIBILITY = { canSeePhotos: false, canSeeLocation: false };
+
+/**
+ * Strips `photoUrl` (both checkIn/checkOut) and `coords` (checkIn/checkOut/
+ * breakIn/breakOut) from a record per the given visibility — never mutates
+ * the original Mongoose document, works on a plain object copy so a caller
+ * that still holds the original (e.g. `checkOut` re-using `openRecord` after
+ * this runs) isn't affected. `photoPublicId` never reaches this at all
+ * (schema `select: false`), so there's nothing to strip for it here.
+ */
+function applyVisibilityRules(record, { canSeePhotos, canSeeLocation }) {
+  const obj = typeof record.toObject === "function" ? record.toObject() : { ...record };
+
+  if (!canSeePhotos) {
+    if (obj.checkIn) obj.checkIn = { ...obj.checkIn, photoUrl: null };
+    if (obj.checkOut) obj.checkOut = { ...obj.checkOut, photoUrl: null };
+  }
+
+  if (!canSeeLocation) {
+    if (obj.checkIn) obj.checkIn = { ...obj.checkIn, coords: null };
+    if (obj.checkOut) obj.checkOut = { ...obj.checkOut, coords: null };
+    if (obj.breakIn) obj.breakIn = { ...obj.breakIn, coords: null };
+    if (obj.breakOut) obj.breakOut = { ...obj.breakOut, coords: null };
+  }
+
+  return obj;
+}
+
+/**
+ * Notifies (§7.4c) three audiences for a check-in/break-in/break-out/check-
+ * out event, same `createNotification` reuse pattern as Leads/Leave: the
+ * employee themselves (a confirmation), their manager if `managerId` is set,
+ * and every admin. Deduplicated via a `Set` (an admin who IS the employee's
+ * manager, or the employee themselves being an admin — not possible today
+ * since `checkIn` blocks admin entirely, but kept for robustness — only ever
+ * gets one notification, not two/three). Never awaited for its own sake by
+ * its callers beyond letting a genuine failure surface — `createNotification`
+ * itself already never throws on a push-delivery failure, only a real
+ * database error would propagate here, same as every other caller of it.
+ */
+async function notifyAttendanceEvent(employee, type, message, attendanceId) {
+  const recipientIds = new Set([String(employee._id)]);
+
+  if (employee.managerId) {
+    recipientIds.add(String(employee.managerId));
+  }
+
+  const admins = await User.find({ role: "admin" }).select("_id");
+  admins.forEach((admin) => recipientIds.add(String(admin._id)));
+
+  await Promise.all(
+    [...recipientIds].map((userId) =>
+      createNotification(userId, type, message, { module: "attendance", id: attendanceId })
+    )
+  );
+}
+
+/**
+ * 45-day Cloudinary photo cleanup (§7.4c, 2026-07-31) — called daily by
+ * `src/cron/attendancePhotoCleanupCron.js`. Finds every Attendance record
+ * older than 45 days (by its `date` field, not `createdAt` — `date` is the
+ * shift's own calendar day, the meaningful "how old is this attendance"
+ * measure) that still has a `photoUrl` set on `checkIn` or `checkOut`,
+ * deletes the actual Cloudinary asset via its `photoPublicId`, then clears
+ * both `photoUrl` and `photoPublicId` to `null` — nothing else on the record
+ * is ever touched.
+ *
+ * Explicitly `.select("+checkIn.photoPublicId +checkOut.photoPublicId")` —
+ * both fields are schema `select: false` (never meant to leak into a normal
+ * API response), so this is the one legitimate place that needs them back.
+ *
+ * Resilient by design: one record's failure (a Cloudinary error, a missing
+ * `photoPublicId` on an old record that pre-dates this field existing at
+ * all) is caught, logged, and counted — never stops the batch, matching the
+ * "never block on a single failure" principle already used elsewhere in this
+ * codebase (e.g. `applyGeofenceCheck`/`generateAutoTravelLog`). A record with
+ * a `photoUrl` but no stored `photoPublicId` (only possible for a photo
+ * uploaded before this field existed) can't have its Cloudinary asset
+ * identified for deletion — best effort still clears the local `photoUrl`
+ * reference so the app stops pointing at a 45-day-old photo, but the
+ * underlying asset itself is orphaned on Cloudinary in that one case, logged
+ * as such rather than silently skipped.
+ */
+export async function cleanupOldAttendancePhotos(referenceDate = new Date()) {
+  const cutoff = new Date(referenceDate);
+  cutoff.setDate(cutoff.getDate() - 45);
+
+  const records = await Attendance.find({
+    date: { $lt: cutoff },
+    $or: [{ "checkIn.photoUrl": { $ne: null } }, { "checkOut.photoUrl": { $ne: null } }],
+  }).select("+checkIn.photoPublicId +checkOut.photoPublicId");
+
+  let cleaned = 0;
+  let failed = 0;
+
+  for (const record of records) {
+    try {
+      await cleanupOneRecordsPhotos(record);
+      cleaned += 1;
+    } catch (error) {
+      failed += 1;
+      console.error(`[attendance photo cleanup] Failed to clean record ${record._id}:`, error);
+    }
+  }
+
+  return { checked: records.length, cleaned, failed };
+}
+
+async function cleanupOneRecordsPhotos(record) {
+  if (record.checkIn?.photoUrl) {
+    if (record.checkIn.photoPublicId) {
+      await deleteCloudinaryAsset(record.checkIn.photoPublicId);
+    } else {
+      console.warn(
+        `[attendance photo cleanup] Record ${record._id} has checkIn.photoUrl but no photoPublicId — clearing the reference, but the Cloudinary asset itself can't be identified/deleted.`
+      );
+    }
+
+    record.checkIn.photoUrl = null;
+    record.checkIn.photoPublicId = null;
+  }
+
+  if (record.checkOut?.photoUrl) {
+    if (record.checkOut.photoPublicId) {
+      await deleteCloudinaryAsset(record.checkOut.photoPublicId);
+    } else {
+      console.warn(
+        `[attendance photo cleanup] Record ${record._id} has checkOut.photoUrl but no photoPublicId — clearing the reference, but the Cloudinary asset itself can't be identified/deleted.`
+      );
+    }
+
+    record.checkOut.photoUrl = null;
+    record.checkOut.photoPublicId = null;
+  }
+
+  await record.save();
 }
 
 function findOpenAttendance(employeeId) {

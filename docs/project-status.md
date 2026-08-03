@@ -1536,3 +1536,31 @@ resolved while Phase 0 is underway.
   flaky tests); `npm run build` succeeds. Verified live via a real browser session: deep link,
   full deactivate→reactivate cycle, self-view section omissions. `frontend/README.md` and
   `.context/final-plan.md` (new §7.32) updated.
+- **2026-07-31** — Five Attendance module additions, built together (§7.4c): (1) **admin
+  exemption** — `POST /attendance/check-in` now rejects (403) an admin's own check-in, enforced
+  server-side rather than only hiding the widget on the frontend; (2) **Break In/Out** — a single
+  break per shift (confirmed decision, not an array), no photo required (confirmed), `coords`
+  required; checkout while still on break rejects with a clear message rather than silently
+  auto-closing the break (the safer of two options this task raised); `workingHours` now also
+  subtracts break duration alongside the existing connectivity-gap subtraction; (3) a new **45-day
+  Cloudinary photo cleanup cron** (`src/cron/attendancePhotoCleanupCron.js`, mirroring
+  `payrollCron.js` exactly) — deletes the actual Cloudinary asset and clears `photoUrl` for
+  records past 45 days, survives a single record's failure without stopping the batch; needed
+  adding a new `photoPublicId` field (`select: false`) since Cloudinary's asset identifier was
+  never stored before this, only the URL; (4) **granular manager permissions** —
+  `attendance.view_photos`/`view_location`, default off for managers, grantable via the existing
+  Individual User Overrides page (no new UI needed); a manager without either grant never sees
+  photoUrl/coords in team records, an employee viewing their OWN record NEVER sees their own
+  photo/location regardless of any permission (a hard rule, applied to the check-in/check-out/
+  break-in/break-out response itself too, not just the GET history endpoints); (5)
+  **notifications** — check-in/break-in/break-out/check-out each notify the employee, their
+  manager, and every admin, reusing the existing Notification module exactly as Leads/Leave do.
+  **A real, explicitly-checked finding, not assumed:** confirmed directly against `api/index.js`
+  (the actual Vercel serverless entry point) that NONE of the three scheduled cron jobs
+  (`payrollCron`, `leadFollowUpReminderCron`, and now this new one) actually fire in production
+  today — a pre-existing, already-documented gap (this task didn't introduce it), but now a THIRD
+  cron silently sitting on top of it, surfaced here rather than quietly compounded; the real fix
+  (Vercel Cron hitting a dedicated endpoint, or moving off serverless) remains outstanding. 65
+  tests in `attendance.test.js` (up from 31) plus 6 new in `attendancePhotoCleanupCron.test.js`;
+  full backend suite 642/642, no regressions. `backend/README.md` and `.context/final-plan.md`
+  (new §7.4c) updated.

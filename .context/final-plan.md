@@ -1595,6 +1595,79 @@ mocked `uploadReportFile` was called with (the "PK"/"%PDF-" magic-number checks 
 streamed response body to the mock's captured argument, still proving a genuine file) and the
 returned `downloadUrl`.
 
+### 7.4c Attendance corrections/additions — Break In/Out, admin exemption, photo cleanup cron, granular manager permissions, notifications (2026-07-31)
+
+✅ **Built** — five separate additions to §7.4/§6.5's Attendance module, done together:
+
+1. **Admin exemption, server-side, not just frontend-hidden (the safer of two options this task
+   raised, confirmed).** `POST /attendance/check-in` rejects (403) when the requesting user's
+   role is `admin`. `checkIn`'s signature changed from `(employeeId, coords, photo)` to
+   `(requestingUser, coords, photo)` to make the check possible — `checkOut`/`breakIn`/`breakOut`
+   take the same shape too, both for consistency and because they need the full user for
+   notifications (below). Check-out/break-in/break-out need no separate admin check — an admin
+   can never reach an open-shift state at all, so they're transitively blocked.
+
+2. **Break In/Out — a single break per shift (confirmed decision), not an array.** New
+   `breakIn: { time, coords }` / `breakOut: { time, coords }` on `Attendance` — no `photoUrl` on
+   either (confirmed: no photo required for a break), but `coords` IS required, same as check-in.
+   `POST /attendance/break-in` (409 if no open shift, already on break, or the one break is
+   already used) / `POST /attendance/break-out` (409 if not currently on break). **Checkout while
+   on break: rejects with a clear message, doesn't auto-close (the safer of two options this task
+   raised, confirmed)** — silently ending a forgotten break would hide a real state transition;
+   `"You're still on break — end your break before checking out."` `workingHours` now also
+   subtracts break duration (`computeWorkingHours`'s new 4th param, `breakMs = 0`, defaulting to
+   0 so `createManualAttendance` is unaffected); `adjustAttendance`'s recompute call updated too,
+   so an admin correction stays consistent with every other `workingHours` derivation.
+
+3. **45-day Cloudinary photo cleanup cron — `src/cron/attendancePhotoCleanupCron.js`, mirroring
+   `payrollCron.js` exactly.** Daily at 00:15. Finds records older than 45 days (by `date`) with
+   a `photoUrl` still set, deletes the Cloudinary asset, clears `photoUrl`+the new
+   `photoPublicId` to `null` — nothing else touched. Survives a single record's failure (logged,
+   counted, batch continues) — same "never block on a single failure" principle as
+   `applyGeofenceCheck`. **New field needed to make deletion possible, checked not assumed:**
+   `public_id` was never stored anywhere before this — `uploadAttendancePhoto`'s return shape
+   changed from a bare URL string to `{ secureUrl, publicId }` (both its callers updated).
+   `checkIn.photoPublicId`/`checkOut.photoPublicId` are schema `select: false` (never meant to
+   leak into a normal API response — the same treatment `User.passwordHash` already gets
+   elsewhere), so the cron explicitly re-selects them.
+   - **CHECKED EXPLICITLY, as this task asked, rather than assumed: do payroll/lead-reminder
+     crons actually run in production today? No — a pre-existing, already-documented gap
+     (`backend/README.md`'s Deployment section, `server.js`'s own comment), reconfirmed here by
+     reading `api/index.js` directly: it never calls any `register*Cron()` function at all.**
+     `server.js` only registers crons when `process.env.VERCEL !== '1'`, and node-cron needs a
+     long-lived process a Vercel serverless function isn't. This new cron is registered the same
+     way (consistency with the existing pattern, as this task asked), but that means **three**
+     scheduled jobs now silently never fire in production, not two — surfaced loudly here rather
+     than quietly compounded. Real fix (Vercel Cron hitting a dedicated endpoint, or leaving
+     serverless) still outstanding — see `docs/project-status.md`.
+
+4. **Granular manager permissions — `attendance.view_photos`/`view_location`.** Two new
+   `PERMISSION_REGISTRY.attendance` actions, independent of `view_team`/`view_all` — seeing the
+   team's records doesn't mean seeing the sensitive photo/coords fields inside them. Default OFF
+   for manager (no template entry added — absence already means not-granted); grantable via the
+   *existing* Individual User Overrides page, no new UI. `getTeamAttendance` strips
+   `photoUrl`/`coords` per-viewer based on `can(requestingUser, "attendance",
+   "view_photos"/"view_location")` (admin bypasses both automatically, via `can()`'s own admin
+   short-circuit). **`getMyAttendance` — hard rule, no override possible:** always strips both,
+   unconditionally, regardless of the viewer's own grants (even a manager/admin viewing their OWN
+   history gets the stripped shape). **Also applied to the check-in/check-out/break-in/break-out
+   response itself** — a deliberate reading of this task's own repeated, blanket wording ("NEVER
+   ... regardless of any permission"), not just the two GET endpoints; the frontend already has
+   both values locally at that point anyway. Existing tests that checked the pre-existing
+   response-echoes-photo/coords behavior were updated to assert against the persisted document
+   instead, matching this suite's own established "verify the real data, not just the response
+   shape" precedent.
+
+5. **Notifications — check-in/break-in/break-out/check-out, reusing `createNotification`, same
+   pattern as Leads/Leave.** Notifies the employee (confirmation), their manager if set, and every
+   admin — deduplicated via a `Set`. Four new `NOTIFICATION_TYPES`: `attendance_check_in`,
+   `attendance_break_in`, `attendance_break_out`, `attendance_check_out`.
+
+**Testing:** 65 tests in `attendance.test.js` (up from 31) + 6 new in
+`attendancePhotoCleanupCron.test.js` (mirroring `payrollCron.test.js`'s structure). Full backend
+suite: 642/642 passing, no regressions. See `backend/README.md`'s own Attendance section for the
+complete write-up.
+
 ### 7.4b Live Location Tracking
 
 ✅ **Built and verified 2026-07-13** (26 tests — 20 original + 6 new for geofencing, `npm test`,

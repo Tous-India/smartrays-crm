@@ -3,8 +3,11 @@ import { startTestDatabase, stopTestDatabase } from "../../../tests/helpers/test
 import { getTestApp } from "../../../tests/helpers/testApp.js";
 import { createUserDirectly, loginAsAgent } from "../../../tests/helpers/authHelpers.js";
 import Attendance from "./attendance.model.js";
+import User from "../user/user.model.js";
+import Notification from "../notification/notification.model.js";
 
 const FAKE_PHOTO_URL = "https://fake.cloudinary.test/photo.jpg";
+const FAKE_PHOTO_PUBLIC_ID = "fake-public-id";
 const FAKE_REPORT_URL = "https://fake.cloudinary.test/report.file";
 // A photo is mandatory server-side on every check-in/check-out (see
 // attendance.validation.js) — this is the throwaway base64 payload nearly
@@ -14,15 +17,22 @@ const TEST_PHOTO = "data:image/jpeg;base64,ZmFrZWltYWdlZGF0YQ==";
 
 // No test ever makes a real Cloudinary API call — the credentials configured
 // for the test suite (testDb.js) aren't for a real account. This mock proves
-// the upload wiring itself (photo in → secure URL stored on the record)
-// without a network dependency, keeping the suite fully self-contained.
-// `uploadReportFile` (added for the Phase 8 report dispatcher, §7.11) is
-// mocked too, since GET /attendance/report now goes through it — the mock
-// itself is what lets tests assert against the actual generated buffer
-// (real bytes it was called with) instead of a streamed response body.
+// the upload wiring itself (photo in → secure URL + public_id stored on the
+// record) without a network dependency, keeping the suite fully self-
+// contained. `{ secureUrl, publicId }` matches `uploadAttendancePhoto`'s real
+// return shape (§7.4c, 2026-07-31 — added `publicId` for the photo-cleanup
+// cron's later `cloudinary.uploader.destroy` call). `deleteCloudinaryAsset`
+// is mocked too, even though this file's own tests never call it directly
+// (that's `attendancePhotoCleanupCron.test.js`'s job) — needed since this
+// mock replaces the whole module. `uploadReportFile` (added for the Phase 8
+// report dispatcher, §7.11) is mocked too, since GET /attendance/report now
+// goes through it — the mock itself is what lets tests assert against the
+// actual generated buffer (real bytes it was called with) instead of a
+// streamed response body.
 vi.mock("../../services/cloudinary.service.js", () => ({
-  uploadAttendancePhoto: vi.fn(async () => FAKE_PHOTO_URL),
+  uploadAttendancePhoto: vi.fn(async () => ({ secureUrl: FAKE_PHOTO_URL, publicId: FAKE_PHOTO_PUBLIC_ID })),
   uploadReportFile: vi.fn(async () => FAKE_REPORT_URL),
+  deleteCloudinaryAsset: vi.fn(async () => ({ result: "ok" })),
 }));
 
 // Every check-out in this file now also triggers travelLog.service.js's
@@ -34,7 +44,7 @@ vi.mock("../../services/googleMaps.service.js", () => ({
 
 let app;
 let sales1Agent, sales2Agent, sales3Agent, managerAgent, adminAgent;
-let sales1, sales2, sales3, admin;
+let sales1, sales2, sales3, admin, manager1Id;
 
 function buildCoords(overrides = {}) {
   return { lat: 12.9716, lng: 77.5946, ...overrides };
@@ -61,7 +71,7 @@ beforeAll(async () => {
     role: "manager",
   });
   managerAgent = await loginAsAgent(app, "manager1@test.local", "Password123");
-  const manager1Id = managerResponse.body.data._id;
+  manager1Id = managerResponse.body.data._id;
 
   const sales1Response = await adminAgent.post("/api/v1/auth/register").send({
     name: "Sales One",
@@ -96,6 +106,12 @@ beforeAll(async () => {
 
 afterEach(async () => {
   await Attendance.deleteMany({});
+  await Notification.deleteMany({});
+  // Some tests grant manager1 extra per-user attendance permission overrides
+  // (view_photos/view_location) — reset back to the manager role template's
+  // own defaults so a later test's "default OFF" assumption never depends on
+  // test execution order.
+  await adminAgent.post(`/api/v1/users/${manager1Id}/permissions/reset`);
 });
 
 afterAll(async () => {
@@ -108,8 +124,13 @@ describe("POST /attendance/check-in", () => {
 
     expect(response.status).toBe(201);
     expect(response.body.data.employeeId).toBe(String(sales1._id));
-    expect(response.body.data.checkIn.coords).toEqual(buildCoords());
     expect(response.body.data.checkOut.time).toBeNull();
+    // Own coords are never in the response (§7.4c hard self-view rule — see
+    // the dedicated describe block below) — the real value is still stored,
+    // checked directly on the persisted document.
+    expect(response.body.data.checkIn.coords).toBeNull();
+    const record = await Attendance.findById(response.body.data._id);
+    expect({ lat: record.checkIn.coords.lat, lng: record.checkIn.coords.lng }).toEqual(buildCoords());
   });
 
   it("rejects a second check-in while one is already open", async () => {
@@ -142,6 +163,14 @@ describe("POST /attendance/check-in", () => {
 
     expect(response.status).toBe(201);
   });
+
+  it("rejects an admin's own check-in — admin accounts do not track attendance (§7.4c)", async () => {
+    const response = await adminAgent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    expect(response.status).toBe(403);
+    expect(response.body.message).toBe("Admin accounts do not track attendance");
+    expect(await Attendance.countDocuments({ employeeId: admin._id })).toBe(0);
+  });
 });
 
 describe("POST /attendance/check-out", () => {
@@ -154,7 +183,10 @@ describe("POST /attendance/check-out", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.data.checkOut.time).not.toBeNull();
-    expect(response.body.data.checkOut.coords.lat).toBe(13);
+    // Own coords never in the response (§7.4c) — real value still stored.
+    expect(response.body.data.checkOut.coords).toBeNull();
+    const record = await Attendance.findById(response.body.data._id);
+    expect(record.checkOut.coords.lat).toBe(13);
   });
 
   it("rejects a check-out when there's no open record", async () => {
@@ -192,6 +224,173 @@ describe("POST /attendance/check-out", () => {
   });
 });
 
+describe("Break In / Break Out (§7.4c)", () => {
+  it("rejects break-in with no open check-in", async () => {
+    const response = await sales1Agent.post("/api/v1/attendance/break-in").send({ coords: buildCoords() });
+
+    expect(response.status).toBe(409);
+  });
+
+  it("starts a break while checked in, requiring coords but no photo", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const response = await sales1Agent.post("/api/v1/attendance/break-in").send({ coords: buildCoords() });
+
+    expect(response.status).toBe(200);
+    // Own coords never in the response (§7.4c) — checked on the record itself.
+    expect(response.body.data.breakIn.coords).toBeNull();
+    expect(response.body.data.breakIn.time).not.toBeNull();
+
+    const record = await Attendance.findOne({ employeeId: sales1._id });
+    expect(record.breakIn.time).not.toBeNull();
+    expect(record.breakIn.coords.lat).toBe(buildCoords().lat);
+  });
+
+  it("rejects break-in with no coords at all", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const response = await sales1Agent.post("/api/v1/attendance/break-in").send({});
+
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects a second break-in while already on break", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+    await sales1Agent.post("/api/v1/attendance/break-in").send({ coords: buildCoords() });
+
+    const response = await sales1Agent.post("/api/v1/attendance/break-in").send({ coords: buildCoords() });
+
+    expect(response.status).toBe(409);
+    expect(response.body.message).toBe("You're already on break.");
+  });
+
+  it("rejects a break-in once the shift's one break has already been used", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+    await sales1Agent.post("/api/v1/attendance/break-in").send({ coords: buildCoords() });
+    await sales1Agent.post("/api/v1/attendance/break-out").send({ coords: buildCoords() });
+
+    const response = await sales1Agent.post("/api/v1/attendance/break-in").send({ coords: buildCoords() });
+
+    expect(response.status).toBe(409);
+    expect(response.body.message).toBe("You've already used your one break for this shift.");
+  });
+
+  it("rejects break-out when not currently on break", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const response = await sales1Agent.post("/api/v1/attendance/break-out").send({ coords: buildCoords() });
+
+    expect(response.status).toBe(409);
+    expect(response.body.message).toBe("You're not currently on break.");
+  });
+
+  it("ends a break when currently on break", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+    await sales1Agent.post("/api/v1/attendance/break-in").send({ coords: buildCoords() });
+
+    const response = await sales1Agent.post("/api/v1/attendance/break-out").send({ coords: buildCoords() });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.breakOut.time).not.toBeNull();
+
+    const record = await Attendance.findOne({ employeeId: sales1._id });
+    expect(record.breakOut.time).not.toBeNull();
+  });
+
+  it("rejects checkout while still on break, with a clear message", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+    await sales1Agent.post("/api/v1/attendance/break-in").send({ coords: buildCoords() });
+
+    const response = await sales1Agent
+      .post("/api/v1/attendance/check-out")
+      .send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    expect(response.status).toBe(409);
+    expect(response.body.message).toBe("You're still on break — end your break before checking out.");
+
+    const record = await Attendance.findOne({ employeeId: sales1._id });
+    expect(record.checkOut.time).toBeNull();
+  });
+
+  it("allows checkout once the break has been ended", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+    await sales1Agent.post("/api/v1/attendance/break-in").send({ coords: buildCoords() });
+    await sales1Agent.post("/api/v1/attendance/break-out").send({ coords: buildCoords() });
+
+    const response = await sales1Agent
+      .post("/api/v1/attendance/check-out")
+      .send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.checkOut.time).not.toBeNull();
+  });
+
+  it("subtracts break duration from workingHours at checkout, in addition to any connectivity-gap subtraction", async () => {
+    const checkInResponse = await sales1Agent
+      .post("/api/v1/attendance/check-in")
+      .send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const breakInTime = new Date(Date.now() - 20 * 60 * 1000);
+    const breakOutTime = new Date(Date.now() - 5 * 60 * 1000); // a 15-minute break
+
+    await Attendance.findByIdAndUpdate(checkInResponse.body.data._id, {
+      breakIn: { time: breakInTime, coords: buildCoords() },
+      breakOut: { time: breakOutTime, coords: buildCoords() },
+    });
+
+    const checkOutResponse = await sales1Agent
+      .post("/api/v1/attendance/check-out")
+      .send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    expect(checkOutResponse.status).toBe(200);
+
+    const record = await Attendance.findById(checkInResponse.body.data._id);
+    const grossMs = record.checkOut.time - record.checkIn.time;
+    const breakMs = breakOutTime - breakInTime;
+    const expectedWorkingHours = Math.round((Math.max(0, grossMs - breakMs) / 3600000) * 100) / 100;
+
+    expect(record.workingHours).toBe(expectedWorkingHours);
+  });
+});
+
+describe("Attendance event notifications (§7.4c, 2026-07-31)", () => {
+  it("notifies the employee, their manager, and every admin on check-in", async () => {
+    const response = await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const attendanceId = response.body.data._id;
+
+    const employeeNotification = await Notification.findOne({ userId: sales1._id, type: "attendance_check_in" });
+    const managerNotification = await Notification.findOne({ userId: manager1Id, type: "attendance_check_in" });
+    const adminNotification = await Notification.findOne({ userId: admin._id, type: "attendance_check_in" });
+
+    expect(employeeNotification).not.toBeNull();
+    expect(managerNotification).not.toBeNull();
+    expect(adminNotification).not.toBeNull();
+    expect(String(employeeNotification.relatedEntity.id)).toBe(String(attendanceId));
+    expect(employeeNotification.relatedEntity.module).toBe("attendance");
+  });
+
+  it("notifies on break-in, break-out, and check-out too", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+    await sales1Agent.post("/api/v1/attendance/break-in").send({ coords: buildCoords() });
+    await sales1Agent.post("/api/v1/attendance/break-out").send({ coords: buildCoords() });
+    await sales1Agent.post("/api/v1/attendance/check-out").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    expect(await Notification.countDocuments({ userId: sales1._id, type: "attendance_break_in" })).toBe(1);
+    expect(await Notification.countDocuments({ userId: sales1._id, type: "attendance_break_out" })).toBe(1);
+    expect(await Notification.countDocuments({ userId: sales1._id, type: "attendance_check_out" })).toBe(1);
+  });
+
+  it("does not double-notify an unaffiliated employee's admin-who-is-not-their-manager more than once", async () => {
+    // sales3 has no managerId at all — only the employee + every admin
+    // should be notified, no manager notification since there is none.
+    await sales3Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    expect(await Notification.countDocuments({ userId: sales3._id, type: "attendance_check_in" })).toBe(1);
+    expect(await Notification.countDocuments({ userId: admin._id, type: "attendance_check_in" })).toBe(1);
+  });
+});
+
 describe("GET /attendance/me", () => {
   it("returns only the authenticated user's own attendance history", async () => {
     await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
@@ -226,6 +425,22 @@ describe("GET /attendance/me", () => {
     expect(currentResponse.body.data).toHaveLength(1);
     expect(otherResponse.body.data).toHaveLength(0);
   });
+
+  it("never shows the employee their own photoUrl/coords, regardless of any permission they hold (§7.4c hard rule)", async () => {
+    // Grant manager1 BOTH view_photos and view_location for OTHER people's
+    // records — the hard rule must still strip their OWN, unaffected by this.
+    await adminAgent.patch(`/api/v1/users/${manager1Id}/permissions`).send({
+      permissions: { attendance: { view_team: true, view_photos: true, view_location: true } },
+    });
+
+    await managerAgent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const response = await managerAgent.get("/api/v1/attendance/me");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data[0].checkIn.photoUrl).toBeNull();
+    expect(response.body.data[0].checkIn.coords).toBeNull();
+  });
 });
 
 describe("Photo capture (check-in/check-out)", () => {
@@ -236,7 +451,11 @@ describe("Photo capture (check-in/check-out)", () => {
     });
 
     expect(response.status).toBe(201);
-    expect(response.body.data.checkIn.photoUrl).toBe(FAKE_PHOTO_URL);
+    // Own photo never in the response either (§7.4c) — the upload itself
+    // still genuinely happened, checked on the persisted document.
+    expect(response.body.data.checkIn.photoUrl).toBeNull();
+    const record = await Attendance.findById(response.body.data._id);
+    expect(record.checkIn.photoUrl).toBe(FAKE_PHOTO_URL);
   });
 
   it("rejects a check-in with no photo at all — the photo requirement is enforced server-side, not just client-side", async () => {
@@ -262,7 +481,9 @@ describe("Photo capture (check-in/check-out)", () => {
     });
 
     expect(response.status).toBe(200);
-    expect(response.body.data.checkOut.photoUrl).toBe(FAKE_PHOTO_URL);
+    expect(response.body.data.checkOut.photoUrl).toBeNull();
+    const record = await Attendance.findById(response.body.data._id);
+    expect(record.checkOut.photoUrl).toBe(FAKE_PHOTO_URL);
   });
 
   it("accepts a multipart photo file alongside JSON-stringified coords", async () => {
@@ -272,8 +493,11 @@ describe("Photo capture (check-in/check-out)", () => {
       .attach("photo", Buffer.from("fake-image-bytes"), "photo.jpg");
 
     expect(response.status).toBe(201);
-    expect(response.body.data.checkIn.photoUrl).toBe(FAKE_PHOTO_URL);
-    expect(response.body.data.checkIn.coords).toEqual(buildCoords());
+    expect(response.body.data.checkIn.photoUrl).toBeNull();
+    expect(response.body.data.checkIn.coords).toBeNull();
+    const record = await Attendance.findById(response.body.data._id);
+    expect(record.checkIn.photoUrl).toBe(FAKE_PHOTO_URL);
+    expect({ lat: record.checkIn.coords.lat, lng: record.checkIn.coords.lng }).toEqual(buildCoords());
   });
 });
 
@@ -382,6 +606,61 @@ describe("GET /attendance/team", () => {
 
     expect(currentResponse.body.data).toHaveLength(1);
     expect(otherResponse.body.data).toHaveLength(0);
+  });
+
+  it("strips photoUrl and coords for a manager with neither view_photos nor view_location (default template)", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const response = await managerAgent.get("/api/v1/attendance/team");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data[0].checkIn.photoUrl).toBeNull();
+    expect(response.body.data[0].checkIn.coords).toBeNull();
+  });
+
+  it("shows photoUrl (but still hides coords) once a manager is granted attendance.view_photos", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+    await adminAgent.patch(`/api/v1/users/${manager1Id}/permissions`).send({
+      permissions: { attendance: { view_team: true, view_photos: true } },
+    });
+
+    const response = await managerAgent.get("/api/v1/attendance/team");
+
+    expect(response.body.data[0].checkIn.photoUrl).toBe(FAKE_PHOTO_URL);
+    expect(response.body.data[0].checkIn.coords).toBeNull();
+  });
+
+  it("shows coords (but still hides photoUrl) once a manager is granted attendance.view_location", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+    await adminAgent.patch(`/api/v1/users/${manager1Id}/permissions`).send({
+      permissions: { attendance: { view_team: true, view_location: true } },
+    });
+
+    const response = await managerAgent.get("/api/v1/attendance/team");
+
+    expect(response.body.data[0].checkIn.coords).toEqual(buildCoords());
+    expect(response.body.data[0].checkIn.photoUrl).toBeNull();
+  });
+
+  it("shows both once a manager is granted both view_photos and view_location", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+    await adminAgent.patch(`/api/v1/users/${manager1Id}/permissions`).send({
+      permissions: { attendance: { view_team: true, view_photos: true, view_location: true } },
+    });
+
+    const response = await managerAgent.get("/api/v1/attendance/team");
+
+    expect(response.body.data[0].checkIn.photoUrl).toBe(FAKE_PHOTO_URL);
+    expect(response.body.data[0].checkIn.coords).toEqual(buildCoords());
+  });
+
+  it("an admin (attendance.view_all) always sees photoUrl and coords, with no grant needed", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const response = await adminAgent.get("/api/v1/attendance/team");
+
+    expect(response.body.data[0].checkIn.photoUrl).toBe(FAKE_PHOTO_URL);
+    expect(response.body.data[0].checkIn.coords).toEqual(buildCoords());
   });
 });
 

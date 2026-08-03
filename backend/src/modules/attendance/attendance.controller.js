@@ -3,6 +3,8 @@ import ApiResponse from "../../utils/ApiResponse.js";
 import {
   checkIn as checkInEmployee,
   checkOut as checkOutEmployee,
+  breakIn as breakInEmployee,
+  breakOut as breakOutEmployee,
   getMyAttendance,
   recordHeartbeat,
   getTeamAttendance,
@@ -24,15 +26,27 @@ function extractPhoto(req) {
 }
 
 export const checkIn = asyncWrapper(async (req, res) => {
-  const attendance = await checkInEmployee(req.user._id, req.body.coords, extractPhoto(req));
+  const attendance = await checkInEmployee(req.user, req.body.coords, extractPhoto(req));
 
   res.status(201).json(new ApiResponse(201, attendance, "Checked in successfully"));
 });
 
 export const checkOut = asyncWrapper(async (req, res) => {
-  const attendance = await checkOutEmployee(req.user._id, req.body.coords, extractPhoto(req));
+  const attendance = await checkOutEmployee(req.user, req.body.coords, extractPhoto(req));
 
   res.status(200).json(new ApiResponse(200, attendance, "Checked out successfully"));
+});
+
+export const breakIn = asyncWrapper(async (req, res) => {
+  const attendance = await breakInEmployee(req.user, req.body.coords);
+
+  res.status(200).json(new ApiResponse(200, attendance, "Break started"));
+});
+
+export const breakOut = asyncWrapper(async (req, res) => {
+  const attendance = await breakOutEmployee(req.user, req.body.coords);
+
+  res.status(200).json(new ApiResponse(200, attendance, "Break ended"));
 });
 
 export const heartbeat = asyncWrapper(async (req, res) => {

@@ -72,6 +72,29 @@ export function validateCheckOutInput(req, res, next) {
 }
 
 /**
+ * Break In/Out (§7.4c, 2026-07-31) — coords are required, matching check-in's
+ * own geolocation requirement, but deliberately does NOT call
+ * `validatePhotoPresence` — no photo is required for either break event
+ * (confirmed decision). Both routes are plain JSON-only (no `upload.single`
+ * in attendance.routes.js), so `extractCoords`'s multipart-string-vs-real-
+ * object normalization is technically moot here, but reused anyway for one
+ * consistent coords-validation path across every attendance endpoint.
+ */
+export function validateBreakInInput(req, res, next) {
+  const coords = extractCoords(req);
+  validateCoords(coords);
+  req.body.coords = coords;
+  next();
+}
+
+export function validateBreakOutInput(req, res, next) {
+  const coords = extractCoords(req);
+  validateCoords(coords);
+  req.body.coords = coords;
+  next();
+}
+
+/**
  * Validates the optional ?month= query param on GET /attendance/me and
  * GET /attendance/team.
  */

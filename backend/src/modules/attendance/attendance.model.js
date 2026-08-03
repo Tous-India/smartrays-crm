@@ -33,6 +33,16 @@ const attendanceSchema = new mongoose.Schema(
         lng: Number,
       },
       photoUrl: String,
+      // Cloudinary's own asset identifier (2026-07-31, §7.4c) — needed by
+      // `attendancePhotoCleanupCron.js` to actually delete the asset via
+      // `cloudinary.uploader.destroy(publicId)`; `photoUrl` alone isn't
+      // enough to identify/delete a Cloudinary asset. `select: false` so it
+      // never leaks into any normal API response (GET /attendance/me,
+      // /team, or a check-in/check-out response itself) the way `photoUrl`
+      // deliberately does — nothing outside the cleanup cron has any
+      // legitimate use for this value. The cron explicitly re-selects it
+      // (`.select("+checkIn.photoPublicId +checkOut.photoPublicId")`).
+      photoPublicId: { type: String, select: false },
     },
     checkOut: {
       time: { type: Date, default: null },
@@ -41,6 +51,28 @@ const attendanceSchema = new mongoose.Schema(
         lng: Number,
       },
       photoUrl: String,
+      photoPublicId: { type: String, select: false },
+    },
+    // Break In/Out (2026-07-31, §7.4c) — a single break per shift, not an
+    // array (confirmed decision): this models "the one break" a shift gets,
+    // not an open-ended log of arbitrarily many breaks. No `photoUrl` on
+    // either — confirmed no photo required for a break event, unlike check-
+    // in/check-out. `coords` IS required (enforced in attendance.validation.js,
+    // matching check-in's own geolocation requirement) so a break's location
+    // is still verifiable even without a photo.
+    breakIn: {
+      time: { type: Date, default: null },
+      coords: {
+        lat: Number,
+        lng: Number,
+      },
+    },
+    breakOut: {
+      time: { type: Date, default: null },
+      coords: {
+        lat: Number,
+        lng: Number,
+      },
     },
     status: {
       type: String,

@@ -10,7 +10,7 @@ import Attendance from "../attendance/attendance.model.js";
 // below) needs to supply one — mocked the same way attendance.test.js does,
 // so this file never makes a real Cloudinary network call either.
 vi.mock("../../services/cloudinary.service.js", () => ({
-  uploadAttendancePhoto: vi.fn(async () => "https://fake.cloudinary.test/photo.jpg"),
+  uploadAttendancePhoto: vi.fn(async () => ({ secureUrl: "https://fake.cloudinary.test/photo.jpg", publicId: "fake-public-id" })),
 }));
 
 // The same real check-out also now triggers travelLog.service.js's auto

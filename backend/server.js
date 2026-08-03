@@ -3,6 +3,7 @@ import { connectDatabase } from "./src/database/connection.js";
 import { env } from "./src/config/env.js";
 import { registerPayrollCron } from "./src/cron/payrollCron.js";
 import { registerLeadFollowUpReminderCron } from "./src/cron/leadFollowUpReminderCron.js";
+import { registerAttendancePhotoCleanupCron } from "./src/cron/attendancePhotoCleanupCron.js";
 
 async function startServer() {
   try {
@@ -21,12 +22,17 @@ async function startServer() {
   // requests. `VERCEL` is a platform-injected env var, so this only ever
   // skips registration when actually running there; this file's own local/
   // traditional-hosting behavior is unchanged. Known limitation, documented
-  // in backend/README.md and the root README's Deployment section — payroll
-  // and lead follow-up reminders need a real answer (e.g. Vercel Cron hitting
-  // a dedicated endpoint) before this app can rely on crons in production.
+  // in backend/README.md and the root README's Deployment section — payroll,
+  // lead follow-up reminders, AND (2026-07-31, §7.4c) the attendance photo
+  // cleanup cron need a real answer (e.g. Vercel Cron hitting a dedicated
+  // endpoint) before this app can rely on crons in production. Confirmed
+  // during §7.4c's own build: `api/index.js` (the actual Vercel entry point)
+  // never calls any of these register functions at all, and never has —
+  // this is a real, pre-existing gap, not something newly introduced here.
   if (process.env.VERCEL !== "1") {
     registerPayrollCron();
     registerLeadFollowUpReminderCron();
+    registerAttendancePhotoCleanupCron();
   }
 
   app.listen(env.port, () => {

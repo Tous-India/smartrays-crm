@@ -793,6 +793,159 @@ tests pass (the one pre-existing failure is `leave.test.js`'s date-sensitive quo
 test, unrelated to this change — confirmed via `git stash` to fail identically with none of this
 task's changes applied).
 
+### Attendance corrections/additions — Break In/Out, admin exemption, photo cleanup cron, granular manager permissions, notifications (§7.4c, 2026-07-31)
+
+Five separate additions to the Attendance module, built together.
+
+**1. Admin exemption.** `POST /attendance/check-in` now rejects (403, `"Admin accounts do not
+track attendance"`) when the requesting user's role is `admin`. Enforced **server-side**, in
+`attendance.service.js#checkIn` itself — not just by hiding the check-in widget on the frontend
+(the safer of the two options this task raised, since a frontend-only exemption is trivially
+bypassed by anyone hitting the endpoint directly, e.g. via curl or a modified client). `checkIn`'s
+signature changed from `(employeeId, coords, photo)` to `(requestingUser, coords, photo)` to make
+this check possible — the caller (`attendance.controller.js`) now passes `req.user` (already
+loaded by `authenticate`) instead of just `req.user._id`; `checkOut`/`breakIn`/`breakOut` take the
+same full-user shape for consistency and because they need it too (notifications, below). Since
+an admin can never check in at all, they can never reach an open-shift state either, so no
+separate check was needed on check-out/break-in/break-out — they're transitively blocked.
+
+**2. Break In/Out — a single break per shift, not an array (confirmed decision).** New
+`breakIn: { time, coords }` / `breakOut: { time, coords }` on `attendance.model.js`, structurally
+identical to `checkIn`/`checkOut` minus `photoUrl` — **no photo required for either** (confirmed
+decision), but `coords` **is** required, enforced the same way check-in's is.
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| POST | `/attendance/break-in` | Authenticated, no module permission | Body `{ coords }`, no photo. **409** if there's no open check-in, if already on break, or if the shift's one break has already been used (`breakIn` AND `breakOut` both already set). |
+| POST | `/attendance/break-out` | Authenticated, no module permission | Body `{ coords }`. **409** if not currently on break (`breakIn` unset, or `breakOut` already set). |
+
+**Checkout while still on break: rejects, doesn't auto-close (a deliberate choice between the two
+options this task raised).** `POST /attendance/check-out` now returns **409** (`"You're still on
+break — end your break before checking out."`) if `breakIn.time` is set and `breakOut.time` isn't.
+Auto-closing the break silently was the alternative; rejecting was chosen because silently ending
+a break the employee forgot about would hide a real state transition from them — a clear message
+asking them to explicitly end it first is safer and unambiguous, matching the same reasoning this
+module already uses elsewhere (e.g. why a wrong/missing photo is a hard 400, not a silent skip).
+
+**`workingHours` now also subtracts break duration**, in addition to the existing
+connectivity-gap subtraction: `computeWorkingHours(checkInTime, checkOutTime, connectivityGaps,
+breakMs = 0)` gained a fourth parameter, defaulting to 0 so `createManualAttendance` (which has no
+break concept at all) is unaffected. `adjustAttendance`'s own recompute call was updated to pass
+the record's `breakDurationMs()` too, so an admin's manual time correction stays consistent with
+every other `workingHours` derivation in the system, the same "recompute, don't drift" principle
+this endpoint's docstring already established for `connectivityGaps`.
+
+**3. 45-day Cloudinary photo cleanup cron — new `src/cron/attendancePhotoCleanupCron.js`,
+mirroring `payrollCron.js`'s exact structure/registration.** Runs daily at 00:15
+(`"15 0 * * *"`), calling `attendance.service.js#cleanupOldAttendancePhotos`: finds every
+`Attendance` record older than 45 days (by its `date` field — the shift's own calendar day, not
+`createdAt`) that still has a `photoUrl` set on `checkIn` or `checkOut`, deletes the actual
+Cloudinary asset, then clears both `photoUrl` and the new `photoPublicId` field to `null` —
+nothing else on the record is ever touched. Resilient by design: one record's failure (a
+Cloudinary error, or an old record with no `photoPublicId` at all) is caught, logged, and counted,
+never stopping the batch — the same "never block on a single failure" principle already used
+elsewhere in this module (`applyGeofenceCheck`/`generateAutoTravelLog`).
+
+- **New field needed to make deletion possible at all: `checkIn.photoPublicId` /
+  `checkOut.photoPublicId`.** Checked first, not assumed: `uploadAttendancePhoto` previously
+  returned only `secure_url` — Cloudinary's own asset identifier (`public_id`) was never stored
+  anywhere, and `secure_url` alone can't identify an asset for `cloudinary.uploader.destroy()`.
+  `uploadAttendancePhoto`'s return shape changed from a bare string to `{ secureUrl, publicId }`
+  (a real, deliberate breaking change to this function's contract — both of its only two callers,
+  `checkIn`/`checkOut` in `attendance.service.js`, were updated together). New
+  `deleteCloudinaryAsset(publicId)` added to `cloudinary.service.js` for the cron to call.
+- **`photoPublicId` is schema `select: false` on both `checkIn`/`checkOut`** — it has no
+  legitimate use anywhere outside the cleanup cron, so it's excluded from every normal query by
+  default (`GET /attendance/me`, `/team`, and the check-in/check-out response itself) the same way
+  `User.passwordHash` already is elsewhere in this codebase. The cron explicitly re-selects it
+  (`.select("+checkIn.photoPublicId +checkOut.photoPublicId")`) since it's the one place that
+  legitimately needs it back.
+- **A record with `photoUrl` but no `photoPublicId`** (only possible for a photo uploaded before
+  this field existed) can't have its Cloudinary asset identified for deletion — best effort still
+  clears the local `photoUrl` reference (so the app stops pointing at a 45-day-old photo), logs a
+  warning, and moves on; the underlying asset is orphaned on Cloudinary in that one case, not
+  silently ignored.
+
+**CHECKED EXPLICITLY, as this task asked — do these crons actually run in production at all?
+No. This was already a known, documented gap before this task (see this file's own Deployment
+section and `server.js`'s own comment), confirmed again here rather than assumed:** `server.js`
+skips registering all three crons (`payrollCron`, `leadFollowUpReminderCron`, and now this one)
+whenever `process.env.VERCEL === '1'`, since `node-cron` needs a long-lived process and a Vercel
+serverless function is not one. `api/index.js` — the ACTUAL Vercel entry point this backend runs
+as in production — never calls any of the three `register*Cron()` functions at all, confirmed by
+reading it directly; it only wraps the existing Express app with a cached DB connection. **This
+means all three scheduled jobs, including this brand-new one, silently never fire in the deployed
+app today.** This is not a regression introduced by this task — `payrollCron`/
+`leadFollowUpReminderCron` were already in exactly this state — but adding a third cron on top of
+an already-broken pattern is worth surfacing loudly rather than quietly compounding: the real fix
+(Vercel Cron Jobs hitting a dedicated, authenticated endpoint instead of `node-cron` inside the
+app process, or moving this backend off serverless entirely) is still outstanding. See
+`docs/project-status.md`'s Outstanding Decisions for tracking.
+
+**4. Granular manager permissions — `attendance.view_photos` / `attendance.view_location`.** Two
+new actions added to `PERMISSION_REGISTRY.attendance` (now `["view_team", "view_all",
+"view_photos", "view_location"]`), independent of and layered on top of `view_team`/`view_all` —
+a manager who can see the team's records at all doesn't automatically see the sensitive
+photo/coords fields inside them. **Default OFF for the manager role template** — no entry added
+to `permission.service.js`'s `DEFAULT_ROLE_TEMPLATES`, since an absent key already means "not
+granted" (`permission.helper.js#can`'s `modulePermissions[action] === true` check). Grantable
+per-manager via the **existing** Individual User Overrides page — registering the keys in
+`PERMISSION_REGISTRY` is all that's needed for them to show up in that already-built matrix, no
+new UI required. Admin still bypasses every check unconditionally, same as always (`can()`'s own
+admin short-circuit).
+
+`getMyAttendance`/`getTeamAttendance` now run every record through `attendance.service.js#
+applyVisibilityRules({ canSeePhotos, canSeeLocation })` before returning it:
+- **`getTeamAttendance` (manager/admin viewing OTHERS' records):** `canSeePhotos`/`canSeeLocation`
+  come from `can(requestingUser, "attendance", "view_photos"/"view_location")` — admin gets both
+  automatically (the same `can()` bypass), a manager needs the specific grant for each,
+  independently.
+- **`getMyAttendance` (viewing YOUR OWN record) — hard rule, no override possible.** Always both
+  `false`, regardless of the viewer's own role or grants — even a manager or admin who happens to
+  be looking at their OWN history via this endpoint gets the same stripped shape. This is not
+  permission-gated at all; it's a fixed `SELF_VIEW_VISIBILITY = { canSeePhotos: false,
+  canSeeLocation: false }` constant applied unconditionally.
+- **The check-in/check-out/break-in/break-out RESPONSE itself is also run through the same
+  self-view stripping** — a deliberate reading of this task's own repeated wording ("employee
+  NEVER sees own photo/location regardless of any permission," stated as a blanket rule, not
+  scoped only to the two GET endpoints). The frontend already has both the photo and the coords
+  locally at that point anyway (it just captured them to send), so nothing is lost by stripping
+  them from what comes back. Existing tests that asserted the pre-existing (pre-this-task)
+  behavior — the response echoing back `photoUrl`/`coords` — were updated to check the real value
+  on the **persisted document** instead (`Attendance.findById(...)`), the same "assert against the
+  real data, not just the response shape" pattern already established elsewhere in this suite
+  (e.g. the website-intake `clientType` fix).
+- **`photoPublicId` never reaches any of this** — it's schema `select: false`, so it's simply
+  absent from every query result here regardless of visibility rules; nothing to strip.
+
+**5. Notifications — check-in/break-in/break-out/check-out, reusing `createNotification`, same
+pattern as Leads/Leave.** `attendance.service.js#notifyAttendanceEvent(employee, type, message,
+attendanceId)` notifies three audiences, deduplicated via a `Set` (an admin who's also the
+employee's manager, or an employee who's also an admin — the latter not actually reachable since
+admin is blocked from checking in at all, but handled defensively anyway): the employee themselves
+(a confirmation), their manager if `managerId` is set, and every admin. Four new
+`NOTIFICATION_TYPES` entries: `attendance_check_in`, `attendance_break_in`,
+`attendance_break_out`, `attendance_check_out` — each notification's `relatedEntity` is
+`{ module: "attendance", id: <attendance record's own id> }`.
+
+**Testing:** 65 tests total in `attendance.test.js` now (up from the prior count) — admin
+exemption (403 + zero records created), the full break-in/break-out state machine (rejects with no
+open shift, rejects a second break-in while already on break, rejects once the shift's one break
+is used, rejects break-out when not on break, rejects checkout while on break with the exact
+message, allows checkout once the break ends, workingHours correctly subtracts break duration
+alongside a connectivity gap in the same shift), the self-view hard rule (own photo/coords always
+null even for a manager granted both permissions for OTHER people's records), permission-gated
+team visibility (all four combinations: neither grant/photos-only/location-only/both, plus
+admin-always-sees-both with no grant needed), and notification delivery to employee+manager+admin
+across all four event types. New `src/cron/attendancePhotoCleanupCron.test.js` (6 tests, mirroring
+`payrollCron.test.js`'s own structure) — the schedule itself (`registerAttendancePhotoCleanupCron`
+mocking `node-cron`), a record older than 45 days gets cleaned, a recent record is left completely
+untouched, no other field on a cleaned record is touched, one record's Cloudinary failure doesn't
+stop the rest of the batch from being cleaned, and a legacy record with no `photoPublicId` still
+gets its `photoUrl` cleared (with a logged warning) even though the asset itself can't be deleted.
+`location.test.js`/`travelLog.test.js`'s own `uploadAttendancePhoto` mocks were updated to the new
+`{ secureUrl, publicId }` shape too. Full backend suite: 642/642 passing, no regressions.
+
 ### Leave (`/api/v1/leave`)
 
 See `.context/final-plan.md` §6.5/§7.5 and §11.7 (leave cadence, resolved this task).
@@ -1589,16 +1742,22 @@ backend-specific:
   don't exhaust Atlas's connection limit. Throws (rather than `process.exit`-ing) on failure now,
   since exiting the process mid-request makes no sense in a serverless function; `server.js`
   itself still exits on a failed initial connect for local/traditional hosting.
-- `server.js` skips `registerPayrollCron()`/`registerLeadFollowUpReminderCron()` when
-  `process.env.VERCEL === '1'` — node-cron needs a long-lived process to fire on schedule,
-  which a Vercel serverless function is not. **Neither cron fires in production today** — a
-  known gap, not silently swallowed; see the root README and `docs/project-status.md` for the
-  planned real fix (Vercel Cron for payroll; a different, always-on answer for the 15-minute
-  lead follow-up reminders).
-- `getAuthCookieOptions()` (`auth.service.js`) uses `sameSite: 'none'` + `secure: true` in
-  production, not `'strict'` — the deployed frontend and backend are on different Vercel
-  domains, making the auth cookie genuinely cross-site; `'strict'`/`'lax'` would simply never
-  be sent back to the backend at all in that case.
+- `server.js` skips `registerPayrollCron()`/`registerLeadFollowUpReminderCron()`/
+  `registerAttendancePhotoCleanupCron()` (all three, as of §7.4c) when `process.env.VERCEL ===
+  '1'` — node-cron needs a long-lived process to fire on schedule, which a Vercel serverless
+  function is not. **None of the three crons fire in production today** — a known gap, not
+  silently swallowed; confirmed directly against `api/index.js` (the actual Vercel entry point),
+  which never calls any of the three `register*Cron()` functions at all. See the root README and
+  `docs/project-status.md` for the planned real fix (Vercel Cron hitting a dedicated endpoint, or
+  moving this backend off serverless).
+- `getAuthCookieOptions()` (`auth.service.js`) uses `sameSite: 'lax'` + `secure: true` in
+  production (changed from `'none'`, 2026-07-31) — the frontend now proxies `/api/*` to this
+  backend via a Vercel Rewrite (`frontend/vercel.json`) instead of calling this backend's own
+  domain directly, so the auth cookie is genuinely same-site again from the browser's
+  perspective. `'none'` was a real but fragile fix for the cross-site setup this replaces —
+  confirmed via live cross-browser testing (WebKit/Safari) that `'none'` gets silently blocked
+  from storage entirely by third-party-cookie policies regardless of `Secure` being set; `'lax'`
+  has no such dependency since there is no cross-site cookie anymore.
 
 ---
 
