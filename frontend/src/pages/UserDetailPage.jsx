@@ -111,6 +111,12 @@ function UserDetailPage() {
         />
       </div>
 
+      <Row gutter={[16, 16]} className="mb-4">
+        <Col span={24}>
+          <UserAttendanceSummaryCard user={user} />
+        </Col>
+      </Row>
+
       <Row gutter={[16, 16]}>
         <Col xs={24} md={12} lg={8}>
           <UserBasicInfoCard user={user} managerName={managerName} />
@@ -120,9 +126,6 @@ function UserDetailPage() {
         </Col>
         <Col xs={24} md={12} lg={8}>
           <UserLeaveCard user={user} />
-        </Col>
-        <Col xs={24} md={12} lg={8}>
-          <UserAttendanceSummaryCard user={user} />
         </Col>
         {showOwnedLeads && (
           <Col xs={24} md={12} lg={8}>
