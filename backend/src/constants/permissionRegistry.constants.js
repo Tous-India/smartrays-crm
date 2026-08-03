@@ -50,7 +50,12 @@ export const PERMISSION_REGISTRY = {
   // scope, unlike location's implicit union-of-grants view. Requesting your
   // own leave (POST /leave/request) needs no grant at all, the same
   // "self-service action" reasoning as Attendance check-in/out.
-  leave: ["view", "view_team", "view_all"],
+  // `approve`/`decline`/`mark_unapproved_absence` added 2026-07-31 (§7.5c) —
+  // reverses the earlier "admin-only, full stop" restriction on all three.
+  // Team-scoped for a manager (their own direct reports only, resolved in
+  // leave.service.js#ensureCanActOnLeave — the same managerId-based scoping
+  // `view_team` already uses); org-wide for admin, unchanged.
+  leave: ["view", "view_team", "view_all", "approve", "decline", "mark_unapproved_absence"],
   // Added 2026-07-13 (§7.6, Phase 6). Same three-tier shape as `leave` —
   // GET /travel-logs?scope=own|team|all checks the matching action per
   // requested scope. `GET /travel-logs/report` uses view_team/view_all only

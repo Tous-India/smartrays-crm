@@ -952,12 +952,12 @@ See `.context/final-plan.md` §6.5/§7.5 and §11.7 (leave cadence, resolved thi
 
 | Method | Path | Access | Notes |
 |---|---|---|---|
-| POST | `/leave/request` | Authenticated, no module permission | Body `{ startDate, endDate, type?, reason?, isHalfDay? }`. Self-service — same reasoning as Attendance check-in/out. `employeeId` is forced to the caller unless they're admin (an admin can request on behalf of someone else — needed so `mark-unapproved-absence` below has a record to act on for an employee who never self-requested). `type` defaults to `paid`; `unapproved_absence` is rejected here (400) — it's only ever set via the dedicated admin action. `isHalfDay` (added later) requires `startDate === endDate` (400 otherwise) — see "Half-day leave support" below. Notifies the requester's manager (if set) and every admin — see "Notifications" below. |
+| POST | `/leave/request` | Authenticated, no module permission | Body `{ startDate, endDate, type?, reason, isHalfDay? }`. `reason` is now **required** (2026-07-31, §7.5c — see below). Self-service — same reasoning as Attendance check-in/out. `employeeId` is forced to the caller unless they're admin (an admin can request on behalf of someone else — needed so `mark-unapproved-absence` below has a record to act on for an employee who never self-requested). **Admin cannot request leave for themselves** (2026-07-31, §7.5c — see below), but the on-behalf-of path above still works unchanged. `type` defaults to `paid`; `unapproved_absence` is rejected here (400) — it's only ever set via the dedicated admin/manager action below. `isHalfDay` (added later) requires `startDate === endDate` (400 otherwise) — see "Half-day leave support" below. Notifies the requester's manager (if set) and every admin — see "Notifications" below. |
 | GET | `/leave` | `leave.view`/`view_team`/`view_all`, per the requested `?scope=` | `?scope=own` (default), `team`, or `all` — each checked against its own matching permission action, not resolved as a union of whatever's held (unlike Location's implicit-view design; §7.5's endpoint gives the caller an explicit choice). |
 | GET | `/leave/balance` | Own always reachable; `?employeeId=` reuses `view_team`/`view_all` | Added later. Returns `{ paidLeaveUsed, paidLeaveLimit: 1, paidLeaveRemaining }` for the calendar month containing today — see "Leave balance" below. |
-| PATCH | `/leave/:id/approve` | Admin only | Rejects (409) if the record isn't `pending`. A `paid`-type approval is capped by the one-paid-leave-per-month quota (§11.7) — see below. Notifies the requester (`leave_approved`) unless the admin is approving their own request. |
-| PATCH | `/leave/:id/decline` | Admin only | Added later. Body `{ reason? }`. Sets `status: "rejected"` — rejects (409) if the record isn't `pending`. Notifies the requester (`leave_declined`, includes the reason if given) unless the admin is declining their own request. See "Decline action" below for the schema decision. |
-| PATCH | `/leave/:id/mark-unapproved-absence` | Admin only | Unconditional admin decree — works regardless of current status. Sets `type: "unapproved_absence"`, `isDoubleDeduction: true`, `status: "approved"`, per the 2x rule (smartrays.md). Deliberately **not** wired to the notification below — the task that added Leave notifications only asked for submit/approve/decline, and this is a distinct, retroactive admin action. |
+| PATCH | `/leave/:id/approve` | Admin org-wide, or a manager on their own team (2026-07-31, §7.5c — reverses the earlier admin-only restriction, see below) | Rejects (409) if the record isn't `pending`. A `paid`-type approval is capped by the one-paid-leave-per-month quota (§11.7) — see below. Notifies the requester (`leave_approved`) unless the decider is approving their own request. |
+| PATCH | `/leave/:id/decline` | Admin org-wide, or a manager on their own team (2026-07-31, §7.5c) | Added later. Body `{ reason? }`. Sets `status: "rejected"` — rejects (409) if the record isn't `pending`. Notifies the requester (`leave_declined`, includes the reason if given) unless the decider is declining their own request. See "Decline action" below for the schema decision. |
+| PATCH | `/leave/:id/mark-unapproved-absence` | Admin org-wide, or a manager on their own team (2026-07-31, §7.5c) | Unconditional decree — works regardless of current status. Sets `type: "unapproved_absence"`, `isDoubleDeduction: true`, `status: "approved"`, per the 2x rule (smartrays.md). Deliberately **not** wired to the notification below — the task that added Leave notifications only asked for submit/approve/decline, and this is a distinct, retroactive action. |
 
 **One paid leave per month, no carry-over (§11.7, resolved this task):** neither source document
 said anything about carry-over either way — genuinely ambiguous, so this is a deliberate,
@@ -970,9 +970,9 @@ employee already has another **approved** `paid` leave somewhere in that same ca
 rather than Attendance's/Users' unconditional-self-access pattern, because viewing your own leave
 data — not just requesting it — genuinely is gated behind a real grant here, matching how
 `GET /leave?scope=` lets the caller choose. `sales_associate`/`employee` get `leave.view: true`
-by default; `manager` gets `leave.view_team: true`. `/approve`, `/decline`, and
-`/mark-unapproved-absence` are `requireAdmin`, not a permission tier — the same binary-admin-action
-reasoning as account creation and User deactivate/reactivate.
+by default; `manager` gets `leave.view_team: true`, plus (2026-07-31, §7.5c) `approve`, `decline`,
+and `mark_unapproved_absence`, scoped to their own team — see below. Admin's access to all three
+remains unconditional and org-wide via `can()`'s built-in admin bypass, unchanged.
 
 **Half-day leave support (added later).** `Leave.isHalfDay` (Boolean, default `false`) — when
 true, the request counts as **0.5 days**, not a full day, against both the monthly paid-leave
@@ -1023,8 +1023,50 @@ notifies the requester only (skipped if the deciding admin is the requester them
 self-requested-then-self-decided edge case). Neither notification path can block its own action —
 `createNotification` itself already never throws on a push failure.
 
-41 tests, all passing (18 original + 23 new for half-day/decline/balance/notifications). No
-application bugs found in this task's additions.
+56 tests, all passing (18 original + 23 for half-day/decline/balance/notifications + 15 new for
+§7.5c below). No application bugs found in this task's additions.
+
+**Manager parity on approve/decline/mark-unapproved-absence, admin exemption from requesting, and
+a required `reason` field (2026-07-31, §7.5c).** This **reverses the earlier admin-only
+restriction** on all three decision actions (§7.5's original "binary-admin-action" design, quoted
+above in the old wording). Reasoning: managers already carry real team-scoped authority elsewhere
+in this codebase (`leave.view_team`, `attendance.view_team`, `users.view_team`), and having them
+unable to act on their own reports' leave — needing an admin for every approval — didn't match
+that pattern and created unnecessary admin bottleneck. Three changes:
+
+1. **Registry + endpoint changes.** `PERMISSION_REGISTRY`'s `leave` module gained `approve`,
+   `decline`, `mark_unapproved_absence`; the manager `DEFAULT_ROLE_TEMPLATES` entry in
+   `permission.service.js` now grants all three by default. The three routes switched from
+   `requireAdmin` to `authorize("leave", "approve"/"decline"/"mark_unapproved_absence")` — admin
+   keeps working automatically through `can()`'s unconditional admin bypass, zero special-casing
+   needed. Route-level `authorize` only confirms the caller holds *some* grant for the action; a
+   new shared service helper, `leave.service.js#ensureCanActOnLeave(leave, requestingUser)`,
+   resolves the record-specific team check — admin short-circuits immediately, otherwise it loads
+   the leave's `employeeId` and 403s unless that employee's `managerId` matches the requesting
+   manager. This is the same "route confirms a grant, service resolves the specific record's team
+   scope" split already used by `getLeaveBalance` and `getTeamAttendance`.
+2. **Admin exemption from requesting (mirrors the same exemption added to Attendance).**
+   `requestLeave` now 403s if the resolved `employeeId` equals the requesting admin's own id —
+   "Admin accounts do not request leave for themselves — specify employeeId to request on behalf
+   of an employee." Deliberately narrower than a blanket "admin role can never POST here": the
+   existing admin-on-behalf-of mechanism (`payload.employeeId` honored only for admin) is the only
+   way a Leave record is ever created for an employee who never self-requested, and
+   `markUnapprovedAbsence` — which only *converts* an existing record, never creates one — depends
+   on it entirely. The exemption is scoped to "admin acting on their own behalf," not "admin acting
+   at all," so this load-bearing path is untouched.
+3. **New required `reason` field.** `Leave.reason` (String) already existed but was optional;
+   now `required: true`, enforced additionally at the validation layer (400 if missing/blank).
+   Kept deliberately separate from `declineReason` (the approver's reason for declining, added in
+   the "Decline action" entry above) — conflating the two would mean a decline overwrites the
+   requester's original context, which is exactly what having two distinct fields avoids.
+
+15 new tests: manager approve/decline/mark-unapproved-absence on their own team (succeeds), the
+same three rejected when attempted outside the manager's team, a no-grant role blocked on all
+three, admin unaffected (still works org-wide regardless of team), admin blocked from requesting
+for themselves (both omitted-`employeeId` and explicit-own-id cases), `reason` required (400 if
+missing or blank), and `reason` stored/returned correctly (checked against both the HTTP response
+and a fresh `Leave.findById` read). Full backend suite re-run after these changes: 654/654 passing
+across 21 test files, no regressions.
 
 ### Transport/Travel (`/api/v1/travel-logs`) — Phase 6
 

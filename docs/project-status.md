@@ -1585,3 +1585,27 @@ resolved while Phase 0 is underway.
   permission-gated photo/location correctly shown/hidden before and after a live grant, the
   Status filter, the self-view hard rule, and all four notification types. `frontend/README.md`
   and `.context/final-plan.md` (§7.4c extended) updated.
+- **2026-07-31** — Backend Leave module corrections (§7.5c), three changes built together: (1)
+  **manager parity on approve/decline/mark-unapproved-absence** — **reverses the earlier
+  admin-only restriction** on all three actions, since managers already hold real team-scoped
+  authority elsewhere (`leave.view_team`, `attendance.view_team`, `users.view_team`) and requiring
+  an admin for every decision on a manager's own team was an unnecessary bottleneck. `PERMISSION_
+  REGISTRY`'s `leave` module gained `approve`/`decline`/`mark_unapproved_absence`; manager's default
+  template now grants all three; the three routes moved from `requireAdmin` to
+  `authorize("leave", ...)` (admin keeps working automatically via `can()`'s bypass), with a new
+  `leave.service.js#ensureCanActOnLeave` helper doing the record-specific `managerId` team check —
+  the same "route confirms a grant, service resolves the record's team scope" split
+  `getLeaveBalance`/`getTeamAttendance` already use; (2) **admin exemption from requesting** —
+  mirrors the same exemption added to Attendance (§7.4c), but scoped narrowly to "admin acting on
+  their own behalf" rather than "admin submitting any request at all," since the existing
+  admin-on-behalf-of mechanism (`payload.employeeId`) is the only way a Leave record is ever
+  created for an employee who never self-requested, and `mark-unapproved-absence` depends on it
+  entirely; (3) **`reason` made required** — the field already existed but was optional; now
+  enforced at both the schema and validation layer, kept separate from the approver's
+  `declineReason`. Retroactively making `reason` required broke 7 direct `Leave.create()` calls in
+  `payroll.test.js`/`report.test.js` that bypass the HTTP validation layer — fixed by adding a test
+  `reason` to each fixture. 15 new tests in `leave.test.js` (manager own-team success and
+  outside-team rejection for all three actions, a no-grant role blocked, admin unaffected, admin
+  blocked from self-requesting, `reason` required and correctly stored/returned) — 56 tests total
+  for the module. Full backend suite: 654/654 passing across 21 test files, no regressions.
+  `backend/README.md` and `.context/final-plan.md` (§6.5/§7.5/§7.5c, §5 permission matrix) updated.

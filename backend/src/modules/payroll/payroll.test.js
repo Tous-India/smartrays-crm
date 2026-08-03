@@ -139,6 +139,7 @@ describe("POST /payroll/run — single-employee computation (§7.7 formulas)", (
       endDate: juneDate(25),
       type: "paid",
       status: "approved",
+      reason: "Test reason",
     });
 
     await Leave.create({
@@ -147,6 +148,7 @@ describe("POST /payroll/run — single-employee computation (§7.7 formulas)", (
       endDate: juneDate(26),
       type: "unpaid",
       status: "approved",
+      reason: "Test reason",
     });
 
     await Leave.create({
@@ -156,6 +158,7 @@ describe("POST /payroll/run — single-employee computation (§7.7 formulas)", (
       type: "unapproved_absence",
       status: "approved",
       isDoubleDeduction: true,
+      reason: "Test reason",
     });
 
     // Pending leave in the same month must NOT count toward any total.
@@ -165,6 +168,7 @@ describe("POST /payroll/run — single-employee computation (§7.7 formulas)", (
       endDate: juneDate(28),
       type: "unpaid",
       status: "pending",
+      reason: "Test reason",
     });
 
     await TravelLog.create({
@@ -225,6 +229,7 @@ describe("POST /payroll/run — single-employee computation (§7.7 formulas)", (
       type: "paid",
       status: "approved",
       isHalfDay: true,
+      reason: "Test reason",
     });
 
     await Leave.create({
@@ -234,6 +239,7 @@ describe("POST /payroll/run — single-employee computation (§7.7 formulas)", (
       type: "unpaid",
       status: "approved",
       isHalfDay: true,
+      reason: "Test reason",
     });
 
     const response = await adminAgent.post(

@@ -35,8 +35,15 @@ const leaveSchema = new mongoose.Schema(
       enum: LEAVE_STATUSES,
       default: "pending",
     },
+    // Required as of 2026-07-31 (§7.5c) — the requester's own reason for
+    // taking leave. Deliberately a separate field from `declineReason`
+    // below (the APPROVER's reason for declining) — conflating the two
+    // would mean a decline overwrites the requester's original context,
+    // which is exactly what `declineReason` being its own field already
+    // exists to avoid.
     reason: {
       type: String,
+      required: true,
       trim: true,
     },
     approvedBy: {

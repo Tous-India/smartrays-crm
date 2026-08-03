@@ -1,6 +1,6 @@
 import { Router } from "express";
 import authenticate from "../../middlewares/authenticate.middleware.js";
-import { requireAdmin } from "../../middlewares/authorize.middleware.js";
+import { authorize, requireAdmin } from "../../middlewares/authorize.middleware.js";
 import { request, list, approve, decline, markAbsence, balance, pendingCount } from "./leave.controller.js";
 import { validateLeaveRequestInput, validateScopeQuery, validateDeclineInput } from "./leave.validation.js";
 
@@ -29,9 +29,27 @@ leaveRouter.get("/balance", authenticate, balance);
 // convention regardless).
 leaveRouter.get("/pending-count", authenticate, requireAdmin, pendingCount);
 
-// Admin-only per §7.5 — "manager can view but not approve."
-leaveRouter.patch("/:id/approve", authenticate, requireAdmin, approve);
-leaveRouter.patch("/:id/decline", authenticate, requireAdmin, validateDeclineInput, decline);
-leaveRouter.patch("/:id/mark-unapproved-absence", authenticate, requireAdmin, markAbsence);
+// Manager parity (§7.5c, 2026-07-31 — reverses the earlier "admin-only, full
+// stop" restriction from §7.5). `authorize()` checks the caller holds SOME
+// grant for the action (admin always does, via can()'s own admin bypass; a
+// manager needs the new leave.approve/decline/mark_unapproved_absence
+// default grant) — the actual own-team-vs-someone-else's-team scoping is
+// resolved inside leave.service.js#ensureCanActOnLeave, which needs to look
+// up the specific record's employee to answer that, not something route-
+// level middleware alone can express.
+leaveRouter.patch("/:id/approve", authenticate, authorize("leave", "approve"), approve);
+leaveRouter.patch(
+  "/:id/decline",
+  authenticate,
+  authorize("leave", "decline"),
+  validateDeclineInput,
+  decline
+);
+leaveRouter.patch(
+  "/:id/mark-unapproved-absence",
+  authenticate,
+  authorize("leave", "mark_unapproved_absence"),
+  markAbsence
+);
 
 export default leaveRouter;

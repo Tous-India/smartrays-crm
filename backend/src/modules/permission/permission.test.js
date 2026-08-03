@@ -73,7 +73,7 @@ describe("Template CRUD", () => {
       credentials: { view: true },
       projects: { view: true, assign_team: true },
       attendance: { view_team: true },
-      leave: { view_team: true },
+      leave: { view_team: true, approve: true, decline: true, mark_unapproved_absence: true },
       travelLogs: { view_team: true },
       tickets: { create: true, assign: true, view_all: true },
       amc: { view: true, edit: true },

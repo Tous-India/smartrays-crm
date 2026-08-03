@@ -92,7 +92,7 @@ describe("POST /leave/request", () => {
   it("always attributes the request to the authenticated user, ignoring any employeeId in the body", async () => {
     const response = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(5), endDate: isoDate(5), employeeId: String(sales2._id) });
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason", employeeId: String(sales2._id) });
 
     expect(response.status).toBe(201);
     expect(response.body.data.employeeId).toBe(String(sales1._id));
@@ -101,16 +101,63 @@ describe("POST /leave/request", () => {
   it("lets an admin request leave on behalf of another employee", async () => {
     const response = await adminAgent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(5), endDate: isoDate(5), employeeId: String(sales1._id) });
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason", employeeId: String(sales1._id) });
 
     expect(response.status).toBe(201);
     expect(response.body.data.employeeId).toBe(String(sales1._id));
   });
 
+  it("rejects an admin's own leave request (§7.5c admin exemption), with no employeeId given", async () => {
+    const response = await adminAgent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
+
+    expect(response.status).toBe(403);
+    expect(response.body.message).toMatch(/do not request leave for themselves/i);
+  });
+
+  it("rejects an admin explicitly naming their own id as employeeId too, not just the omitted case", async () => {
+    const adminId = (await adminAgent.get("/api/v1/auth/me")).body.data._id;
+
+    const response = await adminAgent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason", employeeId: adminId });
+
+    expect(response.status).toBe(403);
+  });
+
+  it("requires a reason on request submission", async () => {
+    const response = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5) });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects a blank/whitespace-only reason", async () => {
+    const response = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "   " });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("stores and returns the reason correctly", async () => {
+    const response = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Family event" });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.reason).toBe("Family event");
+
+    const stored = await Leave.findById(response.body.data._id);
+    expect(stored.reason).toBe("Family event");
+  });
+
   it("rejects a request with endDate before startDate", async () => {
     const response = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(5), endDate: isoDate(3) });
+      .send({ startDate: isoDate(5), endDate: isoDate(3), reason: "Test reason" });
 
     expect(response.status).toBe(400);
   });
@@ -118,7 +165,7 @@ describe("POST /leave/request", () => {
   it("rejects a request with type=unapproved_absence — that's admin-only, never self-requestable", async () => {
     const response = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(5), endDate: isoDate(5), type: "unapproved_absence" });
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason", type: "unapproved_absence" });
 
     expect(response.status).toBe(400);
   });
@@ -126,7 +173,7 @@ describe("POST /leave/request", () => {
   it("accepts isHalfDay:true for a single-day request", async () => {
     const response = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(5), endDate: isoDate(5), isHalfDay: true });
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason", isHalfDay: true });
 
     expect(response.status).toBe(201);
     expect(response.body.data.isHalfDay).toBe(true);
@@ -135,7 +182,7 @@ describe("POST /leave/request", () => {
   it("rejects isHalfDay:true when startDate and endDate differ — a half day only describes a single day", async () => {
     const response = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(5), endDate: isoDate(6), isHalfDay: true });
+      .send({ startDate: isoDate(5), endDate: isoDate(6), reason: "Test reason", isHalfDay: true });
 
     expect(response.status).toBe(400);
   });
@@ -143,7 +190,7 @@ describe("POST /leave/request", () => {
   it("rejects a non-boolean isHalfDay", async () => {
     const response = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(5), endDate: isoDate(5), isHalfDay: "yes" });
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason", isHalfDay: "yes" });
 
     expect(response.status).toBe(400);
   });
@@ -151,8 +198,8 @@ describe("POST /leave/request", () => {
 
 describe("GET /leave?scope=own|team|all", () => {
   it("scope=own (default) returns only the caller's own requests", async () => {
-    await sales1Agent.post("/api/v1/leave/request").send({ startDate: isoDate(5), endDate: isoDate(5) });
-    await sales2Agent.post("/api/v1/leave/request").send({ startDate: isoDate(5), endDate: isoDate(5) });
+    await sales1Agent.post("/api/v1/leave/request").send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
+    await sales2Agent.post("/api/v1/leave/request").send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
 
     const response = await sales1Agent.get("/api/v1/leave");
 
@@ -162,9 +209,9 @@ describe("GET /leave?scope=own|team|all", () => {
   });
 
   it("scope=team lets a manager see their direct reports' requests, not an unaffiliated sales associate's", async () => {
-    await sales1Agent.post("/api/v1/leave/request").send({ startDate: isoDate(5), endDate: isoDate(5) });
-    await sales2Agent.post("/api/v1/leave/request").send({ startDate: isoDate(5), endDate: isoDate(5) });
-    await sales3Agent.post("/api/v1/leave/request").send({ startDate: isoDate(5), endDate: isoDate(5) });
+    await sales1Agent.post("/api/v1/leave/request").send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
+    await sales2Agent.post("/api/v1/leave/request").send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
+    await sales3Agent.post("/api/v1/leave/request").send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
 
     const response = await managerAgent.get("/api/v1/leave?scope=team");
 
@@ -179,7 +226,7 @@ describe("GET /leave?scope=own|team|all", () => {
   });
 
   it("scope=all is blocked for a manager (no leave.view_all grant) but allowed for admin", async () => {
-    await sales1Agent.post("/api/v1/leave/request").send({ startDate: isoDate(5), endDate: isoDate(5) });
+    await sales1Agent.post("/api/v1/leave/request").send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
 
     const managerResponse = await managerAgent.get("/api/v1/leave?scope=all");
     expect(managerResponse.status).toBe(403);
@@ -200,7 +247,7 @@ describe("PATCH /leave/:id/approve", () => {
   it("admin approves a pending paid leave request", async () => {
     const created = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(5), endDate: isoDate(5) });
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
 
     const response = await adminAgent.patch(`/api/v1/leave/${created.body.data._id}/approve`);
 
@@ -209,20 +256,52 @@ describe("PATCH /leave/:id/approve", () => {
     expect(response.body.data.approvedBy).toBe(String((await adminAgent.get("/api/v1/auth/me")).body.data._id));
   });
 
-  it("blocks a non-admin (including the requester's manager) from approving", async () => {
+  it("allows a manager to approve a pending request from their own direct report (§7.5c manager parity)", async () => {
     const created = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(5), endDate: isoDate(5) });
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
+
+    const response = await managerAgent.patch(`/api/v1/leave/${created.body.data._id}/approve`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.status).toBe("approved");
+    expect(response.body.data.approvedBy).toBe(String(manager1._id));
+  });
+
+  it("blocks a manager from approving a request outside their own team", async () => {
+    const created = await sales3Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
 
     const response = await managerAgent.patch(`/api/v1/leave/${created.body.data._id}/approve`);
 
     expect(response.status).toBe(403);
   });
 
+  it("blocks a role with no leave.approve grant at all (sales_associate) from approving", async () => {
+    const created = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
+
+    const response = await sales2Agent.patch(`/api/v1/leave/${created.body.data._id}/approve`);
+
+    expect(response.status).toBe(403);
+  });
+
+  it("still lets admin approve anything org-wide, regardless of team", async () => {
+    const created = await sales3Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
+
+    const response = await adminAgent.patch(`/api/v1/leave/${created.body.data._id}/approve`);
+
+    expect(response.status).toBe(200);
+  });
+
   it("rejects approving a request that isn't pending", async () => {
     const created = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(5), endDate: isoDate(5) });
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
     await adminAgent.patch(`/api/v1/leave/${created.body.data._id}/approve`);
 
     const response = await adminAgent.patch(`/api/v1/leave/${created.body.data._id}/approve`);
@@ -233,7 +312,7 @@ describe("PATCH /leave/:id/approve", () => {
   it("rejects approving a paid request spanning more than 1 day", async () => {
     const created = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(5), endDate: isoDate(6) });
+      .send({ startDate: isoDate(5), endDate: isoDate(6), reason: "Test reason" });
 
     const response = await adminAgent.patch(`/api/v1/leave/${created.body.data._id}/approve`);
 
@@ -243,11 +322,11 @@ describe("PATCH /leave/:id/approve", () => {
   it("enforces the one-paid-leave-per-month quota at APPROVAL time, not at request time: both requests can be submitted, only one can be approved", async () => {
     const first = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(2), endDate: isoDate(2) });
+      .send({ startDate: isoDate(2), endDate: isoDate(2), reason: "Test reason" });
 
     const second = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(3), endDate: isoDate(3) });
+      .send({ startDate: isoDate(3), endDate: isoDate(3), reason: "Test reason" });
 
     // Submitting a second paid request in the same month is never blocked —
     // a request existing isn't the same as it being granted. Both succeed.
@@ -265,7 +344,7 @@ describe("PATCH /leave/:id/approve", () => {
   it("allows an unpaid request to be approved without touching the paid-leave quota", async () => {
     const first = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(2), endDate: isoDate(2), type: "unpaid" });
+      .send({ startDate: isoDate(2), endDate: isoDate(2), reason: "Test reason", type: "unpaid" });
 
     const response = await adminAgent.patch(`/api/v1/leave/${first.body.data._id}/approve`);
 
@@ -275,10 +354,10 @@ describe("PATCH /leave/:id/approve", () => {
   it("a half-day paid request counts as 0.5 against the monthly quota — two can be approved in the same month", async () => {
     const first = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(1), endDate: isoDate(1), isHalfDay: true });
+      .send({ startDate: isoDate(1), endDate: isoDate(1), reason: "Test reason", isHalfDay: true });
     const second = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(1), endDate: isoDate(1), isHalfDay: true });
+      .send({ startDate: isoDate(1), endDate: isoDate(1), reason: "Test reason", isHalfDay: true });
 
     const firstApproval = await adminAgent.patch(`/api/v1/leave/${first.body.data._id}/approve`);
     expect(firstApproval.status).toBe(200);
@@ -290,13 +369,13 @@ describe("PATCH /leave/:id/approve", () => {
   it("rejects a third half-day paid approval once 1.0 day has already been used (0.5 + 0.5 + 0.5 > 1)", async () => {
     const first = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(1), endDate: isoDate(1), isHalfDay: true });
+      .send({ startDate: isoDate(1), endDate: isoDate(1), reason: "Test reason", isHalfDay: true });
     const second = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(1), endDate: isoDate(1), isHalfDay: true });
+      .send({ startDate: isoDate(1), endDate: isoDate(1), reason: "Test reason", isHalfDay: true });
     const third = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(1), endDate: isoDate(1), isHalfDay: true });
+      .send({ startDate: isoDate(1), endDate: isoDate(1), reason: "Test reason", isHalfDay: true });
 
     await adminAgent.patch(`/api/v1/leave/${first.body.data._id}/approve`);
     await adminAgent.patch(`/api/v1/leave/${second.body.data._id}/approve`);
@@ -310,7 +389,7 @@ describe("PATCH /leave/:id/mark-unapproved-absence", () => {
   it("admin marks a leave record as an unapproved absence with double deduction", async () => {
     const created = await adminAgent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(-1), endDate: isoDate(-1), employeeId: String(sales1._id) });
+      .send({ startDate: isoDate(-1), endDate: isoDate(-1), reason: "Test reason", employeeId: String(sales1._id) });
 
     const response = await adminAgent.patch(
       `/api/v1/leave/${created.body.data._id}/mark-unapproved-absence`
@@ -322,12 +401,38 @@ describe("PATCH /leave/:id/mark-unapproved-absence", () => {
     expect(response.body.data.status).toBe("approved");
   });
 
-  it("blocks a non-admin from marking an unapproved absence", async () => {
+  it("allows a manager to mark an unapproved absence for their own direct report (§7.5c manager parity)", async () => {
     const created = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(-1), endDate: isoDate(-1) });
+      .send({ startDate: isoDate(-1), endDate: isoDate(-1), reason: "Test reason" });
 
     const response = await managerAgent.patch(
+      `/api/v1/leave/${created.body.data._id}/mark-unapproved-absence`
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.type).toBe("unapproved_absence");
+    expect(response.body.data.isDoubleDeduction).toBe(true);
+  });
+
+  it("blocks a manager from marking an unapproved absence outside their own team", async () => {
+    const created = await sales3Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(-1), endDate: isoDate(-1), reason: "Test reason" });
+
+    const response = await managerAgent.patch(
+      `/api/v1/leave/${created.body.data._id}/mark-unapproved-absence`
+    );
+
+    expect(response.status).toBe(403);
+  });
+
+  it("blocks a role with no leave.mark_unapproved_absence grant at all (sales_associate)", async () => {
+    const created = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(-1), endDate: isoDate(-1), reason: "Test reason" });
+
+    const response = await sales2Agent.patch(
       `/api/v1/leave/${created.body.data._id}/mark-unapproved-absence`
     );
 
@@ -339,7 +444,7 @@ describe("PATCH /leave/:id/decline", () => {
   it("admin declines a pending request, optionally with a reason", async () => {
     const created = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(5), endDate: isoDate(5) });
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
 
     const response = await adminAgent
       .patch(`/api/v1/leave/${created.body.data._id}/decline`)
@@ -354,7 +459,7 @@ describe("PATCH /leave/:id/decline", () => {
   it("works with no reason at all", async () => {
     const created = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(5), endDate: isoDate(5) });
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
 
     const response = await adminAgent.patch(`/api/v1/leave/${created.body.data._id}/decline`);
 
@@ -366,7 +471,7 @@ describe("PATCH /leave/:id/decline", () => {
   it("rejects a non-string reason", async () => {
     const created = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(5), endDate: isoDate(5) });
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
 
     const response = await adminAgent
       .patch(`/api/v1/leave/${created.body.data._id}/decline`)
@@ -375,12 +480,36 @@ describe("PATCH /leave/:id/decline", () => {
     expect(response.status).toBe(400);
   });
 
-  it("blocks a non-admin (including the requester's manager) from declining", async () => {
+  it("allows a manager to decline a pending request from their own direct report (§7.5c manager parity)", async () => {
     const created = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(5), endDate: isoDate(5) });
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
+
+    const response = await managerAgent
+      .patch(`/api/v1/leave/${created.body.data._id}/decline`)
+      .send({ reason: "Team is short-staffed that week" });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.status).toBe("rejected");
+    expect(response.body.data.approvedBy).toBe(String(manager1._id));
+  });
+
+  it("blocks a manager from declining a request outside their own team", async () => {
+    const created = await sales3Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
 
     const response = await managerAgent.patch(`/api/v1/leave/${created.body.data._id}/decline`);
+
+    expect(response.status).toBe(403);
+  });
+
+  it("blocks a role with no leave.decline grant at all (sales_associate) from declining", async () => {
+    const created = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
+
+    const response = await sales2Agent.patch(`/api/v1/leave/${created.body.data._id}/decline`);
 
     expect(response.status).toBe(403);
   });
@@ -388,7 +517,7 @@ describe("PATCH /leave/:id/decline", () => {
   it("rejects declining a request that isn't pending", async () => {
     const created = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(5), endDate: isoDate(5) });
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
     await adminAgent.patch(`/api/v1/leave/${created.body.data._id}/approve`);
 
     const response = await adminAgent.patch(`/api/v1/leave/${created.body.data._id}/decline`);
@@ -414,7 +543,7 @@ describe("GET /leave/balance", () => {
   it("reflects a full-day approved paid leave as fully used", async () => {
     const created = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(1), endDate: isoDate(1) });
+      .send({ startDate: isoDate(1), endDate: isoDate(1), reason: "Test reason" });
     await adminAgent.patch(`/api/v1/leave/${created.body.data._id}/approve`);
 
     const response = await sales1Agent.get("/api/v1/leave/balance");
@@ -426,7 +555,7 @@ describe("GET /leave/balance", () => {
   it("reflects a half-day approved paid leave as 0.5 used, 0.5 remaining", async () => {
     const created = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(1), endDate: isoDate(1), isHalfDay: true });
+      .send({ startDate: isoDate(1), endDate: isoDate(1), reason: "Test reason", isHalfDay: true });
     await adminAgent.patch(`/api/v1/leave/${created.body.data._id}/approve`);
 
     const response = await sales1Agent.get("/api/v1/leave/balance");
@@ -436,7 +565,7 @@ describe("GET /leave/balance", () => {
   });
 
   it("ignores a pending (not yet approved) paid leave", async () => {
-    await sales1Agent.post("/api/v1/leave/request").send({ startDate: isoDate(1), endDate: isoDate(1) });
+    await sales1Agent.post("/api/v1/leave/request").send({ startDate: isoDate(1), endDate: isoDate(1), reason: "Test reason" });
 
     const response = await sales1Agent.get("/api/v1/leave/balance");
 
@@ -446,7 +575,7 @@ describe("GET /leave/balance", () => {
   it("lets an admin view any employee's balance via ?employeeId=", async () => {
     const created = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(1), endDate: isoDate(1) });
+      .send({ startDate: isoDate(1), endDate: isoDate(1), reason: "Test reason" });
     await adminAgent.patch(`/api/v1/leave/${created.body.data._id}/approve`);
 
     const response = await adminAgent.get(`/api/v1/leave/balance?employeeId=${sales1._id}`);
@@ -478,7 +607,7 @@ describe("Leave notifications", () => {
   it("notifies the requester's manager and every admin on submission — never the requester themselves", async () => {
     const created = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(5), endDate: isoDate(5) });
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
 
     expect(created.status).toBe(201);
 
@@ -498,7 +627,7 @@ describe("Leave notifications", () => {
     // sales3 has no managerId at all — only admins should be notified.
     const created = await sales3Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(5), endDate: isoDate(5) });
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
 
     expect(created.status).toBe(201);
     expect(await Notification.countDocuments({ userId: manager1._id, type: "leave_requested" })).toBe(0);
@@ -507,7 +636,7 @@ describe("Leave notifications", () => {
   it("notifies the requester when their leave is approved", async () => {
     const created = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(5), endDate: isoDate(5) });
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
     await adminAgent.patch(`/api/v1/leave/${created.body.data._id}/approve`);
 
     const notification = await Notification.findOne({ userId: sales1._id, type: "leave_approved" });
@@ -518,7 +647,7 @@ describe("Leave notifications", () => {
   it("notifies the requester when their leave is declined, including the reason", async () => {
     const created = await sales1Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(5), endDate: isoDate(5) });
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
     await adminAgent
       .patch(`/api/v1/leave/${created.body.data._id}/decline`)
       .send({ reason: "Insufficient coverage" });
@@ -532,11 +661,11 @@ describe("Leave notifications", () => {
 
 describe("GET /leave/pending-count (§7.26, sidebar badge)", () => {
   it("returns the org-wide count of pending leave requests", async () => {
-    await sales1Agent.post("/api/v1/leave/request").send({ startDate: isoDate(5), endDate: isoDate(5) });
-    await sales2Agent.post("/api/v1/leave/request").send({ startDate: isoDate(6), endDate: isoDate(6) });
+    await sales1Agent.post("/api/v1/leave/request").send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
+    await sales2Agent.post("/api/v1/leave/request").send({ startDate: isoDate(6), endDate: isoDate(6), reason: "Test reason" });
     const third = await sales3Agent
       .post("/api/v1/leave/request")
-      .send({ startDate: isoDate(7), endDate: isoDate(7) });
+      .send({ startDate: isoDate(7), endDate: isoDate(7), reason: "Test reason" });
     await adminAgent.patch(`/api/v1/leave/${third.body.data._id}/approve`);
 
     const response = await adminAgent.get("/api/v1/leave/pending-count");

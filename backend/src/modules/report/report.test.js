@@ -251,6 +251,7 @@ describe("module: leave", () => {
       endDate: juneDate(1),
       type: "paid",
       status: "approved",
+      reason: "Test reason",
     });
 
     const { uploadReportFile } = await import("../../services/cloudinary.service.js");

@@ -17,7 +17,11 @@ function utcDateKey(date) {
 }
 
 export function validateLeaveRequestInput(req, res, next) {
-  const { startDate, endDate, type, isHalfDay } = req.body;
+  const { startDate, endDate, type, isHalfDay, reason } = req.body;
+
+  if (!reason || typeof reason !== "string" || !reason.trim()) {
+    throw new ApiError(400, "A reason is required");
+  }
 
   if (!startDate || Number.isNaN(Date.parse(startDate))) {
     throw new ApiError(400, "A valid startDate is required");

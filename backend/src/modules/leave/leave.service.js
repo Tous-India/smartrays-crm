@@ -15,9 +15,29 @@ export const PAID_LEAVE_MONTHLY_LIMIT = 1;
  * POST /pings (§7.4b). Only an admin may request leave on behalf of someone
  * else — needed so the mark-unapproved-absence flow below has somewhere to
  * start from for an employee who never submitted a request themselves.
+ *
+ * Admin exemption (2026-07-31, §7.5c) — admin accounts don't request leave
+ * FOR THEMSELVES, mirroring the same exemption added to Attendance check-in.
+ * Deliberately narrower than a blanket "reject every admin-submitted
+ * request," though: this endpoint's own on-behalf-of path (above) is a real,
+ * already-tested, load-bearing feature — `markUnapprovedAbsence` below has
+ * no way to CREATE a record, only convert an existing one, so admin
+ * submitting a request on behalf of an employee who never requested
+ * themselves is the only way that flow has anything to act on. Checked
+ * against the RESOLVED employeeId (after the on-behalf-of resolution below),
+ * not just "was employeeId present in the payload" — an admin explicitly
+ * passing their own id would otherwise slip through the same self-request
+ * this check exists to block.
  */
 export async function requestLeave(payload, requestingUser) {
   const employeeId = requestingUser.role === "admin" && payload.employeeId ? payload.employeeId : requestingUser._id;
+
+  if (requestingUser.role === "admin" && String(employeeId) === String(requestingUser._id)) {
+    throw new ApiError(
+      403,
+      "Admin accounts do not request leave for themselves — specify employeeId to request on behalf of an employee."
+    );
+  }
 
   const leave = await Leave.create({
     employeeId,
@@ -134,32 +154,59 @@ export async function listLeaves(scope, requestingUser) {
 
 /**
  * `GET /leave/pending-count` (§7.26, sidebar badge) — admin-only, hard-gated
- * by role at the route (`requireAdmin`), not a `leave.*` permission grant:
- * this task's own spec is explicit that this badge is admin-only full stop,
- * not "whoever happens to hold `view_all`" (which a permission override
- * could technically extend to a manager later). Org-wide, no ownership
- * scoping — matches "manager can view but not approve" (§7.5): only an
- * admin approves, so only an admin needs to know how many are waiting.
+ * by role at the route (`requireAdmin`), not a `leave.*` permission grant.
+ * Org-wide, no ownership scoping. Unaffected by the 2026-07-31 manager-parity
+ * change (§7.5c) below — this task didn't ask for a per-manager pending-count
+ * badge, so it stays exactly what it was: a global count for the admin
+ * sidebar, orthogonal to who else can now also approve/decline.
  */
 export async function getPendingLeaveCount() {
   return Leave.countDocuments({ status: "pending" });
 }
 
 /**
- * Admin-only (§7.5). A `paid`-type request is capped at the one-paid-leave-
- * per-calendar-month rule (§11.7, resolved 2026-07-13): a single request
- * can't span more than 1 day, and approving it must not push the employee's
- * total APPROVED paid-leave days for that calendar month above 1. No
- * carry-over — an unused paid leave in one month does not roll into the
- * next; this is a deliberate assumption where the source documents were
- * silent, stated explicitly per this task's own instructions.
+ * Scoping check shared by approve/decline/mark-unapproved-absence below
+ * (2026-07-31, §7.5c — reverses the earlier "admin-only, full stop"
+ * restriction on all three). Admin bypasses entirely — org-wide, exactly as
+ * before. A manager (the route-level `authorize("leave", "approve"/...)`
+ * already confirmed holds SOME grant for this action) is further scoped to
+ * their own direct reports here, reusing the same managerId-based "own team"
+ * check used everywhere else in this codebase (e.g. `listLeaves`'s own
+ * `scope=team` resolution) rather than inventing new scoping logic. A
+ * manager acting on a request from someone outside their team is a 403, not
+ * a 404 — the record demonstrably exists (the caller supplied a real id),
+ * they're just not allowed to act on this particular one.
  */
-export async function approveLeave(leaveId, adminUser) {
+async function ensureCanActOnLeave(leave, requestingUser) {
+  if (requestingUser.role === "admin") {
+    return;
+  }
+
+  const employee = await User.findById(leave.employeeId);
+
+  if (!employee || String(employee.managerId) !== String(requestingUser._id)) {
+    throw new ApiError(403, "You can only act on leave requests from your own direct reports");
+  }
+}
+
+/**
+ * Admin org-wide, or a manager acting on their own team's request (§7.5c,
+ * 2026-07-31 — see `ensureCanActOnLeave`). A `paid`-type request is capped at
+ * the one-paid-leave-per-calendar-month rule (§11.7, resolved 2026-07-13): a
+ * single request can't span more than 1 day, and approving it must not push
+ * the employee's total APPROVED paid-leave days for that calendar month
+ * above 1. No carry-over — an unused paid leave in one month does not roll
+ * into the next; this is a deliberate assumption where the source documents
+ * were silent, stated explicitly per this task's own instructions.
+ */
+export async function approveLeave(leaveId, requestingUser) {
   const leave = await Leave.findById(leaveId);
 
   if (!leave) {
     throw new ApiError(404, "Leave request not found");
   }
+
+  await ensureCanActOnLeave(leave, requestingUser);
 
   if (leave.status !== "pending") {
     throw new ApiError(409, "Only a pending leave request can be approved");
@@ -170,43 +217,46 @@ export async function approveLeave(leaveId, adminUser) {
   }
 
   leave.status = "approved";
-  leave.approvedBy = adminUser._id;
+  leave.approvedBy = requestingUser._id;
   await leave.save();
 
-  await notifyLeaveDecision(leave, adminUser);
+  await notifyLeaveDecision(leave, requestingUser);
 
   return leave;
 }
 
 /**
- * Admin-only (§7.5 addition). Reuses the exact same "only a pending request
- * can be decided" guard `approveLeave` already enforces. Sets `status:
- * "rejected"` — the existing, previously-unused `LEAVE_STATUSES` value
- * (leave.model.js already declared it, no endpoint ever set it) rather than
- * adding a new `declined` enum value that would mean the same thing. Reuses
- * `approvedBy` to record which admin made this approval-state decision, the
- * same treatment `markUnapprovedAbsence` below already gives that field even
- * though its own outcome isn't literally "approved" either — this is "the
- * admin who last decided this record's approval state," not strictly
- * "approved by."
+ * Admin org-wide, or a manager acting on their own team's request (§7.5c,
+ * same scoping as `approveLeave`). Reuses the exact same "only a pending
+ * request can be decided" guard `approveLeave` already enforces. Sets
+ * `status: "rejected"` — the existing, previously-unused `LEAVE_STATUSES`
+ * value (leave.model.js already declared it, no endpoint ever set it)
+ * rather than adding a new `declined` enum value that would mean the same
+ * thing. Reuses `approvedBy` to record which admin/manager made this
+ * approval-state decision, the same treatment `markUnapprovedAbsence` below
+ * already gives that field even though its own outcome isn't literally
+ * "approved" either — this is "who last decided this record's approval
+ * state," not strictly "approved by."
  */
-export async function declineLeave(leaveId, reason, adminUser) {
+export async function declineLeave(leaveId, reason, requestingUser) {
   const leave = await Leave.findById(leaveId);
 
   if (!leave) {
     throw new ApiError(404, "Leave request not found");
   }
 
+  await ensureCanActOnLeave(leave, requestingUser);
+
   if (leave.status !== "pending") {
     throw new ApiError(409, "Only a pending leave request can be declined");
   }
 
   leave.status = "rejected";
-  leave.approvedBy = adminUser._id;
+  leave.approvedBy = requestingUser._id;
   leave.declineReason = reason || null;
   await leave.save();
 
-  await notifyLeaveDecision(leave, adminUser);
+  await notifyLeaveDecision(leave, requestingUser);
 
   return leave;
 }
@@ -329,24 +379,28 @@ function resolveMonthRange(date) {
 }
 
 /**
- * Admin-only (§7.5). Retroactively converts a leave record into the
- * unapproved-absence case, per the 2x rule (smartrays.md): an employee who
- * takes leave without going through approval, and whom an admin has to mark
- * absent, is counted as 2 days' deduction. This is an admin decree, not a
- * normal approval — it works regardless of the record's current status, and
- * doesn't run the paid-leave quota check since it's never `type: "paid"`.
+ * Admin org-wide, or a manager acting on their own team's request (§7.5c,
+ * same scoping as `approveLeave`/`declineLeave`). Retroactively converts a
+ * leave record into the unapproved-absence case, per the 2x rule
+ * (smartrays.md): an employee who takes leave without going through
+ * approval, and whom an admin/manager has to mark absent, is counted as 2
+ * days' deduction. This is a decree, not a normal approval — it works
+ * regardless of the record's current status, and doesn't run the paid-leave
+ * quota check since it's never `type: "paid"`.
  */
-export async function markUnapprovedAbsence(leaveId, adminUser) {
+export async function markUnapprovedAbsence(leaveId, requestingUser) {
   const leave = await Leave.findById(leaveId);
 
   if (!leave) {
     throw new ApiError(404, "Leave request not found");
   }
 
+  await ensureCanActOnLeave(leave, requestingUser);
+
   leave.type = "unapproved_absence";
   leave.isDoubleDeduction = true;
   leave.status = "approved";
-  leave.approvedBy = adminUser._id;
+  leave.approvedBy = requestingUser._id;
   await leave.save();
 
   return leave;

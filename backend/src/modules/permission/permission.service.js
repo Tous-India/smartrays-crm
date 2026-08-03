@@ -24,11 +24,17 @@ const INITIAL_TEMPLATE_DEFAULTS = {
     credentials: { view: true },
     projects: { view: true, assign_team: true },
     // Added 2026-07-13 (full Phase 3, §7.4/§7.5). A manager needs to see
-    // their team's attendance and leave requests (to view, though only
-    // admin can approve/mark-unapproved-absence) — the same managerId-based
-    // "own team" scoping as everywhere else.
+    // their team's attendance — the same managerId-based "own team" scoping
+    // as everywhere else.
     attendance: { view_team: true },
-    leave: { view_team: true },
+    // `approve`/`decline`/`mark_unapproved_absence` added 2026-07-31 (§7.5c)
+    // — reverses this same task's earlier "view only, admin approves" default
+    // (the parenthetical in this comment used to say exactly that). A
+    // manager now decides on their own direct reports' leave requests
+    // directly, scoped to their own team the same way `view_team` already
+    // is (leave.service.js#ensureCanActOnLeave) — admin keeps org-wide
+    // access to all three regardless of team, unchanged.
+    leave: { view_team: true, approve: true, decline: true, mark_unapproved_absence: true },
     // Added 2026-07-13 (§7.6, Phase 6) — same reasoning as attendance/leave
     // above: a manager can see their team's travel logs, own team scoping.
     travelLogs: { view_team: true },

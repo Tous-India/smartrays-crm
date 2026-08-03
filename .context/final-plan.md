@@ -450,22 +450,35 @@ reworked to guided reassignment" section for the UI side (`DeactivationReassignM
   three-tier shape exactly, but checked per explicitly-requested `?scope=` rather than resolved
   as an implicit union of every held grant (§7.5's endpoint design gives the caller the choice,
   `location`'s doesn't). Requesting your own leave needs no grant — self-service, same reasoning
-  as Attendance check-in/out. `/approve` and `/mark-unapproved-absence` are `requireAdmin`, not a
-  permission tier — binary admin-only actions, matching how `location`/`user` gate their own
-  binary admin actions.
+  as Attendance check-in/out. `/approve`, `/decline`, and `/mark-unapproved-absence` are
+  `authorize("leave", ...)`-gated, not `requireAdmin` (**reversed 2026-07-31, §7.5c** — see below);
+  admin keeps unconditional org-wide access via `can()`'s bypass, and manager now holds all three
+  by default, scoped to their own team via a service-level `managerId` check.
 - **Key invariants:** one paid leave per calendar month, no carry-over (§11.7) — a single `paid`
   request over 1 day is rejected outright, and approving one is rejected if it would push the
   employee's other *approved* paid-leave days for that month over 1; only an admin may request
   leave on behalf of someone else (needed so `mark-unapproved-absence` has a record to act on for
-  an employee who never self-requested); `mark-unapproved-absence` is an unconditional admin
-  decree (works regardless of current status) that always sets `isDoubleDeduction: true`.
+  an employee who never self-requested — admin is otherwise blocked from requesting for
+  themselves, §7.5c below); `mark-unapproved-absence` is an unconditional decree (works regardless
+  of current status) that always sets `isDoubleDeduction: true`; `reason` is required on request
+  submission (§7.5c below).
 - **Known deviations:** "date(s)" (§6.5) built as an inclusive `startDate`/`endDate` range, the
   simplest reading that still covers a multi-day request.
-- **Test coverage:** 18 tests, no application bugs found. **Confirmed 2026-07-13 (follow-up
-  review):** one test explicitly proves the quota is enforced at approval time, not request
-  time — two paid requests for the same employee in the same month both submit successfully
-  (201), the first approval succeeds, and only the second is rejected (409, with a message
-  naming the quota). This was already the implemented behavior, not a fix.
+- **Test coverage:** 56 tests (18 original + 23 for half-day/decline/balance/notifications + 15
+  for §7.5c), no application bugs found. **Confirmed 2026-07-13 (follow-up review):** one test
+  explicitly proves the quota is enforced at approval time, not request time — two paid requests
+  for the same employee in the same month both submit successfully (201), the first approval
+  succeeds, and only the second is rejected (409, with a message naming the quota). This was
+  already the implemented behavior, not a fix.
+- **Manager parity + admin exemption + required `reason` (2026-07-31, §7.5c):** reverses the
+  original "`/approve`/`/decline`/`/mark-unapproved-absence` are admin-only" design — manager now
+  gets all three, scoped to their own direct reports (`ensureCanActOnLeave` in `leave.service.js`,
+  the same "route confirms a grant, service resolves the record's team scope" split
+  `getLeaveBalance`/`getTeamAttendance` already use). Admin is now blocked from requesting leave
+  for themselves (mirrors the same exemption added to Attendance), but the admin-on-behalf-of
+  mechanism (`payload.employeeId`) is untouched since `mark-unapproved-absence` depends on it to
+  have a record to act on. `Leave.reason` (already existed, previously optional) is now required
+  at both the schema and validation layer, kept separate from `declineReason`.
 
 ##### Transport/Travel (§7.6, Phase 6, built 2026-07-13)
 - **Data model:** `TravelLog` — §6.5, built as designed. Distinct from `LocationPing` (raw GPS
@@ -823,7 +836,7 @@ client-side (to hide/disable controls, never trusted alone).
 | users.view_team | ✅ (bypass) | ✅ default | – | – | – |
 | users.view_all | ✅ (bypass) | – | – | – | – |
 | leave.view/view_team/view_all | ✅ (bypass) | `view_team` default | `view` default | `view` default | – |
-| leave request/approve/mark-unapproved-absence | approve+mark: ✅ only | view own team's, can't approve | request only | request only | – |
+| leave request/approve/decline/mark-unapproved-absence | ✅ org-wide, blocked from requesting for self (§7.5c) | own team: request/approve/decline/mark-unapproved-absence all default (§7.5c); blocked outside own team | request only | request only | – |
 | travelLogs.view/view_team/view_all | ✅ (bypass) | `view_team` default | `view` default | `view` default | – |
 | travel-log manual entry (own / direct report / anyone) | ✅ (any employeeId) | own or direct report only | own only | own only | – |
 | payroll.view/run | ✅ | – (deliberate — no `team` tier exists at all, unlike every other row above) | – (same as Manager — corrected 2026-07-13: an earlier build misread this "–" as a blank/unspecified cell and granted "own payslip only" to match Employee; that was wrong, this cell is an explicit "–" like Manager's) | own payslip only | – |
@@ -884,9 +897,12 @@ Attendance, viewing your OWN leave data (not just requesting it) genuinely is ga
 grant — `GET /leave?scope=own|team|all` lets the caller explicitly choose a scope rather than
 implicitly resolving one from whatever's held, matching how `location`'s endpoints work rather
 than `users`'/`attendance`'s unconditional-self-access pattern. `sales_associate`/`employee` get
-`leave.view: true` by default (their own requests); `manager` gets `leave.view_team: true`.
-*Requesting* leave (`POST /leave/request`) needs no grant at all regardless of role — a
-self-service action, same as Attendance check-in/out.
+`leave.view: true` by default (their own requests); `manager` gets `leave.view_team: true`, plus
+(2026-07-31, §7.5c) `approve`, `decline`, and `mark_unapproved_absence` by default, scoped to their
+own direct reports at the service layer. *Requesting* leave (`POST /leave/request`) needs no grant
+at all regardless of role — a self-service action, same as Attendance check-in/out — except that
+an admin is blocked from requesting for themselves (§7.5c), the on-behalf-of path for other
+employees remaining open to them.
 
 **`travelLogs.*` (added 2026-07-13, §7.6, Phase 6):** mirrors `leave`'s exact three-tier shape and
 reasoning — `GET /travel-logs?scope=own|team|all` gives the caller an explicit choice, checked
@@ -1062,6 +1078,8 @@ request counts as 0.5 days against quotas/payroll rather than a full day; valida
 new `PATCH /leave/:id/decline`, kept separate from the existing `reason` field so declining never
 overwrites the requester's own stated reason for taking leave. No new `status` enum value was
 needed — `declineLeave` sets the existing, previously-unused `"rejected"` value.
+**Made required (2026-07-31, §7.5c):** `reason` (previously optional) is now `required: true` at
+the schema layer, plus enforced (400) at the validation layer on request submission.
 **`TravelLog`** — employeeId, date, originCoords, destinationCoords, distanceKm (from Google Maps Distance Matrix), source (`auto` from check-in/out or `manual`). **Retrofitted
 2026-07-13 with an approval workflow** (§7.6/§7.7, done alongside resolving §11.4): `status`
 (`pending`/`approved`/`rejected`, default `pending` — neither `auto` nor `manual` entries
@@ -1854,10 +1872,12 @@ same task as the full Attendance build (§7.4) — "Full Phase 3." Leave cadence
 one paid leave per calendar month, no carry-over.
 
 **Rules:** `scope=team` resolves to employees where `managerId == req.user._id` (§6.1/§11.9);
-manager can view but not approve — only Admin can call `/approve` or
-`/mark-unapproved-absence`. Requesting your own leave needs no `leave.*` grant at all (a
-self-service action, same reasoning as Attendance check-in/out); viewing leave data — even your
-own — does, mirroring `location`'s three-tier permission shape (`view`/`view_team`/`view_all`)
+manager can now also approve/decline/mark-unapproved-absence for their own team, scoped the same
+way (**reversed 2026-07-31, §7.5c** — originally only Admin could call `/approve`,
+`/decline`, or `/mark-unapproved-absence`; see below). Requesting your own leave needs no `leave.*`
+grant at all (a self-service action, same reasoning as Attendance check-in/out) — except an admin
+is now blocked from requesting for themselves (§7.5c); viewing leave data — even your own — does
+need a grant, mirroring `location`'s three-tier permission shape (`view`/`view_team`/`view_all`)
 rather than the unconditional self-access pattern `attendance`/`users` use, since §7.5 gives the
 caller an explicit `?scope=own|team|all` choice to check against, not an implicit union of
 whatever's held.
@@ -1866,9 +1886,11 @@ whatever's held.
 POST   /leave/request                                                                 ✅ built
 GET    /leave?scope=own|team|all                                                      ✅ built
 GET    /leave/balance?employeeId=          (own always; team/all reuse view tiers)    ✅ built
-PATCH  /leave/:id/approve         (admin)                                             ✅ built
-PATCH  /leave/:id/decline         (admin; reason?, sets status: "rejected")           ✅ built
-PATCH  /leave/:id/mark-unapproved-absence   (admin; sets isDoubleDeduction=true)       ✅ built
+PATCH  /leave/:id/approve         (admin org-wide, or manager own-team, §7.5c)        ✅ built
+PATCH  /leave/:id/decline         (admin org-wide, or manager own-team, §7.5c;
+                                    reason?, sets status: "rejected")                  ✅ built
+PATCH  /leave/:id/mark-unapproved-absence   (admin org-wide, or manager own-team,
+                                              §7.5c; sets isDoubleDeduction=true)      ✅ built
 ```
 **Key invariants:** a `paid`-type approval is capped by the monthly quota (§11.7) — a single
 request over 1 day is rejected outright, and a second approved paid leave in the same calendar
@@ -1929,6 +1951,32 @@ endpoint, a decline action, notifications, and a frontend team calendar view:**
   before this task).
 
 41 tests total (18 original + 23 new), all passing.
+
+**Manager parity, admin exemption from requesting, and a required `reason` field (2026-07-31,
+§7.5c) — reverses the earlier admin-only restriction on all three decision actions.** Reasoning:
+managers already hold real team-scoped authority elsewhere (`leave.view_team`,
+`attendance.view_team`, `users.view_team`); requiring an admin for every single leave decision on
+a manager's own team didn't match that pattern and was an unnecessary bottleneck.
+
+- `PERMISSION_REGISTRY`'s `leave` module gained `approve`/`decline`/`mark_unapproved_absence`;
+  manager's default template now grants all three. The three routes moved from `requireAdmin` to
+  `authorize("leave", ...)` — admin keeps working automatically via `can()`'s bypass. A new
+  `leave.service.js#ensureCanActOnLeave(leave, requestingUser)` helper does the record-specific
+  team check (admin short-circuits; otherwise 403s unless the leave's `employeeId.managerId`
+  matches the requesting manager) — the same "route confirms a grant, service resolves the
+  record's team scope" split `getLeaveBalance`/`getTeamAttendance` already use.
+- Admin is now blocked from requesting leave for themselves (mirrors the same exemption added to
+  Attendance) — but only when acting on their own behalf; the admin-on-behalf-of mechanism
+  (`payload.employeeId`) is untouched, since `mark-unapproved-absence` depends on it entirely to
+  have a record to act on for an employee who never self-requested.
+- `Leave.reason` (already existed, previously optional) is now `required: true`, enforced
+  additionally at the validation layer. Kept separate from `declineReason` — conflating the two
+  would let a decline overwrite the requester's own original context.
+
+15 new tests (manager own-team success and outside-team rejection for all three actions, a
+no-grant role blocked, admin unaffected, admin blocked from self-requesting, `reason` required and
+correctly stored/returned) — **56 tests total for the Leave module.** Full backend suite re-run:
+654/654 passing across 21 test files, no regressions.
 
 ### 7.6 Transport/Travel
 
