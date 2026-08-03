@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import AttendanceTimeline from "./AttendanceTimeline";
 
 const DAY_WITH_GAP = {
@@ -99,21 +98,9 @@ describe("AttendanceTimeline", () => {
     expect(screen.getByTestId("geofence-violation-bar")).toHaveClass("bg-green-400");
   });
 
-  it("adds a per-row Edit action only when onEditRecord is provided, and it stops row-click propagation", async () => {
-    const onRowClick = vi.fn();
-    const onEditRecord = vi.fn();
-    render(
-      <AttendanceTimeline
-        records={[DAY_WITHOUT_GAP]}
-        isLoading={false}
-        onRowClick={onRowClick}
-        onEditRecord={onEditRecord}
-      />
-    );
+  it("never renders a per-row Edit action (Attendance is UI-read-only)", () => {
+    render(<AttendanceTimeline records={[DAY_WITHOUT_GAP]} isLoading={false} onRowClick={vi.fn()} />);
 
-    await userEvent.click(screen.getByRole("button"));
-
-    expect(onEditRecord).toHaveBeenCalledWith(DAY_WITHOUT_GAP);
-    expect(onRowClick).not.toHaveBeenCalled();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 });

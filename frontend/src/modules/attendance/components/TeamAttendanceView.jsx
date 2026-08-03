@@ -5,7 +5,6 @@ import AttendanceRecordsSection from "./AttendanceRecordsSection";
 import ReportDownloadButton from "../../../components/ReportDownloadButton";
 import useTeamAttendance from "../hooks/useTeamAttendance";
 import useUserDirectory from "../../../hooks/useUserDirectory";
-import useSessionStore from "../../../store/sessionStore";
 import { usePermission } from "../../../hooks/usePermission";
 import { ATTENDANCE_LIFECYCLE_FILTER_OPTIONS, deriveAttendanceLifecycleState } from "../constants/attendance.constants";
 
@@ -17,22 +16,14 @@ import { ATTENDANCE_LIFECYCLE_FILTER_OPTIONS, deriveAttendanceLifecycleState } f
  * client-side rather than re-fetching per employee. Route-level access is
  * gated by the page (`AttendanceTeamPage.jsx`, via `PermissionGate`), not
  * here — this component assumes it's already allowed to render.
- *
- * Admin manual-correction (§7.4 addition) — `defaultEmployeeId` (which
- * employee a brand-new record, from the toolbar's Add Record button, gets
- * created for) is only ever a single specific employee, never "All
- * employees" (there's no one valid target then) — `AttendanceRecordsSection`
- * disables that button in that case rather than guessing.
  */
 function TeamAttendanceView() {
   const [month, setMonth] = useState(dayjs());
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("");
   const monthKey = month.format("YYYY-MM");
-  const { records, isLoading, refetch } = useTeamAttendance(monthKey);
+  const { records, isLoading } = useTeamAttendance(monthKey);
   const { users } = useUserDirectory();
-  const currentUser = useSessionStore((state) => state.user);
-  const isAdmin = currentUser?.role === "admin";
 
   // Permission-gated photo/location visibility (§7.4c) — independent grants,
   // admin bypasses both automatically via `usePermission`'s own admin
@@ -94,9 +85,6 @@ function TeamAttendanceView() {
         month={month}
         showEmployeeColumn={!selectedEmployeeId}
         employeeNameById={employeeNameById}
-        canCorrect={isAdmin}
-        defaultEmployeeId={selectedEmployeeId || null}
-        onChanged={refetch}
         showPhotos={canSeePhotos}
         showLocation={canSeeLocation}
       />

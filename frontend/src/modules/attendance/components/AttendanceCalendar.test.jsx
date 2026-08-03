@@ -72,14 +72,22 @@ describe("AttendanceCalendar", () => {
     expect(screen.getByTestId("attendance-geofence-marker-2026-06-05")).toBeInTheDocument();
   });
 
-  it("calls onDayClick with the date and record (or undefined) when a cell is clicked", async () => {
+  it("calls onDayClick with the record when a day with a real record is clicked", async () => {
     const onDayClick = vi.fn();
     render(<AttendanceCalendar month={JUNE_2026} records={[PRESENT_RECORD]} onDayClick={onDayClick} />);
 
     await userEvent.click(screen.getByTestId("attendance-calendar-day-2026-06-03"));
-    expect(onDayClick).toHaveBeenLastCalledWith(expect.anything(), PRESENT_RECORD);
+    expect(onDayClick).toHaveBeenCalledWith(PRESENT_RECORD);
+  });
 
-    await userEvent.click(screen.getByTestId("attendance-calendar-day-2026-06-10"));
-    expect(onDayClick).toHaveBeenLastCalledWith(expect.anything(), undefined);
+  it("is not clickable (and never calls onDayClick) on a day with no record — read-only, no Add Record action", async () => {
+    const onDayClick = vi.fn();
+    render(<AttendanceCalendar month={JUNE_2026} records={[PRESENT_RECORD]} onDayClick={onDayClick} />);
+
+    const noRecordDay = screen.getByTestId("attendance-calendar-day-2026-06-10");
+    expect(noRecordDay).toBeDisabled();
+
+    await userEvent.click(noRecordDay);
+    expect(onDayClick).not.toHaveBeenCalled();
   });
 });

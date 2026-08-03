@@ -16,15 +16,15 @@ import useSessionStore from "../../../store/sessionStore";
  * "attendance"` and a `{from, to}` date range derived from whichever month
  * is currently selected.
  *
- * `canCorrect`/`defaultEmployeeId` (admin manual-correction, §7.4 addition)
- * — an admin can correct their OWN attendance too, not just a report's;
- * `defaultEmployeeId` is always the logged-in user's own id here (always a
- * valid target, unlike Team's "which employee is selected" question).
+ * Note: admin never actually reaches this view — `AttendancePage.jsx`
+ * routes admin to `AdminAttendanceView` instead (§7.4 reversal, the org-wide
+ * redefinition of `/attendance` for admin). This component still exists
+ * unchanged for Manager/Employee/Sales Associate.
  */
 function PersonalAttendanceView() {
   const [month, setMonth] = useState(dayjs());
   const monthKey = month.format("YYYY-MM");
-  const { records, isLoading, refetch } = useMyAttendance(monthKey);
+  const { records, isLoading } = useMyAttendance(monthKey);
   const user = useSessionStore((state) => state.user);
   const isAdmin = user?.role === "admin";
 
@@ -50,9 +50,6 @@ function PersonalAttendanceView() {
         records={records}
         isLoading={isLoading}
         month={month}
-        canCorrect={isAdmin}
-        defaultEmployeeId={user?._id}
-        onChanged={refetch}
         // Hard rule (§7.4c), not permission-based: viewing your OWN record
         // never shows photo/location, no matter your role or grants — the
         // backend already strips both from GET /attendance/me's response,

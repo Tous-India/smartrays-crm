@@ -1640,3 +1640,22 @@ resolved while Phase 0 is underway.
   Live-verified end-to-end via Playwright against isolated dev server instances with two separate
   temporary manager+employee teams (proving cross-team isolation) — cleaned up (deactivated +
   hard-deleted) after. `frontend/README.md` and `.context/final-plan.md` (§7.18 extended) updated.
+- **2026-07-31** — Attendance corrections: removed the admin manual-correction UI entirely
+  (reverses that earlier feature), fixed the `/attendance` empty-table bug for admin, added 5
+  filters. `AttendanceCorrectionModal.jsx` deleted outright (Credentials Vault removal precedent)
+  along with every entry point into it — the toolbar Add Record button, per-row Edit action, photo
+  modal's Edit Record button, and the calendar's click-empty-day-to-create handler. Attendance is
+  UI-read-only for every role now, including admin; the backend's `PATCH /attendance/:id`/
+  `POST /attendance/manual` endpoints are untouched, just dormant. Admin has no personal attendance
+  at all (exempt from checking in), so routing every role through `PersonalAttendanceView` always
+  showed admin an empty table — `AttendancePage.jsx` now branches by role: admin gets a new
+  `AdminAttendanceView` (org-wide, reusing the existing `GET /attendance/team`, which already
+  resolves to every record for a caller holding `attendance.view_all`); Manager/Employee/Sales
+  Associate keep the existing view completely unchanged. Five filters on the admin view: Employee,
+  Team (built against the real `Team` entity, not a manager-list stand-in), Status, a month
+  picker, and a separate Custom Date Range picker for arbitrary spans (composed from the existing
+  per-month endpoint across however many months the range touches, rather than a new backend
+  endpoint). Photo/location viewing confirmed unaffected — verified live against a real record's
+  coordinates. 19 new/updated tests; full frontend suite passes, no regressions; `npm run build`
+  succeeds. Live-verified via Playwright. `frontend/README.md` and `.context/final-plan.md`
+  (§7.18 extended) updated.

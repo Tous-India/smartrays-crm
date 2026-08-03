@@ -130,7 +130,7 @@ Source of Truth rule made concrete, and to mark what's real vs. planned in the d
 | `frontend` (scaffold) | ✅ **Built (Frontend Phase 0, 2026-07-16)** | Vite + Tailwind + Ant Design scaffold, API client, session store, route guards, dashboard/portal layout shells, full §8 route map wired (every route exists; only `/login` and `/` are functionally complete, the rest are placeholders) — see the Frontend Phase 0 LLD entry below and `frontend/README.md` |
 | `lead` (frontend) | ✅ **Built (2026-07-16) — the reference implementation for every later frontend module** | Table View + Board View (`@dnd-kit` kanban) behind one shared page shell, Lead Detail slide-over (real route), Import wizard, filtered export — see §7.15 |
 | `customer` (frontend) | ✅ **Built** | List View (search/owner/status filters, bulk activate/deactivate/delete) + Add Customer wizard (surfaces the backend's contract automation explicitly) + a real Customer Detail full page (billing/site details/contracts/contacts/activity log). Credentials Vault UI deliberately removed 2026-07-29 (backend/data untouched, just not surfaced) — see §7.17 |
-| `attendance` (frontend) | ✅ **Built** | Check-in/out widget (native `getUserMedia`+`<canvas>` camera capture, native `Geolocation`, both mandatory before submit) + Personal/Team timeline views with connectivity gaps rendered as red bar segments + report download via the unified dispatcher — see §7.18 |
+| `attendance` (frontend) | ✅ **Built** | Check-in/out widget (native `getUserMedia`+`<canvas>` camera capture, native `Geolocation`, both mandatory before submit) + Personal/Team timeline views with connectivity gaps rendered as red bar segments + report download via the unified dispatcher — see §7.18. **UI-read-only for every role (2026-07-31)** — admin manual-correction UI removed; `/attendance` redefined for admin as an org-wide, 5-filter view (`AdminAttendanceView`) — see §7.18's dated write-up |
 | `leave` (frontend) | ✅ **Built** | Request modal (hidden for admin, §7.5c) + scope-tabbed list (own/team/all, built from whichever grants the user holds) + Approve/Decline/Mark Unapproved Absence gated per-action (admin org-wide, manager on their own team, §7.5c — reverses the original admin-only restriction), the latter's 2x-deduction consequence shown directly in the confirm prompt — see §7.18. **Extended 2026-07-31 (§7.5c):** required Reason field (request form + expandable Admin-table row + dashboard widget), Employee/Team/Status/Date-range Admin filters |
 | `location` (frontend) | ✅ **Built — a new route, `/location`, with no prior frontend at all** | Live map (auto-polling `GET /location/live`) + History map (employee+date picker, `GET /location/history` as a polyline) via a generic `GoogleMapView` (native Maps JS SDK, no wrapper library) — see §7.18 |
 | `user` (frontend) | ✅ **Built (§7.19, 2026-07-17)** | `/settings/users` roster list/edit/deactivate/reactivate/admin-password-reset/create, plus self-service + admin-override password reset (`/forgot-password`, `/reset-password`) — see §7.19 |
@@ -1586,9 +1586,11 @@ recomputes `workingHours` via the same `computeWorkingHours` helper the real che
 uses, over the record's existing `connectivityGaps`; the `POST` 409s if a record already
 exists for that employee+date. Both set the new `isManuallyAdjusted`/`adjustedBy` fields
 (§6.5) unconditionally — see that section for the full audit-trail reasoning. 13 new tests
-(6 + 7). Frontend surfaces this via a photo-viewer modal, a calendar-grid view, summary
-stats, and an admin-only correction form — see `frontend/README.md`'s "Admin correction,
-photo viewer, calendar view & summary stats" section for the full write-up.
+(6 + 7). Frontend originally surfaced this via a photo-viewer modal, a calendar-grid view,
+summary stats, and an admin-only correction form. **Frontend correction UI removed 2026-07-31
+(§7.18's dated write-up) — these two endpoints are now dormant, not deleted**, same treatment
+as the Credentials Vault's backend layer: still fully functional, just not reachable from any
+UI right now.
 
 **`GET /attendance/report` — built as groundwork for §7.11, not a one-off:** a new shared
 `src/services/report.service.js` exports `generateExcelReport({sheetName, columns, rows})` (via
@@ -3146,6 +3148,35 @@ fixed with a live `PATCH /permissions/templates/manager`; confirmed zero manager
 currently exist, so no existing manager needed an additional permissions reset, and this same
 database backs the deployed production API (no separate staging DB), so the fix is already live
 there too. Full write-up: `frontend/README.md`'s dated §7.5c Leave section.
+
+**Attendance corrections — read-only UI, Admin's redefined `/attendance`, 5 filters (2026-07-31)
+— reverses the earlier admin manual-correction UI feature.** `AttendanceCorrectionModal.jsx`
+deleted outright (matching the Credentials Vault removal precedent); every entry point into it
+stripped too — the toolbar "Add Record" button, the per-row Edit action, the photo modal's "Edit
+Record" footer button, and the calendar's "click an empty day to create" handler. Attendance is
+UI-read-only for every role now, including admin — the backend's `PATCH /attendance/:id`/
+`POST /attendance/manual` endpoints are untouched, just dormant (§7.4's own write-up, above).
+
+Admin has no personal attendance at all (exempt from checking in, §7.4c), so routing every role
+through `PersonalAttendanceView` always rendered an empty table for admin. `AttendancePage.jsx`
+now branches: admin gets a new `AdminAttendanceView` (org-wide, reusing `GET /attendance/team`,
+which already resolves to every record for a caller holding `attendance.view_all` — the same
+"route confirms a grant, the service resolves the actual scope" split `TeamAttendanceView` already
+relies on for a manager's narrower `view_team`); Manager/Employee/Sales Associate keep the
+existing `PersonalAttendanceView` completely unchanged. Five filters on this admin view — Employee
+and Status mirror `TeamAttendanceView`'s own pattern; Team is built against the real `Team` entity
+(`useTeams()`, not a manager-list stand-in — a full `GET /users` roster fetch supplies each
+employee's `managerId`, since the lightweight `useUserDirectory()` dropdown doesn't return it); a
+Month `DatePicker` (existing pattern) plus a separate Custom Date Range `RangePicker` for an
+arbitrary span, composed from the same per-month endpoint (fetches every calendar month the range
+touches and merges) rather than adding a new backend range endpoint. Photo/location viewing and
+the live-location map are completely unaffected — confirmed live against a real check-in record.
+
+19 new/updated tests (`AdminAttendanceView.test.jsx`/`AttendancePage.test.jsx` new;
+`AttendanceCalendar`/`AttendanceTimeline`/`AttendancePhotoModal`/`AttendanceRecordsSection` tests
+updated to assert the removed actions are gone; `AttendanceCorrectionModal.test.jsx` deleted).
+Full frontend suite passes, no regressions; `npm run build` succeeds. Full write-up:
+`frontend/README.md`'s dated 2026-07-31 Attendance section.
 
 ---
 

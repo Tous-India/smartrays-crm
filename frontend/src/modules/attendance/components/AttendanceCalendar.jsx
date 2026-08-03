@@ -27,10 +27,11 @@ const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
  * not a replacement for it (both remain selectable via the view-mode
  * toggle in `PersonalAttendanceView`/`TeamAttendanceView`).
  *
- * Clicking any day (record or not) calls `onDayClick(date, record)` —
- * the parent decides what that means (open the photo viewer for a real
- * record, or the admin "Add Record" form for an empty one).
- * Manually-adjusted records (§7.4's admin-correction addition) get a small
+ * Clicking a day with a real record calls `onDayClick(record)`, opening the
+ * photo viewer — read-only, matching `AttendanceTimeline`'s own row click.
+ * A day with no record isn't clickable at all (the admin "Add Record" form
+ * this used to open was removed — Attendance is UI-read-only for every role
+ * now). Manually-adjusted records (§7.4's admin-correction addition) get a small
  * exclamation badge in the cell's corner so they're never confused with a
  * real verified check-in at a glance, matching the same distinction
  * `AttendancePhotoModal`'s own Tag makes in the detail view. A day with a
@@ -75,11 +76,12 @@ function AttendanceCalendar({ month, records, onDayClick }) {
             <button
               key={dayKey}
               type="button"
-              onClick={() => onDayClick(date, record)}
+              onClick={record ? () => onDayClick(record) : undefined}
+              disabled={!record}
               title={record ? ATTENDANCE_STATUS_LABELS[record.status] : "No record"}
               data-testid={`attendance-calendar-day-${dayKey}`}
               data-status={record?.status || "none"}
-              className={`relative aspect-square rounded border p-1 text-left text-xs transition hover:opacity-75 ${cellClasses}`}
+              className={`relative aspect-square rounded border p-1 text-left text-xs transition ${record ? "cursor-pointer hover:opacity-75" : "cursor-default"} ${cellClasses}`}
             >
               <span>{date.date()}</span>
               {record?.isManuallyAdjusted && (

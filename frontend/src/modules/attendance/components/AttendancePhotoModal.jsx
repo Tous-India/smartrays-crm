@@ -1,5 +1,5 @@
-import { Modal, Row, Col, Image, Empty, Tag, Typography, Button, Space } from "antd";
-import { EditOutlined, EnvironmentOutlined } from "@ant-design/icons";
+import { Modal, Row, Col, Image, Empty, Tag, Typography, Space } from "antd";
+import { EnvironmentOutlined } from "@ant-design/icons";
 import ConnectivityGapBar from "./ConnectivityGapBar";
 import GeofenceViolationBar from "./GeofenceViolationBar";
 import { ATTENDANCE_STATUS_COLORS, ATTENDANCE_STATUS_LABELS } from "../constants/attendance.constants";
@@ -59,11 +59,10 @@ function PhotoSlot({ title, photoUrl, time, coords, showPhoto, showLocation }) {
  * for a manually-created record (§7.4's admin-correction addition), which
  * has no photo/coords at all by design.
  *
- * `onEdit` is only passed by the parent when the current user is an admin
- * (the same role gate the backend's `PATCH /attendance/:id` enforces) — the
- * Edit button here is the "from either the list or calendar view" entry
- * point the admin-correction UI needs, reached via the day's own detail
- * view rather than a separate action per row.
+ * Read-only detail view — the admin-correction Edit action that used to live
+ * in this modal's footer was removed (Attendance is UI-read-only for every
+ * role now; see `backend/README.md`'s note on the dormant `PATCH
+ * /attendance/:id` endpoint). Viewing photos/location here is unaffected.
  *
  * `showPhotos`/`showLocation` (§7.4c) — independent gates matching the
  * backend's own `attendance.view_photos`/`view_location` permissions
@@ -76,7 +75,7 @@ function PhotoSlot({ title, photoUrl, time, coords, showPhoto, showLocation }) {
  * placeholder that looks like a data problem rather than a permission
  * boundary they simply don't have.
  */
-function AttendancePhotoModal({ open, record, onCancel, onEdit, showPhotos, showLocation }) {
+function AttendancePhotoModal({ open, record, onCancel, showPhotos, showLocation }) {
   if (!record) {
     return null;
   }
@@ -85,13 +84,7 @@ function AttendancePhotoModal({ open, record, onCancel, onEdit, showPhotos, show
     <Modal
       open={open}
       onCancel={onCancel}
-      footer={
-        onEdit ? (
-          <Button icon={<EditOutlined />} onClick={onEdit}>
-            Edit Record
-          </Button>
-        ) : null
-      }
+      footer={null}
       title={`Attendance — ${new Date(record.date).toLocaleDateString()}`}
     >
       <Space direction="vertical" size="middle" className="w-full">

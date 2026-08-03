@@ -1,5 +1,5 @@
-import { Table, Tag, Tooltip, Button, Space } from "antd";
-import { ExclamationCircleFilled, EditOutlined, EnvironmentOutlined } from "@ant-design/icons";
+import { Table, Tag, Tooltip, Space } from "antd";
+import { ExclamationCircleFilled, EnvironmentOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import ConnectivityGapBar from "./ConnectivityGapBar";
 import GeofenceViolationBar from "./GeofenceViolationBar";
@@ -18,10 +18,8 @@ import { ATTENDANCE_STATUS_COLORS, ATTENDANCE_STATUS_LABELS } from "../constants
  * — clicking a record here or there both do the same thing. A manually-
  * adjusted record (§7.4's admin-correction addition) gets a small
  * exclamation badge next to its Status Tag so it's never confused with a
- * real verified check-in at a glance; `onEditRecord` (only passed by the
- * parent for an admin) adds a dedicated Edit action per row, the "from
- * either the list or calendar view" entry point that feature's own spec
- * asks for.
+ * real verified check-in at a glance. The per-row Edit action that used to
+ * live here was removed — Attendance is UI-read-only for every role now.
  *
  * A separate "Location" column (added later, geofencing §6.5/§7.4) —
  * deliberately its own column, not overlaid onto the "Connectivity Gaps"
@@ -29,7 +27,7 @@ import { ATTENDANCE_STATUS_COLORS, ATTENDANCE_STATUS_LABELS } from "../constants
  * distinct orange (vs. connectivity's red) makes it immediately clear which
  * *kind* of issue occurred, not just that "something was wrong" that shift.
  */
-function AttendanceTimeline({ records, isLoading, showEmployeeColumn, employeeNameById, onRowClick, onEditRecord }) {
+function AttendanceTimeline({ records, isLoading, showEmployeeColumn, employeeNameById, onRowClick }) {
   const columns = [
     ...(showEmployeeColumn
       ? [
@@ -91,25 +89,6 @@ function AttendanceTimeline({ records, isLoading, showEmployeeColumn, employeeNa
         </Space>
       ),
     },
-    ...(onEditRecord
-      ? [
-          {
-            title: "",
-            key: "actions",
-            render: (_, record) => (
-              <Button
-                type="text"
-                size="small"
-                icon={<EditOutlined />}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onEditRecord(record);
-                }}
-              />
-            ),
-          },
-        ]
-      : []),
   ];
 
   return (

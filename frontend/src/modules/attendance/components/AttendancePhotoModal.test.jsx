@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import AttendancePhotoModal from "./AttendancePhotoModal";
 
 const RECORD_WITH_PHOTOS = {
@@ -70,16 +69,8 @@ describe("AttendancePhotoModal", () => {
     expect(screen.queryByText(/Manually adjusted by admin/)).not.toBeInTheDocument();
   });
 
-  it("shows an Edit Record button and calls onEdit when provided (admin only)", async () => {
-    const onEdit = vi.fn();
-    render(<AttendancePhotoModal open record={RECORD_WITH_PHOTOS} onCancel={vi.fn()} onEdit={onEdit} />);
-
-    await userEvent.click(screen.getByRole("button", { name: /Edit Record/ }));
-    expect(onEdit).toHaveBeenCalled();
-  });
-
-  it("hides the Edit Record button when onEdit is not provided (non-admin)", () => {
-    render(<AttendancePhotoModal open record={RECORD_WITH_PHOTOS} onCancel={vi.fn()} />);
+  it("never shows an Edit Record button — Attendance is UI-read-only for every role", () => {
+    render(<AttendancePhotoModal open record={RECORD_WITH_PHOTOS} onCancel={vi.fn()} showPhotos showLocation />);
 
     expect(screen.queryByRole("button", { name: /Edit Record/ })).not.toBeInTheDocument();
   });
