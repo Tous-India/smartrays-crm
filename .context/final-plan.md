@@ -836,7 +836,7 @@ client-side (to hide/disable controls, never trusted alone).
 | users.view_team | ✅ (bypass) | ✅ default | – | – | – |
 | users.view_all | ✅ (bypass) | – | – | – | – |
 | leave.view/view_team/view_all | ✅ (bypass) | `view_team` default | `view` default | `view` default | – |
-| leave request/approve/decline/mark-unapproved-absence | ✅ org-wide, blocked from requesting for self (§7.5c) | own team: request/approve/decline/mark-unapproved-absence all default (§7.5c); blocked outside own team | request only | request only | – |
+| leave request/approve/decline/mark-unapproved-absence/delete | ✅ org-wide, blocked from requesting for self (§7.5c) | own team: request/approve/decline/mark-unapproved-absence/delete all default (§7.5c/§7.5d), plus `view` for their own history (§7.5d); blocked outside own team | request only | request only | – |
 | travelLogs.view/view_team/view_all | ✅ (bypass) | `view_team` default | `view` default | `view` default | – |
 | travel-log manual entry (own / direct report / anyone) | ✅ (any employeeId) | own or direct report only | own only | own only | – |
 | payroll.view/run | ✅ | – (deliberate — no `team` tier exists at all, unlike every other row above) | – (same as Manager — corrected 2026-07-13: an earlier build misread this "–" as a blank/unspecified cell and granted "own payslip only" to match Employee; that was wrong, this cell is an explicit "–" like Manager's) | own payslip only | – |
@@ -1893,6 +1893,8 @@ PATCH  /leave/:id/decline         (admin org-wide, or manager own-team, §7.5c;
                                     reason?, sets status: "rejected")                  ✅ built
 PATCH  /leave/:id/mark-unapproved-absence   (admin org-wide, or manager own-team,
                                               §7.5c; sets isDoubleDeduction=true)      ✅ built
+DELETE /leave/:id                (admin org-wide, or manager own-team, §7.5d;
+                                    hard delete)                                       ✅ built
 ```
 **Key invariants:** a `paid`-type approval is capped by the monthly quota (§11.7) — a single
 request over 1 day is rejected outright, and a second approved paid leave in the same calendar
@@ -1979,6 +1981,21 @@ a manager's own team didn't match that pattern and was an unnecessary bottleneck
 no-grant role blocked, admin unaffected, admin blocked from self-requesting, `reason` required and
 correctly stored/returned) — **56 tests total for the Leave module.** Full backend suite re-run:
 654/654 passing across 21 test files, no regressions.
+
+**Manager `view` grant + `DELETE /leave/:id` (§7.5d, 2026-07-31, same day) — discovered while
+building the frontend's role-based Leave tabs (§7.18).** A manager had `view_team` but never
+`view` — no way to see their OWN past leave requests, since `GET /leave` (scope=own) requires
+`leave.view` specifically. `DEFAULT_ROLE_TEMPLATES.manager.leave` now includes `view: true`. New
+`DELETE /leave/:id` reuses the exact same `ensureCanActOnLeave` team-scoping as
+approve/decline/mark-unapproved-absence (admin org-wide, manager own-team); `PERMISSION_REGISTRY`
+gained `delete`, manager's template grants it by default. **Same stale-template finding as §7.5c,
+hit again:** this dev database's "manager" `RolePermissionTemplate` row was already re-seeded once
+that same day for §7.5c and needed a second live `PATCH /permissions/templates/manager` for this
+addition — confirmed zero manager accounts exist, so no user-level reset was needed; same shared
+database backs production, so already live there too. 6 new tests (manager scope=own now works;
+delete org-wide for admin; delete own-team for manager; blocked outside team; blocked for a
+no-grant role; 404 for a nonexistent id) — **62 tests total for the Leave module.** Full backend
+suite: 660/660 passing across 21 test files, no regressions.
 
 ### 7.6 Transport/Travel
 

@@ -208,6 +208,16 @@ describe("GET /leave?scope=own|team|all", () => {
     expect(response.body.data[0].employeeId).toBe(String(sales1._id));
   });
 
+  it("scope=own now works for a manager too (§7.5d, 2026-07-31) — previously only view_team, no view grant at all", async () => {
+    await managerAgent.post("/api/v1/leave/request").send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
+
+    const response = await managerAgent.get("/api/v1/leave");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0].employeeId).toBe(String(manager1._id));
+  });
+
   it("scope=team lets a manager see their direct reports' requests, not an unaffiliated sales associate's", async () => {
     await sales1Agent.post("/api/v1/leave/request").send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
     await sales2Agent.post("/api/v1/leave/request").send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
@@ -527,6 +537,57 @@ describe("PATCH /leave/:id/decline", () => {
 
   it("404s for a nonexistent leave record", async () => {
     const response = await adminAgent.patch("/api/v1/leave/000000000000000000000000/decline");
+
+    expect(response.status).toBe(404);
+  });
+});
+
+describe("DELETE /leave/:id (§7.5d, 2026-07-31)", () => {
+  it("admin deletes any leave request org-wide", async () => {
+    const created = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
+
+    const response = await adminAgent.delete(`/api/v1/leave/${created.body.data._id}`);
+
+    expect(response.status).toBe(200);
+    expect(await Leave.findById(created.body.data._id)).toBeNull();
+  });
+
+  it("allows a manager to delete a request from their own direct report", async () => {
+    const created = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
+
+    const response = await managerAgent.delete(`/api/v1/leave/${created.body.data._id}`);
+
+    expect(response.status).toBe(200);
+    expect(await Leave.findById(created.body.data._id)).toBeNull();
+  });
+
+  it("blocks a manager from deleting a request outside their own team", async () => {
+    const created = await sales3Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
+
+    const response = await managerAgent.delete(`/api/v1/leave/${created.body.data._id}`);
+
+    expect(response.status).toBe(403);
+    expect(await Leave.findById(created.body.data._id)).not.toBeNull();
+  });
+
+  it("blocks a role with no leave.delete grant at all (sales_associate)", async () => {
+    const created = await sales1Agent
+      .post("/api/v1/leave/request")
+      .send({ startDate: isoDate(5), endDate: isoDate(5), reason: "Test reason" });
+
+    const response = await sales2Agent.delete(`/api/v1/leave/${created.body.data._id}`);
+
+    expect(response.status).toBe(403);
+  });
+
+  it("404s for a nonexistent leave record", async () => {
+    const response = await adminAgent.delete("/api/v1/leave/000000000000000000000000");
 
     expect(response.status).toBe(404);
   });

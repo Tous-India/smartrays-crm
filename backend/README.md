@@ -958,6 +958,7 @@ See `.context/final-plan.md` §6.5/§7.5 and §11.7 (leave cadence, resolved thi
 | PATCH | `/leave/:id/approve` | Admin org-wide, or a manager on their own team (2026-07-31, §7.5c — reverses the earlier admin-only restriction, see below) | Rejects (409) if the record isn't `pending`. A `paid`-type approval is capped by the one-paid-leave-per-month quota (§11.7) — see below. Notifies the requester (`leave_approved`) unless the decider is approving their own request. |
 | PATCH | `/leave/:id/decline` | Admin org-wide, or a manager on their own team (2026-07-31, §7.5c) | Added later. Body `{ reason? }`. Sets `status: "rejected"` — rejects (409) if the record isn't `pending`. Notifies the requester (`leave_declined`, includes the reason if given) unless the decider is declining their own request. See "Decline action" below for the schema decision. |
 | PATCH | `/leave/:id/mark-unapproved-absence` | Admin org-wide, or a manager on their own team (2026-07-31, §7.5c) | Unconditional decree — works regardless of current status. Sets `type: "unapproved_absence"`, `isDoubleDeduction: true`, `status: "approved"`, per the 2x rule (smartrays.md). Deliberately **not** wired to the notification below — the task that added Leave notifications only asked for submit/approve/decline, and this is a distinct, retroactive action. |
+| DELETE | `/leave/:id` | Admin org-wide, or a manager on their own team (2026-07-31, §7.5d) | New — see below. A hard delete, not a status change. Same `ensureCanActOnLeave` team-scoping as approve/decline/mark-unapproved-absence. |
 
 **One paid leave per month, no carry-over (§11.7, resolved this task):** neither source document
 said anything about carry-over either way — genuinely ambiguous, so this is a deliberate,
@@ -971,8 +972,10 @@ rather than Attendance's/Users' unconditional-self-access pattern, because viewi
 data — not just requesting it — genuinely is gated behind a real grant here, matching how
 `GET /leave?scope=` lets the caller choose. `sales_associate`/`employee` get `leave.view: true`
 by default; `manager` gets `leave.view_team: true`, plus (2026-07-31, §7.5c) `approve`, `decline`,
-and `mark_unapproved_absence`, scoped to their own team — see below. Admin's access to all three
-remains unconditional and org-wide via `can()`'s built-in admin bypass, unchanged.
+and `mark_unapproved_absence`, scoped to their own team — see below. Admin's access to all these
+remains unconditional and org-wide via `can()`'s built-in admin bypass, unchanged. **Manager also
+gets `view` (2026-07-31, §7.5d)** — previously `view_team` only, meaning a manager had no way to
+see their own past requests at all — plus `delete`, same team-scoping as the other three actions.
 
 **Half-day leave support (added later).** `Leave.isHalfDay` (Boolean, default `false`) — when
 true, the request counts as **0.5 days**, not a full day, against both the monthly paid-leave
@@ -1067,6 +1070,36 @@ for themselves (both omitted-`employeeId` and explicit-own-id cases), `reason` r
 missing or blank), and `reason` stored/returned correctly (checked against both the HTTP response
 and a fresh `Leave.findById` read). Full backend suite re-run after these changes: 654/654 passing
 across 21 test files, no regressions.
+
+**Manager `view` grant, and `DELETE /leave/:id` (2026-07-31, §7.5d — same day, discovered while
+building the frontend's role-based Leave tabs).** Two changes, prompted by the frontend needing a
+manager-facing "Own" tab (their own request history) alongside "Team," and a Delete action:
+
+1. **Manager now holds `leave.view` too, not just `view_team`.** Before this, a manager had no way
+   to see their OWN past leave requests at all — `GET /leave` (scope=own) requires `leave.view`,
+   which manager's default template never granted (only `sales_associate`/`employee` had it).
+   `DEFAULT_ROLE_TEMPLATES.manager.leave` now includes `view: true` alongside the existing
+   `view_team`/`approve`/`decline`/`mark_unapproved_absence`.
+2. **`DELETE /leave/:id`, new.** `PERMISSION_REGISTRY`'s `leave` module gained `delete`; manager's
+   template grants it by default. Reuses the exact same `ensureCanActOnLeave` team-scoping as
+   approve/decline/mark-unapproved-absence — admin org-wide, manager on their own direct reports
+   only. A real hard delete (`leave.deleteOne()`), not a status/soft-delete concept this module has
+   never had.
+
+**A real, already-seeded-database finding, not just a code change — the same "manager"
+`RolePermissionTemplate` staleness §7.5c hit, hit again.** `RolePermissionTemplate` rows are lazily
+seeded once and read verbatim from then on (§7.12) — this dev database's "manager" template was
+already re-seeded once for §7.5c earlier the same day, and needed a second live
+`PATCH /permissions/templates/manager` for this `view`/`delete` addition too, for the exact same
+reason. Confirmed zero manager accounts exist in this database at the time of the fix, so no
+existing manager needed an additional `POST /users/:id/permissions/reset` — every manager
+registered from now on inherits the corrected template. This database backs the deployed
+production API too (no separate staging DB), so the fix is already live there.
+
+6 new tests: manager can now `GET /leave` (scope=own) for themselves; admin deletes any request
+org-wide; manager deletes their own team's request; manager blocked deleting outside their team; a
+no-grant role (sales_associate) blocked from deleting; 404 for a nonexistent id. Full backend
+suite: 660/660 passing across 21 test files, no regressions.
 
 ### Transport/Travel (`/api/v1/travel-logs`) — Phase 6
 

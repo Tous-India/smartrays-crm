@@ -55,7 +55,9 @@ export const PERMISSION_REGISTRY = {
   // Team-scoped for a manager (their own direct reports only, resolved in
   // leave.service.js#ensureCanActOnLeave — the same managerId-based scoping
   // `view_team` already uses); org-wide for admin, unchanged.
-  leave: ["view", "view_team", "view_all", "approve", "decline", "mark_unapproved_absence"],
+  // `delete` added 2026-07-31 (§7.5d, same day) — team-scoped for a manager
+  // via the same `ensureCanActOnLeave` helper, org-wide for admin.
+  leave: ["view", "view_team", "view_all", "approve", "decline", "mark_unapproved_absence", "delete"],
   // Added 2026-07-13 (§7.6, Phase 6). Same three-tier shape as `leave` —
   // GET /travel-logs?scope=own|team|all checks the matching action per
   // requested scope. `GET /travel-logs/report` uses view_team/view_all only

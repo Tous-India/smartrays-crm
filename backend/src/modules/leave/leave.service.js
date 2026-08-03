@@ -405,3 +405,22 @@ export async function markUnapprovedAbsence(leaveId, requestingUser) {
 
   return leave;
 }
+
+/**
+ * `DELETE /leave/:id` (§7.5d, 2026-07-31) — admin org-wide, or a manager
+ * acting on their own team's request, the exact same `ensureCanActOnLeave`
+ * scoping approve/decline/mark_unapproved_absence already use. A hard
+ * delete, not a status change — this is a real removal from the collection,
+ * not a soft-delete/archive concept this module has never had.
+ */
+export async function deleteLeave(leaveId, requestingUser) {
+  const leave = await Leave.findById(leaveId);
+
+  if (!leave) {
+    throw new ApiError(404, "Leave request not found");
+  }
+
+  await ensureCanActOnLeave(leave, requestingUser);
+
+  await leave.deleteOne();
+}

@@ -34,7 +34,22 @@ const INITIAL_TEMPLATE_DEFAULTS = {
     // directly, scoped to their own team the same way `view_team` already
     // is (leave.service.js#ensureCanActOnLeave) — admin keeps org-wide
     // access to all three regardless of team, unchanged.
-    leave: { view_team: true, approve: true, decline: true, mark_unapproved_absence: true },
+    // `view`/`delete` added 2026-07-31 (§7.5d, same day) — a manager needs
+    // to see their OWN past leave requests too (the frontend's restructured
+    // "Own"/"Team" tabs for this role need a real `view` grant to back the
+    // "Own" tab, which manager never had before this — `view_team` alone
+    // only ever covered seeing OTHER people's requests). `delete` reuses the
+    // exact same `ensureCanActOnLeave` team-scoping as approve/decline/
+    // mark_unapproved_absence — a manager can delete their own team's
+    // requests, admin any request org-wide.
+    leave: {
+      view: true,
+      view_team: true,
+      approve: true,
+      decline: true,
+      mark_unapproved_absence: true,
+      delete: true,
+    },
     // Added 2026-07-13 (§7.6, Phase 6) — same reasoning as attendance/leave
     // above: a manager can see their team's travel logs, own team scoping.
     travelLogs: { view_team: true },

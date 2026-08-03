@@ -1,7 +1,7 @@
 import { Router } from "express";
 import authenticate from "../../middlewares/authenticate.middleware.js";
 import { authorize, requireAdmin } from "../../middlewares/authorize.middleware.js";
-import { request, list, approve, decline, markAbsence, balance, pendingCount } from "./leave.controller.js";
+import { request, list, approve, decline, markAbsence, remove, balance, pendingCount } from "./leave.controller.js";
 import { validateLeaveRequestInput, validateScopeQuery, validateDeclineInput } from "./leave.validation.js";
 
 const leaveRouter = Router();
@@ -51,5 +51,10 @@ leaveRouter.patch(
   authorize("leave", "mark_unapproved_absence"),
   markAbsence
 );
+
+// §7.5d, 2026-07-31 — same scoping split as the three actions above (route
+// confirms SOME grant, leave.service.js#ensureCanActOnLeave resolves the
+// specific record's team scope). A hard delete, not a status change.
+leaveRouter.delete("/:id", authenticate, authorize("leave", "delete"), remove);
 
 export default leaveRouter;

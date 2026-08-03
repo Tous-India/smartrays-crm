@@ -6,6 +6,7 @@ import {
   approveLeave,
   markUnapprovedAbsence,
   declineLeave,
+  deleteLeave,
   getLeaveBalance,
   getPendingLeaveCount,
 } from "./leave.service.js";
@@ -44,6 +45,12 @@ export const balance = asyncWrapper(async (req, res) => {
   const data = await getLeaveBalance(req.query.employeeId, req.user);
 
   res.status(200).json(new ApiResponse(200, data, "Leave balance fetched successfully"));
+});
+
+export const remove = asyncWrapper(async (req, res) => {
+  await deleteLeave(req.params.id, req.user);
+
+  res.status(200).json(new ApiResponse(200, null, "Leave request deleted successfully"));
 });
 
 export const pendingCount = asyncWrapper(async (req, res) => {
