@@ -6,6 +6,8 @@ import ReportDownloadButton from "../../../components/ReportDownloadButton";
 import useTeamAttendance from "../hooks/useTeamAttendance";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import useSessionStore from "../../../store/sessionStore";
+import { usePermission } from "../../../hooks/usePermission";
+import { ATTENDANCE_LIFECYCLE_FILTER_OPTIONS, deriveAttendanceLifecycleState } from "../constants/attendance.constants";
 
 /**
  * `/attendance/team` — same shape as the Personal view, but for a manager's/
@@ -25,11 +27,22 @@ import useSessionStore from "../../../store/sessionStore";
 function TeamAttendanceView() {
   const [month, setMonth] = useState(dayjs());
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
+  const [selectedStatus, setSelectedStatus] = useState("");
   const monthKey = month.format("YYYY-MM");
   const { records, isLoading, refetch } = useTeamAttendance(monthKey);
   const { users } = useUserDirectory();
   const currentUser = useSessionStore((state) => state.user);
   const isAdmin = currentUser?.role === "admin";
+
+  // Permission-gated photo/location visibility (§7.4c) — independent grants,
+  // admin bypasses both automatically via `usePermission`'s own admin
+  // short-circuit. The backend already strips whichever field the viewer
+  // lacks the grant for, so this only controls whether the photo-viewer
+  // modal shows the section AT ALL (vs. a confusing empty "No photo"
+  // placeholder that would look like a data problem rather than a
+  // permission boundary) — see AttendancePhotoModal.jsx.
+  const canSeePhotos = usePermission("attendance", "view_photos");
+  const canSeeLocation = usePermission("attendance", "view_location");
 
   const employeeNameById = useMemo(() => new Map(users.map((user) => [user._id, user.name])), [users]);
 
@@ -45,9 +58,9 @@ function TeamAttendanceView() {
     ];
   }, [records, employeeNameById]);
 
-  const filteredRecords = selectedEmployeeId
-    ? records.filter((record) => String(record.employeeId) === selectedEmployeeId)
-    : records;
+  const filteredRecords = records
+    .filter((record) => !selectedEmployeeId || String(record.employeeId) === selectedEmployeeId)
+    .filter((record) => !selectedStatus || deriveAttendanceLifecycleState(record) === selectedStatus);
 
   const from = month.startOf("month").format("YYYY-MM-DD");
   const to = month.endOf("month").format("YYYY-MM-DD");
@@ -65,6 +78,12 @@ function TeamAttendanceView() {
             optionFilterProp="label"
             onChange={setSelectedEmployeeId}
           />
+          <Select
+            value={selectedStatus}
+            options={ATTENDANCE_LIFECYCLE_FILTER_OPTIONS}
+            style={{ width: 160 }}
+            onChange={setSelectedStatus}
+          />
         </Space>
         <ReportDownloadButton module="attendance" filters={{ from, to }} filenamePrefix="team-attendance" />
       </div>
@@ -78,6 +97,8 @@ function TeamAttendanceView() {
         canCorrect={isAdmin}
         defaultEmployeeId={selectedEmployeeId || null}
         onChanged={refetch}
+        showPhotos={canSeePhotos}
+        showLocation={canSeeLocation}
       />
     </div>
   );

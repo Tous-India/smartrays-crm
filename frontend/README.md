@@ -718,6 +718,108 @@ manually-adjusted marker), and the photo modal's Location section all rendered c
 data deleted afterward. Full frontend suite passes (the same 2 pre-existing, unrelated timeout
 failures as every prior task); `npm run build` succeeds.
 
+### Attendance corrections/additions — Break In/Out, admin exemption, permission-gated photo/location, notifications (§7.4c, 2026-07-31)
+
+Frontend half of the backend's five §7.4c additions (see `backend/README.md`'s own Attendance
+section for the full backend write-up).
+
+**1. Admin exemption.** `PersonalAttendanceView.jsx` now conditionally renders
+`<CheckInOutWidget />` — omitted entirely when `user?.role === "admin"`. The backend already
+rejects an admin's own check-in (403), but hiding the widget here means an admin never even sees
+a check-in prompt to begin with, not just a rejected attempt after tapping it. The rest of the
+page (summary stats, records table, admin correction UI) is unaffected — an admin still visits
+`/attendance` to correct records, just without a check-in widget above it.
+
+**2. Break In/Out UI — extends `CheckInOutWidget.jsx`'s existing state machine.** New state:
+Not Checked In → Checked In → (On Break) → Checked In → Checked Out. Two new derived booleans,
+`isOnBreak`/`canBreakIn`, computed from the open record's `breakIn`/`breakOut` timestamps (same
+"derive state from timestamps, don't track it separately" approach the widget's own
+`isCheckedIn` already uses). Break In only renders when checked in, not on break, and the
+shift's one break hasn't been used yet; Break Out only renders while on break — matching the
+backend's own rejection conditions exactly, so the button a user *can* tap always succeeds.
+
+- **No camera/photo step at all for either — a single click captures geolocation and submits
+  immediately**, unlike check-in/check-out's own capture-then-confirm flow. New
+  `requestGeolocationOnce()` (in `useGeolocation.js`, exported standalone alongside the existing
+  stateful hook) wraps `navigator.geolocation.getCurrentPosition` in a plain Promise — the
+  stateful hook's own "capturing.../error/retry" UI isn't needed for a flow with no camera step
+  to render alongside, so a promise a handler can simply `await` is the right shape here, not a
+  second hook.
+- **The Check Out button is disabled (with an explanatory tooltip) while on break** — a UI nicety
+  on top of the backend's own 409 rejection, so the user finds out *before* tapping Check Out
+  that they need to end their break first, not after a failed request.
+- **"On Break since {time}" tag**, shown alongside the existing "Checked In"/elapsed-time
+  display, using the record's own `breakIn.time`.
+
+**3. Permission-gated photo/location display — `AttendancePhotoModal.jsx` gains two new props,
+`showPhotos`/`showLocation`.** The backend already strips `photoUrl`/`coords` server-side for a
+viewer who lacks the corresponding permission, so the frontend's job is deciding whether to
+render the SECTION at all, not the data itself:
+- **`TeamAttendanceView.jsx`** computes both via `usePermission("attendance",
+  "view_photos"/"view_location")` (admin bypasses both automatically, the same `can()`
+  short-circuit every other permission check in this app already relies on) and passes them down
+  through `AttendanceRecordsSection.jsx` to the modal.
+- **`PersonalAttendanceView.jsx` passes `showPhotos={false}`/`showLocation={false}`
+  unconditionally** — a hard rule, not permission-based, matching the backend's own "no override
+  for self-viewing" behavior. Even an admin or a manager granted both permissions sees the
+  stripped shape when viewing their OWN history through this same page.
+- **Omitting the section entirely (not an empty "No photo"/"No coordinates" placeholder) when the
+  viewer lacks the grant** — the empty-placeholder state already existed for a genuinely
+  photo-less record (e.g. an admin manual correction); reusing it for "you don't have permission"
+  would conflate two different reasons for absence, making a permission boundary look like a data
+  problem. `PhotoSlot`'s `time` field is never gated — only the image and the coords line are.
+  The modal's "Location" section header (the `GeofenceViolationBar` block) is gated the same way.
+- **The Timeline/Calendar list views' own "Location" column is deliberately left ungated** — a
+  judgment call, not an oversight: that column renders `GeofenceViolationBar`, a derived
+  violation-timeline summary (did the shift stay within the geofence radius, for how long), not
+  the raw GPS coordinates `attendance.view_location` actually governs. The backend itself never
+  strips `geofenceViolations` for any viewer — only `photoUrl`/`coords` are permission-gated
+  server-side — so gating this column on the frontend alone would be inconsistent with what the
+  backend actually protects.
+
+**4. Status filter — `TeamAttendanceView.jsx`.** A new `Select` alongside the existing Employee
+filter, backed by new `ATTENDANCE_LIFECYCLE_FILTER_OPTIONS`/`deriveAttendanceLifecycleState`
+(`attendance.constants.js`) — a DERIVED shift-lifecycle state (present/on-break/checked-out/
+absent), computed client-side from the same `checkIn`/`checkOut`/`breakIn`/`breakOut`/`status`
+fields already on each record, not a new backend query param (the existing Employee filter
+already works this same "fetch the month, filter client-side" way). Deliberately distinct from
+the raw `status` enum (`present`/`absent`/`half_day`/`on_leave`) — a `half_day`/`on_leave` record
+with no real check-in matches none of the four lifecycle filter values and only shows under "All
+statuses," which is correct: it genuinely isn't in any of those four shift states.
+
+**5. Notifications — no backend-shape surprises, confirmed by reading the actual endpoint names/
+types before starting (per this task's own instruction).** The bell (`NotificationBell.jsx`)
+already renders any notification generically via its own `message` string — there was no
+per-type icon/label mapping to extend for any EXISTING type, so the four new
+`attendance_check_in`/`attendance_break_in`/`attendance_break_out`/`attendance_check_out` types
+needed no bell-rendering changes at all. One small addition: `MODULE_ROUTES` gained
+`attendance: () => "/attendance"` (matching `leave`'s own `() => "/leave"` — no per-record detail
+route exists for either module, so a click just goes to the list/personal-view page, ignoring
+`relatedEntity.id`) — previously, clicking an attendance notification did nothing at all.
+
+**Testing:** `CheckInOutWidget.test.jsx` gained a new describe block (7 tests) — Break In shown/
+hidden correctly, "On Break since" tag + Check Out disabled while on break, Break In/Out both
+hidden once the one break is used, Break Out submits and refetches, a denied-geolocation error
+for a break action, no break buttons at all when not checked in.
+`AttendancePhotoModal.test.jsx`'s existing tests were updated to explicitly pass
+`showPhotos`/`showLocation` (previously implicit/always-shown), plus a new describe block (3
+tests) covering all four permission combinations. Full frontend suite passes (the same
+established pre-existing flaky tests, unrelated to this change — confirmed via isolated re-runs);
+`npm run build` succeeds.
+
+**Live-verified end-to-end** against isolated, throwaway dev server instances (the shared local
+dev servers' ports/CORS config didn't match this session's actual assigned ports, worked around
+without touching anyone else's running instance) — created temporary manager+employee accounts,
+drove the full flow: admin sees zero Check-In buttons on `/attendance`; employee checks in,
+starts a break ("On Break since..." tag appears, Check Out visibly disabled), ends the break
+(Check Out re-enabled), checks out; the manager's team view showed neither photo nor the
+Location section before being granted `view_photos`/`view_location`, and both correctly appeared
+immediately after the grant (via `PATCH /users/:id/permissions`) with a page reload; the Status
+filter's "Checked Out" option correctly narrowed the table to just that one record; the
+employee's own record modal showed times/connectivity-gaps only, no photo/coordinates; the
+notification bell showed all four event confirmations with correct messages and timestamps.
+Temporary accounts deleted afterward.
+
 ### Dashboard widget catalog (`src/modules/dashboard/`)
 
 `/dashboard` is a **declarative widget catalog, not a runtime plugin/registry** — there's no

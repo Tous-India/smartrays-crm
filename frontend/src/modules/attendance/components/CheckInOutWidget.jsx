@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import dayjs from "dayjs";
-import { Alert, Button, Card, Spin, Tag, Tooltip, App } from "antd";
+import { Alert, Button, Card, Space, Spin, Tag, Tooltip, App } from "antd";
 import { EnvironmentOutlined, ReloadOutlined } from "@ant-design/icons";
 import useMyAttendance from "../hooks/useMyAttendance";
-import useGeolocation from "../hooks/useGeolocation";
+import useGeolocation, { requestGeolocationOnce } from "../hooks/useGeolocation";
 import useCheckedInHeartbeatLoop from "../hooks/useCheckedInHeartbeatLoop";
 import CameraCapture from "./CameraCapture";
-import { checkIn, checkOut } from "../api/attendanceApi";
+import { checkIn, checkOut, breakIn, breakOut } from "../api/attendanceApi";
 
 const CURRENT_MONTH = dayjs().format("YYYY-MM");
 
@@ -28,10 +28,20 @@ function CheckInOutWidget() {
   const [isCapturing, setIsCapturing] = useState(false);
   const [photo, setPhoto] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSubmittingBreak, setIsSubmittingBreak] = useState(false);
   const [now, setNow] = useState(() => dayjs());
 
   const isCheckedIn = Boolean(openRecord);
   const action = isCheckedIn ? "check-out" : "check-in";
+
+  // Break state machine (§7.4c): Not Checked In -> Checked In -> (On Break)
+  // -> Checked In -> Checked Out. A single break per shift — `hasUsedBreak`
+  // is true once both breakIn and breakOut are set, at which point Break In
+  // never shows again this shift (matches the backend's own "one break per
+  // shift" rejection).
+  const isOnBreak = Boolean(openRecord?.breakIn?.time) && !openRecord?.breakOut?.time;
+  const hasUsedBreak = Boolean(openRecord?.breakIn?.time) && Boolean(openRecord?.breakOut?.time);
+  const canBreakIn = isCheckedIn && !isOnBreak && !hasUsedBreak;
 
   useEffect(() => {
     if (!isCheckedIn) {
@@ -87,6 +97,41 @@ function CheckInOutWidget() {
     }
   }
 
+  /**
+   * Break In/Out — no camera step and no "confirm" review screen, unlike
+   * check-in/check-out above: a single click captures the location and
+   * submits immediately, since there's no photo to review first.
+   */
+  async function handleBreakIn() {
+    setIsSubmittingBreak(true);
+
+    try {
+      const coords = await requestGeolocationOnce();
+      await breakIn({ coords });
+      message.success("Break started");
+      refetch();
+    } catch (error) {
+      message.error(error.message || "Could not start your break — please try again.");
+    } finally {
+      setIsSubmittingBreak(false);
+    }
+  }
+
+  async function handleBreakOut() {
+    setIsSubmittingBreak(true);
+
+    try {
+      const coords = await requestGeolocationOnce();
+      await breakOut({ coords });
+      message.success("Break ended");
+      refetch();
+    } catch (error) {
+      message.error(error.message || "Could not end your break — please try again.");
+    } finally {
+      setIsSubmittingBreak(false);
+    }
+  }
+
   if (isLoading) {
     return (
       <Card>
@@ -106,6 +151,11 @@ function CheckInOutWidget() {
           {isCheckedIn ? (
             <div>
               <Tag color="green">Checked In</Tag>
+              {isOnBreak && (
+                <Tag color="orange" data-testid="on-break-tag">
+                  On Break since {dayjs(openRecord.breakIn.time).format("h:mm A")}
+                </Tag>
+              )}
               <Tooltip title="Sending periodic heartbeat + location pings while you're checked in">
                 <span
                   className="ml-1 inline-flex items-center gap-1 text-xs text-gray-400"
@@ -123,9 +173,23 @@ function CheckInOutWidget() {
             <Tag>Not Checked In</Tag>
           )}
 
-          <Button type="primary" onClick={handleStartCapture}>
-            {isCheckedIn ? "Check Out" : "Check In"}
-          </Button>
+          <Space>
+            {canBreakIn && (
+              <Button onClick={handleBreakIn} loading={isSubmittingBreak}>
+                Break In
+              </Button>
+            )}
+            {isOnBreak && (
+              <Button onClick={handleBreakOut} loading={isSubmittingBreak}>
+                Break Out
+              </Button>
+            )}
+            <Tooltip title={isOnBreak ? "End your break before checking out" : ""}>
+              <Button type="primary" onClick={handleStartCapture} disabled={isOnBreak}>
+                {isCheckedIn ? "Check Out" : "Check In"}
+              </Button>
+            </Tooltip>
+          </Space>
         </div>
       )}
 

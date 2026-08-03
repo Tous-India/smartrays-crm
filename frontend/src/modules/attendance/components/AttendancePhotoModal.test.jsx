@@ -44,16 +44,20 @@ describe("AttendancePhotoModal", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("shows check-in and check-out photos with their coords", () => {
-    render(<AttendancePhotoModal open record={RECORD_WITH_PHOTOS} onCancel={vi.fn()} />);
+  it("shows check-in and check-out photos with their coords when both showPhotos/showLocation are granted", () => {
+    render(
+      <AttendancePhotoModal open record={RECORD_WITH_PHOTOS} onCancel={vi.fn()} showPhotos showLocation />
+    );
 
     expect(screen.getByAltText("Check-In photo")).toHaveAttribute("src", RECORD_WITH_PHOTOS.checkIn.photoUrl);
     expect(screen.getByAltText("Check-Out photo")).toHaveAttribute("src", RECORD_WITH_PHOTOS.checkOut.photoUrl);
     expect(screen.getAllByText(/Lat 12.97160, Lng 77.59460/)).toHaveLength(2);
   });
 
-  it("gracefully shows a 'No photo' state for a manually-created record with no photos", () => {
-    render(<AttendancePhotoModal open record={MANUAL_RECORD_NO_PHOTOS} onCancel={vi.fn()} />);
+  it("gracefully shows a 'No photo' state for a manually-created record with no photos, when showPhotos is granted", () => {
+    render(
+      <AttendancePhotoModal open record={MANUAL_RECORD_NO_PHOTOS} onCancel={vi.fn()} showPhotos showLocation />
+    );
 
     expect(screen.getAllByText("No photo")).toHaveLength(2);
     expect(screen.getAllByText("No coordinates captured")).toHaveLength(2);
@@ -61,7 +65,7 @@ describe("AttendancePhotoModal", () => {
   });
 
   it("does not show the manually-adjusted tag for a real check-in", () => {
-    render(<AttendancePhotoModal open record={RECORD_WITH_PHOTOS} onCancel={vi.fn()} />);
+    render(<AttendancePhotoModal open record={RECORD_WITH_PHOTOS} onCancel={vi.fn()} showPhotos showLocation />);
 
     expect(screen.queryByText(/Manually adjusted by admin/)).not.toBeInTheDocument();
   });
@@ -81,7 +85,7 @@ describe("AttendancePhotoModal", () => {
   });
 
   it("shows a plain green Location bar with no violation when none occurred", () => {
-    render(<AttendancePhotoModal open record={RECORD_WITH_PHOTOS} onCancel={vi.fn()} />);
+    render(<AttendancePhotoModal open record={RECORD_WITH_PHOTOS} onCancel={vi.fn()} showLocation />);
 
     expect(screen.getByText("Location")).toBeInTheDocument();
     expect(screen.getByTestId("geofence-violation-bar")).toHaveClass("bg-green-400");
@@ -89,10 +93,65 @@ describe("AttendancePhotoModal", () => {
   });
 
   it("shows the geofence violation info alongside connectivity gaps when a violation occurred", () => {
-    render(<AttendancePhotoModal open record={RECORD_WITH_GEOFENCE_VIOLATION} onCancel={vi.fn()} />);
+    render(<AttendancePhotoModal open record={RECORD_WITH_GEOFENCE_VIOLATION} onCancel={vi.fn()} showLocation />);
 
     const violationSegment = screen.getByTestId("geofence-violation-segment");
     expect(violationSegment).toHaveClass("bg-orange-500");
     expect(screen.getByText("Connectivity Gaps")).toBeInTheDocument();
+  });
+
+  describe("permission-gated photo/location visibility (§7.4c)", () => {
+    it("omits the photo AND the Location section entirely when neither is granted (e.g. a manager with no grants at all)", () => {
+      render(
+        <AttendancePhotoModal
+          open
+          record={RECORD_WITH_PHOTOS}
+          onCancel={vi.fn()}
+          showPhotos={false}
+          showLocation={false}
+        />
+      );
+
+      expect(screen.queryByAltText("Check-In photo")).not.toBeInTheDocument();
+      expect(screen.queryByAltText("Check-Out photo")).not.toBeInTheDocument();
+      expect(screen.queryByText(/Lat 12.97160/)).not.toBeInTheDocument();
+      expect(screen.queryByText("No photo")).not.toBeInTheDocument();
+      expect(screen.queryByText("No coordinates captured")).not.toBeInTheDocument();
+      expect(screen.queryByText("Location")).not.toBeInTheDocument();
+      // Time is never gated — still visible either way.
+      expect(screen.getByText(new Date(RECORD_WITH_PHOTOS.checkIn.time).toLocaleString())).toBeInTheDocument();
+    });
+
+    it("shows the photo but hides coords/Location when only showPhotos is granted", () => {
+      render(
+        <AttendancePhotoModal
+          open
+          record={RECORD_WITH_PHOTOS}
+          onCancel={vi.fn()}
+          showPhotos
+          showLocation={false}
+        />
+      );
+
+      expect(screen.getByAltText("Check-In photo")).toBeInTheDocument();
+      expect(screen.queryByText(/Lat 12.97160/)).not.toBeInTheDocument();
+      expect(screen.queryByText("Location")).not.toBeInTheDocument();
+    });
+
+    it("shows coords/Location but hides the photo when only showLocation is granted", () => {
+      render(
+        <AttendancePhotoModal
+          open
+          record={RECORD_WITH_PHOTOS}
+          onCancel={vi.fn()}
+          showPhotos={false}
+          showLocation
+        />
+      );
+
+      expect(screen.queryByAltText("Check-In photo")).not.toBeInTheDocument();
+      expect(screen.getAllByText(/Lat 12.97160, Lng 77.59460/)).toHaveLength(2);
+      expect(screen.getByText("Location")).toBeInTheDocument();
+    });
   });
 });

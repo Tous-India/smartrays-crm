@@ -21,6 +21,15 @@ export function checkOut({ coords, photo }) {
   return apiClient.post("/attendance/check-out", { coords, photo });
 }
 
+// Break In/Out (§7.4c) — no photo, unlike check-in/check-out.
+export function breakIn({ coords }) {
+  return apiClient.post("/attendance/break-in", { coords });
+}
+
+export function breakOut({ coords }) {
+  return apiClient.post("/attendance/break-out", { coords });
+}
+
 // Fired repeatedly by `useCheckedInHeartbeatLoop` while checked in — see
 // that hook for the interval/reasoning. No body needed: the backend derives
 // "which shift" from the authenticated user's own open Attendance record.

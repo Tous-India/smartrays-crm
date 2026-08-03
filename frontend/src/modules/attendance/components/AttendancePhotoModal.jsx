@@ -22,19 +22,29 @@ function CoordsDisplay({ coords }) {
   );
 }
 
-function PhotoSlot({ title, photoUrl, time, coords }) {
+/**
+ * `showPhoto`/`showLocation` (§7.4c) gate the photo image and coords line
+ * independently — `time` is never gated, it's not the sensitive part. When
+ * `showPhoto` is false, the photo area is omitted entirely rather than
+ * showing a "No photo" placeholder — that placeholder means something
+ * different (a manually-created record genuinely has none) than "you don't
+ * have permission to see this," and conflating the two would make a
+ * permission boundary look like a data problem.
+ */
+function PhotoSlot({ title, photoUrl, time, coords, showPhoto, showLocation }) {
   return (
     <div>
       <div className="mb-1 text-sm font-medium">{title}</div>
-      {photoUrl ? (
-        <Image src={photoUrl} alt={`${title} photo`} width="100%" style={{ maxHeight: 220, objectFit: "cover" }} />
-      ) : (
-        <div className="flex h-[140px] items-center justify-center rounded border border-dashed border-gray-300 bg-gray-50">
-          <Empty description="No photo" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-        </div>
-      )}
+      {showPhoto &&
+        (photoUrl ? (
+          <Image src={photoUrl} alt={`${title} photo`} width="100%" style={{ maxHeight: 220, objectFit: "cover" }} />
+        ) : (
+          <div className="flex h-[140px] items-center justify-center rounded border border-dashed border-gray-300 bg-gray-50">
+            <Empty description="No photo" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          </div>
+        ))}
       <div className="mt-1 text-xs text-gray-500">{time ? new Date(time).toLocaleString() : "Not recorded"}</div>
-      <CoordsDisplay coords={coords} />
+      {showLocation && <CoordsDisplay coords={coords} />}
     </div>
   );
 }
@@ -54,8 +64,19 @@ function PhotoSlot({ title, photoUrl, time, coords }) {
  * Edit button here is the "from either the list or calendar view" entry
  * point the admin-correction UI needs, reached via the day's own detail
  * view rather than a separate action per row.
+ *
+ * `showPhotos`/`showLocation` (§7.4c) — independent gates matching the
+ * backend's own `attendance.view_photos`/`view_location` permissions
+ * (Team view) or the hard "never your own" rule (Personal view, always
+ * both `false` regardless of the viewer's permissions — see
+ * `PersonalAttendanceView.jsx`). The backend already strips the underlying
+ * `photoUrl`/`coords` data the viewer isn't allowed to see, so these props
+ * only control whether the SECTION itself renders — without them, a
+ * manager lacking the grant would see a "No photo"/"No coordinates"
+ * placeholder that looks like a data problem rather than a permission
+ * boundary they simply don't have.
  */
-function AttendancePhotoModal({ open, record, onCancel, onEdit }) {
+function AttendancePhotoModal({ open, record, onCancel, onEdit, showPhotos, showLocation }) {
   if (!record) {
     return null;
   }
@@ -88,6 +109,8 @@ function AttendancePhotoModal({ open, record, onCancel, onEdit }) {
               photoUrl={record.checkIn?.photoUrl}
               time={record.checkIn?.time}
               coords={record.checkIn?.coords}
+              showPhoto={showPhotos}
+              showLocation={showLocation}
             />
           </Col>
           <Col span={12}>
@@ -96,6 +119,8 @@ function AttendancePhotoModal({ open, record, onCancel, onEdit }) {
               photoUrl={record.checkOut?.photoUrl}
               time={record.checkOut?.time}
               coords={record.checkOut?.coords}
+              showPhoto={showPhotos}
+              showLocation={showLocation}
             />
           </Col>
         </Row>
@@ -105,13 +130,15 @@ function AttendancePhotoModal({ open, record, onCancel, onEdit }) {
           <ConnectivityGapBar record={record} />
         </div>
 
-        <div>
-          <div className="mb-1 text-sm font-medium">
-            <EnvironmentOutlined className="mr-1" />
-            Location
+        {showLocation && (
+          <div>
+            <div className="mb-1 text-sm font-medium">
+              <EnvironmentOutlined className="mr-1" />
+              Location
+            </div>
+            <GeofenceViolationBar record={record} />
           </div>
-          <GeofenceViolationBar record={record} />
-        </div>
+        )}
       </Space>
     </Modal>
   );

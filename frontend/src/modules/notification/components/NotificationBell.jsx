@@ -12,6 +12,9 @@ const MODULE_ROUTES = {
   // Leave has no per-record detail route — every leave notification just
   // goes to the list page, ignoring `relatedEntity.id`.
   leave: () => "/leave",
+  // Attendance (§7.4c's check-in/break-in/break-out/check-out notifications)
+  // has no per-record detail route either — same treatment as Leave.
+  attendance: () => "/attendance",
 };
 
 function timeAgo(dateString) {

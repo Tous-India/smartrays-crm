@@ -19,6 +19,8 @@ vi.mock("../api/attendanceApi", () => ({
   getMyAttendance: vi.fn(),
   checkIn: vi.fn(),
   checkOut: vi.fn(),
+  breakIn: vi.fn(),
+  breakOut: vi.fn(),
   heartbeat: vi.fn(),
 }));
 
@@ -195,5 +197,149 @@ describe("CheckInOutWidget — already checked in (page loaded mid-shift)", () =
       });
     });
     expect(attendanceApi.checkIn).not.toHaveBeenCalled();
+  });
+});
+
+describe("CheckInOutWidget — Break In/Out (§7.4c)", () => {
+  it("shows a Break In button while checked in and not on break, with no camera/photo step", async () => {
+    attendanceApi.getMyAttendance.mockResolvedValue({
+      data: { data: [{ _id: "att-1", checkIn: { time: new Date().toISOString() }, checkOut: { time: null } }] },
+    });
+    attendanceApi.breakIn.mockResolvedValue({ data: { data: {} } });
+
+    render(<CheckInOutWidget />);
+    await screen.findByText("Checked In");
+
+    const breakInButton = screen.getByRole("button", { name: "Break In" });
+    expect(breakInButton).toBeInTheDocument();
+    // No camera preview/capture button appears for a break action.
+    expect(screen.queryByRole("button", { name: /Capture Photo/ })).not.toBeInTheDocument();
+
+    await userEvent.click(breakInButton);
+
+    await waitFor(() => {
+      expect(attendanceApi.breakIn).toHaveBeenCalledWith({ coords: { lat: 12.34, lng: 56.78 } });
+    });
+  });
+
+  it("shows 'On Break since ...' and a Break Out button, and hides Break In, once on break", async () => {
+    attendanceApi.getMyAttendance.mockResolvedValue({
+      data: {
+        data: [
+          {
+            _id: "att-1",
+            checkIn: { time: new Date().toISOString() },
+            checkOut: { time: null },
+            breakIn: { time: new Date().toISOString() },
+            breakOut: { time: null },
+          },
+        ],
+      },
+    });
+
+    render(<CheckInOutWidget />);
+    await screen.findByText("Checked In");
+
+    expect(screen.getByTestId("on-break-tag")).toHaveTextContent("On Break since");
+    expect(screen.getByRole("button", { name: "Break Out" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Break In" })).not.toBeInTheDocument();
+  });
+
+  it("disables the Check Out button while on break", async () => {
+    attendanceApi.getMyAttendance.mockResolvedValue({
+      data: {
+        data: [
+          {
+            _id: "att-1",
+            checkIn: { time: new Date().toISOString() },
+            checkOut: { time: null },
+            breakIn: { time: new Date().toISOString() },
+            breakOut: { time: null },
+          },
+        ],
+      },
+    });
+
+    render(<CheckInOutWidget />);
+    await screen.findByText("Checked In");
+
+    expect(screen.getByRole("button", { name: "Check Out" })).toBeDisabled();
+  });
+
+  it("hides both Break In and Break Out once the shift's one break has already been used", async () => {
+    attendanceApi.getMyAttendance.mockResolvedValue({
+      data: {
+        data: [
+          {
+            _id: "att-1",
+            checkIn: { time: new Date().toISOString() },
+            checkOut: { time: null },
+            breakIn: { time: new Date().toISOString() },
+            breakOut: { time: new Date().toISOString() },
+          },
+        ],
+      },
+    });
+
+    render(<CheckInOutWidget />);
+    await screen.findByText("Checked In");
+
+    expect(screen.queryByRole("button", { name: "Break In" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Break Out" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Check Out" })).toBeEnabled();
+  });
+
+  it("submits Break Out and refetches", async () => {
+    attendanceApi.getMyAttendance.mockResolvedValue({
+      data: {
+        data: [
+          {
+            _id: "att-1",
+            checkIn: { time: new Date().toISOString() },
+            checkOut: { time: null },
+            breakIn: { time: new Date().toISOString() },
+            breakOut: { time: null },
+          },
+        ],
+      },
+    });
+    attendanceApi.breakOut.mockResolvedValue({ data: { data: {} } });
+
+    render(<CheckInOutWidget />);
+    await screen.findByText("Checked In");
+
+    await userEvent.click(screen.getByRole("button", { name: "Break Out" }));
+
+    await waitFor(() => {
+      expect(attendanceApi.breakOut).toHaveBeenCalledWith({ coords: { lat: 12.34, lng: 56.78 } });
+    });
+    // getMyAttendance called once on mount, once again by the post-break-out refetch.
+    expect(attendanceApi.getMyAttendance).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows a clear error when location access is denied for a break action", async () => {
+    mockGeolocation((_success, failure) => failure({ code: 1, PERMISSION_DENIED: 1, message: "denied" }));
+    attendanceApi.getMyAttendance.mockResolvedValue({
+      data: { data: [{ _id: "att-1", checkIn: { time: new Date().toISOString() }, checkOut: { time: null } }] },
+    });
+
+    render(<CheckInOutWidget />);
+    await screen.findByText("Checked In");
+
+    await userEvent.click(screen.getByRole("button", { name: "Break In" }));
+
+    await waitFor(() => {
+      expect(attendanceApi.breakIn).not.toHaveBeenCalled();
+    });
+  });
+
+  it("does not show any break button when not checked in at all", async () => {
+    attendanceApi.getMyAttendance.mockResolvedValue({ data: { data: [] } });
+
+    render(<CheckInOutWidget />);
+    await screen.findByText("Not Checked In");
+
+    expect(screen.queryByRole("button", { name: "Break In" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Break Out" })).not.toBeInTheDocument();
   });
 });

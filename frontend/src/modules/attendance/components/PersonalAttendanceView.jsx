@@ -33,7 +33,11 @@ function PersonalAttendanceView() {
 
   return (
     <div className="flex flex-col gap-4">
-      <CheckInOutWidget />
+      {/* Admin accounts don't track attendance at all (§7.4c) — the backend
+          already rejects an admin's own check-in (403), but hiding the
+          widget here too means an admin never even sees a check-in prompt
+          in the first place, not just a rejected attempt. */}
+      {!isAdmin && <CheckInOutWidget />}
 
       <div className="flex items-center justify-between">
         <DatePicker picker="month" value={month} allowClear={false} onChange={(value) => setMonth(value || dayjs())} />
@@ -49,6 +53,14 @@ function PersonalAttendanceView() {
         canCorrect={isAdmin}
         defaultEmployeeId={user?._id}
         onChanged={refetch}
+        // Hard rule (§7.4c), not permission-based: viewing your OWN record
+        // never shows photo/location, no matter your role or grants — the
+        // backend already strips both from GET /attendance/me's response,
+        // this just tells the photo-viewer modal to omit the sections
+        // entirely rather than show an empty "No photo"/"No coordinates"
+        // placeholder that would look like a data problem.
+        showPhotos={false}
+        showLocation={false}
       />
     </div>
   );

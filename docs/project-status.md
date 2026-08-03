@@ -1564,3 +1564,24 @@ resolved while Phase 0 is underway.
   tests in `attendance.test.js` (up from 31) plus 6 new in `attendancePhotoCleanupCron.test.js`;
   full backend suite 642/642, no regressions. `backend/README.md` and `.context/final-plan.md`
   (new §7.4c) updated.
+- **2026-07-31** — Frontend half of the five §7.4c Attendance additions built same day. Admin's
+  check-in widget hidden entirely on `/attendance` (the backend already rejects the request; this
+  avoids showing a prompt that would just fail). `CheckInOutWidget.jsx`'s state machine extended
+  for Break In/Out — no camera step, a single click captures geolocation and submits immediately;
+  Check Out disabled with a tooltip while on break; an "On Break since {time}" tag alongside the
+  existing Checked-In indicator. `AttendancePhotoModal.jsx` gained permission-gated
+  `showPhotos`/`showLocation` — a manager needs `attendance.view_photos`/`view_location`
+  independently (via the existing `usePermission` hook, admin bypasses both) to see either
+  section in Team view; viewing your OWN record always hides both, unconditionally, matching the
+  backend's own hard rule. A missing grant omits the section entirely rather than showing an
+  empty placeholder, so a permission boundary doesn't look like a data problem. New Status filter
+  on Team Attendance (present/on-break/checked-out/absent — a derived shift-lifecycle state
+  computed client-side, distinct from the record's own `status` field). The notification bell
+  needed no type-specific rendering changes at all — it already displays any notification
+  generically — just a small routing addition so clicking one navigates to `/attendance`. 10 new
+  frontend tests; full suite passes (same established flaky baseline); `npm run build` succeeds.
+  Live-verified end-to-end against isolated dev server instances with temporary manager+employee
+  accounts (cleaned up after): admin-hidden widget, the full break state-machine transition,
+  permission-gated photo/location correctly shown/hidden before and after a live grant, the
+  Status filter, the self-view hard rule, and all four notification types. `frontend/README.md`
+  and `.context/final-plan.md` (§7.4c extended) updated.

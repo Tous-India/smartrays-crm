@@ -1668,6 +1668,33 @@ returned `downloadUrl`.
 suite: 642/642 passing, no regressions. See `backend/README.md`'s own Attendance section for the
 complete write-up.
 
+**Frontend half, built same day:** `PersonalAttendanceView.jsx` hides `CheckInOutWidget` entirely
+for admin (backend already rejects, this just avoids showing a prompt that would fail).
+`CheckInOutWidget.jsx`'s state machine extended for Break In/Out — no camera step, a single click
+captures geolocation (new standalone `requestGeolocationOnce()`, `useGeolocation.js`) and submits
+immediately; Check Out disabled with a tooltip while on break; "On Break since {time}" tag.
+`AttendancePhotoModal.jsx` gained `showPhotos`/`showLocation` props — `TeamAttendanceView.jsx`
+computes them via `usePermission("attendance", "view_photos"/"view_location")` (admin bypasses
+both); `PersonalAttendanceView.jsx` passes both `false` unconditionally (hard rule, not
+permission-based — matches the backend's own no-override-for-self rule). Missing grant omits the
+section entirely rather than showing an empty placeholder, which would conflate "no permission"
+with "no photo exists." **Deliberately NOT gated: the Timeline/Calendar list views' own
+"Location" column** — that renders `GeofenceViolationBar` (a derived violation-timeline summary),
+not the raw coords `view_location` actually governs; the backend itself never strips
+`geofenceViolations` for any viewer, only `photoUrl`/`coords`, so gating this column would be
+inconsistent with what's actually protected server-side. New Status filter on
+`TeamAttendanceView.jsx` (`ATTENDANCE_LIFECYCLE_FILTER_OPTIONS`/`deriveAttendanceLifecycleState`,
+`attendance.constants.js`) — a derived shift-lifecycle state (present/on-break/checked-out/
+absent) computed client-side, distinct from the raw `status` enum. Notification bell needed no
+type-specific rendering changes at all (it already displays any type generically via `message`) —
+just a small `MODULE_ROUTES.attendance` addition so clicking one actually navigates somewhere.
+10 new frontend tests (7 in `CheckInOutWidget.test.jsx`, 3 in `AttendancePhotoModal.test.jsx`).
+Live-verified end-to-end against isolated dev server instances (temp manager+employee accounts,
+cleaned up after) — admin-hidden widget, full break state-machine transitions, permission-gated
+photo/location shown/hidden correctly before and after a live grant, Status filter, self-view
+hard rule, and all four notification types. See `frontend/README.md`'s own §7.4c section for the
+complete write-up.
+
 ### 7.4b Live Location Tracking
 
 ✅ **Built and verified 2026-07-13** (26 tests — 20 original + 6 new for geofencing, `npm test`,

@@ -40,6 +40,8 @@ function AttendanceRecordsSection({
   canCorrect,
   defaultEmployeeId,
   onChanged,
+  showPhotos,
+  showLocation,
 }) {
   const { message } = App.useApp();
   const [viewMode, setViewMode] = useState("list");
@@ -127,6 +129,8 @@ function AttendanceRecordsSection({
         record={photoModalRecord}
         onCancel={() => setPhotoModalRecord(null)}
         onEdit={canCorrect ? handleEditFromPhotoModal : undefined}
+        showPhotos={showPhotos}
+        showLocation={showLocation}
       />
 
       <AttendanceCorrectionModal
