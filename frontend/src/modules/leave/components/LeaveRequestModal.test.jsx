@@ -25,6 +25,7 @@ describe("LeaveRequestModal — half day", () => {
     await userEvent.click(screen.getByRole("checkbox", { name: "Half Day" }));
     await userEvent.type(screen.getByLabelText("Start Date"), "2026-08-10");
     await userEvent.keyboard("{Escape}");
+    await userEvent.type(screen.getByLabelText("Reason"), "Doctor appointment");
 
     await userEvent.click(screen.getByRole("button", { name: "Submit Request" }));
 
@@ -45,9 +46,25 @@ describe("LeaveRequestModal — half day", () => {
     await userEvent.keyboard("{Escape}");
     await userEvent.type(screen.getByLabelText("End Date"), "2026-08-12");
     await userEvent.keyboard("{Escape}");
+    await userEvent.type(screen.getByLabelText("Reason"), "Family event");
 
     await userEvent.click(screen.getByRole("button", { name: "Submit Request" }));
 
     expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ isHalfDay: false }));
+  });
+
+  it("blocks submission when Reason is left blank", async () => {
+    const onSubmit = vi.fn();
+    render(<LeaveRequestModal open onCancel={vi.fn()} onSubmit={onSubmit} isSubmitting={false} />);
+
+    await userEvent.type(screen.getByLabelText("Start Date"), "2026-08-10");
+    await userEvent.keyboard("{Escape}");
+    await userEvent.type(screen.getByLabelText("End Date"), "2026-08-12");
+    await userEvent.keyboard("{Escape}");
+
+    await userEvent.click(screen.getByRole("button", { name: "Submit Request" }));
+
+    expect(await screen.findByText("A reason is required")).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 });

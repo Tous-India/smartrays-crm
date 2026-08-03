@@ -1609,3 +1609,34 @@ resolved while Phase 0 is underway.
   blocked from self-requesting, `reason` required and correctly stored/returned) — 56 tests total
   for the module. Full backend suite: 654/654 passing across 21 test files, no regressions.
   `backend/README.md` and `.context/final-plan.md` (§6.5/§7.5/§7.5c, §5 permission matrix) updated.
+- **2026-07-31** — Frontend half of the §7.5c Leave corrections built same day. Approve/Decline/
+  Mark Unapproved Absence now gate per-action on `usePermission("leave", "approve"/"decline"/
+  "mark_unapproved_absence")` instead of a blanket `isAdmin` flag, so a manager sees exactly the
+  same buttons admin does for their own team — no extra per-row team check needed, since a manager
+  without `view_all` can only ever reach the already-backend-filtered `scope=team` in the first
+  place. Request Leave is hidden entirely for admin (mirrors the backend's own exemption). The
+  Reason field (already existed) is now required and shown via an expandable Admin-table row
+  (chosen over a new column since it's free text that can run long) plus a line under each entry in
+  the dashboard's `LeavePendingRequestsWidget`. New Employee/Team/Status/Date-range filters on the
+  Admin table (`scope=all`, list view only; Team calendar view unaffected).
+  **Two real bugs found and fixed while verifying live, not assumed:** (1) `LeavePendingRequestsWidget`
+  was hard-coded to `listLeave("all")`, gated only on holding `approve` — safe when only admin held
+  that action, but a manager now holds `approve` without `view_all`, so it would have 403'd for
+  every manager opening the dashboard; fixed by picking the scope from whichever view-tier grant is
+  actually held. (2) This dev database's "manager" `RolePermissionTemplate` document was seeded on
+  2026-07-17, before today's backend code change — `RolePermissionTemplate` rows are lazily seeded
+  once and read from the database from then on, so a code-level default change has zero effect on
+  an already-seeded row; the earlier backend deploy's manager-parity change was silently
+  non-functional for every manager until the template document itself was corrected via a live
+  `PATCH /permissions/templates/manager` (also dropping a stale `tasks` key the same document still
+  carried from before Task was removed, §7.3 — unrelated pre-existing staleness surfaced by the same
+  fetch). Confirmed via `GET /users?role=manager` that zero manager accounts currently exist, so no
+  existing manager needed an additional permissions reset; this dev database and the deployed
+  production backend share the same `MONGODB_URI` (no separate staging DB), so the fix is already
+  live in production too. 15 new/updated tests in `LeaveListPage.test.jsx` plus 5 in
+  `LeaveRequestModal.test.jsx`/`LeavePendingRequestsWidget.test.jsx`; full frontend suite passes (no
+  Leave-module failures; the same pre-existing failures elsewhere trace to a concurrent session's
+  uncommitted changes to `CustomersTable.jsx`, not this task); `npm run build` succeeds.
+  Live-verified end-to-end via Playwright against isolated dev server instances with two separate
+  temporary manager+employee teams (proving cross-team isolation) — cleaned up (deactivated +
+  hard-deleted) after. `frontend/README.md` and `.context/final-plan.md` (§7.18 extended) updated.

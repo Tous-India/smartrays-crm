@@ -131,7 +131,7 @@ Source of Truth rule made concrete, and to mark what's real vs. planned in the d
 | `lead` (frontend) | ✅ **Built (2026-07-16) — the reference implementation for every later frontend module** | Table View + Board View (`@dnd-kit` kanban) behind one shared page shell, Lead Detail slide-over (real route), Import wizard, filtered export — see §7.15 |
 | `customer` (frontend) | ✅ **Built** | List View (search/owner/status filters, bulk activate/deactivate/delete) + Add Customer wizard (surfaces the backend's contract automation explicitly) + a real Customer Detail full page (billing/site details/contracts/contacts/activity log). Credentials Vault UI deliberately removed 2026-07-29 (backend/data untouched, just not surfaced) — see §7.17 |
 | `attendance` (frontend) | ✅ **Built** | Check-in/out widget (native `getUserMedia`+`<canvas>` camera capture, native `Geolocation`, both mandatory before submit) + Personal/Team timeline views with connectivity gaps rendered as red bar segments + report download via the unified dispatcher — see §7.18 |
-| `leave` (frontend) | ✅ **Built** | Request modal + scope-tabbed list (own/team/all, built from whichever grants the user holds) + admin-only Approve/Mark Unapproved Absence, the latter's 2x-deduction consequence shown directly in the confirm prompt — see §7.18 |
+| `leave` (frontend) | ✅ **Built** | Request modal (hidden for admin, §7.5c) + scope-tabbed list (own/team/all, built from whichever grants the user holds) + Approve/Decline/Mark Unapproved Absence gated per-action (admin org-wide, manager on their own team, §7.5c — reverses the original admin-only restriction), the latter's 2x-deduction consequence shown directly in the confirm prompt — see §7.18. **Extended 2026-07-31 (§7.5c):** required Reason field (request form + expandable Admin-table row + dashboard widget), Employee/Team/Status/Date-range Admin filters |
 | `location` (frontend) | ✅ **Built — a new route, `/location`, with no prior frontend at all** | Live map (auto-polling `GET /location/live`) + History map (employee+date picker, `GET /location/history` as a polyline) via a generic `GoogleMapView` (native Maps JS SDK, no wrapper library) — see §7.18 |
 | `user` (frontend) | ✅ **Built (§7.19, 2026-07-17)** | `/settings/users` roster list/edit/deactivate/reactivate/admin-password-reset/create, plus self-service + admin-override password reset (`/forgot-password`, `/reset-password`) — see §7.19 |
 | `dashboard` (frontend) | ✅ **Built (§7.20/§7.21)** | `/dashboard` shell composing Leads + Customers widgets (§7.20) plus 6 operational glance widgets — Attendance/Leave/Tickets/AMC/Payments/Payroll (§7.21) — by role via a declarative catalog, each widget independently permission-gated and independently fetching/failing — see §7.20/§7.21 |
@@ -3128,6 +3128,24 @@ stopping on check-out, cleaning up on unmount with no leaked intervals, and a fa
 heartbeat/ping call never throwing — all via fake timers (`vi.useFakeTimers()` +
 `vi.advanceTimersByTimeAsync()`, needed because the loop resolves a real `Promise` before
 its first interval exists, which plain synchronous timer advancement doesn't flush).
+
+**Manager parity, admin exemption, Reason field & Admin filters (2026-07-31, §7.5c) — reverses
+the "admin-only, manager can view but not approve" restriction on Approve/Decline/Mark Unapproved
+Absence.** Each action button now gates on its own `usePermission("leave", "approve"/"decline"/
+"mark_unapproved_absence")` check rather than a blanket `isAdmin` flag; the Request Leave button
+is hidden for admin (mirrors the backend's own exemption); the Reason field (already existed) is
+now required and displayed via an expandable Admin-table row plus a line on the dashboard's
+`LeavePendingRequestsWidget`; that widget also needed its own fix, since a hard-coded
+`listLeave("all")` would have 403'd for a manager who now holds `approve` without `view_all` —
+its scope is now picked from whichever view-tier grant is actually held. New Employee/Team/Status/
+Date-range filters on the Admin table (`scope=all`, list view only). **A real finding while
+verifying live, not assumed:** this dev database's "manager" `RolePermissionTemplate` document
+predated the backend's §7.5c code change and had not picked it up (templates are lazily seeded
+once, then read verbatim — a code default change has no effect on an already-seeded row) —
+fixed with a live `PATCH /permissions/templates/manager`; confirmed zero manager accounts
+currently exist, so no existing manager needed an additional permissions reset, and this same
+database backs the deployed production API (no separate staging DB), so the fix is already live
+there too. Full write-up: `frontend/README.md`'s dated §7.5c Leave section.
 
 ---
 

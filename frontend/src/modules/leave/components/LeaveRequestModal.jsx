@@ -93,7 +93,11 @@ function LeaveRequestModal({ open, onCancel, onSubmit, isSubmitting }) {
         <Form.Item label="Type" name="type" rules={[{ required: true }]}>
           <Select options={TYPE_OPTIONS} />
         </Form.Item>
-        <Form.Item label="Reason" name="reason">
+        <Form.Item
+          label="Reason"
+          name="reason"
+          rules={[{ required: true, whitespace: true, message: "A reason is required" }]}
+        >
           <Input.TextArea rows={3} />
         </Form.Item>
       </Form>
