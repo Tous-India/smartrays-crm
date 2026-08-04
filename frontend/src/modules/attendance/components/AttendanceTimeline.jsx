@@ -1,16 +1,15 @@
 import { Table, Tag, Tooltip, Space } from "antd";
 import { ExclamationCircleFilled, EnvironmentOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
-import ConnectivityGapBar from "./ConnectivityGapBar";
+import AttendanceTimelineBar from "./AttendanceTimelineBar";
 import GeofenceViolationBar from "./GeofenceViolationBar";
 import { ATTENDANCE_STATUS_COLORS, ATTENDANCE_STATUS_LABELS } from "../constants/attendance.constants";
 
 /**
- * Pure render of a set of Attendance records as a table — one row per day,
- * working hours and connectivity gaps (§6.5) both shown per §7.4's stated
- * requirement. Reused by both the Personal view (`records` = own month) and
- * the Team view (`records` = the selected employee's records, filtered
- * client-side from the team fetch) rather than duplicating this table twice.
+ * Pure render of a set of Attendance records as a table — one row per day.
+ * Reused by both the Personal view (`records` = own month) and the Team
+ * view (`records` = the selected employee's records, filtered client-side
+ * from the team fetch) rather than duplicating this table twice.
  *
  * `onRowClick` (opens `AttendancePhotoModal` in the parent) makes a row
  * double as the "click a day's record" entry point the photo viewer needs.
@@ -19,11 +18,15 @@ import { ATTENDANCE_STATUS_COLORS, ATTENDANCE_STATUS_LABELS } from "../constants
  * real verified check-in at a glance. The per-row Edit action that used to
  * live here was removed — Attendance is UI-read-only for every role now.
  *
- * A separate "Location" column (added later, geofencing §6.5/§7.4) —
- * deliberately its own column, not overlaid onto the "Connectivity Gaps"
- * bar, so a `EnvironmentOutlined`-labeled header plus `GeofenceViolationBar`'s
- * distinct orange (vs. connectivity's red) makes it immediately clear which
- * *kind* of issue occurred, not just that "something was wrong" that shift.
+ * **Timeline column (§7.4e, 2026-08-04)** — the old separate Check-In/
+ * Check-Out/Working Hours/Connectivity Gaps columns are gone, replaced by
+ * one `AttendanceTimelineBar` showing the full day as a single 24-hour
+ * color-segmented bar plus calculated duration stats. See that
+ * component's own docblock (and `utils/attendanceTimeline.js`'s) for the
+ * investigation and design behind the replacement. "Location" (geofence
+ * violations) stays its own separate column, unaffected — it answers a
+ * genuinely different question ("where," not "when") that the timeline bar
+ * was never meant to absorb.
  */
 function AttendanceTimeline({ records, isLoading, showEmployeeColumn, employeeNameById, onRowClick }) {
   const columns = [
@@ -42,25 +45,10 @@ function AttendanceTimeline({ records, isLoading, showEmployeeColumn, employeeNa
       render: (date) => dayjs(date).format("DD MMM YYYY"),
     },
     {
-      title: "Check-In",
-      dataIndex: ["checkIn", "time"],
-      render: (time) => (time ? dayjs(time).format("HH:mm:ss") : "-"),
-    },
-    {
-      title: "Check-Out",
-      dataIndex: ["checkOut", "time"],
-      render: (time) => (time ? dayjs(time).format("HH:mm:ss") : "-"),
-    },
-    {
-      title: "Working Hours",
-      dataIndex: "workingHours",
-      render: (hours) => (hours != null ? `${hours.toFixed(2)}h` : "-"),
-    },
-    {
-      title: "Connectivity Gaps",
-      key: "gaps",
-      width: 220,
-      render: (_, record) => <ConnectivityGapBar record={record} />,
+      title: "Timeline",
+      key: "timeline",
+      width: 260,
+      render: (_, record) => <AttendanceTimelineBar record={record} />,
     },
     {
       title: (

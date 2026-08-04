@@ -429,7 +429,7 @@ in later frontend tasks — mirroring how the backend was built phase-by-phase.
 | `auth` (login, session, password reset) | ✅ Built — `POST /auth/login`, `GET /auth/me`, `POST /auth/logout` wired through `sessionStore`. **Password reset added (§7.17, 2026-07-17):** "Forgot password?" link on the login page, a `/forgot-password` request-email page, and a `/reset-password?token=` page — all three (plus login) share a new `AuthLayout` component (`src/components/AuthLayout.jsx`) for the dark-glass background/card treatment. Register/Customer-signup pages still not built (no public UI needed — registration is admin-only, via the User Management module below). |
 | `lead` (Leads) | ✅ **Built — the reference implementation for every module below.** Table View (search/owner/follow-up filters, inline status dropdown, hot toggle, owner reassignment) and Board View (kanban, `@dnd-kit` drag-between-stages) share one page shell (`LeadsListPage`) behind `/leads` and `/leads/board`; Lead Detail (`/leads/:id`) is a real, linkable route rendered as a slide-over (Log Call, Hot toggle, Won, Lost, Convert to Customer, Edit, Delete); an Import wizard (upload → automatic column-matching preview → per-row results) and a filtered Excel export. See `.context/final-plan.md` §7.14's Leads frontend entry for the full write-up, including the one real backend gap found (no lead-specific activity log — the Activity Timeline is assembled client-side from call history + lead fields instead). |
 | `customer` (Customers) | ✅ **Built.** List View (`CustomersListPage`, behind `/customers`) — search/owner/status filters (defaults to active-only, an explicit "Show Inactive" checkbox), sortable columns, row-select + bulk activate/deactivate/delete, and an `Add Customer` wizard (`CustomerFormWizard`) that walks Company Info → Billing → Contracts → Contacts → Project Manager, creating the customer then each staged contract/contact in turn and surfacing the backend's contract automation explicitly in the success toast ("Project + draft Invoice auto-created for: ...") rather than leaving it invisible. Customer Detail (`/customers/:id`, a real full page per leads-customer-functional-spec.md, not a slide-over) renders `CustomerHeaderSection`/`CustomerBillingCard`/`CustomerSiteDetailsCard`/`CustomerContractsSection`/`CustomerContactsSection`/`CustomerInvoicePlaceholder`/`CustomerActivityLog` from one `useCustomerDetail` hook. Every mutating action is gated to the exact backend `customers` permission its endpoint requires. **Credentials Vault UI deliberately removed (2026-07-29)** — see "Credentials Vault removal" below. Tests: `CustomersListPage.test.jsx`, `CustomerDetailPage.test.jsx`, all passing, no real network calls. |
-| `attendance` (Attendance) | ✅ **Built.** `CheckInOutWidget` (`/attendance`, top of the Personal view) — camera capture via native `getUserMedia` + a `<canvas>` snapshot (no library, see below), geolocation via the native `Geolocation` API, both mandatory before Confirm enables (mirroring the backend's server-side-enforced photo requirement, §7.4). Fetches current status on mount rather than assuming — correctly shows "Checked In" + a live elapsed-time counter if the page loads mid-shift, and (see below) resumes the heartbeat/ping loop in that same case. `/attendance` now routes by role (2026-07-31, §7.4 reversal): admin gets `AdminAttendanceView` (org-wide, 5 filters — see the dated write-up below), Manager/Employee/Sales Associate keep `PersonalAttendanceView` unchanged. Personal, Team (`/attendance/team`, `TeamAttendanceView`), and Admin views all render through one shared `AttendanceRecordsSection` — summary stats and a read-only photo-viewer modal, on top of the original `AttendanceTimeline` table (Check-In/Check-Out/Working Hours/Status) with connectivity gaps (`connectivityGaps[]`, §6.5) rendered as visually distinct red segments on a proportional bar (`ConnectivityGapBar`). **List/Calendar toggle removed (2026-07-31, §7.5e)** — list/timeline-only now, no calendar view anywhere; see the dated write-up below. **Attendance is UI-read-only for every role, including admin (2026-07-31)** — the admin manual-correction UI (Add Record/Edit) was removed; see the dated write-up below. Team view keeps its employee selector (client-side filter; the backend endpoint has no per-employee filter), gated by `attendance.view_team`/`view_all` via a 403 `Result` in `AttendanceTeamPage.jsx` (not `PermissionGate`, which only expresses a single module+action pair — this needs an OR of two). Every view's report button hits the unified `POST /reports/generate` dispatcher (`module: "attendance"`) via the shared `ReportDownloadButton`/`reportApi.js`. **Extended later** with geofence-violation display — a "Location" column/section/marker alongside every existing connectivity-gap one — see "Geofencing" below for the full write-up. |
+| `attendance` (Attendance) | ✅ **Built.** `CheckInOutWidget` (`/attendance`, top of the Personal view) — camera capture via native `getUserMedia` + a `<canvas>` snapshot (no library, see below), geolocation via the native `Geolocation` API, both mandatory before Confirm enables (mirroring the backend's server-side-enforced photo requirement, §7.4). Fetches current status on mount rather than assuming — correctly shows "Checked In" + a live elapsed-time counter if the page loads mid-shift, and (see below) resumes the heartbeat/ping loop in that same case. `/attendance` now routes by role (2026-07-31, §7.4 reversal): admin gets `AdminAttendanceView` (org-wide, 5 filters — see the dated write-up below), Manager/Employee/Sales Associate keep `PersonalAttendanceView` unchanged. Personal, Team (`/attendance/team`, `TeamAttendanceView`), and Admin views all render through one shared `AttendanceRecordsSection` — summary stats and a read-only photo-viewer modal, on top of the `AttendanceTimeline` table (Date/Timeline/Location/Status — see §7.4e below for the 2026-08-04 Timeline column replacing the original separate Check-In/Check-Out/Working Hours/Connectivity Gaps columns). **List/Calendar toggle removed (2026-07-31, §7.5e)** — list/timeline-only now, no calendar view anywhere; see the dated write-up below. **Attendance is UI-read-only for every role, including admin (2026-07-31)** — the admin manual-correction UI (Add Record/Edit) was removed; see the dated write-up below. Team view keeps its employee selector (client-side filter; the backend endpoint has no per-employee filter), gated by `attendance.view_team`/`view_all` via a 403 `Result` in `AttendanceTeamPage.jsx` (not `PermissionGate`, which only expresses a single module+action pair — this needs an OR of two). Every view's report button hits the unified `POST /reports/generate` dispatcher (`module: "attendance"`) via the shared `ReportDownloadButton`/`reportApi.js`. **Extended later** with geofence-violation display — a "Location" column/section/marker alongside every existing connectivity-gap one — see "Geofencing" below for the full write-up. |
 | `leave` (Leave) | ✅ **Built.** `LeaveListPage` (`/leave`) — **list/table only, no calendar view, no "All" tab (2026-07-31, §7.5e)**, tabs are role-shaped (admin: none, a single unified filterable view; manager: Own + Team; everyone else: none, just their own list) — see the dated write-up below. A Request Leave modal (`paid`/`unpaid` only — `unapproved_absence` is never requestable, only via a separate action; hidden entirely for admin, §7.5c), and Approve/Decline/Mark Unapproved Absence/**Delete** (§7.5d/§7.5e) actions gated per-action on `leave.approve`/`decline`/`mark_unapproved_absence`/`delete` (admin org-wide, manager on their own team — reverses the original "admin-only" restriction, §7.5c). The mark-unapproved-absence confirmation shows its 2x-deduction consequence **directly in the `Popconfirm`'s description text**, not a tooltip, since burying it there would fail the whole point of confirming before an irreversible-feeling action; Delete gets the same confirm-first treatment. Report download via the same shared `ReportDownloadButton` (`module: "leave"`, `filters: { scope }`). **Extended later** with half-day support, a leave balance card, a Decline action, manager parity, a required Reason field, and Admin filters (including a corrected Team filter, §7.5e) — see "Half-day, balance, decline, calendar & notifications", "Manager parity, admin exemption, Reason field & Admin filters (§7.5c)", and the dated §7.5e write-up below for the full write-ups. |
 | `location` (Live Map) | ✅ **Built — a new route, `/location`** (§7.4b had no frontend before this task). Live view (`LiveMapView`) re-polls `GET /location/live` every ~12s and plots one marker per visible, currently-checked-in employee; History view (`HistoryMapView`) — an employee + date picker rendering that day's `GET /location/history` ping trail as a polyline. Gated by the existing `location` `PERMISSION_REGISTRY` set (any of `view`/`view_team`/`view_all`), same 403-`Result` pattern as Team Attendance. Uses `LeafletMapView` (`src/components/`) — `react-leaflet` + OpenStreetMap tiles, migrated 2026-08-04 from the Google Maps JS SDK — see "Maps & camera dependency decisions" below. Now actually receives pings — see "Heartbeat & location-ping loop" below. |
 | `user` (User Management) | ✅ **Built (§7.19, 2026-07-17)** — a new `/settings/users` route (added since §8's original route map didn't list one; gated on `users.view_all`/`users.view_team`, same as the backend scoping). Roster list (admin sees everyone, manager sees their own team — entirely server-side scoping, no client-side filtering), per-user Edit (name/email/phone/role/managerId/baseSalary via the existing `PATCH /users/:id`), Deactivate/Reactivate, an admin password-reset action (supports both an admin-typed exact password and a backend-generated one-time temp password, shown once), a link to the Permissions module (**now built — see below**, no longer a placeholder), and Create User (admin only, via the existing `POST /auth/register` — no new backend endpoint). **Create ("New User") form reworked 2026-07-30** — see below. |
@@ -956,6 +956,87 @@ Location column, the calendar's orange pin marker (correctly not overlapping the
 manually-adjusted marker), and the photo modal's Location section all rendered correctly; test
 data deleted afterward. Full frontend suite passes (the same 2 pre-existing, unrelated timeout
 failures as every prior task); `npm run build` succeeds.
+
+### Attendance table: a single 24-hour Timeline column (§7.4e, 2026-08-04)
+
+Replaces the table's old separate Check-In/Check-Out/Working Hours columns and the
+"Connectivity Gaps" column (`ConnectivityGapBar`) with one `AttendanceTimelineBar` column — a
+single horizontal bar representing that full calendar day, color-segmented by status, plus three
+calculated duration stats underneath. "Location" (geofence violations) is **unaffected** — it
+stays its own separate column, since it answers a genuinely different question ("where," not
+"when") the timeline was never meant to absorb.
+
+**Investigation first, per the task's own instruction (folded into this same build, not a
+separate step):** confirmed via the actual column render functions — not assumed — that
+Check-In/Check-Out (`checkIn.time`/`checkOut.time`, shown as text) and "Connectivity Gaps"
+(`ConnectivityGapBar`, overlaying `connectivityGaps[]` in red) were reading **different fields**,
+not duplicate data: the gap bar only reads the two timestamps to *scale* itself, its actual
+content comes from a field the other columns never touch. So this was a **UI clarity/visual-
+redundancy problem**, not a data bug — several columns all visually anchored to the same two
+timestamps, two of them near-identical-looking colored bars (`ConnectivityGapBar`/
+`GeofenceViolationBar` share the exact same shape, differing only by overlay color) reads as
+duplication even though the underlying data doesn't overlap. Nothing about the underlying data
+needed fixing before building this on top of it.
+
+**`utils/attendanceTimeline.js`** — two pure, independently-tested functions, kept separate from
+the presentational component so the actual math has its own direct test coverage (matching this
+project's established "extract pure decision logic" precedent, e.g.
+`resolveDropDestination.test.js` for the Leads kanban board):
+- **`computeTimelineSegments(record)`** → `[{ color, leftPercent, widthPercent }]`, the same
+  left/width-percent-over-a-relative-container technique `ConnectivityGapBar`/
+  `GeofenceViolationBar` already used, just computed against the full 24-hour day instead of
+  just the shift window. **GRAY** (the bar's own background, no segment needed) = not checked in
+  at all that day, or before check-in/after check-out; **GREEN** = checked in, connected
+  normally; **RED** = a connectivity gap; **AMBER** = the break period
+  (`breakIn.time`–`breakOut.time`) — the task's own stated assumption, adopted as given (gray was
+  the offered alternative). A record with no `checkIn.time` at all returns an empty array — the
+  component then renders a fully gray bar, per the task's explicit requirement.
+- **`computeAttendanceDurations(record)`** → `{ shiftMs, connectedMs, issueMs }` — Total Shift
+  Time (`checkOut - checkIn`), Total Connectivity Issue Time (summed gap durations), Total
+  Connected/Normal Time (shift minus gaps minus break). All three `null` when there's no
+  check-in/check-out to measure against (an absent day, or a still-open shift) — the component
+  renders `-` for each in that case. `formatDuration(ms)` renders `"8h 15m"` (omitting the hours
+  part entirely under an hour, e.g. `"45m"`) rather than raw minutes/seconds.
+
+**Midnight-crossing shifts — confirmed possible, not assumed away, by reading the data model:**
+`attendance.service.js#checkIn` sets `date: startOfDay(now)` at check-in time, and `checkOut`
+never validates that the checkout timestamp falls on the same calendar day, nor caps shift
+duration — so a shift starting just before midnight can legitimately end after it. Since this
+timeline represents exactly one calendar day (`record.date`, local midnight to midnight), a
+checkout landing after that boundary is **clamped to the end of the bar** (100%) rather than
+overflowing past it or attempting to wrap onto a second row — there's no "continues on
+tomorrow's row" marker; tomorrow's own row already independently reflects whatever was recorded
+against that day's own `checkIn`/`checkOut`.
+
+**`AttendanceTimelineBar.jsx`** — the presentational component: the bar itself (gray base,
+absolutely-positioned colored segments from `computeTimelineSegments`), then the three duration
+stats as small `Tooltip`-labeled text underneath (`Shift: 8h 15m`, `Connected: 7h 45m`,
+`Issues: 20m`). `AttendanceTimeline.jsx`'s old five columns (Check-In, Check-Out, Working Hours,
+Connectivity Gaps, plus the now-unused `ConnectivityGapBar` import) collapsed into one "Timeline"
+column rendering this component — `GeofenceViolationBar`'s "Location" column is untouched,
+still reading `geofenceViolations[]` exactly as before.
+
+**Testing:** `attendanceTimeline.test.js` (12 tests) covers the pure functions directly — no
+segments for no check-in, a plain green segment for a normal shift, gap+break overlaid with the
+correct color/position/precedence (a gap wins over an overlapping break, since the connectivity
+issue is the more actionable thing to surface), the midnight-crossing clamp, a still-open shift
+running to the end of the bar, and all of `computeAttendanceDurations`'/`formatDuration`'s
+branches (including the zero-duration `"0m"` case, which must not read as the `null`-duration
+`"-"` case). `AttendanceTimeline.test.jsx` was rewritten (not just trimmed) for the new column —
+the calculated duration stats render correctly, a connectivity gap renders as a real, correctly-
+positioned red segment, a normal day renders green-only, and a no-attendance day renders a bar
+with zero segments — the manually-adjusted-marker and Location-column tests were unaffected and
+needed no changes. Full Attendance suite: 73/73 passing; full frontend suite: no new regressions
+(same pre-existing, unrelated failures noted throughout this file). `npm run build` succeeds.
+
+**Verified visually** by rendering `AttendanceTimelineBar` directly (bypassing the app's login,
+which wasn't reachable with available dev credentials in this environment — see the 2026-08-04
+Leaflet migration's changelog entry for the same constraint) against three representative
+records via a throwaway Vite entry point, screenshotted, and deleted afterward — confirmed: a
+gray-then-green-with-a-red-sliver-and-an-amber-sliver-then-gray bar for a shift with a gap and a
+break, positioned proportionally correct; a plain green bar for a normal shift; and a fully gray
+bar with zero segments for a day with no attendance at all, exactly matching the task's stated
+verification criteria.
 
 ### Attendance corrections/additions — Break In/Out, admin exemption, permission-gated photo/location, notifications (§7.4c, 2026-07-31)
 
