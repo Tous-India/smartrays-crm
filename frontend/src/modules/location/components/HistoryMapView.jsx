@@ -1,7 +1,7 @@
 import { useState } from "react";
 import dayjs from "dayjs";
 import { DatePicker, Select, Space, Empty, Alert } from "antd";
-import GoogleMapView from "../../../components/GoogleMapView";
+import LeafletMapView from "../../../components/LeafletMapView";
 import useLocationHistory from "../hooks/useLocationHistory";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import useSessionStore from "../../../store/sessionStore";
@@ -63,7 +63,7 @@ function HistoryMapView({ initialEmployeeId, initialDate, showControls = true, d
       ) : !isLoading && pings.length === 0 ? (
         <Empty description="No location pings recorded for this day" />
       ) : (
-        <GoogleMapView path={path} markers={extraMarkers} />
+        <LeafletMapView path={path} markers={extraMarkers} />
       )}
     </div>
   );

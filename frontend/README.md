@@ -24,13 +24,13 @@ cp .env.example .env.local   # optional, for personal machine overrides
 Fill in `.env`:
 - `VITE_API_BASE_URL` — the backend's API base URL, default `http://localhost:5000/api/v1`
   (must match `backend`'s `PORT` + its `/api/v1` mount prefix, see `backend/src/route.js`)
-- `VITE_GOOGLE_MAPS_API_KEY` — powers the Location live-map view (`src/modules/location/`).
-  **Deliberately a separate key from the backend's own `GOOGLE_MAPS_API_KEY`** (see
-  `backend/.env.example`), even though both call Google Maps: this one is loaded into the
-  browser and visible to anyone who opens devtools, so it must be restricted by **HTTP
-  referrer** (your domain(s) + localhost) in the Google Cloud Console — never by server IP
-  the way the backend's key is. Enable the "Maps JavaScript API" for this key (a different
-  API than the backend key's "Distance Matrix API").
+
+No map API key is needed — the Location live-map/history views and the Attendance map
+integration all run on `react-leaflet` + free OpenStreetMap tiles (§11.6, migrated
+2026-08-04 from the Google Maps JS SDK; see "Maps & camera dependency decisions" below for
+why). The backend's own separate `GOOGLE_MAPS_API_KEY` (`backend/.env.example`) is
+unrelated — a different Google API (Distance Matrix, for Travel Log's per-shift distance
+calculation), untouched by this migration.
 
 ### Running
 
@@ -52,7 +52,7 @@ npm run test:watch
 
 Vitest + React Testing Library + `@testing-library/user-event`, mirroring the backend's
 testing discipline (`vitest`, no real network calls — every API call is mocked at the
-module boundary, same principle as backend's Cloudinary/Google Maps mocking). jsdom is the
+module boundary, same principle as backend's Cloudinary mocking). jsdom is the
 test environment; `src/test/setup.js` stubs `window.matchMedia` (jsdom doesn't implement
 it, but Ant Design's responsive components call it unconditionally on mount) and wires up
 `@testing-library/jest-dom`'s matchers.
@@ -77,7 +77,7 @@ enforces, without a flaky DOM-drag simulation layered on top. Follow this same s
 (pure decision logic extracted + tested directly) for any future drag-and-drop UI rather
 than fighting jsdom.
 
-**Testing camera/geolocation/Google-Maps-backed UI (Attendance/Location) — a pattern that
+**Testing camera/geolocation/Leaflet-map-backed UI (Attendance/Location) — a pattern that
 hadn't come up before this build, follow it for any future module touching these same
 browser APIs:**
 - **`navigator.mediaDevices.getUserMedia`** — jsdom has no camera at all, so stub it per
@@ -93,16 +93,18 @@ browser APIs:**
   pattern, calling the success/failure callback synchronously: `getCurrentPosition:
   vi.fn((success, failure) => success({ coords: { latitude, longitude } }))` (or call
   `failure({ code: 1, PERMISSION_DENIED: 1 })` to test the permission-denied path).
-- **The Google Maps JS SDK** — don't mock the script-loading hook itself; instead set
-  `window.google = { maps: { Map: vi.fn(...), Marker: vi.fn(...), Polyline: vi.fn(...),
-  LatLngBounds: vi.fn(...) } }` (each constructor a `vi.fn()` that also attaches whatever
-  instance methods `GoogleMapView.jsx` calls, e.g. `this.setMap = vi.fn()` on Marker/
-  Polyline, `this.fitBounds = vi.fn()` on Map) **before** rendering. `useGoogleMapsScript`'s
-  loaded-state check (`Boolean(window.google?.maps)`) reads this synchronously at mount, so
-  the real `<script>`-injection path never runs in tests at all. Push each constructor
-  call's arguments into a plain array from within the mock to assert on what was actually
-  plotted (marker positions/labels, polyline path points) without needing a real map. See
-  `LiveMapView.test.jsx`/`HistoryMapView.test.jsx`.
+- **`react-leaflet` (§11.6, 2026-08-04 — replaced the Google Maps JS SDK)** — Leaflet's real
+  `Map` needs actual browser DOM measurement/tile loading jsdom doesn't support, so
+  `vi.mock("react-leaflet", ...)` the whole module rather than trying to render a real map:
+  stub `MapContainer` as a plain `<div>` wrapping its children, `TileLayer` as `() => null`,
+  and `Marker`/`Polyline` as components that push their received props into a plain array
+  (so a test can assert on the exact `position`/`icon`/`title`/`positions` `LeafletMapView`
+  passed them) before rendering a lightweight stub `<div>`. `useMap` mocks out to
+  `() => ({ fitBounds: vi.fn() })` since `FitBounds` (the internal helper that keeps the
+  viewport synced to markers/path) calls it. `leaflet` itself (the `L` import) is **not**
+  mocked — `L.divIcon()`/`L.latLngBounds()` are pure factory functions with no real-DOM
+  dependency, so they run fine as-is under jsdom. See `LiveMapView.test.jsx`/
+  `HistoryMapView.test.jsx`/`AttendancePhotoModal.test.jsx`.
 - **Testing interval-based hooks (`useCheckedInHeartbeatLoop`) with fake timers** —
   `vi.useFakeTimers()` in `beforeEach`/`vi.useRealTimers()` in `afterEach`, and
   `@testing-library/react`'s `renderHook`/`rerender`/`unmount` to drive `isActive` through
@@ -429,7 +431,7 @@ in later frontend tasks — mirroring how the backend was built phase-by-phase.
 | `customer` (Customers) | ✅ **Built.** List View (`CustomersListPage`, behind `/customers`) — search/owner/status filters (defaults to active-only, an explicit "Show Inactive" checkbox), sortable columns, row-select + bulk activate/deactivate/delete, and an `Add Customer` wizard (`CustomerFormWizard`) that walks Company Info → Billing → Contracts → Contacts → Project Manager, creating the customer then each staged contract/contact in turn and surfacing the backend's contract automation explicitly in the success toast ("Project + draft Invoice auto-created for: ...") rather than leaving it invisible. Customer Detail (`/customers/:id`, a real full page per leads-customer-functional-spec.md, not a slide-over) renders `CustomerHeaderSection`/`CustomerBillingCard`/`CustomerSiteDetailsCard`/`CustomerContractsSection`/`CustomerContactsSection`/`CustomerInvoicePlaceholder`/`CustomerActivityLog` from one `useCustomerDetail` hook. Every mutating action is gated to the exact backend `customers` permission its endpoint requires. **Credentials Vault UI deliberately removed (2026-07-29)** — see "Credentials Vault removal" below. Tests: `CustomersListPage.test.jsx`, `CustomerDetailPage.test.jsx`, all passing, no real network calls. |
 | `attendance` (Attendance) | ✅ **Built.** `CheckInOutWidget` (`/attendance`, top of the Personal view) — camera capture via native `getUserMedia` + a `<canvas>` snapshot (no library, see below), geolocation via the native `Geolocation` API, both mandatory before Confirm enables (mirroring the backend's server-side-enforced photo requirement, §7.4). Fetches current status on mount rather than assuming — correctly shows "Checked In" + a live elapsed-time counter if the page loads mid-shift, and (see below) resumes the heartbeat/ping loop in that same case. `/attendance` now routes by role (2026-07-31, §7.4 reversal): admin gets `AdminAttendanceView` (org-wide, 5 filters — see the dated write-up below), Manager/Employee/Sales Associate keep `PersonalAttendanceView` unchanged. Personal, Team (`/attendance/team`, `TeamAttendanceView`), and Admin views all render through one shared `AttendanceRecordsSection` — summary stats and a read-only photo-viewer modal, on top of the original `AttendanceTimeline` table (Check-In/Check-Out/Working Hours/Status) with connectivity gaps (`connectivityGaps[]`, §6.5) rendered as visually distinct red segments on a proportional bar (`ConnectivityGapBar`). **List/Calendar toggle removed (2026-07-31, §7.5e)** — list/timeline-only now, no calendar view anywhere; see the dated write-up below. **Attendance is UI-read-only for every role, including admin (2026-07-31)** — the admin manual-correction UI (Add Record/Edit) was removed; see the dated write-up below. Team view keeps its employee selector (client-side filter; the backend endpoint has no per-employee filter), gated by `attendance.view_team`/`view_all` via a 403 `Result` in `AttendanceTeamPage.jsx` (not `PermissionGate`, which only expresses a single module+action pair — this needs an OR of two). Every view's report button hits the unified `POST /reports/generate` dispatcher (`module: "attendance"`) via the shared `ReportDownloadButton`/`reportApi.js`. **Extended later** with geofence-violation display — a "Location" column/section/marker alongside every existing connectivity-gap one — see "Geofencing" below for the full write-up. |
 | `leave` (Leave) | ✅ **Built.** `LeaveListPage` (`/leave`) — **list/table only, no calendar view, no "All" tab (2026-07-31, §7.5e)**, tabs are role-shaped (admin: none, a single unified filterable view; manager: Own + Team; everyone else: none, just their own list) — see the dated write-up below. A Request Leave modal (`paid`/`unpaid` only — `unapproved_absence` is never requestable, only via a separate action; hidden entirely for admin, §7.5c), and Approve/Decline/Mark Unapproved Absence/**Delete** (§7.5d/§7.5e) actions gated per-action on `leave.approve`/`decline`/`mark_unapproved_absence`/`delete` (admin org-wide, manager on their own team — reverses the original "admin-only" restriction, §7.5c). The mark-unapproved-absence confirmation shows its 2x-deduction consequence **directly in the `Popconfirm`'s description text**, not a tooltip, since burying it there would fail the whole point of confirming before an irreversible-feeling action; Delete gets the same confirm-first treatment. Report download via the same shared `ReportDownloadButton` (`module: "leave"`, `filters: { scope }`). **Extended later** with half-day support, a leave balance card, a Decline action, manager parity, a required Reason field, and Admin filters (including a corrected Team filter, §7.5e) — see "Half-day, balance, decline, calendar & notifications", "Manager parity, admin exemption, Reason field & Admin filters (§7.5c)", and the dated §7.5e write-up below for the full write-ups. |
-| `location` (Live Map) | ✅ **Built — a new route, `/location`** (§7.4b had no frontend before this task). Live view (`LiveMapView`) re-polls `GET /location/live` every ~12s and plots one marker per visible, currently-checked-in employee; History view (`HistoryMapView`) — an employee + date picker rendering that day's `GET /location/history` ping trail as a polyline. Gated by the existing `location` `PERMISSION_REGISTRY` set (any of `view`/`view_team`/`view_all`), same 403-`Result` pattern as Team Attendance. Uses `GoogleMapView` (`src/components/`) + `useGoogleMapsScript` (`src/hooks/`) — see "Maps & camera dependency decisions" below. Now actually receives pings — see "Heartbeat & location-ping loop" below. |
+| `location` (Live Map) | ✅ **Built — a new route, `/location`** (§7.4b had no frontend before this task). Live view (`LiveMapView`) re-polls `GET /location/live` every ~12s and plots one marker per visible, currently-checked-in employee; History view (`HistoryMapView`) — an employee + date picker rendering that day's `GET /location/history` ping trail as a polyline. Gated by the existing `location` `PERMISSION_REGISTRY` set (any of `view`/`view_team`/`view_all`), same 403-`Result` pattern as Team Attendance. Uses `LeafletMapView` (`src/components/`) — `react-leaflet` + OpenStreetMap tiles, migrated 2026-08-04 from the Google Maps JS SDK — see "Maps & camera dependency decisions" below. Now actually receives pings — see "Heartbeat & location-ping loop" below. |
 | `user` (User Management) | ✅ **Built (§7.19, 2026-07-17)** — a new `/settings/users` route (added since §8's original route map didn't list one; gated on `users.view_all`/`users.view_team`, same as the backend scoping). Roster list (admin sees everyone, manager sees their own team — entirely server-side scoping, no client-side filtering), per-user Edit (name/email/phone/role/managerId/baseSalary via the existing `PATCH /users/:id`), Deactivate/Reactivate, an admin password-reset action (supports both an admin-typed exact password and a backend-generated one-time temp password, shown once), a link to the Permissions module (**now built — see below**, no longer a placeholder), and Create User (admin only, via the existing `POST /auth/register` — no new backend endpoint). **Create ("New User") form reworked 2026-07-30** — see below. |
 | `dashboard` (Dashboard) | ✅ **Built (§7.20/§7.21)** — the `/dashboard` shell, composing widgets by role via a declarative catalog rather than four separate per-role dashboards. Leads + Customers widgets (§7.20), plus 6 operational glance widgets — Attendance/Leave/Tickets/AMC/Payments/Payroll (§7.21) — see "Dashboard widget catalog" below for the full list and how to extend it. |
 | `payment` (Payments) | ✅ **Built** — the first real UI for this previously backend-only module (`/payments`, admin-only per §5's matrix). `PaymentsListPage` — a `Segmented` date-range filter (Today/Yesterday/This Month/Financial Year/All Time, computed client-side and sent as `from`/`to`; Financial Year is April 1–March 31, no existing FY utility anywhere else in this codebase, added fresh) driving a server-paginated `PaymentsTable` (Date/Customer/Amount/Notes/Recorded By — `customerId`/`recordedBy` resolved to names via the same Map-lookup convention `CustomersTable`'s Owner column already uses, not a backend join). `GET /payments` gained real `from`/`to`/`page`/`limit` support for this — the first server-side pagination in this backend, everything else paginates client-side (see `backend/README.md`'s Payments section). A "Record Payment" modal (`RecordPaymentModal`, gated separately behind `payments.create`) — its Customer field is a genuinely debounced search-as-you-type `Select` against the existing `GET /customers?search=` endpoint, not the fully-fetched-once-then-client-filtered `showSearch` pattern every other picker in this app uses (Owner/Project Manager pickers), since fetching every Customer up front defeats the purpose. Scoped to system customers only for this first version — `manualClientName` (cash/non-system entries) and invoice-linking (partial reconciliation against an outstanding Invoice) are backend-supported but deliberately left for a future pass. **Edit/delete audit trail added 2026-07-30** — an Actions column (History/Edit/Delete icon buttons, Edit/Delete gated behind `payments.edit`/`payments.delete` via `PermissionGate`) drives `EditPaymentModal` (pre-filled amount/date/notes/collectedBy plus a required "Reason for edit"; customerId/manualClientName/invoiceId are read-only in this form, matching the backend's own restriction), `DeletePaymentModal` (a small dedicated modal, not a bare `Popconfirm`, since deleting needs a typed reason — required "Reason for deletion"), and `PaymentAuditLogModal` ("View History," read-only, fetched fresh on every open; no per-row "has history" badge on the main table — that would need either an N+1 request per row or a backend list-shape change, noted as a reasonable future addition rather than built now). Soft-delete (see `backend/README.md`'s Payments section for the full soft-vs-hard-delete reasoning) means a deleted row simply disappears from the table on refetch, not a client-side filter. 20 tests total (`PaymentsListPage.test.jsx`), all passing. |
@@ -478,18 +480,30 @@ If this feature returns, the natural re-entry point is re-adding a
   here ("live preview, capture on a button press"), so `useCamera.js` (`src/modules/
   attendance/hooks/`) just wraps `navigator.mediaDevices.getUserMedia` directly, and
   `CameraCapture.jsx` owns the `<video>`/`<canvas>` elements.
-- **Google Maps: the JS SDK loaded via a plain `<script>` tag, talking to
-  `window.google.maps` directly — no wrapper library** (e.g. `@react-google-maps/api`).
-  §7.4b's own stated scope is deliberately basic (markers + a polyline, no clustering/info
-  windows/autocomplete), so a wrapper's abstraction wouldn't earn its weight here either.
-  `useGoogleMapsScript.js` (`src/hooks/`) injects the script once (module-level dedupe, so
-  two map views mounting at once never double-inject it) and resolves once
-  `window.google.maps` exists; `GoogleMapView.jsx` (`src/components/`) is the generic
-  marker(s)/polyline renderer both `LiveMapView` and `HistoryMapView` share. Each marker
-  optionally carries a `color` (2026-08-04, added for the Attendance map integration below) —
-  one of Google's standard colored-pin icon names (`red`/`orange`/`blue`/`green`/etc., via
-  `https://maps.google.com/mapfiles/ms/icons/{color}-dot.png`) — letting a caller visually
-  distinguish marker *types* on the same map instead of every marker looking identical.
+- **Maps: `react-leaflet` + free OpenStreetMap tiles — no API key, no billing (§11.6,
+  migrated 2026-08-04 from the Google Maps JS SDK).** §7.4b's own stated scope is
+  deliberately basic (markers + a polyline, no clustering/info windows/autocomplete), so a
+  heavier mapping stack wouldn't earn its weight here either. **Why the migration:** the
+  Google Maps integration was never actually functional in production — no billing account
+  or real API key was ever configured (`VITE_GOOGLE_MAPS_API_KEY` sat commented-out in
+  `.env`/blank in `.env.example` the whole time), so every map view in production was
+  silently broken. Leaflet + OpenStreetMap's standard tile server
+  (`https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png`) needs neither a key nor billing, so
+  this isn't just a like-for-like swap — it's the difference between the feature actually
+  working and not. `LeafletMapView.jsx` (`src/components/`) is the generic marker(s)/
+  polyline renderer `LiveMapView`/`HistoryMapView` share (the same role `GoogleMapView.jsx`
+  played before — deleted, along with `useGoogleMapsScript.js`, rather than left as dead
+  code). Each marker optionally carries a `color` (2026-08-04, for the Attendance map
+  integration below) — one of a small named set (`red`/`orange`/`blue`/`green`/etc.)
+  rendered as an inline SVG pin via `L.divIcon`, not a URL to an external icon asset (Google's
+  colored-pin icons were themselves a `maps.google.com`-hosted URL) — letting a caller
+  visually distinguish marker *types* on the same map instead of every marker looking
+  identical, with one fewer external dependency than before. Bounds-fitting (keeping the
+  viewport framed around whatever's currently plotted, e.g. on Live's ~12s poll or History's
+  employee/date change) is a small `FitBounds` child component calling `useMap().fitBounds()`
+  in a `useEffect` — the standard react-leaflet pattern for syncing the map to data that
+  changes after mount, since `MapContainer`'s own `bounds` prop only applies once, at
+  mount.
 
 **Attendance's "View on Map" — reuses `HistoryMapView`, doesn't fork it (§7.4d, 2026-08-04).**
 The admin photo-viewer modal (`AttendancePhotoModal.jsx`) already showed connectivity gaps and

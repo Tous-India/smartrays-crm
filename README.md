@@ -131,7 +131,9 @@ routing shell), Leads (Table/Board/Detail/Import/Export — the reference implem
 later modules), Customers (List/Detail/Contracts/Contacts/Credentials/Activity), and
 Attendance + Leave + a new Location live-map view (built together — check-in/out widget with
 native camera/geolocation capture, connectivity-gap timeline, Leave request/approval, and a
-`/location` live-map + history-trail view via the native Google Maps JS SDK) are all built,
+`/location` live-map + history-trail view via `react-leaflet` + OpenStreetMap tiles, migrated
+from the Google Maps JS SDK 2026-08-04 since Google Maps was never actually functional in
+production — no billing/API key was ever configured, and Leaflet+OSM needs neither) are all built,
 including the client-side loop that actually submits `POST /attendance/heartbeat`/
 `POST /location/pings` on an interval while checked in (`useCheckedInHeartbeatLoop`); User
 Management (`/settings/users` — roster list/edit/deactivate/reactivate/admin-password-reset/

@@ -11,26 +11,19 @@ vi.mock("../../location/hooks/useLocationHistory", () => ({
   default: vi.fn(() => ({ pings: [], isLoading: false, error: null })),
 }));
 
-const useLocationHistory = (await import("../../location/hooks/useLocationHistory")).default;
+// `react-leaflet`'s real `MapContainer` needs an actual browser Map instance
+// (DOM measurement, tile loading) jsdom doesn't support — stubbed at the
+// module boundary, same pattern `HistoryMapView.test.jsx`/`LiveMapView.test.jsx`
+// already use (§11.6, 2026-08-04 — migrated from Google Maps to Leaflet).
+vi.mock("react-leaflet", () => ({
+  MapContainer: ({ children }) => <div data-testid="rl-map">{children}</div>,
+  TileLayer: () => null,
+  Marker: () => <div data-testid="rl-marker" />,
+  Polyline: () => <div data-testid="rl-polyline" />,
+  useMap: () => ({ fitBounds: vi.fn() }),
+}));
 
-function stubGoogleMaps() {
-  window.google = {
-    maps: {
-      Map: vi.fn(function Map() {
-        this.fitBounds = vi.fn();
-      }),
-      Marker: vi.fn(function Marker() {
-        this.setMap = vi.fn();
-      }),
-      Polyline: vi.fn(function Polyline() {
-        this.setMap = vi.fn();
-      }),
-      LatLngBounds: vi.fn(function LatLngBounds() {
-        this.extend = vi.fn();
-      }),
-    },
-  };
-}
+const useLocationHistory = (await import("../../location/hooks/useLocationHistory")).default;
 
 const RECORD_WITH_PHOTOS = {
   _id: "att-1",
@@ -183,7 +176,6 @@ describe("AttendancePhotoModal", () => {
     });
 
     it("opens AttendanceLocationMapModal (reusing HistoryMapView) when clicked", async () => {
-      stubGoogleMaps();
       useLocationHistory.mockReturnValue({
         pings: [{ coords: { lat: 12.97, lng: 77.59 }, capturedAt: "2026-06-03T09:00:00.000Z" }],
         isLoading: false,
@@ -193,7 +185,7 @@ describe("AttendancePhotoModal", () => {
 
       await userEvent.click(screen.getByRole("button", { name: "View on Map" }));
 
-      expect(await screen.findByTestId("google-map-container")).toBeInTheDocument();
+      expect(await screen.findByTestId("leaflet-map-container")).toBeInTheDocument();
       // Locked to this record — no employee/date picker to reach for a
       // different day.
       expect(screen.queryByPlaceholderText("Select an employee")).not.toBeInTheDocument();

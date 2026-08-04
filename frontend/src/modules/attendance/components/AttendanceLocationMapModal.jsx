@@ -5,8 +5,9 @@ import { deriveAttendanceMapMarkers } from "../utils/attendanceMapMarkers";
 /**
  * "View on Map" (§7.4d, 2026-08-04) — opened from `AttendancePhotoModal`.
  * Reuses `HistoryMapView` (Location module, §7.4b) rather than a second map
- * component: same `GET /location/history` data, same `GoogleMapView`
- * rendering, just locked to this one record's employee/day
+ * component: same `GET /location/history` data, same `LeafletMapView`
+ * rendering (§11.6, 2026-08-04 — Leaflet, not Google Maps), just locked to
+ * this one record's employee/day
  * (`showControls={false}` — an admin reviewing a specific shift's map
  * doesn't need the employee/date pickers HistoryMapView's own `/location`
  * page uses) and given `deriveAttendanceMapMarkers(record)` to additionally

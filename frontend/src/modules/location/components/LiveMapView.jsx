@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import dayjs from "dayjs";
 import { List, Spin, Empty } from "antd";
-import GoogleMapView from "../../../components/GoogleMapView";
+import LeafletMapView from "../../../components/LeafletMapView";
 import useLiveLocations from "../hooks/useLiveLocations";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 
@@ -10,7 +10,7 @@ import useUserDirectory from "../../../hooks/useUserDirectory";
  * employee (§7.4b: scoping is entirely server-side via `GET /location/live`,
  * this component just renders whatever it returns). A plain list beneath
  * the map doubles as a legend and keeps the view useful even before the map
- * script/tiles finish loading.
+ * tiles finish loading.
  */
 function LiveMapView() {
   const { liveLocations, isLoading } = useLiveLocations();
@@ -26,7 +26,7 @@ function LiveMapView() {
 
   return (
     <div className="flex flex-col gap-4">
-      <GoogleMapView markers={markers} />
+      <LeafletMapView markers={markers} />
 
       {isLoading ? (
         <Spin />

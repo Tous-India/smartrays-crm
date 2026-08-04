@@ -2,37 +2,24 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import LiveMapView from "./LiveMapView";
 
-const markerConstructorCalls = [];
+const markerCalls = [];
 
 /**
- * Stubs `window.google.maps` directly rather than mocking
- * `useGoogleMapsScript` — `GoogleMapView`'s loaded-state check
- * (`Boolean(window.google?.maps)`) reads this synchronously at mount, so
- * setting it before render is enough to skip the real script-load path
- * entirely, the same "mock the SDK loading at the global boundary" the task
- * asks for.
+ * Stubs `react-leaflet` at the module boundary rather than rendering a real
+ * `MapContainer` — Leaflet's real `Map` class needs actual browser DOM
+ * measurement/tile loading jsdom doesn't support, the same reason the
+ * earlier Google Maps SDK was stubbed rather than rendered for real.
  */
-function stubGoogleMaps() {
-  markerConstructorCalls.length = 0;
-
-  window.google = {
-    maps: {
-      Map: vi.fn(function Map() {
-        this.fitBounds = vi.fn();
-      }),
-      Marker: vi.fn(function Marker(options) {
-        markerConstructorCalls.push(options);
-        this.setMap = vi.fn();
-      }),
-      Polyline: vi.fn(function Polyline() {
-        this.setMap = vi.fn();
-      }),
-      LatLngBounds: vi.fn(function LatLngBounds() {
-        this.extend = vi.fn();
-      }),
-    },
-  };
-}
+vi.mock("react-leaflet", () => ({
+  MapContainer: ({ children }) => <div data-testid="rl-map">{children}</div>,
+  TileLayer: () => null,
+  Marker: (props) => {
+    markerCalls.push(props);
+    return <div data-testid="rl-marker" />;
+  },
+  Polyline: () => <div data-testid="rl-polyline" />,
+  useMap: () => ({ fitBounds: vi.fn() }),
+}));
 
 vi.mock("../hooks/useLiveLocations", () => ({
   default: vi.fn(),
@@ -45,7 +32,7 @@ const useLiveLocations = (await import("../hooks/useLiveLocations")).default;
 const useUserDirectory = (await import("../../../hooks/useUserDirectory")).default;
 
 beforeEach(() => {
-  stubGoogleMaps();
+  markerCalls.length = 0;
   useUserDirectory.mockReturnValue({
     users: [
       { _id: "emp-1", name: "Employee One" },
@@ -66,10 +53,10 @@ describe("LiveMapView", () => {
 
     render(<LiveMapView />);
 
-    expect(screen.getByTestId("google-map-container")).toBeInTheDocument();
-    expect(markerConstructorCalls).toHaveLength(2);
-    expect(markerConstructorCalls[0]).toMatchObject({ position: { lat: 12.9, lng: 77.6 }, title: "Employee One" });
-    expect(markerConstructorCalls[1]).toMatchObject({ position: { lat: 13.0, lng: 77.7 }, title: "Employee Two" });
+    expect(screen.getByTestId("leaflet-map-container")).toBeInTheDocument();
+    expect(markerCalls).toHaveLength(2);
+    expect(markerCalls[0]).toMatchObject({ position: [12.9, 77.6], title: "Employee One" });
+    expect(markerCalls[1]).toMatchObject({ position: [13.0, 77.7], title: "Employee Two" });
 
     // The legend list doubles as a human-readable check on the same data.
     expect(screen.getByText("Employee One")).toBeInTheDocument();
@@ -81,7 +68,7 @@ describe("LiveMapView", () => {
 
     render(<LiveMapView />);
 
-    expect(markerConstructorCalls).toHaveLength(0);
+    expect(markerCalls).toHaveLength(0);
     expect(screen.getByText(/No one is currently checked in/)).toBeInTheDocument();
   });
 });
