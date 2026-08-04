@@ -2015,7 +2015,7 @@ See `.env.example` for the full annotated list. Summary:
 | `JWT_SECRET` | Yes | JWT signing secret |
 | `JWT_EXPIRES_IN` | Yes | e.g. `7d` — also drives the auth cookie's `maxAge` |
 | `COOKIE_NAME` | Yes | Name of the httpOnly auth cookie |
-| `CLIENT_ORIGIN` | Yes | Allowed CORS origin (frontend dev server / prod domain) |
+| `CLIENT_ORIGIN` | Yes | Allowed CORS origin(s) — comma-separated list accepted as of 2026-08-04, see the CORS section below |
 | `SEED_ADMIN_NAME` / `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` | Only for `npm run seed:admin` | One-time first-admin bootstrap |
 | `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET` | **Yes, as of 2026-07-13** | File storage for Attendance check-in/check-out photos (§6.5/§7.4) — `env.js` now fails fast at boot if any is missing. |
 | `CREDENTIALS_ENCRYPTION_KEY` | **Yes, as of 2026-07-13** | 32-byte base64 AES-256-GCM key for the customer credentials vault (§6.3/§11.8) — `env.js` now fails fast at boot if it's missing, since every `Credential` record depends on it. |
@@ -2027,6 +2027,57 @@ See `.env.example` for the full annotated list. Summary:
 | `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` | **Yes, as of Phase 9** | Web Push VAPID keypair (§6.7) — `webPush.service.js#setVapidDetails` fails immediately at import time if either is missing or not a real key. Generate a real pair with `node -e "console.log(require('web-push').generateVAPIDKeys())"` — there's no safe placeholder for a public-key-cryptography pair the way there is for e.g. a Cloudinary cloud name. |
 | `VAPID_SUBJECT` | No — defaults to `mailto:support@smartrayssolutions.com` if unset | The `mailto:`/`https:` contact URL the Web Push spec asks a VAPID sender to supply. |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `SMTP_FROM` | **Yes, as of §7.17 (password reset)** | SMTP config for `src/services/email.service.js`'s password-reset email. Any standard SMTP provider works. `env.js` fails fast at boot if any is missing, matching every other required-integration var above — but note `nodemailer.createTransport()` itself (unlike `web-push`'s `setVapidDetails()`) does NOT validate host/credentials synchronously at import, so a bad-but-present value won't crash the boot, only a real send attempt. |
+
+### CORS — multi-origin support for local dev (2026-08-04)
+
+**Why this exists — a real incident, not speculative hardening.** `CLIENT_ORIGIN` used to be a
+single hardcoded value (`http://localhost:5173`), and `app.js`'s `cors()` call passed it straight
+through as a static string. When port 5173 was already occupied (a concurrent Claude Code
+session running its own `npm run dev`), Vite silently fell back to 5174 — and a browser login
+attempt from that fallback port got blocked by CORS. The backend actually processed the request
+fine (confirmed via direct `curl`, which bypasses browser-enforced CORS entirely, and by calling
+`loginUser()` directly); the browser simply refused to let the page's JS read the cross-origin
+response, and the frontend's generic catch-all rendered that as "Login failed" — indistinguishable
+from an actual wrong-password error. This cost real debugging time across multiple sessions
+before being correctly diagnosed (see `docs/project-status.md`'s 2026-08-04 changelog entry).
+
+**The fix:** `CLIENT_ORIGIN` now accepts a comma-separated list of origins —
+`src/config/env.js` splits and trims it into `env.clientOrigins` (an array), used by `app.js`'s
+`cors()` origin callback to check each incoming request's `Origin` header against the full list:
+
+```js
+cors({
+  origin: (origin, callback) => callback(null, !origin || env.clientOrigins.includes(origin)),
+  credentials: true,
+})
+```
+
+- **A request with no `Origin` header at all** (curl, server-to-server calls) is let through —
+  the exact same behavior the old static-string config already had, since CORS only ever
+  restricts what a *browser's* fetch/XHR can read, never the server-side response itself.
+- **An origin outside the list** gets `callback(null, false)`, not a thrown error — the request
+  still completes normally server-side; it just comes back with no
+  `Access-Control-Allow-Origin` header, so a real browser blocks the calling page from reading
+  it. The allowlist stays genuinely closed: no wildcard, no reflecting back whatever `Origin`
+  was sent, just a check against the explicit list.
+- **`env.clientOrigin`** (singular, unchanged name) is now derived as the **first** entry in the
+  list — used by the one place that needs exactly one canonical URL rather than an allowlist,
+  `auth.service.js`'s password-reset email link (`${env.clientOrigin}/reset-password?...`).
+
+**Local dev:** `.env`/`.env.example` now default to
+`CLIENT_ORIGIN=http://localhost:5173,http://localhost:5174` — covering Vite's own fallback port
+so a port collision with another running instance no longer silently breaks login. **Production
+stays a single value** (`https://crm.smartrayssolutions.com`) — this multi-origin support is
+specifically to absorb local dev port drift, not meant as general production flexibility; nothing
+about the Vercel-deployed backend's `CLIENT_ORIGIN` changed.
+
+**Testing:** `app.test.js` (new file, 4 tests) — `testDb.js`'s own `CLIENT_ORIGIN` test default
+was updated to match the real `.env`'s two-origin value, so these tests exercise the actual
+comma-separated parsing, not a mocked allowlist: both `http://localhost:5173` and
+`http://localhost:5174` get `Access-Control-Allow-Origin` correctly reflected back; an origin
+outside the list (`http://evil.example.com`) gets no such header at all, proving the allowlist
+stays closed rather than becoming accidentally permissive; and a request with no `Origin` header
+still passes through. Full backend suite: **678/678 passing.**
 
 ---
 

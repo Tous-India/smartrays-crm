@@ -17,7 +17,10 @@ export async function startTestDatabase() {
   process.env.JWT_SECRET = process.env.JWT_SECRET || "test-jwt-secret";
   process.env.JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "1h";
   process.env.COOKIE_NAME = process.env.COOKIE_NAME || "test_token";
-  process.env.CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || "http://localhost:5173";
+  // Two origins by default (not just one) so app.test.js's multi-origin CORS
+  // tests exercise the real comma-separated parsing (§CORS, 2026-08-04),
+  // matching the real .env's own default.
+  process.env.CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || "http://localhost:5173,http://localhost:5174";
   // Fixed 32-byte base64 key so Credential encryption/decryption round-trips
   // deterministically across test runs — not a real secret, test-only.
   process.env.CREDENTIALS_ENCRYPTION_KEY =

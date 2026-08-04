@@ -64,6 +64,18 @@ function validateEnvVars() {
 
 validateEnvVars();
 
+// `CLIENT_ORIGIN` accepts a comma-separated list (2026-08-04) — production
+// stays a single value (crm.smartrayssolutions.com); local dev can list
+// several (e.g. "http://localhost:5173,http://localhost:5174") to absorb
+// Vite's own port-drift when 5173 is already taken by another running
+// instance, which repeatedly looked like a login/credentials bug this
+// session when it was actually the browser silently CORS-blocking a
+// request from whichever port Vite fell back to. See backend/README.md's
+// CORS section for the full incident writeup.
+const clientOrigins = process.env.CLIENT_ORIGIN.split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 export const env = {
   nodeEnv: process.env.NODE_ENV,
   isProduction: process.env.NODE_ENV === "production",
@@ -72,7 +84,12 @@ export const env = {
   jwtSecret: process.env.JWT_SECRET,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN,
   cookieName: process.env.COOKIE_NAME,
-  clientOrigin: process.env.CLIENT_ORIGIN,
+  // The single, canonical origin — used wherever exactly one URL is needed
+  // (e.g. auth.service.js's password-reset email link, which can only ever
+  // point at one place). Always the FIRST entry in CLIENT_ORIGIN's list.
+  // CORS itself uses `clientOrigins` (the full list) below, not this.
+  clientOrigin: clientOrigins[0],
+  clientOrigins,
   // Not required at boot (see requiredEnvVars above) — the Location Tracking
   // module (.context/final-plan.md §7.4b) is optional infrastructure, not
   // needed for the app to run. Defaults to 2 minutes if unset.

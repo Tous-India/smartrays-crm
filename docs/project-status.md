@@ -1751,13 +1751,18 @@ resolved while Phase 0 is underway.
   `CustomersTable.jsx`/`PaymentsListPage.jsx`/`RecordPaymentModal.jsx` (already present before
   this task started) and full-suite test-order flakiness (`UserManagementPage.test.jsx` passes
   24/24 in isolation). Live Playwright verification was attempted (dev servers started, scratchpad
-  login script reused) but the saved dev credentials from a past session's scripts
-  (`smartrays.crm@gmail.com`) are no longer valid against this dev database ("Login failed") and
-  no working credentials were available to try instead — a real Google Maps API key is also not
-  configured locally (both `frontend/.env` and `backend/.env` use placeholders), so even a
-  successful login wouldn't have rendered real map tiles for the Attendance "View on Map" check.
-  Verification here rests on the automated test suites instead; live UI verification is still
-  outstanding and should be re-attempted with current credentials. `backend/README.md`,
+  login script reused) but the login attempt failed ("Login failed"). **Correction (diagnosed
+  2026-08-04, see that day's own changelog entry below): the account/credentials were never the
+  problem** — `smartrays.crm@gmail.com`/`Easytest@1` is valid, confirmed by querying the dev
+  database directly and calling the real login service function and endpoint. The actual cause
+  was a CORS/port mismatch (the frontend dev server landed on port 5174, not 5173, since 5173 was
+  occupied by a concurrent session, and the backend's CORS config only allowed 5173) — fixed the
+  same day by making `CLIENT_ORIGIN` accept multiple origins. A real Google Maps API key is also
+  not configured locally (both `frontend/.env` and `backend/.env` used placeholders at the time,
+  though this task itself migrated off Google Maps entirely, see below), so even a successful
+  login wouldn't have rendered real map tiles for the Attendance "View on Map" check at the time.
+  Verification here rested on the automated test suites instead; live UI verification was still
+  outstanding as of this entry. `backend/README.md`,
   `frontend/README.md`, and `.context/final-plan.md`
   (§7.11, §7.4d, §7.5f) updated.
 - **2026-08-04** — Migrated the Location live-map/history-trail views and the Attendance map
@@ -1789,6 +1794,33 @@ resolved while Phase 0 is underway.
   `leaflet` package itself isn't mocked, since `L.divIcon()`/`L.latLngBounds()` are pure
   factory functions with no real-DOM dependency. Full frontend suite passes with no new
   regressions (same pre-existing, unrelated failures noted above); `npm run build` succeeds.
-  Live browser verification still blocked by the same missing dev credentials noted above — not
-  by a missing map API key this time, since Leaflet+OSM needs none. `frontend/README.md` and
+  Live browser verification failed at the time ("Login failed") — **correction (diagnosed
+  2026-08-04, see that day's own entry below): not missing/invalid credentials**, a CORS/port
+  mismatch instead. `frontend/README.md` and
   `.context/final-plan.md` (§11.11, §7.18) updated. Deployed via `cd frontend && vercel --prod`.
+- **2026-08-04** — Diagnosed why live Playwright verification kept failing with "Login failed"
+  earlier the same day (flagged in the two entries above): **not a credentials problem.**
+  Querying the dev database directly confirmed the `smartrays.crm@gmail.com` account exists,
+  `isActive: true`, and `bcrypt.compare` against the stored hash with `Easytest@1` returns `true`.
+  Calling the real `loginUser()` service function directly, and hitting `POST /auth/login` via
+  `curl`, both succeeded (HTTP 200, valid session cookie). The actual cause: `backend/.env`'s
+  `CLIENT_ORIGIN` was hardcoded to `http://localhost:5173`, and the CORS middleware only allowed
+  that exact origin — every frontend dev server this session landed on port **5174** instead
+  (5173 was occupied by a concurrent session's own instance), so a browser login attempt was
+  silently blocked by CORS (the backend processed it fine; the browser refused to let the page's
+  JS read the cross-origin response), which the frontend's generic catch-all rendered as "Login
+  failed" — indistinguishable from a real wrong-password error. Fixed same-day: `CLIENT_ORIGIN`
+  now accepts a comma-separated list (`env.js` parses it into `clientOrigins`; `env.clientOrigin`
+  stays the first entry for the one place that needs a single canonical URL,
+  `auth.service.js`'s password-reset email link); `app.js`'s `cors()` call checks the incoming
+  request's `Origin` against the full list via a dynamic origin function instead of a static
+  string, defaulting closed (`callback(null, false)`) for anything not on the list — no
+  wildcard, no reflecting back whatever `Origin` was sent. `.env`/`.env.example` now default to
+  `http://localhost:5173,http://localhost:5174`; production's `CLIENT_ORIGIN` stays a single
+  value, unaffected — this is local-dev-only flexibility. 4 new tests (`app.test.js`, new file)
+  confirm both allowed origins get `Access-Control-Allow-Origin` reflected back, a disallowed
+  origin gets none (CORS stays closed, not permissive), and a request with no `Origin` header at
+  all (curl/server-to-server) still passes through exactly as the old static-string config
+  allowed. Full backend suite: **678/678 passing.** `backend/README.md` updated; the two
+  "stale/invalid credentials" notes above corrected in place. Deployed via
+  `cd backend && vercel --prod`.
