@@ -34,4 +34,19 @@ describe("LeaveBalanceCard", () => {
     expect(await screen.findByText("Employee's Balance")).toBeInTheDocument();
     expect(leaveApi.getLeaveBalance).toHaveBeenCalledWith("emp-1");
   });
+
+  // BUG 1 regression (2026-08-04) — the shared app-elevated-card shadow
+  // class was requested twice but never actually applied (confirmed via
+  // `git log`: this file was only ever touched by its original
+  // feature-build commit). Asserts on the real rendered className.
+  it("applies the shared app-elevated-card shadow class", async () => {
+    leaveApi.getLeaveBalance.mockResolvedValue({
+      data: { data: { paidLeaveUsed: 0, paidLeaveLimit: 1, paidLeaveRemaining: 1 } },
+    });
+
+    render(<LeaveBalanceCard />);
+
+    await screen.findByText("/ 1 used");
+    expect(document.querySelector(".ant-card")).toHaveClass("app-elevated-card");
+  });
 });

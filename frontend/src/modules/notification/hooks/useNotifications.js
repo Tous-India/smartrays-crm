@@ -10,6 +10,22 @@ const POLL_INTERVAL_MS = 45000;
  * derives the count client-side) and exposes mark-as-read actions. Browser
  * push subscription is explicitly out of scope for this task; this is
  * in-app polling only.
+ *
+ * **Refetches on tab visibility return (BUG 2, 2026-08-04)** — a plain
+ * `setInterval` with no visibility awareness is exactly what
+ * `useCheckedInHeartbeatLoop.js` already documents as a real problem for
+ * this app's usage pattern: browsers throttle (sometimes heavily) a
+ * backgrounded tab's timers, so a user who switches away and back — the
+ * natural way to test "does person B see person A's action," e.g. admin/
+ * manager/employee testing together — could wait well past
+ * `POLL_INTERVAL_MS` for their next real poll, making it look like polling
+ * "doesn't work" until a manual refresh forces a fresh fetch. Unlike that
+ * heartbeat hook (which fully pauses/resumes its intervals to save
+ * geolocation/battery cost while hidden), this one keeps the interval
+ * running as-is — a `GET /notifications` poll is cheap — and just adds one
+ * extra trigger: refetch immediately the moment the tab becomes visible
+ * again, rather than waiting for however long is left on a possibly
+ * browser-delayed interval tick.
  */
 export function useNotifications() {
   const [notifications, setNotifications] = useState([]);
@@ -28,7 +44,18 @@ export function useNotifications() {
     refetch();
     const interval = setInterval(refetch, POLL_INTERVAL_MS);
 
-    return () => clearInterval(interval);
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        refetch();
+      }
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [refetch]);
 
   async function markAsRead(id) {

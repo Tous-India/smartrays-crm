@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { Table, Tag, Segmented, Space, Button, Popconfirm, DatePicker, Select, Tooltip, Typography, App } from "antd";
+import { Table, Tag, Segmented, Space, Button, Popconfirm, DatePicker, Select, Tooltip, Typography, App, Alert } from "antd";
 import { CheckOutlined, CloseOutlined, ExclamationCircleOutlined, DeleteOutlined } from "@ant-design/icons";
 import useLeaveList from "../hooks/useLeaveList";
 import LeaveRequestModal from "./LeaveRequestModal";
@@ -57,6 +57,15 @@ const EMPTY_ADMIN_FILTERS = { employeeId: "", teamId: "", status: "", dateRange:
  * `LeadsTable.jsx`) instead of this table's own previous text-label
  * buttons. **Reason is a real column now, not an expandable row (§7.5f)** —
  * truncated via `Typography.Text`'s `ellipsis.tooltip`, full text on hover.
+ *
+ * **Fetch errors shown distinctly from a genuinely empty list (BUG 3,
+ * 2026-08-04)** — `useLeaveList`'s `error` used to be silently ignored
+ * entirely, so a real failure (e.g. a 403 for a scope the caller lost
+ * access to) rendered identically to "this scope genuinely has zero
+ * requests," making a real bug indistinguishable from correct-but-empty
+ * data. Reuses the exact `Alert`-instead-of-content pattern
+ * `HistoryMapView.jsx` already established for the same "surface the
+ * error, don't paper over it" reasoning.
  */
 function LeaveListPage() {
   const { message } = App.useApp();
@@ -86,7 +95,7 @@ function LeaveListPage() {
   const effectiveScope = isAdmin ? "all" : scope;
   const showScopeTabs = !isAdmin && scopeOptions.length > 1;
 
-  const { leaveRequests, isLoading, refetch } = useLeaveList(effectiveScope);
+  const { leaveRequests, isLoading, error, refetch } = useLeaveList(effectiveScope);
   const [isRequestOpen, setIsRequestOpen] = useState(false);
   const [isSubmittingRequest, setIsSubmittingRequest] = useState(false);
   const [declineTarget, setDeclineTarget] = useState(null);
@@ -469,7 +478,20 @@ function LeaveListPage() {
         </Space>
       )}
 
-      <Table rowKey="_id" columns={columns} dataSource={displayedLeaveRequests} loading={isLoading} scroll={{ x: "max-content" }} />
+      {error ? (
+        <Alert
+          type="error"
+          showIcon
+          message="Could not load leave requests"
+          description={
+            error.response?.status === 403
+              ? "You don't have permission to view this scope."
+              : "Please try again."
+          }
+        />
+      ) : (
+        <Table rowKey="_id" columns={columns} dataSource={displayedLeaveRequests} loading={isLoading} scroll={{ x: "max-content" }} />
+      )}
 
       <LeaveRequestModal
         open={isRequestOpen}

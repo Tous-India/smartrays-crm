@@ -229,6 +229,31 @@ describe("GET /leave?scope=own|team|all", () => {
     expect(response.body.data).toHaveLength(2);
   });
 
+  it("scope=team returns 200 with an empty array for a manager with zero direct reports — not a 403 or an error (BUG 3 regression, 2026-08-04)", async () => {
+    // Diagnosed live: a reported "Team tab shows empty" turned out to be
+    // correct behavior given the actual data (a manager account with no
+    // one reporting to them), not a scoping bug — this locks in that exact
+    // distinction so a future change can't turn "no direct reports" into
+    // an accidental 403/500 instead of a legitimate empty list.
+    // Registered through the real endpoint (not createUserDirectly), the
+    // same way manager1/sales1/etc. are set up in beforeAll — that's what
+    // resolves the manager role's actual `leave.view_team` template default
+    // onto the new user; createUserDirectly leaves `permissions: {}` and
+    // would 403 here for the wrong reason (no grant at all, not "no reports").
+    await adminAgent.post("/api/v1/auth/register").send({
+      name: "Unaffiliated Manager",
+      email: "unaffiliated-manager@test.local",
+      password: "Password123",
+      role: "manager",
+    });
+    const unaffiliatedManagerAgent = await loginAsAgent(app, "unaffiliated-manager@test.local", "Password123");
+
+    const response = await unaffiliatedManagerAgent.get("/api/v1/leave?scope=team");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toEqual([]);
+  });
+
   it("scope=team is blocked for a sales_associate (no leave.view_team grant)", async () => {
     const response = await sales1Agent.get("/api/v1/leave?scope=team");
 

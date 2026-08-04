@@ -481,3 +481,48 @@ describe("LeaveListPage — leave balance", () => {
     expect(leaveApi.getLeaveBalance).toHaveBeenCalledWith(undefined);
   });
 });
+
+// BUG 3 regression (2026-08-04) — investigating a live "Team tab shows
+// empty" report found the backend scoping itself is correct and already
+// covered by a passing test (`scope=team lets a manager see their direct
+// reports' requests`, leave.test.js) — the live database's data was the
+// actual cause (the sole manager account had zero real direct reports),
+// not a code defect. What WAS a real, separate bug found along the way:
+// GET /leave's `error` was silently ignored entirely, so a genuine fetch
+// failure (a 403 for a scope the caller lost access to, a 500, a network
+// error) rendered identically to "this scope genuinely has zero requests"
+// — indistinguishable from the outside, which is exactly what made this
+// report hard to diagnose in the first place.
+describe("LeaveListPage — surfaces a fetch error distinctly from an empty list (BUG 3, 2026-08-04)", () => {
+  it("shows an error Alert instead of silently rendering an empty table when GET /leave fails", async () => {
+    leaveApi.listLeave.mockRejectedValue({ response: { status: 403 } });
+    useSessionStore.setState({
+      user: { _id: "manager-1", role: "manager", permissions: { leave: { view: true, view_team: true } } },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    render(<LeaveListPage />);
+
+    expect(await screen.findByText("Could not load leave requests")).toBeInTheDocument();
+    expect(screen.getByText("You don't have permission to view this scope.")).toBeInTheDocument();
+    // Must not ALSO render an (empty) table underneath the error — the
+    // whole point is one unambiguous state, not both at once.
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+  });
+
+  it("renders the table normally (no error Alert) when the scope genuinely has zero requests", async () => {
+    leaveApi.listLeave.mockResolvedValue({ data: { data: [] } });
+    useSessionStore.setState({
+      user: { _id: "manager-1", role: "manager", permissions: { leave: { view: true, view_team: true } } },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    render(<LeaveListPage />);
+
+    await waitFor(() => expect(leaveApi.listLeave).toHaveBeenCalled());
+    expect(screen.queryByText("Could not load leave requests")).not.toBeInTheDocument();
+    expect(screen.getByRole("table")).toBeInTheDocument();
+  });
+});
