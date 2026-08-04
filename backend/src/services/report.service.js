@@ -26,6 +26,31 @@ export async function generateExcelReport({ sheetName, columns, rows }) {
   return workbook.xlsx.writeBuffer();
 }
 
+/**
+ * Report/export-only filter (2026-08-04, §7.11) — excludes records whose
+ * referenced employee/owner no longer exists (a hard-deleted `User`, so
+ * `refField` didn't populate at all) or is currently deactivated
+ * (`isActive: false`), from the generated report/export ONLY. Every other
+ * view in the app (e.g. the Leave table's own list, which shows a
+ * `"[Deleted User]"` row for exactly this same case) is untouched — this
+ * function is called only from the report-building code path, never from
+ * a list/detail endpoint. Deliberately does NOT touch deletion/cascade
+ * logic or the underlying records at all: nothing is deleted, modified, or
+ * fixed up — a deactivated/deleted employee's historical Leave/Attendance/
+ * Payroll/etc. records remain exactly as they were, just omitted from this
+ * one generated file. Callers pass the field populated with `{ isActive: 1
+ * }` selected (in addition to whatever else, e.g. `name`) — `ref.isActive`
+ * would otherwise read `undefined` and fail the `!== false` check for the
+ * wrong reason.
+ */
+export function excludeInactiveOrDeletedRefs(records, refField) {
+  return records.filter((record) => {
+    const ref = record[refField];
+
+    return ref != null && ref.isActive !== false;
+  });
+}
+
 const TABLE_HEADER_FILL = "#163b78"; // brand navy — same seed color App.jsx's ConfigProvider uses
 const TABLE_HEADER_TEXT = "#ffffff";
 const TABLE_ROW_ALT_FILL = "#f3f4f6";

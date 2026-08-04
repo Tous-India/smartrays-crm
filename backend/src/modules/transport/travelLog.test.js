@@ -5,6 +5,7 @@ import { createUserDirectly, loginAsAgent } from "../../../tests/helpers/authHel
 import { bufferParser } from "../../../tests/helpers/binaryResponse.js";
 import TravelLog from "./travelLog.model.js";
 import Attendance from "../attendance/attendance.model.js";
+import User from "../user/user.model.js";
 
 const FAKE_DISTANCE_KM = 12.5;
 const TEST_PHOTO = "data:image/jpeg;base64,ZmFrZWltYWdlZGF0YQ==";
@@ -410,6 +411,52 @@ describe("GET /travel-logs/report", () => {
     });
 
     expect(employeeNames.sort()).toEqual(["Sales One", "Sales Two"].sort());
+  });
+
+  it("excludes a deactivated team member's travel log from the report, without touching the underlying data (§7.11, 2026-08-04)", async () => {
+    await sales1Agent.post("/api/v1/travel-logs").send({ distanceKm: 5 });
+
+    const deactivated = await createUserDirectly({
+      name: "Deactivated Traveler",
+      email: "deactivated-travel@test.local",
+      password: "Password123",
+      role: "sales_associate",
+      managerId: manager1._id,
+    });
+
+    const orphanedLog = await TravelLog.create({
+      employeeId: deactivated._id,
+      date: new Date(2026, 5, 1),
+      distanceKm: 10,
+      source: "manual",
+    });
+
+    await User.updateOne({ _id: deactivated._id }, { isActive: false });
+
+    const { uploadAttendancePhoto } = await import("../../services/cloudinary.service.js");
+    uploadAttendancePhoto.mockClear();
+
+    const response = await managerAgent.get("/api/v1/travel-logs/report").buffer(true).parse(bufferParser);
+
+    expect(response.status).toBe(200);
+
+    const { default: ExcelJS } = await import("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(response.body);
+    const worksheet = workbook.worksheets[0];
+
+    const employeeNames = [];
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber > 1) {
+        employeeNames.push(row.getCell(1).value);
+      }
+    });
+
+    expect(employeeNames).not.toContain("Deactivated Traveler");
+    expect(employeeNames).toContain("Sales One");
+
+    const stillExists = await TravelLog.findById(orphanedLog._id);
+    expect(stillExists).not.toBeNull();
   });
 
   it("generates a valid, non-empty PDF report when format=pdf, streamed directly with no Cloudinary call", async () => {

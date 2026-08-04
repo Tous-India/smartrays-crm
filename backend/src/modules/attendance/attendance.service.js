@@ -2,7 +2,7 @@ import ApiError from "../../utils/ApiError.js";
 import { can } from "../../helpers/permission.helper.js";
 import { env } from "../../config/env.js";
 import { uploadAttendancePhoto, deleteCloudinaryAsset } from "../../services/cloudinary.service.js";
-import { generateExcelReport, generatePdfReport } from "../../services/report.service.js";
+import { generateExcelReport, generatePdfReport, excludeInactiveOrDeletedRefs } from "../../services/report.service.js";
 import { haversineDistanceMeters } from "../../services/geo.service.js";
 import { generateAutoTravelLog } from "../transport/travelLog.service.js";
 import { createNotification } from "../notification/notification.service.js";
@@ -530,7 +530,12 @@ export async function generateAttendanceReport({ from, to, format }, requestingU
     filter.date = dateFilter;
   }
 
-  const records = await Attendance.find(filter).sort({ date: 1 }).populate("employeeId", "name");
+  const allRecords = await Attendance.find(filter).sort({ date: 1 }).populate("employeeId", "name isActive");
+  // Report/export-only exclusion (§7.11, 2026-08-04) — a deleted/deactivated
+  // employee's attendance history stays fully intact in the database and
+  // still shows up in every other view; it's just left out of this
+  // generated file. See excludeInactiveOrDeletedRefs' own docblock.
+  const records = excludeInactiveOrDeletedRefs(allRecords, "employeeId");
   const subtitle = from || to ? `${from || "…"} to ${to || "…"}` : undefined;
 
   return format === "pdf" ? buildPdfReport(records, subtitle) : buildXlsxReport(records);

@@ -713,6 +713,54 @@ describe("GET /attendance/report", () => {
     expect(employeeNames.sort()).toEqual(["Sales One", "Sales Two"].sort());
   });
 
+  it("excludes a deactivated team member's attendance record from the report, without touching the underlying data (§7.11, 2026-08-04)", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const deactivatedResponse = await adminAgent.post("/api/v1/auth/register").send({
+      name: "Deactivated Team Member",
+      email: "deactivated-attendance@test.local",
+      password: "Password123",
+      role: "sales_associate",
+      managerId: manager1Id,
+    });
+    const deactivatedId = deactivatedResponse.body.data._id;
+
+    const orphanedRecord = await Attendance.create({
+      employeeId: deactivatedId,
+      date: new Date(2026, 5, 1),
+      checkIn: { time: new Date(2026, 5, 1, 9) },
+      status: "present",
+      workingHours: 8,
+    });
+
+    await User.updateOne({ _id: deactivatedId }, { isActive: false });
+
+    const { uploadAttendancePhoto } = await import("../../services/cloudinary.service.js");
+    uploadAttendancePhoto.mockClear();
+
+    const response = await managerAgent.get("/api/v1/attendance/report").buffer(true).parse(bufferParser);
+
+    expect(response.status).toBe(200);
+
+    const { default: ExcelJS } = await import("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(response.body);
+    const worksheet = workbook.worksheets[0];
+
+    const employeeNames = [];
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber > 1) {
+        employeeNames.push(row.getCell(1).value);
+      }
+    });
+
+    expect(employeeNames).not.toContain("Deactivated Team Member");
+    expect(employeeNames).toContain("Sales One");
+
+    const stillExists = await Attendance.findById(orphanedRecord._id);
+    expect(stillExists).not.toBeNull();
+  });
+
   it("generates a valid, non-empty PDF report when format=pdf, streamed directly with no Cloudinary call", async () => {
     await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
 

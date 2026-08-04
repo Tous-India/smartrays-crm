@@ -304,7 +304,7 @@ describe("module: leave", () => {
     expect(dataRow.getCell(1).value).toBe("Employee One");
   });
 
-  it("labels a genuinely-deleted employee's leave record '[Deleted User]', not 'Unknown' (§7.11 PDF/Unknown-name fix, 2026-08-04)", async () => {
+  it("excludes a deleted employee's leave record from the report entirely, without touching the underlying data (§7.11, 2026-08-04)", async () => {
     const { createUserDirectly } = await import("../../../tests/helpers/authHelpers.js");
     const throwaway = await createUserDirectly({
       name: "Throwaway Employee",
@@ -313,13 +313,22 @@ describe("module: leave", () => {
       role: "employee",
     });
 
-    await Leave.create({
+    const leaveRecord = await Leave.create({
       employeeId: throwaway._id,
       startDate: juneDate(1),
       endDate: juneDate(1),
       type: "paid",
       status: "approved",
       reason: "Test reason",
+    });
+
+    await Leave.create({
+      employeeId: employee1._id,
+      startDate: juneDate(2),
+      endDate: juneDate(2),
+      type: "paid",
+      status: "approved",
+      reason: "Still-active employee's leave",
     });
 
     // Simulates the post-hard-delete state (`user.service.js#hardDeleteUser`
@@ -350,8 +359,78 @@ describe("module: leave", () => {
       }
     });
 
-    expect(employeeNames).toContain("[Deleted User]");
+    // The deleted employee's row is gone entirely from the report — not
+    // relabeled "[Deleted User]"/"Unknown", just excluded — while the still-
+    // active employee's row is unaffected.
+    expect(employeeNames).not.toContain("[Deleted User]");
     expect(employeeNames).not.toContain("Unknown");
+    expect(employeeNames).toContain("Employee One");
+
+    // The underlying Leave document is completely untouched by generating
+    // this report — still exists, still points at the (now-deleted)
+    // employeeId, exactly as before. This is a report-query filter, not a
+    // data change.
+    const stillExists = await Leave.findById(leaveRecord._id);
+    expect(stillExists).not.toBeNull();
+    expect(String(stillExists.employeeId)).toBe(String(throwaway._id));
+
+    // The Leave module's own LIST view (GET /leave, not the report) is a
+    // completely separate code path from the report dispatcher — it must
+    // keep returning this record exactly as before, proving the exclusion
+    // above is a report-only filter, not a change to what the app
+    // considers "this employee's leave history."
+    const listResponse = await adminAgent.get("/api/v1/leave?scope=all");
+    const listedIds = listResponse.body.data.map((record) => record._id);
+    expect(listedIds).toContain(String(leaveRecord._id));
+  });
+
+  it("excludes a deactivated (not deleted) employee's leave record from the report too", async () => {
+    const { createUserDirectly } = await import("../../../tests/helpers/authHelpers.js");
+    const deactivated = await createUserDirectly({
+      name: "Deactivated Employee",
+      email: "deactivated-leave@test.local",
+      password: "Password123",
+      role: "employee",
+    });
+
+    await Leave.create({
+      employeeId: deactivated._id,
+      startDate: juneDate(3),
+      endDate: juneDate(3),
+      type: "unpaid",
+      status: "approved",
+      reason: "Deactivated employee's leave",
+    });
+
+    const { default: User } = await import("../user/user.model.js");
+    await User.updateOne({ _id: deactivated._id }, { isActive: false });
+
+    const response = await adminAgent
+      .post("/api/v1/reports/generate")
+      .send({ module: "leave", filters: { scope: "all" } })
+      .buffer(true)
+      .parse(bufferParser);
+
+    expect(response.status).toBe(200);
+
+    const { default: ExcelJS } = await import("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(response.body);
+    const worksheet = workbook.worksheets[0];
+
+    const employeeNames = [];
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber > 1) {
+        employeeNames.push(row.getCell(1).value);
+      }
+    });
+
+    expect(employeeNames).not.toContain("Deactivated Employee");
+
+    // Deactivating the user for report purposes doesn't touch the User
+    // document beyond the flag itself, and the Leave record is untouched.
+    const stillDeactivated = await User.findById(deactivated._id);
+    expect(stillDeactivated.isActive).toBe(false);
   });
 
   it("still 403s a scope the caller doesn't hold, via the reused listLeaves check (sales_associate requesting scope=team)", async () => {
@@ -409,6 +488,60 @@ describe("module: payroll", () => {
 
     expect(dataRow.getCell(1).value).toBe("Employee One");
     expect(dataRow.getCell(5).value).toBe(21000);
+  });
+
+  it("excludes a deleted/deactivated employee's payroll record from the report, without touching the underlying data (§7.11, 2026-08-04)", async () => {
+    const { createUserDirectly } = await import("../../../tests/helpers/authHelpers.js");
+    const deactivated = await createUserDirectly({
+      name: "Deactivated Payee",
+      email: "deactivated-payroll@test.local",
+      password: "Password123",
+      role: "employee",
+    });
+
+    const payrollRecord = await Payroll.create({
+      employeeId: deactivated._id,
+      month: 6,
+      year: 2026,
+      daysInMonth: 30,
+      presentDays: 20,
+      paidLeaveDays: 1,
+      unpaidDeductionDays: 0,
+      workingHoursTotal: 160,
+      grossAmount: 21000,
+      netAmount: 21000,
+      mileageReimbursement: 0,
+      generatedAt: juneDate(30),
+      paidOn: new Date(2026, 6, 1),
+    });
+
+    const { default: User } = await import("../user/user.model.js");
+    await User.updateOne({ _id: deactivated._id }, { isActive: false });
+
+    const response = await adminAgent
+      .post("/api/v1/reports/generate")
+      .send({ module: "payroll", filters: { scope: "all" } })
+      .buffer(true)
+      .parse(bufferParser);
+
+    expect(response.status).toBe(200);
+
+    const { default: ExcelJS } = await import("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(response.body);
+    const worksheet = workbook.worksheets[0];
+
+    const employeeNames = [];
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber > 1) {
+        employeeNames.push(row.getCell(1).value);
+      }
+    });
+
+    expect(employeeNames).not.toContain("Deactivated Payee");
+
+    const stillExists = await Payroll.findById(payrollRecord._id);
+    expect(stillExists).not.toBeNull();
   });
 
   it("blocks a manager entirely — Payroll has no manager grant at all", async () => {
@@ -470,6 +603,52 @@ describe("module: leads", () => {
     expect(names).toEqual(["Own Lead"]);
   });
 
+  it("excludes a deleted/deactivated owner's lead from the report, without touching the underlying data (§7.11, 2026-08-04)", async () => {
+    const { createUserDirectly } = await import("../../../tests/helpers/authHelpers.js");
+    const deactivated = await createUserDirectly({
+      name: "Deactivated Owner",
+      email: "deactivated-lead-owner@test.local",
+      password: "Password123",
+      role: "sales_associate",
+    });
+
+    const orphanedLead = await Lead.create({
+      name: "Orphaned Owner Lead",
+      companyName: "Gamma",
+      ownerId: deactivated._id,
+      source: "Website",
+      clientType: "residential",
+    });
+
+    const { default: User } = await import("../user/user.model.js");
+    await User.updateOne({ _id: deactivated._id }, { isActive: false });
+
+    const response = await adminAgent
+      .post("/api/v1/reports/generate")
+      .send({ module: "leads" })
+      .buffer(true)
+      .parse(bufferParser);
+
+    expect(response.status).toBe(200);
+
+    const { default: ExcelJS } = await import("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(response.body);
+    const worksheet = workbook.worksheets[0];
+
+    const names = [];
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber > 1) {
+        names.push(row.getCell(1).value);
+      }
+    });
+
+    expect(names).not.toContain("Orphaned Owner Lead");
+
+    const stillExists = await Lead.findById(orphanedLead._id);
+    expect(stillExists).not.toBeNull();
+  });
+
   it("blocks an employee (no leads grant by default)", async () => {
     const response = await employee1Agent.post("/api/v1/reports/generate").send({ module: "leads" });
 
@@ -522,6 +701,50 @@ describe("module: customers", () => {
     const response = await employee1Agent.post("/api/v1/reports/generate").send({ module: "customers" });
 
     expect(response.status).toBe(403);
+  });
+
+  it("excludes a deleted/deactivated owner's customer from the report, without touching the underlying data (§7.11, 2026-08-04)", async () => {
+    const { createUserDirectly } = await import("../../../tests/helpers/authHelpers.js");
+    const deactivated = await createUserDirectly({
+      name: "Deactivated Customer Owner",
+      email: "deactivated-customer-owner@test.local",
+      password: "Password123",
+      role: "sales_associate",
+    });
+
+    const orphanedCustomer = await Customer.create({
+      companyName: "Orphaned Owner Customer",
+      ownerId: deactivated._id,
+      projectManagerId: admin._id,
+    });
+
+    const { default: User } = await import("../user/user.model.js");
+    await User.updateOne({ _id: deactivated._id }, { isActive: false });
+
+    const response = await adminAgent
+      .post("/api/v1/reports/generate")
+      .send({ module: "customers" })
+      .buffer(true)
+      .parse(bufferParser);
+
+    expect(response.status).toBe(200);
+
+    const { default: ExcelJS } = await import("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(response.body);
+    const worksheet = workbook.worksheets[0];
+
+    const companies = [];
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber > 1) {
+        companies.push(row.getCell(1).value);
+      }
+    });
+
+    expect(companies).not.toContain("Orphaned Owner Customer");
+
+    const stillExists = await Customer.findById(orphanedCustomer._id);
+    expect(stillExists).not.toBeNull();
   });
 
   it("generates a PDF when format=pdf is requested — streamed directly, no Cloudinary involved", async () => {

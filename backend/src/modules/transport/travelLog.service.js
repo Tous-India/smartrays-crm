@@ -1,7 +1,7 @@
 import ApiError from "../../utils/ApiError.js";
 import { can } from "../../helpers/permission.helper.js";
 import { getDistanceKm } from "../../services/googleMaps.service.js";
-import { generateExcelReport, generatePdfReport } from "../../services/report.service.js";
+import { generateExcelReport, generatePdfReport, excludeInactiveOrDeletedRefs } from "../../services/report.service.js";
 import TravelLog from "./travelLog.model.js";
 import User from "../user/user.model.js";
 
@@ -237,7 +237,11 @@ export async function generateTravelLogReport({ from, to, format }, requestingUs
     filter.date = dateFilter;
   }
 
-  const records = await TravelLog.find(filter).sort({ date: 1 }).populate("employeeId", "name");
+  const allRecords = await TravelLog.find(filter).sort({ date: 1 }).populate("employeeId", "name isActive");
+  // Report/export-only exclusion (§7.11, 2026-08-04) — see
+  // excludeInactiveOrDeletedRefs' own docblock; the underlying TravelLog
+  // records are untouched, just left out of this generated file.
+  const records = excludeInactiveOrDeletedRefs(allRecords, "employeeId");
   const subtitle = from || to ? `${from || "…"} to ${to || "…"}` : undefined;
 
   return format === "pdf" ? buildPdfReport(records, subtitle) : buildXlsxReport(records);

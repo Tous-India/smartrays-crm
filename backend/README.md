@@ -1697,7 +1697,60 @@ report test already verified PDF output via the `%PDF-`/`PK` magic-number check 
 response body (not via inspecting `formatRow`'s text output), so those assertions remained valid
 against the new table-rendering code unchanged. Full backend suite: **668/668 passing.**
 
-#### Reports & Analytics (`/api/v1/reports/analytics/*`) — added §7.23
+#### Reports exclude deleted/deactivated employees' records — export-only filter, 2026-08-04
+
+Every §7.11 dispatcher module's report/export (Attendance, Transport, Leave, Payroll, Leads,
+Customers) now **excludes** rows whose referenced employee/owner no longer exists (a
+hard-deleted `User`) or is currently deactivated (`isActive: false`) — a **report/export-only**
+filter, not a data or deletion change. This is deliberately the opposite direction from the
+2026-08-04 PDF fix above: that fix made a deleted user's row *visible* in the report (labeled
+`"[Deleted User]"` instead of `"Unknown"`); this task makes that same row *absent* from the
+report entirely. Both are real, correct behavior for their own scope — the PDF fix's
+`"[Deleted User]"` label lives on in the row-building code as a defensive fallback (still
+correct if `populate()` ever failed to resolve a reference for some other reason), but in
+practice a report never reaches that fallback anymore, since this new filter removes any such
+row before the row-building step runs at all.
+
+**`excludeInactiveOrDeletedRefs(records, refField)`** (`src/services/report.service.js`) — the
+one shared filter every module calls: `records.filter((record) => record[refField] != null &&
+record[refField].isActive !== false)`. Requires the populate call selecting that field to also
+select `isActive` (in addition to whatever else, e.g. `name`) — without it, `ref.isActive` reads
+`undefined` and the `!== false` check would (correctly, but for the wrong reason) treat it as
+active. Applied right after each module's own `populate()` call and right before its
+`build*Rows`/`buildXlsxReport`/`buildPdfReport` row-shaping — so the exclusion happens exactly
+once per module, at the same point every module already resolves the employee/owner name:
+
+```
+attendance/transport: their own generateAttendanceReport/generateTravelLogReport
+                       (attendance.service.js/travelLog.service.js)
+leave/payroll/leads/customers: report.service.js's MODULE_HANDLERS.<module>.generateBuffer
+```
+
+**Explicitly does NOT touch:**
+- **Deletion/cascade logic** — `user.service.js#hardDeleteUser` is completely unmodified; this
+  task didn't need to touch it, since it already deliberately leaves other records' references
+  unresolved (see that function's own docblock, and the PDF fix's write-up above).
+- **The underlying records** — nothing is deleted, modified, or fixed up. A deactivated/deleted
+  employee's Leave/Attendance/Payroll/etc. history remains in the database exactly as it was,
+  forever — it's just omitted from this one generated file, computed fresh on every request.
+- **Any other view** — the list/detail endpoints each module already had (`GET /leave`,
+  `GET /attendance/team`, `GET /payroll`, `GET /leads`, `GET /customers`,
+  `GET /travel-logs`) call the exact same `listLeaves`/`getTeamAttendance`/`listPayroll`/
+  `listLeads`/`listCustomers`/`listTravelLogs` functions they always did — none of those
+  functions were touched, so every one of those views keeps showing a deleted/deactivated
+  employee's records exactly as before (whatever fallback label the frontend already used for
+  an unresolvable name — this task didn't change that either).
+
+**Testing:** one dedicated regression test per affected module (7 total, across
+`report.test.js`/`attendance.test.js`/`travelLog.test.js`) — each creates a record for a
+throwaway employee, deletes or deactivates that `User`, generates the report, and asserts the
+row is **absent** (not relabeled) while an unrelated active employee's row is unaffected, then
+independently confirms via `Model.findById` that the underlying record still exists untouched.
+Leave's test additionally calls `GET /leave?scope=all` directly and confirms the same record
+**is** still returned there — the most direct possible proof that this is an export-only filter,
+not a change to what the app considers that employee's history. Full backend suite:
+**674/674 passing**, no regressions.
+
 
 See `.context/final-plan.md` §7.23. Same module folder (`src/modules/report/`), new sibling
 files `analytics.service.js`/`analytics.controller.js` — `report.service.js`/`report.controller.js`

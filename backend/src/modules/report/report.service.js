@@ -1,6 +1,6 @@
 import ApiError from "../../utils/ApiError.js";
 import { can } from "../../helpers/permission.helper.js";
-import { generateExcelReport, generatePdfReport } from "../../services/report.service.js";
+import { generateExcelReport, generatePdfReport, excludeInactiveOrDeletedRefs } from "../../services/report.service.js";
 import { generateAttendanceReport } from "../attendance/attendance.service.js";
 import { generateTravelLogReport } from "../transport/travelLog.service.js";
 import { listLeaves } from "../leave/leave.service.js";
@@ -31,6 +31,13 @@ import Customer from "../customer/customer.model.js";
  * check and may itself reject a *broader* scope than the caller holds (e.g.
  * `listPayroll` still 403s a `scope=all` request from someone who only has
  * `payroll.view`, not `payroll.run`).
+ *
+ * **Deleted/deactivated employees excluded from the output (2026-08-04)** —
+ * every `generateBuffer` below calls `excludeInactiveOrDeletedRefs` right
+ * after its own `populate()`, before building rows. Export-only: nothing
+ * about deletion, scoping, or any other view changes — see
+ * `excludeInactiveOrDeletedRefs`'s own docblock and backend/README.md's
+ * Reports section for the full reasoning.
  */
 const MODULE_HANDLERS = {
   attendance: {
@@ -51,8 +58,8 @@ const MODULE_HANDLERS = {
       can(user, "leave", "view") || can(user, "leave", "view_team") || can(user, "leave", "view_all"),
     generateBuffer: async (filters, format, user) => {
       const records = await listLeaves(filters.scope, user);
-      await Leave.populate(records, { path: "employeeId", select: "name" });
-      const rows = buildLeaveRows(records);
+      await Leave.populate(records, { path: "employeeId", select: "name isActive" });
+      const rows = buildLeaveRows(excludeInactiveOrDeletedRefs(records, "employeeId"));
 
       return format === "pdf"
         ? generatePdfReport({
@@ -72,8 +79,8 @@ const MODULE_HANDLERS = {
     canAccess: (user) => can(user, "payroll", "view"),
     generateBuffer: async (filters, format, user) => {
       const records = await listPayroll({ scope: filters.scope, month: filters.month }, user);
-      await Payroll.populate(records, { path: "employeeId", select: "name" });
-      const rows = buildPayrollRows(records);
+      await Payroll.populate(records, { path: "employeeId", select: "name isActive" });
+      const rows = buildPayrollRows(excludeInactiveOrDeletedRefs(records, "employeeId"));
       const subtitleParts = [filters.scope && `Scope: ${filters.scope}`, filters.month && `Month: ${filters.month}`].filter(
         Boolean
       );
@@ -92,8 +99,8 @@ const MODULE_HANDLERS = {
     canAccess: (user) => can(user, "leads", "view"),
     generateBuffer: async (filters, format, user) => {
       const records = await listLeads(filters, user);
-      await Lead.populate(records, { path: "ownerId", select: "name" });
-      const rows = buildLeadsRows(records);
+      await Lead.populate(records, { path: "ownerId", select: "name isActive" });
+      const rows = buildLeadsRows(excludeInactiveOrDeletedRefs(records, "ownerId"));
 
       return format === "pdf"
         ? generatePdfReport({
@@ -109,8 +116,8 @@ const MODULE_HANDLERS = {
     canAccess: (user) => can(user, "customers", "view"),
     generateBuffer: async (filters, format, user) => {
       const records = await listCustomers(filters, user);
-      await Customer.populate(records, { path: "ownerId", select: "name" });
-      const rows = buildCustomersRows(records);
+      await Customer.populate(records, { path: "ownerId", select: "name isActive" });
+      const rows = buildCustomersRows(excludeInactiveOrDeletedRefs(records, "ownerId"));
 
       return format === "pdf"
         ? generatePdfReport({
