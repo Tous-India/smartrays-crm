@@ -114,7 +114,7 @@ Source of Truth rule made concrete, and to mark what's real vs. planned in the d
 | `team` | ✅ Built (§7.24, 2026-07-30) | Admin-only org-structure entity (name/type/head) layered over the existing `managerId` scoping — no stored member list, see §11.9 |
 | `lead` | ✅ Built (§7.1) | Sales pipeline: board/table, call logging, conversion entry point — conversion is now a real implementation (§7.2, 2026-07-13), not a 501 stub |
 | `location` | ✅ Built (§7.4b) | Live GPS tracking during an open shift — live view + day-trail history |
-| `permission` | ✅ Built (§7.12); frontend built (§7.27, 2026-07-30) | Role permission templates + per-user overrides — the authorization data source itself |
+| `permission` | ✅ Built (§7.12); frontend built (§7.27, 2026-07-30) | Role permission templates + per-user overrides — the authorization data source itself. **Boot-time drift reconciliation (§7.12b, 2026-08-03)** — auto-syncs each role template's key set against `INITIAL_TEMPLATE_DEFAULTS`/`PERMISSION_REGISTRY` on every server start, never touching a customized value |
 | `attendance` | ✅ **Fully built** (§7.4, 2026-07-13) | Check-in/check-out with photo capture (Cloudinary) + connectivity-gap-adjusted `workingHours` + own/team/org history and PDF/Excel reports |
 | `customer` | ✅ Built (§7.2, Phase 2, 2026-07-13) | Client account: billing, contracts, contacts, credentials vault, activity log, contract→Project automation. `Invoice` remains a minimal placeholder model — Phase 7's Payments module (§7.9) adds partial balance/status reconciliation onto it, not full invoicing |
 | `project` | ✅ Built (§7.3, Phase 2, 2026-07-13) | Delivery unit linked to a customer/contract; owns team assignment. No direct creation endpoint — always born from a Contract. Originally also owned Task functionality, deliberately removed 2026-07-29 (§6.4/§7.3) |
@@ -2663,6 +2663,57 @@ Gated by `permissions.manage` (§5) rather than `requireAdmin` — even though i
 admin will ever hold that grant, using the same `can()`-backed mechanism as every other module
 keeps this module self-consistent rather than a special case, and leaves room for a future
 non-admin "permissions manager" role without an endpoint rewrite.
+
+### 7.12b RolePermissionTemplate drift reconciliation (2026-08-03)
+
+**The bug this prevents, found twice in one session.** A role's `RolePermissionTemplate` is
+lazily seeded from `INITIAL_TEMPLATE_DEFAULTS` **once** — read verbatim from the database forever
+after. Editing that constant in code has zero effect on a template that already existed before the
+edit shipped. The §7.5c and §7.5d Leave manager-parity changes each added a new permission action
+to `manager`'s code default and it silently never reached the already-seeded live template —
+caught only by live-verifying each feature immediately after shipping it, fixed by hand both times
+via a one-off `PATCH /permissions/templates/manager`. A follow-up audit also found `employee`'s
+template still carrying an orphaned `tasks` key from before Task functionality was fully removed
+(2026-07-29) — never touched since its original 2026-07-17 seeding. Nothing in the test suite can
+ever catch this class of bug (tests always start from a freshly-seeded database, in sync with code
+by construction), so it's exactly the kind of drift that accumulates silently in a real, long-lived
+deployment.
+
+**Mechanism (`permission.service.js#reconcileRoleTemplate`/`reconcileAllRoleTemplates`).** For
+each of the 4 non-admin roles (`RECONCILABLE_ROLES` — `admin`'s template is always `{}`, reconciling
+it is meaningless):
+- A code-default module/action key **missing outright** from the stored template gets added with
+  the code's default value (the §7.5c/§7.5d bug, generalized).
+- A stored module/action key **no longer valid anywhere** in `PERMISSION_REGISTRY` gets removed
+  (the `employee.tasks` orphan, generalized) — a module emptied out by this is dropped entirely
+  rather than left as a dangling `{}`.
+- **Never touches a key that already exists**, regardless of its value — this only fills a
+  structural gap or removes structural dead weight, never inspects or overwrites an existing
+  value. An admin's deliberate customization (a role template edit, or a per-user override) is
+  therefore safe from this running, unconditionally and automatically, forever.
+
+**Boot-time over the whole role set, not lazy-per-fetch — a deliberate choice.** Reconciling on
+every `GET /permissions/templates/:role` was considered and rejected: a read endpoint silently
+becoming a write is a bad shape, and it would only ever reconcile whichever single role happened
+to be requested, leaving the other three drifted indefinitely if nobody views them through the
+admin UI. A boot-time pass checks all 4 at once, with one clear log line per process start instead
+of an invisible side effect buried in a GET handler.
+
+**Wired into both real entry points — `server.js` and `api/index.js` (the actual Vercel serverless
+entry point; `server.js` never runs there at all, the same pre-existing gap already documented for
+cron jobs, §7.4).** `reconcileRoleTemplatesOnBoot()` caches its own promise exactly the way
+`database/connection.js#connectDatabase` does, for the same reason: on serverless, every request
+can be a cold start, so without caching this would re-hit the database on every single request in
+production. Whichever entry point actually boots a process does the real work once; every
+subsequent call in that same warm process (server or serverless container) just awaits the already-
+settled promise. Failures are caught and logged, never thrown — a hygiene pass must never be able
+to crash the server or block a request.
+
+**Immediate cleanup, same task:** the live `employee.tasks` orphan is gone, confirmed via a real
+server boot against the shared database (same `MONGODB_URI` as production — already live there
+too).
+
+9 new tests. Full backend suite: 667/667 passing, no regressions.
 
 ### 7.13 Dashboards
 One dashboard shell (`/dashboard`) that composes widgets by role + permissions, rather than

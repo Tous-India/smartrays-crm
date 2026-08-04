@@ -126,6 +126,155 @@ export function getRegistry() {
   return PERMISSION_REGISTRY;
 }
 
+// The 4 roles `INITIAL_TEMPLATE_DEFAULTS` actually defines grants for.
+// `admin` is deliberately excluded — its template is always `{}` (admin
+// bypasses `can()` entirely regardless of what's stored) and reconciling it
+// would be a meaningless no-op at best.
+export const RECONCILABLE_ROLES = ["manager", "sales_associate", "employee", "customer"];
+
+/**
+ * Fixes `RolePermissionTemplate` drift (2026-08-03, discovered auditing the
+ * §7.5c/§7.5d Leave fixes — see backend/README.md's dated write-up for the
+ * full incident). A role's template is lazily seeded ONCE from
+ * `INITIAL_TEMPLATE_DEFAULTS` and read verbatim from the database forever
+ * after (`getOrCreateTemplate`'s own doc, above) — editing this constant in
+ * code has zero effect on a template that already existed before the edit
+ * shipped. Twice this session, a real permission action was added to a
+ * role's code default and silently never reached the live database until
+ * caught by hand and patched via a one-off `PATCH /permissions/templates/:role`
+ * call. This reconciles that gap structurally, not just for this one
+ * incident:
+ *
+ * - Any module/action key present in `INITIAL_TEMPLATE_DEFAULTS[role]` but
+ *   ABSENT from the stored template gets added, using the code's default
+ *   value — this is exactly the §7.5c/§7.5d bug, generalized.
+ * - Any module/action key stored in the template that no longer exists
+ *   ANYWHERE in `PERMISSION_REGISTRY` gets removed — genuinely dead data,
+ *   the same class of issue as the orphaned `employee.tasks` key left behind
+ *   when Task functionality was fully removed (2026-07-29) but this
+ *   template, never touched since its original 2026-07-17 seeding, never
+ *   got the memo.
+ *
+ * Deliberately NOT touched: any key that already exists in the stored
+ * template, regardless of its value. A manager who's had `leave.approve`
+ * customized to `false` (or any other admin-edited value, whether via
+ * `updateTemplate` or a per-user override) keeps exactly that — this only
+ * ever adds a key that's missing outright, or removes one that's invalid
+ * outright. It never overwrites an existing value, so a genuine admin
+ * customization can never be silently reverted by this running.
+ */
+export async function reconcileRoleTemplate(role) {
+  const template = await getOrCreateTemplate(role);
+  const codeDefaults = INITIAL_TEMPLATE_DEFAULTS[role] || {};
+  const permissions = structuredClone(template.permissions || {});
+  const added = [];
+  const removed = [];
+
+  for (const [module, actions] of Object.entries(codeDefaults)) {
+    if (!permissions[module]) {
+      permissions[module] = {};
+    }
+
+    for (const [action, defaultValue] of Object.entries(actions)) {
+      if (!(action in permissions[module])) {
+        permissions[module][action] = defaultValue;
+        added.push(`${module}.${action}`);
+      }
+    }
+  }
+
+  for (const module of Object.keys(permissions)) {
+    const validActions = PERMISSION_REGISTRY[module];
+
+    if (!validActions) {
+      removed.push(...Object.keys(permissions[module]).map((action) => `${module}.${action}`));
+      delete permissions[module];
+      continue;
+    }
+
+    for (const action of Object.keys(permissions[module])) {
+      if (!validActions.includes(action)) {
+        removed.push(`${module}.${action}`);
+        delete permissions[module][action];
+      }
+    }
+
+    // Drop a module emptied out by the removal above too, rather than
+    // leaving a dangling `{}` behind.
+    if (Object.keys(permissions[module]).length === 0) {
+      delete permissions[module];
+    }
+  }
+
+  if (added.length === 0 && removed.length === 0) {
+    return { role, added, removed, changed: false };
+  }
+
+  template.permissions = permissions;
+  await template.save();
+
+  return { role, added, removed, changed: true };
+}
+
+/**
+ * Runs `reconcileRoleTemplate` for every reconcilable role. Idempotent by
+ * construction — a second run immediately after the first finds every key
+ * already present/valid and reports `changed: false` for all four.
+ */
+export async function reconcileAllRoleTemplates() {
+  const results = [];
+
+  for (const role of RECONCILABLE_ROLES) {
+    // Sequential, not Promise.all — these are simple, infrequent (once per
+    // process) writes; no need for the concurrency, and sequential logging
+    // below reads in a stable, predictable order.
+    results.push(await reconcileRoleTemplate(role));
+  }
+
+  const changed = results.filter((result) => result.changed);
+
+  if (changed.length === 0) {
+    console.log("[permission] Role template reconciliation: all templates already match code defaults.");
+  } else {
+    changed.forEach((result) => {
+      console.log(
+        `[permission] Role template reconciliation — "${result.role}": added [${result.added.join(", ") || "none"}], removed [${result.removed.join(", ") || "none"}]`
+      );
+    });
+  }
+
+  return results;
+}
+
+let reconciliationPromise = null;
+
+/**
+ * Boot-time entry point — cached across calls the same way
+ * `database/connection.js#connectDatabase` caches its connection, and for
+ * the identical reason: this app runs on Vercel's serverless runtime
+ * (`api/index.js`) where every request can be a fresh cold start, so without
+ * caching this would re-run (and re-hit the database four times) on every
+ * single request in production. Call this from both `server.js` (local/
+ * traditional hosting boot) and `api/index.js` (serverless — reconciles once
+ * per cold start, a no-op on every warm invocation after that); whichever
+ * entry point actually runs a given process reconciles it, the other's call
+ * just awaits the same cached settled promise.
+ */
+export function reconcileRoleTemplatesOnBoot() {
+  if (!reconciliationPromise) {
+    reconciliationPromise = reconcileAllRoleTemplates().catch((error) => {
+      // Never let a reconciliation failure crash the server over what's
+      // fundamentally a hygiene pass, not a request in the critical path.
+      // Reset the cache so the next call can retry rather than permanently
+      // caching a rejection, matching connectDatabase's own behavior.
+      reconciliationPromise = null;
+      console.error("[permission] Role template reconciliation failed:", error.message);
+    });
+  }
+
+  return reconciliationPromise;
+}
+
 /**
  * Returns a role's template, lazily creating it with the initial defaults if
  * it doesn't exist yet — same pattern as LeadSource (§7.1).

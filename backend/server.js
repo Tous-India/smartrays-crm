@@ -4,6 +4,7 @@ import { env } from "./src/config/env.js";
 import { registerPayrollCron } from "./src/cron/payrollCron.js";
 import { registerLeadFollowUpReminderCron } from "./src/cron/leadFollowUpReminderCron.js";
 import { registerAttendancePhotoCleanupCron } from "./src/cron/attendancePhotoCleanupCron.js";
+import { reconcileRoleTemplatesOnBoot } from "./src/modules/permission/permission.service.js";
 
 async function startServer() {
   try {
@@ -15,6 +16,13 @@ async function startServer() {
     // backend/api/index.js).
     process.exit(1);
   }
+
+  // RolePermissionTemplate drift reconciliation (2026-08-03, §7.12b) — see
+  // permission.service.js#reconcileRoleTemplatesOnBoot for the full incident
+  // and reasoning. Also called from api/index.js's handler for the
+  // serverless entry point; cached in both, so this only ever does real work
+  // once per process.
+  await reconcileRoleTemplatesOnBoot();
 
   // node-cron relies on a long-lived process to fire on schedule — true for
   // this file (a persistent server), but NOT true on Vercel's serverless

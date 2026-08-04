@@ -3,6 +3,8 @@ import { startTestDatabase, stopTestDatabase, clearAllCollections } from "../../
 import { getTestApp } from "../../../tests/helpers/testApp.js";
 import { createUserDirectly, loginAsAgent } from "../../../tests/helpers/authHelpers.js";
 import { PERMISSION_REGISTRY } from "../../constants/permissionRegistry.constants.js";
+import { reconcileRoleTemplate, reconcileAllRoleTemplates, RECONCILABLE_ROLES } from "./permission.service.js";
+import RolePermissionTemplate from "./permission.model.js";
 
 let app;
 let adminAgent;
@@ -279,5 +281,129 @@ describe("Non-admin access is denied on every endpoint in this module", () => {
   it("blocks POST /users/:id/permissions/reset", async () => {
     const response = await nonAdminAgent.post("/api/v1/users/000000000000000000000000/permissions/reset");
     expect(response.status).toBe(403);
+  });
+});
+
+describe("RolePermissionTemplate drift reconciliation (§7.12b, 2026-08-03)", () => {
+  // Seeds the role's template via the real `getOrCreateTemplate` code path
+  // (through the existing GET endpoint, same as the "lazily seeds..." test
+  // above) — an `upsert` straight against the model would bypass
+  // `INITIAL_TEMPLATE_DEFAULTS` entirely and create an empty `{}` template,
+  // which isn't what "a template that's drifted from its real defaults"
+  // means.
+  async function seedTemplate(role) {
+    await adminAgent.get(`/api/v1/permissions/templates/${role}`);
+  }
+
+  it("adds a key missing from the stored template that code says should exist, with the code's default value", async () => {
+    await seedTemplate("manager");
+    // Strip out leave.delete directly to simulate the exact §7.5d scenario
+    // (a template seeded BEFORE that key existed in code).
+    await RolePermissionTemplate.updateOne({ role: "manager" }, { $unset: { "permissions.leave.delete": "" } });
+
+    const before = await RolePermissionTemplate.findOne({ role: "manager" });
+    expect(before.permissions.leave.delete).toBeUndefined();
+
+    const result = await reconcileRoleTemplate("manager");
+
+    expect(result.changed).toBe(true);
+    expect(result.added).toContain("leave.delete");
+    expect(result.removed).toEqual([]);
+
+    const after = await RolePermissionTemplate.findOne({ role: "manager" });
+    expect(after.permissions.leave.delete).toBe(true);
+    // Every other leave action untouched by the same fix.
+    expect(after.permissions.leave.view_team).toBe(true);
+    expect(after.permissions.leave.approve).toBe(true);
+  });
+
+  it("removes an orphaned key no longer present in PERMISSION_REGISTRY", async () => {
+    await seedTemplate("employee");
+    // Simulate the real employee.tasks orphan generically — a module that
+    // no longer exists anywhere in PERMISSION_REGISTRY (Task functionality
+    // was fully removed 2026-07-29).
+    await RolePermissionTemplate.updateOne(
+      { role: "employee" },
+      { $set: { "permissions.tasks": { view: true, assign: true } } }
+    );
+
+    const before = await RolePermissionTemplate.findOne({ role: "employee" });
+    expect(before.permissions.tasks).toEqual({ view: true, assign: true });
+
+    const result = await reconcileRoleTemplate("employee");
+
+    expect(result.changed).toBe(true);
+    expect(result.removed).toEqual(expect.arrayContaining(["tasks.view", "tasks.assign"]));
+
+    const after = await RolePermissionTemplate.findOne({ role: "employee" });
+    expect(after.permissions.tasks).toBeUndefined();
+    // Employee's real, still-valid grants untouched.
+    expect(after.permissions.leave.view).toBe(true);
+  });
+
+  it("removes only the invalid action within a module, keeping its still-valid actions", async () => {
+    await seedTemplate("manager");
+    // "leave.not_a_real_action" isn't in PERMISSION_REGISTRY.leave, but the
+    // module itself is still valid and manager should keep its other leave
+    // actions.
+    await RolePermissionTemplate.updateOne(
+      { role: "manager" },
+      { $set: { "permissions.leave.not_a_real_action": true } }
+    );
+
+    const result = await reconcileRoleTemplate("manager");
+
+    expect(result.removed).toEqual(["leave.not_a_real_action"]);
+
+    const after = await RolePermissionTemplate.findOne({ role: "manager" });
+    expect(after.permissions.leave.not_a_real_action).toBeUndefined();
+    expect(after.permissions.leave.view).toBe(true);
+    expect(after.permissions.leave.approve).toBe(true);
+  });
+
+  it("leaves a key an admin customized to a non-default value completely untouched", async () => {
+    await seedTemplate("manager");
+    // Simulate an admin having deliberately turned OFF manager's default
+    // leave.approve grant via the Permissions UI.
+    await RolePermissionTemplate.updateOne({ role: "manager" }, { $set: { "permissions.leave.approve": false } });
+
+    const result = await reconcileRoleTemplate("manager");
+
+    // leave.approve already exists (as false) — reconciliation must never
+    // touch an existing key, regardless of its value.
+    expect(result.added).not.toContain("leave.approve");
+
+    const after = await RolePermissionTemplate.findOne({ role: "manager" });
+    expect(after.permissions.leave.approve).toBe(false);
+  });
+
+  it("is idempotent — running it again immediately after finds nothing left to change", async () => {
+    await seedTemplate("manager");
+    await RolePermissionTemplate.updateOne({ role: "manager" }, { $unset: { "permissions.leave.delete": "" } });
+    await RolePermissionTemplate.updateOne(
+      { role: "manager" },
+      { $set: { "permissions.notARealModule": { someAction: true } } }
+    );
+
+    const first = await reconcileRoleTemplate("manager");
+    expect(first.changed).toBe(true);
+
+    const second = await reconcileRoleTemplate("manager");
+    expect(second).toEqual({ role: "manager", added: [], removed: [], changed: false });
+  });
+
+  it("a freshly-seeded template (never drifted) is already a no-op", async () => {
+    const result = await reconcileRoleTemplate("sales_associate");
+
+    expect(result.changed).toBe(false);
+    expect(result.added).toEqual([]);
+    expect(result.removed).toEqual([]);
+  });
+
+  it("reconcileAllRoleTemplates processes exactly the 4 non-admin roles, never admin", async () => {
+    const results = await reconcileAllRoleTemplates();
+
+    expect(results.map((result) => result.role)).toEqual(RECONCILABLE_ROLES);
+    expect(RECONCILABLE_ROLES).not.toContain("admin");
   });
 });

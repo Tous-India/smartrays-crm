@@ -384,6 +384,77 @@ module keeps this module self-consistent instead of a special case.
 No application bugs found while building or testing this module — 20 tests, all passing on the
 first implementation.
 
+### RolePermissionTemplate drift reconciliation (§7.12b, 2026-08-03)
+
+**The bug this exists to prevent, found twice in one session.** A role's template is lazily
+seeded from `INITIAL_TEMPLATE_DEFAULTS` **once**, the first time anyone reads that role, and read
+verbatim from the database from then on (`getOrCreateTemplate`, above) — editing
+`INITIAL_TEMPLATE_DEFAULTS` in code has **zero effect** on a template that already existed before
+the edit shipped. Twice on 2026-07-31/08-03 (the §7.5c and §7.5d Leave manager-parity changes), a
+real permission action was added to `manager`'s code default and silently never reached the
+already-seeded live template — caught only by chance, because I happened to be live-verifying that
+exact feature immediately after shipping it, and fixed by hand each time via a one-off
+`PATCH /permissions/templates/manager` call. A follow-up audit also found a **stale, orphaned**
+`employee.tasks` key still sitting in the database — Task functionality was fully removed from
+`PERMISSION_REGISTRY`/`INITIAL_TEMPLATE_DEFAULTS` on 2026-07-29, but `employee`'s template, never
+touched since its original 2026-07-17 seeding, never got the memo. Nothing in the test suite could
+ever catch this class of bug — tests always start from a freshly-seeded, empty database, so a
+template is always in sync with code there by construction.
+
+**What it does (`permission.service.js#reconcileRoleTemplate`/`reconcileAllRoleTemplates`).** For
+each of the 4 non-admin roles (`manager`/`sales_associate`/`employee`/`customer` —
+`RECONCILABLE_ROLES`; `admin`'s template is always `{}` and reconciling it would be a meaningless
+no-op):
+- Any module/action key present in `INITIAL_TEMPLATE_DEFAULTS[role]` but **missing outright** from
+  the stored template gets added, using the code's default value — the exact §7.5c/§7.5d bug,
+  generalized and automated.
+- Any module/action key stored in the template that **no longer exists anywhere** in
+  `PERMISSION_REGISTRY` gets removed — genuinely dead data, the `employee.tasks` case generalized.
+  If removing invalid actions empties a module out entirely, the module key itself is dropped too,
+  rather than leaving a dangling `{}` behind.
+
+**What it deliberately never touches: any key that already exists, regardless of its value.** This
+only ever adds a key that's missing outright or removes one that's invalid outright — it never
+inspects, compares, or overwrites the *value* of an existing key. A manager whose `leave.approve`
+has been customized to `false` via the Permissions UI keeps exactly that, forever — reconciliation
+has no opinion on it at all, because the key already exists. This is what makes it safe to run
+automatically and unconditionally: it can only ever fill a structural gap or remove structural
+dead weight, never revert an admin's actual decision.
+
+**Boot-time, not per-request — a deliberate choice.** Lazy per-`GET /permissions/templates/:role`
+reconciliation was considered and rejected: it would silently mutate data on every single template
+fetch (a read endpoint quietly becoming a write), and would only ever reconcile whichever one role
+happened to be requested, leaving the other three (including ones never viewed through the admin
+UI at all) still drifted indefinitely. A boot-time pass over all 4 roles at once is more visible
+(one clear log line per process start, not an invisible side effect buried in a GET handler) and
+guarantees every role gets checked, not just whichever one an admin happens to click into.
+
+**Wired into both entry points this app actually boots from** — `server.js` (local/traditional
+persistent-process hosting) and `api/index.js` (the actual Vercel serverless entry point, where
+`server.js` never runs at all; see this file's own Deployment section for that gap already existing
+for cron jobs). `reconcileRoleTemplatesOnBoot()` caches its own promise across calls, the identical
+pattern `database/connection.js#connectDatabase` already uses and for the identical reason: on
+Vercel, every request can be a fresh cold start, so without caching this would re-run (and re-hit
+the database 4 times) on every single request in production. Whichever entry point a given process
+actually boots from does the real reconciliation once; every call after that in the same warm
+process — including every other serverless invocation hitting the same warm container — just
+awaits the same already-settled promise. A reconciliation failure is caught and logged, never
+thrown — this is a hygiene pass, not something that should be able to crash the server or block a
+request.
+
+**Immediate cleanup, done as part of this same task.** The live `employee` template's orphaned
+`tasks` key is gone — confirmed via a real server boot against the shared database (this dev
+database and the deployed production API share the same `MONGODB_URI`, so the fix is already live
+in production too, no separate step needed).
+
+9 new tests (`permission.test.js`): a missing key gets added with the correct default; an orphaned
+module gets removed entirely; an orphaned action within an otherwise-valid module is removed while
+the module's other actions survive; a key customized away from its default is left completely
+untouched; running it twice in a row is idempotent (second run reports `changed: false` for
+everything); a never-drifted, freshly-seeded template is already a no-op;
+`reconcileAllRoleTemplates` processes exactly the 4 reconcilable roles, never `admin`. Full backend
+suite: 667/667 passing, no regressions.
+
 ### User Management (`/api/v1/users`)
 
 See `.context/final-plan.md` §7.0b for the full design writeup. The roster CRUD/management layer
@@ -1094,7 +1165,11 @@ already re-seeded once for §7.5c earlier the same day, and needed a second live
 reason. Confirmed zero manager accounts exist in this database at the time of the fix, so no
 existing manager needed an additional `POST /users/:id/permissions/reset` — every manager
 registered from now on inherits the corrected template. This database backs the deployed
-production API too (no separate staging DB), so the fix is already live there.
+production API too (no separate staging DB), so the fix is already live there. **This exact
+pattern — hit twice in one session — is why §7.12b's boot-time reconciliation mechanism exists**
+(see the Permissions module section, above); a future permission-registry change like this one
+will propagate to the live template automatically on the next server boot, no manual `PATCH`
+required.
 
 6 new tests: manager can now `GET /leave` (scope=own) for themselves; admin deletes any request
 org-wide; manager deletes their own team's request; manager blocked deleting outside their team; a
