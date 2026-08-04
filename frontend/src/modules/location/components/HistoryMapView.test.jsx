@@ -88,3 +88,32 @@ describe("HistoryMapView", () => {
     expect(screen.getByText(/isn't visible to you/)).toBeInTheDocument();
   });
 });
+
+describe("HistoryMapView — reused for the Attendance map integration (§7.4d, 2026-08-04)", () => {
+  it("locks to the given initialEmployeeId/initialDate and hides the pickers when showControls is false", () => {
+    useLocationHistory.mockReturnValue({
+      pings: [{ coords: { lat: 12.9, lng: 77.6 }, capturedAt: "2026-06-01T09:00:00.000Z" }],
+      isLoading: false,
+      error: null,
+    });
+
+    render(<HistoryMapView initialEmployeeId="emp-9" initialDate="2026-06-01" showControls={false} />);
+
+    expect(useLocationHistory).toHaveBeenCalledWith({ employeeId: "emp-9", date: "2026-06-01" });
+    expect(screen.queryByPlaceholderText("Select an employee")).not.toBeInTheDocument();
+    expect(screen.getByTestId("google-map-container")).toBeInTheDocument();
+  });
+
+  it("passes deriveExtraMarkers(pings) through to GoogleMapView as markers", () => {
+    const pings = [{ coords: { lat: 12.9, lng: 77.6 }, capturedAt: "2026-06-01T09:00:00.000Z" }];
+    useLocationHistory.mockReturnValue({ pings, isLoading: false, error: null });
+    const deriveExtraMarkers = vi.fn(() => [{ lat: 1, lng: 1, label: "Test marker", color: "red" }]);
+
+    render(<HistoryMapView deriveExtraMarkers={deriveExtraMarkers} />);
+
+    expect(deriveExtraMarkers).toHaveBeenCalledWith(pings);
+    expect(window.google.maps.Marker).toHaveBeenCalledWith(
+      expect.objectContaining({ icon: { url: expect.stringContaining("red-dot.png") } })
+    );
+  });
+});

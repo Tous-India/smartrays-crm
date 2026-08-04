@@ -1,11 +1,18 @@
 import asyncWrapper from "../../utils/asyncWrapper.js";
-import ApiResponse from "../../utils/ApiResponse.js";
 import { generateReport } from "./report.service.js";
 
+const REPORT_CONTENT_TYPES = {
+  pdf: "application/pdf",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+};
+
 export const generate = asyncWrapper(async (req, res) => {
-  const { module, filters, format } = req.body;
+  const { module, filters } = req.body;
+  const format = req.body.format || "xlsx";
 
-  const result = await generateReport({ module, filters: filters || {}, format: format || "xlsx" }, req.user);
+  const buffer = await generateReport({ module, filters: filters || {}, format }, req.user);
 
-  res.status(200).json(new ApiResponse(200, result, "Report generated successfully"));
+  res.setHeader("Content-Type", REPORT_CONTENT_TYPES[format]);
+  res.setHeader("Content-Disposition", `attachment; filename=${module}-report.${format}`);
+  res.status(200).send(buffer);
 });

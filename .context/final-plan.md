@@ -188,7 +188,7 @@ Full statements live where cited — this is a summary index, not a restatement:
 
 | Service | Used for | Status |
 |---|---|---|
-| Cloudinary | File storage — attendance photos, ticket attachments, generated PDF/Excel reports | ✅ Wired and in use — `src/services/cloudinary.service.js`, Attendance check-in/check-out photos (§7.4, 2026-07-13) and Ticket attachments (§7.8, `uploadTicketAttachment`, `resource_type: "auto"` since attachments aren't guaranteed to be images). Generated-report storage still pending §7.11 |
+| Cloudinary | File storage — attendance photos, ticket attachments | ✅ Wired and in use — `src/services/cloudinary.service.js`, Attendance check-in/check-out photos (§7.4, 2026-07-13) and Ticket attachments (§7.8, `uploadTicketAttachment`, `resource_type: "auto"` since attachments aren't guaranteed to be images). Generated PDF/Excel reports (§7.11) briefly went through Cloudinary too (Phase 8) but were moved off it 2026-08-04 — reports are now streamed directly, never uploaded anywhere |
 | Google Maps Distance Matrix | Computing per-shift travel distance for the Transport/Travel module | ✅ Wired and in use (§7.6, 2026-07-13) — `src/services/googleMaps.service.js`, no SDK dependency (calls the REST API via `fetch`) |
 | Web Push (VAPID) | Push notifications — lead assignment, follow-up reminders, ticket assignment | ✅ Wired and in use (§6.7/§7.16, Phase 9, 2026-07-16) — `src/services/webPush.service.js`, no SDK beyond the `web-push` npm package itself. Browser-side receipt (PWA service worker) is a frontend follow-up |
 
@@ -1604,16 +1604,14 @@ streaming/buffer mechanics live in the shared service so the real cross-module r
 migrated onto it — that code already works and is already tested, and migrating it wasn't part of
 this task.
 
-**Updated (Phase 8, §7.11) — `GET /attendance/report`'s response shape changed, a stated
-breaking change:** the endpoint no longer streams the file directly; `attendance.controller.js`
-now calls the new `report.service.js#generateReport` dispatcher (`module: "attendance"`)
-internally — `generateAttendanceReport` itself is completely unchanged, still the function that
-actually fetches and renders the data — and the response is now `{ downloadUrl }` (uploaded to
-Cloudinary), matching §7.11's dispatcher exactly rather than leaving this endpoint as a special
-case. `attendance.test.js`'s report tests were rewritten to assert against the real buffer the
-mocked `uploadReportFile` was called with (the "PK"/"%PDF-" magic-number checks moved from the
-streamed response body to the mock's captured argument, still proving a genuine file) and the
-returned `downloadUrl`.
+**Updated (Phase 8, §7.11) — `GET /attendance/report`:** `attendance.controller.js` calls the
+`report.service.js#generateReport` dispatcher (`module: "attendance"`) internally —
+`generateAttendanceReport` itself is completely unchanged, still the function that actually
+fetches and renders the data. Through Phase 8 the dispatcher uploaded the result to Cloudinary
+and this endpoint returned `{ downloadUrl }`; as of 2026-08-04 that upload step was removed
+(§7.11's write-up has the full reasoning) and the endpoint streams the buffer directly again,
+same as it did before Phase 8 — `attendance.test.js`'s report tests assert against the real
+streamed response body/headers and explicitly confirm no Cloudinary function is called.
 
 ### 7.4c Attendance corrections/additions — Break In/Out, admin exemption, photo cleanup cron, granular manager permissions, notifications (2026-07-31)
 
@@ -2063,12 +2061,12 @@ union), and mirrors `attendance`'s report gate (`view_team`/`view_all` only) for
 than writing new PDF/Excel generation code. `sales_associate`/`employee` get `travelLogs.view:
 true` by default; `manager` gets `travelLogs.view_team: true`.
 
-**Updated (Phase 8, §7.11) — `GET /travel-logs/report`'s response shape changed, a stated
-breaking change:** same migration as Attendance's report endpoint above —
-`travelLog.controller.js` now calls `report.service.js#generateReport` (`module: "transport"`)
-internally, `generateTravelLogReport` itself is unchanged, and the response is now
-`{ downloadUrl }` instead of a streamed file. `travelLog.test.js`'s report tests were rewritten
-the same way Attendance's were.
+**Updated (Phase 8, §7.11) — `GET /travel-logs/report`:** same migration as Attendance's report
+endpoint above — `travelLog.controller.js` calls `report.service.js#generateReport`
+(`module: "transport"`) internally, `generateTravelLogReport` itself is unchanged. As of
+2026-08-04's Cloudinary removal (§7.11) the response streams the buffer directly again instead
+of returning `{ downloadUrl }` — `travelLog.test.js`'s report tests were rewritten the same way
+Attendance's were.
 
 **Test coverage:** 28 tests, all passing — includes a dedicated side-by-side scope
 test proving admin/manager/employee scoping simultaneously, plus (added 2026-07-13) **7** tests
@@ -2437,14 +2435,15 @@ deliberate v1 simplifications per this task's own instruction, not oversights.
 
 ### 7.11 Reports
 
-✅ **Built (Phase 8)** — 24 tests (`report.test.js`), no application bugs found. Module folder
-is `src/modules/report/`.
+✅ **Built (Phase 8)**, Cloudinary removed 2026-08-04 — 24 tests (`report.test.js`), no
+application bugs found. Module folder is `src/modules/report/`.
 
 Shared report-generation service consumed by attendance, leave, payroll, transport, leads,
 and customers rather than one-off generators — single `POST /reports/generate` with
 `{module, filters, format}` dispatching to per-module data-fetchers behind one PDF/Excel
-renderer. The generated file is uploaded to Cloudinary (§3/§11.6) and the response returns a
-download URL rather than streaming the binary through the API server.
+renderer. The generated file is streamed directly as the HTTP response
+(`Content-Type`/`Content-Disposition: attachment`) — see the 2026-08-04 write-up below for why
+this replaced the original Cloudinary-upload design.
 
 **`report.service.js`'s dispatcher** pairs, per supported `module` (exactly the six named
 above), a coarse access check with a data-fetch+render step:
@@ -2479,25 +2478,43 @@ endpoint already uses. A manager requesting an `attendance` report gets exactly 
 data, proven in `report.test.js` by asserting the dispatcher's report contains the exact same
 employee set `GET /attendance/team` independently returns for the same manager.
 
-**BREAKING CHANGE (intentional — no frontend exists yet to break):** `GET /attendance/report`
-and `GET /travel-logs/report` now internally call this same dispatcher instead of duplicating
-report generation, and their response changed from **streaming the file directly** to
-returning **`{ downloadUrl }`** (uploaded to Cloudinary) — matching this section's stated
-behavior exactly, rather than leaving those two endpoints as a special case. Existing tests for
-both were rewritten to assert against the real buffer the mocked `uploadReportFile` was called
-with (still proving a genuine, well-formed file — the "PK"/"%PDF-" magic-number checks are
-unchanged, just moved from the streamed response body to the mock's captured argument) and the
-returned `downloadUrl`, instead of a streamed response body.
+`GET /attendance/report` and `GET /travel-logs/report` internally call this same dispatcher
+instead of duplicating report generation, rather than being left as a special case.
 
-**Explicitly out of scope:** `GET /payroll/:id/payslip` was **not** migrated and stays exactly
-as it was (a direct PDF stream) — it's a single-document artifact, not a filtered-list report,
-so it doesn't fit the dispatcher pattern (§7.7's own stated PDF-only, no-xlsx-option design is
-unrelated to and unaffected by this task). A dedicated regression test in `payroll.test.js`
-proves this endpoint still streams `application/pdf` directly rather than returning
-`{ downloadUrl }`. Leads' `GET /leads/export` also stays exactly as-is
-— a deliberately separate, pre-existing CSV/Excel export, unrelated to and not migrated onto
-this dispatcher; the new `leads` module report is additive (reuses `listLeads`, not
-`exportLeadsToExcel`), not a replacement.
+**Cloudinary removed from the whole dispatcher (2026-08-04) — architecture change, superseding
+the original Phase 8 design above and the "BREAKING CHANGE" note it originally carried.**
+Through Phase 8, the dispatcher uploaded every generated report to Cloudinary and all three
+callers (`POST /reports/generate`, `GET /attendance/report`, `GET /travel-logs/report`) returned
+`{ downloadUrl }` instead of streaming the file. In practice this meant every report download —
+regardless of module — depended on an external service being reachable and fast, for no real
+benefit: the file is generated on this server and requested by an already-authenticated caller
+of this same API, so it never actually needed to leave the server at all. `generateReport` now
+returns the raw buffer directly; each of the three controllers sets
+`Content-Type`/`Content-Disposition: attachment` and streams it with `res.send(buffer)` — the
+same direct-stream shape `GET /leads/export` and `GET /payroll/:id/payslip` already used (see
+below for why those two were never part of the Cloudinary-upload design to begin with).
+`uploadReportFile` (the Cloudinary wrapper this dispatcher used) was deleted from
+`cloudinary.service.js` as dead code rather than left unused. Every test across
+`report.test.js`/`attendance.test.js`/`travelLog.test.js` was rewritten to assert against the
+real streamed response body/headers (the "PK"/"%PDF-" magic-number checks still hold, now
+directly on the response) and to explicitly confirm no Cloudinary function is ever called during
+report generation — not just that the response no longer contains a `downloadUrl`. Frontend:
+`reportApi.js#generateReport` now requests `responseType: "blob"`, and
+`ReportDownloadButton.jsx`/`ExportForm.jsx` trigger the download via a new
+`triggerBlobDownload` (object-URL → hidden `<a download>` click → revoke) instead of the old
+`triggerFileDownload` (which opened an already-hosted Cloudinary URL) — see
+`frontend/README.md`'s Reports section for the full write-up.
+
+**Explicitly out of scope, both before and after the 2026-08-04 change:** `GET
+/payroll/:id/payslip` was **not** migrated onto the dispatcher and stays exactly as it was (a
+direct PDF stream, never routed through Cloudinary at any point) — it's a single-document
+artifact, not a filtered-list report, so it doesn't fit the dispatcher pattern (§7.7's own
+stated PDF-only, no-xlsx-option design is unrelated to and unaffected by this task). A dedicated
+regression test in `payroll.test.js` proves this endpoint still streams `application/pdf`
+directly. Leads' `GET /leads/export` also stays exactly as-is — a deliberately separate,
+pre-existing CSV/Excel export (also always a direct stream, never Cloudinary); the `leads`
+module report inside the dispatcher is additive (reuses `listLeads`, not `exportLeadsToExcel`),
+not a replacement.
 
 **Per-module `filters` validation (`report.validation.js`) reuses each target module's own
 existing query validator** rather than duplicating its checks — each one called as a plain
@@ -2516,10 +2533,10 @@ pattern §7.10's `amc.validation.js` already established for
 
 This closes a gap from the initial build, where `filters` was only checked for being a plain
 object, not for a shape sane for the requested module. It also brought test rigor up to a
-consistent bar across all six modules: every module's success-path test now asserts the real
-magic-number file signature ("PK" for xlsx / "%PDF-" for pdf) on the buffer the mocked
-`uploadReportFile` was called with, not just the ones (`attendance`/`transport`/`customers`)
-that already did.
+consistent bar across all six modules: every module's success-path test asserts the real
+magic-number file signature ("PK" for xlsx / "%PDF-" for pdf) directly on the streamed response
+body (2026-08-04 — no more mocked `uploadReportFile` buffer to inspect, per the Cloudinary
+removal above), not just the ones (`attendance`/`transport`/`customers`) that already did.
 
 ### 7.12 Permissions
 
@@ -3146,13 +3163,15 @@ employee + date picker rendering `GET /location/history`'s ping trail as a polyl
 out-of-scope `employeeId` surfaces the backend's 404 (§7.1's precedent) as a real error
 message, not a silent blank map.
 
-**Report downloads (Attendance + Leave)** — a new shared `frontend/src/components/
-ReportDownloadButton.jsx` + `src/services/reportApi.js`, used by both modules (and meant
-for every later module with a report) rather than duplicating the "pick a format, call
-`POST /reports/generate`, get `{ downloadUrl }`, trigger a real download" flow per module.
-`triggerFileDownload` opens the already-hosted Cloudinary URL via a synthetic `<a download>`
-click — no blob/object-URL handling needed, unlike Leads' export, since this URL is already
-real and hosted, not a same-origin blob this app created.
+**Report downloads (all six §7.11 modules)** — a shared `frontend/src/components/
+ReportDownloadButton.jsx` + `src/services/reportApi.js`, used by every module with a report
+(directly, and/or via `ExportForm.jsx` on the `/reports` page) rather than duplicating the
+"pick a format, call `POST /reports/generate`, trigger a real download" flow per module. As of
+2026-08-04 (§7.11's Cloudinary removal) the dispatcher streams the file directly instead of
+returning `{ downloadUrl }`, so `generateReport` now requests `responseType: "blob"` and
+`triggerBlobDownload` replaced the old `triggerFileDownload` — object-URL → hidden
+`<a download>` click → `revokeObjectURL`, the same blob-download pattern Leads' export already
+used, rather than the old "open an already-hosted Cloudinary URL" approach.
 
 **Known gap from this task — resolved in a same-phase follow-up (`useCheckedInHeartbeatLoop`,
 `attendance/hooks/`):** this task originally shipped with neither `POST
@@ -3190,8 +3209,8 @@ before/after (including the "page loaded mid-shift" case); connectivity gaps ren
 a real, distinguishing class/style (`bg-red-500`), not just present in the data; Team
 Attendance's permission gate (403 for no grant, real content for `view_team`/admin);
 Leave's request flow, admin-only approve/mark-absence, and the mark-absence consequence
-text actually appearing before the API call fires; the report button's `{ downloadUrl }`
-response triggering a real download call; both map views rendering real markers/a real
+text actually appearing before the API call fires; the report button's streamed blob response
+triggering a real download call; both map views rendering real markers/a real
 polyline from mocked live/history data; and (the same-phase follow-up) the heartbeat/ping
 loop starting on fresh check-in, resuming identically on an already-checked-in mount,
 stopping on check-out, cleaning up on unmount with no leaked intervals, and a failed
@@ -3650,8 +3669,8 @@ components — data fetch, transform, empty/loading/error states); a separate
 `ReportsPageContent.test.jsx` (5 tests) mocks each section component itself instead, to test
 permission-gating and the shared date-range filter propagating identically to every trend
 section, isolated from chart-rendering concerns; `ExportForm.test.jsx` (6 tests) covers the
-module-list permission filtering, dispatcher call correctness, and the `downloadUrl` → download
-handoff. Full frontend suite: 232 tests (the same 2 pre-existing flaky failures —
+module-list permission filtering, dispatcher call correctness, and (updated 2026-08-04) the
+blob response → `triggerBlobDownload` handoff. Full frontend suite: 232 tests (the same 2 pre-existing flaky failures —
 `LeadDetailPage`/`CustomersListPage`, confirmed unrelated and passing in isolation — unchanged
 from every prior run); `npm run build` succeeds.
 
@@ -4173,7 +4192,7 @@ frontend/
 | 5 | ✅ **Built and verified:** Support/Tickets + Customer Portal (§7.0/§7.8, `ticket` module, 35 tests + 6 in `auth.test.js` for Customer Portal self-signup). Customer Portal accounts authenticate through the exact same auth system (`role: "customer"`) and are self-signed-up (not admin-created), verified by an email-domain match against `Contact`/`Customer` records rather than an admin grant. `Ticket` raise (internal admin/manager, or customer portal self-raise)/list (`scope=all\|assigned\|own`)/assign/status-change/comments/attachments (Cloudinary, reusing `uploadAttendancePhoto`'s shared client) all built per §7.8. New `tickets` `PERMISSION_REGISTRY` entry and a `customer` `RolePermissionTemplate`. §11.2 (category/status split) resolved as part of this build. Full suite: **304 tests, all passing** (verified via a real `npm test` run — a follow-up added 2 more tests: manager's `scope=all` checked explicitly alongside admin's, and history-ordering across a mixed comment/status-change sequence). | Phase 2 (needs Customer) |
 | 6 | ✅ **Built and verified 2026-07-13:** Transport/Travel (Google Maps Distance Matrix integration — §7.6, `transport` module, 28 tests). Auto-generates a `TravelLog` from Attendance checkout coords (direct call into `attendance.service.js#checkOut`, never fails checkout); manual entry with coords or a direct `distanceKm` override; `GET /travel-logs?scope=own\|team\|all` (mirrors Leave's shape) + `PATCH /travel-logs/:id/approve\|reject` (added 2026-07-13, resolves §11.4) + `GET /travel-logs/report` (reuses `src/services/report.service.js`). `GOOGLE_MAPS_API_KEY` is now a required env var. §11.4 (feeds payroll?) resolved 2026-07-13 — only `status: "approved"` entries feed Payroll mileage reimbursement. | Phase 3 |
 | 7 | ✅ **Built and verified:** Payments + AMC (§7.9/§7.10, `payment`/`amc` modules, 16 + 20 tests). `Payment` (admin-only, no ownership scoping at all per §5) can optionally attach to a real `Invoice` via a new `invoiceId` field — applying it reduces `Invoice.balance` and updates `Invoice.status` (`paid` at 0, the newly-added `partially_paid` otherwise) — **§11.3 resolved: partial reconciliation, not a standalone log and not full invoicing**. `AMC`'s two-flow creation (`new_customer` reuses `customer.service.js#createCustomer` directly; `existing_customer` requires an in-scope `customerId`) matches smartrays.md's "ask which create client or convert client"; `view`/`edit` scoping ("own team"/"own") is resolved via the underlying Customer's ownership (new `customer.service.js#getVisibleCustomerIds` export), since AMC has no `ownerId` field of its own — Manager's "own team" tier is the "PM" role smartrays.md describes elsewhere. No automation on renewal for v1 (stated simplification). Full suite: **340 tests, all passing.** ✅ **Payments frontend built — see §7.22**: `/payments` (date-range filter tabs, server-paginated table, a Record Payment modal with a genuinely debounced customer search) — the first server-side pagination/date-filtering added to this backend for it, everything else still paginates client-side. AMC's own frontend remains a placeholder — not part of this task. | Phase 2 |
-| 8 | ✅ **Built and verified:** Reports (§7.11, `report` module, 24 tests). Single `POST /reports/generate` `{module, filters, format}` dispatching to `attendance`/`leave`/`payroll`/`transport`/`leads`/`customers` — each via that module's own existing, already-scoped data-fetcher (`generateAttendanceReport`/`generateTravelLogReport` reused unmodified; `listLeaves`/`listPayroll`/`listLeads`/`listCustomers` reused with new column/row rendering added in `report.service.js` itself). No new `reports.generate` permission — gated per-module by reusing `can()` against that module's own actions. Per-module `filters` shape validated by reusing each target module's own existing query validator (`validateReportQuery`/`validateScopeQuery`/`validateListQuery`) rather than duplicating checks; `leads`/`customers` fall back to their model's own status enum since neither has a dedicated query validator to reuse. **Breaking change (intentional):** `GET /attendance/report`/`GET /travel-logs/report` now internally call this dispatcher and return `{ downloadUrl }` instead of streaming the file — existing tests rewritten to assert against the real buffer the mocked upload was called with. `GET /leads/export` and `GET /payroll/:id/payslip` both deliberately excluded (pre-existing separate export; single-document artifact, respectively) — the payslip exclusion now has a dedicated regression test proving it still streams directly. Full suite: **365 tests, all passing.** | All prior phases have data to report on |
+| 8 | ✅ **Built and verified:** Reports (§7.11, `report` module, 24 tests). Single `POST /reports/generate` `{module, filters, format}` dispatching to `attendance`/`leave`/`payroll`/`transport`/`leads`/`customers` — each via that module's own existing, already-scoped data-fetcher (`generateAttendanceReport`/`generateTravelLogReport` reused unmodified; `listLeaves`/`listPayroll`/`listLeads`/`listCustomers` reused with new column/row rendering added in `report.service.js` itself). No new `reports.generate` permission — gated per-module by reusing `can()` against that module's own actions. Per-module `filters` shape validated by reusing each target module's own existing query validator (`validateReportQuery`/`validateScopeQuery`/`validateListQuery`) rather than duplicating checks; `leads`/`customers` fall back to their model's own status enum since neither has a dedicated query validator to reuse. `GET /attendance/report`/`GET /travel-logs/report` internally call this dispatcher rather than duplicating report generation. **Cloudinary removed 2026-08-04:** all three callers (`POST /reports/generate` and both of the above) briefly uploaded every report to Cloudinary and returned `{ downloadUrl }` (Phase 8) before streaming the buffer directly again as of 2026-08-04, matching `GET /leads/export`/`GET /payroll/:id/payslip`'s pre-existing direct-stream shape — existing tests rewritten to assert against the real streamed response and to confirm no Cloudinary function is called. `GET /leads/export` and `GET /payroll/:id/payslip` were both deliberately excluded from the dispatcher itself (pre-existing separate export; single-document artifact, respectively; neither was ever routed through Cloudinary) — the payslip exclusion has a dedicated regression test proving it still streams directly. Full suite: **365 tests, all passing.** | All prior phases have data to report on |
 | 9 | ✅ **Backend half built 2026-07-16 — see §7.16:** Notification module (§6.7), Web Push (VAPID) delivery, lead follow-up reminder cron — wired into Leads (assignment + reminders) and Ticket assignment. **This closes out every backend phase.** ✅ **Frontend half — Dashboard — built, see §7.20/§7.21:** the `/dashboard` shell composing Leads + Customers widgets (§7.20) plus 6 operational glance widgets — Attendance/Leave/Tickets/AMC/Payments/Payroll (§7.21) — by role via a declarative catalog (`dashboardConfig.js`), permission-gated per-widget on top of the role-level config. An Employee-facing own-scoped widget is a future incremental addition using the same pattern, not a gap. Remaining: PWA service worker wiring for push receipt/display (no dashboard-side work left). | All |
 | — | ✅ **Built 2026-07-17 — see §7.19:** password reset (self-service email flow + admin override) and the User Management frontend screen (`/settings/users`, closing a gap that existed since Phase 0 — the backend `user` module had endpoints with no frontend consumer). Bundled login page visual redesign in the same task. Not a numbered roadmap phase — a cross-cutting fix/gap-closure task, not new module scope. **Also: first production deployment, to Vercel — see the Deployment section below.** | Phase 0 (`user` module) |
 

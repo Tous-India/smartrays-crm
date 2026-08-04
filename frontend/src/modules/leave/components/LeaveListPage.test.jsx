@@ -357,8 +357,8 @@ describe("LeaveListPage — approve/decline/mark-unapproved-absence/delete, perm
   });
 });
 
-describe("LeaveListPage — Reason field (§7.5c, 2026-07-31)", () => {
-  it("shows the Reason as an expandable row detail once Team/All data is being viewed", async () => {
+describe("LeaveListPage — Reason column (§7.5f, 2026-08-04 — a real column, not an expandable row)", () => {
+  it("shows the Reason directly in the table, with no expand toggle anywhere", async () => {
     useSessionStore.setState({
       user: { _id: "admin-1", role: "admin", permissions: {} },
       isAuthenticated: true,
@@ -368,8 +368,20 @@ describe("LeaveListPage — Reason field (§7.5c, 2026-07-31)", () => {
     render(<LeaveListPage />);
     await screen.findByText("Employee One");
 
-    await userEvent.click(screen.getByRole("button", { name: "Expand row" }));
-    expect(await screen.findByText(/Family event/)).toBeInTheDocument();
+    expect(screen.getByText("Family event")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Expand row" })).not.toBeInTheDocument();
+  });
+
+  it("shows the Reason column for an employee's own list too, not just Team/Admin scopes", async () => {
+    useSessionStore.setState({
+      user: { _id: "emp-1", role: "employee", permissions: { leave: { view: true } } },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    render(<LeaveListPage />);
+
+    expect(await screen.findByText("Family event")).toBeInTheDocument();
   });
 });
 

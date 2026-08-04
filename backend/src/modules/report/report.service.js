@@ -1,7 +1,6 @@
 import ApiError from "../../utils/ApiError.js";
 import { can } from "../../helpers/permission.helper.js";
 import { generateExcelReport, generatePdfReport } from "../../services/report.service.js";
-import { uploadReportFile } from "../../services/cloudinary.service.js";
 import { generateAttendanceReport } from "../attendance/attendance.service.js";
 import { generateTravelLogReport } from "../transport/travelLog.service.js";
 import { listLeaves } from "../leave/leave.service.js";
@@ -91,11 +90,16 @@ const MODULE_HANDLERS = {
 };
 
 /**
- * `POST /reports/generate`'s implementation: resolve the handler, gate on
- * its coarse access check (403 if not even eligible to attempt this
- * module's reports), fetch+render via that module's own logic, upload the
- * result, and return `{ downloadUrl }` — never streaming the binary through
- * this API server, per §7.11.
+ * `POST /reports/generate`'s implementation (and the two legacy per-module
+ * report endpoints, `GET /attendance/report` and `GET /travel-logs/report`,
+ * which call this same function directly): resolve the handler, gate on its
+ * coarse access check (403 if not even eligible to attempt this module's
+ * reports), fetch+render via that module's own logic, and return the raw
+ * file buffer for the caller to stream directly as the HTTP response
+ * (2026-08-04, §7.11 — Cloudinary's upload step was removed; a report is
+ * generated on this server and never needs to leave it before reaching the
+ * requester, matching the existing `GET /leads/export` and
+ * `GET /payroll/:id/payslip` direct-stream precedent).
  */
 export async function generateReport({ module, filters, format }, requestingUser) {
   const handler = MODULE_HANDLERS[module];
@@ -108,10 +112,7 @@ export async function generateReport({ module, filters, format }, requestingUser
     throw new ApiError(403, "You do not have permission to generate this report");
   }
 
-  const buffer = await handler.generateBuffer(filters || {}, format, requestingUser);
-  const downloadUrl = await uploadReportFile(buffer, format);
-
-  return { downloadUrl };
+  return handler.generateBuffer(filters || {}, format, requestingUser);
 }
 
 // --- Leave rendering (new — leave.service.js has no report function of its

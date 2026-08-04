@@ -485,7 +485,28 @@ If this feature returns, the natural re-entry point is re-adding a
   `useGoogleMapsScript.js` (`src/hooks/`) injects the script once (module-level dedupe, so
   two map views mounting at once never double-inject it) and resolves once
   `window.google.maps` exists; `GoogleMapView.jsx` (`src/components/`) is the generic
-  marker(s)/polyline renderer both `LiveMapView` and `HistoryMapView` share.
+  marker(s)/polyline renderer both `LiveMapView` and `HistoryMapView` share. Each marker
+  optionally carries a `color` (2026-08-04, added for the Attendance map integration below) —
+  one of Google's standard colored-pin icon names (`red`/`orange`/`blue`/`green`/etc., via
+  `https://maps.google.com/mapfiles/ms/icons/{color}-dot.png`) — letting a caller visually
+  distinguish marker *types* on the same map instead of every marker looking identical.
+
+**Attendance's "View on Map" — reuses `HistoryMapView`, doesn't fork it (§7.4d, 2026-08-04).**
+The admin photo-viewer modal (`AttendancePhotoModal.jsx`) already showed connectivity gaps and
+geofence violations as text/colored bars; a "View on Map" button now opens
+`AttendanceLocationMapModal.jsx`, which renders the Location module's own `HistoryMapView`
+locked to that one record's employee/day (`initialEmployeeId`/`initialDate`/
+`showControls={false}` — new, backward-compatible optional props; every existing caller that
+omits them behaves exactly as before) instead of a second, parallel map component. It fetches
+the exact same `GET /location/history` ping data `HistoryMapView` already fetches for its own
+`/location` page — no new backend endpoint. A new `deriveExtraMarkers(pings)` prop is the
+extension point: `attendanceMapMarkers.js#deriveAttendanceMapMarkers(record)` returns a function
+of that shape, marking a connectivity gap's two temporal *boundaries* (the last ping before the
+gap and the first ping after it — a gap has no pings *during* it by definition, so its
+boundaries are the only thing that can be marked) in **red**, and every ping captured *during* a
+geofence violation window in **orange** — the same red/orange vocabulary
+`ConnectivityGapBar.jsx`/`GeofenceViolationBar.jsx` already use elsewhere on the same modal, not
+a newly invented color scheme.
 
 ### Heartbeat & location-ping loop (`useCheckedInHeartbeatLoop`)
 
@@ -846,6 +867,35 @@ Absence/Delete on their own team's row (confirmed via horizontal scroll to the A
 employee sees no tabs, no Actions column, and no Delete option at all; Attendance shows no
 calendar view anywhere, with the manually-adjusted and geofence markers still visible in the list.
 
+### Leave: icon-only actions & Reason as a real column (`LeaveListPage.jsx`, 2026-08-04, §7.5f)
+
+**Icon-only action buttons, Tooltip on hover.** Approve/Decline/Mark Unapproved Absence/Delete
+(the same four gated by `usePermission` since §7.5c/§7.5e) are now `type="text"` icon buttons
+(`CheckOutlined`/`CloseOutlined`/`ExclamationCircleOutlined`/`DeleteOutlined`) each wrapped in a
+`Tooltip`, matching the established icon+Tooltip+`aria-label` pattern
+(`CustomerStatusToggleButton.jsx`, `LeadsTable.jsx`'s Log Call/Hot-toggle buttons) instead of
+this table being the one place still using full text-labeled buttons. Each button keeps the
+exact same `aria-label` text its old visible label used ("Approve", "Decline", etc.) — the
+`Popconfirm`/gating logic underneath is unchanged, so every existing
+`getByRole("button", { name: "..." })` test query kept working with no changes needed. Actions
+column `width` dropped from `300` to `160` now that the column no longer needs to fit four full
+text labels.
+
+**Reason is a real column now, not an expandable row.** The old `expandable` row (which only
+showed for non-"own" scopes) is removed entirely — no `Table` `expandable` prop at all — replaced
+with a plain "Reason" column, shown unconditionally (including for an employee's own "own"-scope
+list, unlike the old expandable row). Long reasons truncate via AntD `Typography.Text`'s
+`ellipsis={{ tooltip: reason }}` — the simplest standard AntD truncation mechanism, chosen over
+hand-rolled CSS truncation + a separate `Tooltip` wrapper since there was no existing precedent
+in this codebase to match either way. The table already had `scroll={{ x: "max-content" }}` from
+§7.5e, so the extra column is a non-issue width-wise.
+
+12 updated tests in `LeaveListPage.test.jsx`: the old expandable-row Reason tests replaced with
+tests confirming the Reason column renders directly (own scope included) and that no "Expand
+row" toggle exists anywhere; every pre-existing Approve/Decline/Mark Unapproved Absence/Delete
+query needed zero changes, proving the `aria-label` preservation actually worked. Full Leave
+suite passes (31/31).
+
 ### Geofencing (`src/modules/attendance/`)
 
 Surfaces the backend's new `geofenceViolations[]` (see `backend/README.md`'s Attendance section
@@ -1113,8 +1163,21 @@ mocked API rejection not affecting any other widget on the same page.
 
 `/reports` — the app's first real analytics feature, replacing the `PlaceholderPage` that sat
 there before, and distinct from the pre-existing raw export dispatcher (`POST
-/reports/generate`, still `services/reportApi.js`/`components/ReportDownloadButton.jsx`,
-untouched), which now has a proper UI home on this same page instead of no UI at all.
+/reports/generate`, `services/reportApi.js`/`components/ReportDownloadButton.jsx`), which now
+has a proper UI home on this same page instead of no UI at all.
+
+**`POST /reports/generate` streams the file directly now, not a `{ downloadUrl }`
+(2026-08-04).** The backend dispatcher used to upload the generated file to Cloudinary and
+return a hosted URL; it now streams the raw file as the HTTP response body instead (see
+`backend/README.md`'s Reports section for why). `reportApi.js#generateReport` sets
+`responseType: "blob"` on the axios call so the binary body isn't misparsed as JSON, and the old
+`triggerFileDownload(url, filename)` (which opened an already-hosted URL) was replaced with
+`triggerBlobDownload(blob, filename)` — the standard object-URL → hidden `<a download>` click →
+`revokeObjectURL` pattern, the same one `LeadsListPage.jsx#handleExport` already used for its own
+blob export. `ReportDownloadButton.jsx` is the one place that calls both, so every module that
+renders it (Leads, Customers, Attendance, Leave, Payroll, Transport — via this shared component
+and/or `ExportForm.jsx`) picked up the new direct-download behavior automatically, with no
+per-module changes needed.
 
 **New dependency: `@ant-design/charts`** — chosen specifically because it renders through the
 app's existing AntD `ConfigProvider`/brand theme (`App.jsx`'s `BRAND_THEME`, navy
@@ -1200,8 +1263,8 @@ components' own data-fetch/transform/empty/loading/error behavior). A separate
 permission-gating and shared-date-range-propagation tests from chart-rendering concerns
 entirely — the same "test composition separately from leaf widgets" split
 `DashboardPage.test.jsx` already established. `ExportForm.test.jsx` (6 tests) covers the
-module-list permission filtering, per-module filter payloads, and the dispatcher call →
-`downloadUrl` → download handoff (mocking `services/reportApi.js`, the same pattern
+module-list permission filtering, per-module filter payloads, and the dispatcher call → blob
+response → `triggerBlobDownload` handoff (mocking `services/reportApi.js`, the same pattern
 `ReportDownloadButton.test.jsx` already uses).
 
 **Known deviations:** none from this task's own stated scope. Live-browser (CDP screenshot)

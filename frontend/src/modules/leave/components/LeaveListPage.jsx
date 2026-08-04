@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { Table, Tag, Segmented, Space, Button, Popconfirm, DatePicker, Select, Tooltip, App } from "antd";
-import { DeleteOutlined } from "@ant-design/icons";
+import { Table, Tag, Segmented, Space, Button, Popconfirm, DatePicker, Select, Tooltip, Typography, App } from "antd";
+import { CheckOutlined, CloseOutlined, ExclamationCircleOutlined, DeleteOutlined } from "@ant-design/icons";
 import useLeaveList from "../hooks/useLeaveList";
 import LeaveRequestModal from "./LeaveRequestModal";
 import LeaveDeclineModal from "./LeaveDeclineModal";
@@ -24,6 +24,7 @@ import {
 import { LEAVE_TYPE_LABELS, LEAVE_STATUS_LABELS, LEAVE_STATUS_COLORS, LEAVE_STATUSES } from "../constants/leave.constants";
 
 const { RangePicker } = DatePicker;
+const { Text } = Typography;
 
 const EMPTY_ADMIN_FILTERS = { employeeId: "", teamId: "", status: "", dateRange: null };
 
@@ -50,7 +51,12 @@ const EMPTY_ADMIN_FILTERS = { employeeId: "", teamId: "", status: "", dateRange:
  * Approve/Decline/Mark Unapproved Absence/Delete (§7.5c/§7.5d) each gate on
  * their own `usePermission` check, not a blanket `isAdmin` flag — see the
  * original §7.5c comment (preserved below) for why no extra per-row "is
- * this my team?" check is needed on top of that.
+ * this my team?" check is needed on top of that. **Icon-only, Tooltip-
+ * labeled (§7.5f, 2026-08-04)** — matches the established icon+Tooltip+
+ * `aria-label` action-button pattern (`CustomerStatusToggleButton.jsx`,
+ * `LeadsTable.jsx`) instead of this table's own previous text-label
+ * buttons. **Reason is a real column now, not an expandable row (§7.5f)** —
+ * truncated via `Typography.Text`'s `ellipsis.tooltip`, full text on hover.
  */
 function LeaveListPage() {
   const { message } = App.useApp();
@@ -321,6 +327,22 @@ function LeaveListPage() {
       width: 150,
       render: (isDoubleDeduction) => (isDoubleDeduction ? <Tag color="red">Yes (2x)</Tag> : "No"),
     },
+    {
+      // A real column now, not an expandable row (§7.5f, 2026-08-04) — the
+      // table already scrolls horizontally, so this fits fine width-wise.
+      // Truncated with `Typography.Text`'s built-in `ellipsis.tooltip`
+      // rather than a custom CSS truncation + a second Tooltip component —
+      // same "hover for the full value" affordance as everywhere else in
+      // this app, one line of markup instead of a bespoke implementation.
+      title: "Reason",
+      dataIndex: "reason",
+      width: 220,
+      render: (reason) => (
+        <Text ellipsis={{ tooltip: reason }} style={{ maxWidth: 200 }}>
+          {reason}
+        </Text>
+      ),
+    },
     effectiveScope !== "own" && {
       title: "Paid Leave Balance",
       key: "balance",
@@ -333,20 +355,29 @@ function LeaveListPage() {
     canActOnLeave && {
       title: "Actions",
       key: "actions",
-      width: 300,
+      width: 160,
       render: (_, leave) => (
         <Space>
           {leave.status === "pending" && (
             <>
               {canApprove && (
                 <Popconfirm title="Approve this leave request?" okText="Confirm Approval" onConfirm={() => handleApprove(leave)}>
-                  <Button size="small">Approve</Button>
+                  <Tooltip title="Approve">
+                    <Button type="text" size="small" icon={<CheckOutlined />} aria-label="Approve" />
+                  </Tooltip>
                 </Popconfirm>
               )}
               {canDecline && (
-                <Button size="small" danger onClick={() => setDeclineTarget(leave)}>
-                  Decline
-                </Button>
+                <Tooltip title="Decline">
+                  <Button
+                    type="text"
+                    danger
+                    size="small"
+                    icon={<CloseOutlined />}
+                    aria-label="Decline"
+                    onClick={() => setDeclineTarget(leave)}
+                  />
+                </Tooltip>
               )}
             </>
           )}
@@ -358,9 +389,9 @@ function LeaveListPage() {
               okType="danger"
               onConfirm={() => handleMarkAbsence(leave)}
             >
-              <Button size="small" danger>
-                Mark Unapproved Absence
-              </Button>
+              <Tooltip title="Mark Unapproved Absence">
+                <Button type="text" danger size="small" icon={<ExclamationCircleOutlined />} aria-label="Mark Unapproved Absence" />
+              </Tooltip>
             </Popconfirm>
           )}
           {canDelete && (
@@ -372,7 +403,7 @@ function LeaveListPage() {
               onConfirm={() => handleDelete(leave)}
             >
               <Tooltip title="Delete">
-                <Button size="small" danger icon={<DeleteOutlined />} aria-label="Delete" />
+                <Button type="text" danger size="small" icon={<DeleteOutlined />} aria-label="Delete" />
               </Tooltip>
             </Popconfirm>
           )}
@@ -438,28 +469,7 @@ function LeaveListPage() {
         </Space>
       )}
 
-      <Table
-        rowKey="_id"
-        columns={columns}
-        dataSource={displayedLeaveRequests}
-        loading={isLoading}
-        scroll={{ x: "max-content" }}
-        expandable={
-          effectiveScope !== "own"
-            ? {
-                // Reason is required on every request (§7.5c) and can run
-                // long as free text — an expandable row detail keeps the
-                // table itself scannable, rather than a column that would
-                // either truncate awkwardly or blow up column width.
-                expandedRowRender: (leave) => (
-                  <p className="m-0">
-                    <strong>Reason:</strong> {leave.reason}
-                  </p>
-                ),
-              }
-            : undefined
-        }
-      />
+      <Table rowKey="_id" columns={columns} dataSource={displayedLeaveRequests} loading={isLoading} scroll={{ x: "max-content" }} />
 
       <LeaveRequestModal
         open={isRequestOpen}

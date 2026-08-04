@@ -698,15 +698,17 @@ model was extended in place, not replaced.
 | POST | `/attendance/heartbeat` | Authenticated, no module permission | No body. A "still alive" signal the client calls periodically while checked in — see the connectivity-gap design below. **409** with no open shift. |
 | GET | `/attendance/me` | Authenticated | Own history, newest first, optional `?month=YYYY-MM` filter. Unconditional — no `attendance.*` grant needed, matching `GET /auth/me`. |
 | GET | `/attendance/team` | `attendance.view_team` or `view_all` | Direct reports' records (or everyone's, with `view_all`), optional `?month=`. |
-| GET | `/attendance/report` | `attendance.view_team` or `view_all` | `?from=&to=&format=pdf\|xlsx` (format defaults to `xlsx`). Same visible-employee scoping as `/team`. **Response changed in Phase 8 (§7.11) — see below.** |
+| GET | `/attendance/report` | `attendance.view_team` or `view_all` | `?from=&to=&format=pdf\|xlsx` (format defaults to `xlsx`). Same visible-employee scoping as `/team`. Streams the file directly — see below. |
 
-**Updated (Phase 8, §7.11) — `GET /attendance/report`'s response shape changed, a stated
-breaking change (no frontend exists yet to break):** this endpoint no longer streams the file
-directly. It now internally calls the new unified `report.service.js#generateReport` dispatcher
-(`module: "attendance"`) — `attendance.service.js#generateAttendanceReport` itself is completely
-unchanged, still the function that actually fetches and renders the data — and returns
-**`{ downloadUrl }`** (uploaded to Cloudinary) instead. See the Reports section below for the
-full dispatcher design.
+**Updated (Phase 8, §7.11; Cloudinary removed 2026-08-04) — `GET /attendance/report` internally
+calls the unified `report.service.js#generateReport` dispatcher (`module: "attendance"`) —
+`attendance.service.js#generateAttendanceReport` itself is completely unchanged, still the
+function that actually fetches and renders the data. The dispatcher used to upload the result to
+Cloudinary and return `{ downloadUrl }`; as of 2026-08-04 it no longer talks to Cloudinary at
+all — `generateReport` returns the raw buffer, and this endpoint streams it directly as the HTTP
+response (`Content-Type`/`Content-Disposition: attachment`), the same as `GET /leads/export` and
+`GET /payroll/:id/payslip` already did. See the Reports section below for the full dispatcher
+design and the reasoning for the removal.
 
 **Connectivity-gap detection — design (§6.5's own spec was intentionally terse: "if network
 issue/logout during shift, ... mark red"):** `POST /attendance/heartbeat` is a **deliberately
@@ -1188,7 +1190,7 @@ folder has to its `customerActivity.model.js`).
 |---|---|---|---|
 | POST | `/travel-logs` | Authenticated, no module permission (manual entry) | Body `{ originCoords?, destinationCoords?, distanceKm?, date?, employeeId? }`. Requires either `distanceKm` or both coords — there needs to be something to use or compute a distance from. If `distanceKm` is given, it's used as-is (manual entries may not always have precise coords); otherwise, if both coords are given, `distanceKm` is computed via Google Maps. Self-service by default; a manager may log on behalf of their own direct report, an admin on behalf of anyone — a **plain employee/sales_associate naming someone else's `employeeId` is rejected outright (403)**, deliberately not silently redirected to self the way Leads' `ownerId` is (see below). |
 | GET | `/travel-logs` | `travelLogs.view`/`view_team`/`view_all`, per the requested `?scope=` | `?scope=own` (default)/`team`/`all`, same explicit-scope-per-permission-action pattern as `GET /leave` — not Location's implicit union. Optional `?employeeId=` narrows further within whatever the scope already permits (e.g. a manager on `scope=team` filtering to one report); ignored on `scope=own`. Optional `?month=YYYY-MM`. |
-| GET | `/travel-logs/report` | `travelLogs.view_team` or `view_all` | `?from=&to=&format=pdf\|xlsx` (format defaults to `xlsx`) — same shape as `GET /attendance/report`, reusing `src/services/report.service.js`'s generic builders rather than writing new PDF/Excel generation code. **Response changed in Phase 8 (§7.11) — see below.** |
+| GET | `/travel-logs/report` | `travelLogs.view_team` or `view_all` | `?from=&to=&format=pdf\|xlsx` (format defaults to `xlsx`) — same shape as `GET /attendance/report`, reusing `src/services/report.service.js`'s generic builders rather than writing new PDF/Excel generation code. Streams the file directly — see below. |
 | PATCH | `/travel-logs/:id/approve` | Authenticated only — structural check, not a permission tier (added 2026-07-13) | Allowed for the target employee's own manager or admin; 403 otherwise. 409 if the log isn't currently `pending`. |
 | PATCH | `/travel-logs/:id/reject` | Same as above | Same structural check and 409-if-not-pending rule. |
 
@@ -1209,11 +1211,11 @@ list endpoint (explicit `?scope=`, not an implicit union), and mirrors `attendan
 `employee` get `travelLogs.view: true` by default (their own history); `manager` gets
 `travelLogs.view_team: true`.
 
-**Updated (Phase 8, §7.11) — `GET /travel-logs/report`'s response shape changed, a stated
-breaking change:** same migration as Attendance's report endpoint — `travelLog.controller.js`
-now calls the unified `report.service.js#generateReport` dispatcher (`module: "transport"`)
-internally, `generateTravelLogReport` itself is unchanged, and the response is now
-`{ downloadUrl }` instead of a streamed file. See the Reports section below.
+**Updated (Phase 8, §7.11; Cloudinary removed 2026-08-04) — `GET /travel-logs/report`:** same
+migration as Attendance's report endpoint — `travelLog.controller.js` calls the unified
+`report.service.js#generateReport` dispatcher (`module: "transport"`) internally,
+`generateTravelLogReport` itself is unchanged, and the response is streamed directly as of
+2026-08-04 (no more Cloudinary upload / `{ downloadUrl }`). See the Reports section below.
 
 **Approval workflow (added 2026-07-13, resolves §11.4) — "does travel distance feed payroll, or
 is it reporting-only?": it feeds payroll, but only entries someone with authority has
@@ -1525,7 +1527,7 @@ See `.context/final-plan.md` §7.11. Module folder is `src/modules/report/`.
 
 | Method | Path | Access | Notes |
 |---|---|---|---|
-| POST | `/reports/generate` | Resolved per-module inside `generateReport` — no route-level gate, no new `reports.generate` permission | Body `{ module, filters?, format? }`. `module` is one of `attendance`/`leave`/`payroll`/`transport`/`leads`/`customers` (exactly the six §7.11 names). `format` defaults to `xlsx`. Returns `{ downloadUrl }` — uploads the generated file to Cloudinary rather than streaming it. |
+| POST | `/reports/generate` | Resolved per-module inside `generateReport` — no route-level gate, no new `reports.generate` permission | Body `{ module, filters?, format? }`. `module` is one of `attendance`/`leave`/`payroll`/`transport`/`leads`/`customers` (exactly the six §7.11 names). `format` defaults to `xlsx`. Streams the generated file directly as the response (`Content-Type` + `Content-Disposition: attachment`) — see the Cloudinary-removal note below. |
 
 **Dispatcher design (`report.service.js`):** a small internal `module → { canAccess, generateBuffer }` map:
 - **`attendance`/`transport`** already had a combined fetch-and-render function from their own
@@ -1557,18 +1559,33 @@ one that module's own list/report endpoint already uses. A manager requesting an
 report gets exactly their team's data, proven in `report.test.js` by asserting the dispatcher's
 report contains the exact same employee set `GET /attendance/team` independently returns.
 
-**BREAKING CHANGE (intentional — no frontend exists yet to break):** `GET /attendance/report`
-and `GET /travel-logs/report` now internally call this same dispatcher instead of duplicating
-report generation, and their response changed from streaming the file directly to returning
-`{ downloadUrl }` — see the Attendance/Transport sections above.
+`GET /attendance/report` and `GET /travel-logs/report` internally call this same dispatcher
+instead of duplicating report generation — see the Attendance/Transport sections above.
 
-**Explicitly out of scope:** `GET /payroll/:id/payslip` was **not** migrated and stays exactly
-as it was (a direct PDF stream) — it's a single-document artifact, not a filtered-list report,
-so it doesn't fit the dispatcher pattern. A dedicated regression test in `payroll.test.js`
-confirms this: it still streams `application/pdf` directly rather than returning
-`{ downloadUrl }`. Leads' `GET /leads/export` also stays exactly as-is —
-a deliberately separate, pre-existing CSV/Excel export; the new `leads` module report is
-additive (reuses `listLeads`, not `exportLeadsToExcel`), not a replacement.
+**Cloudinary removed from the dispatcher (2026-08-04).** Through Phase 8, `generateReport`
+uploaded the generated buffer to Cloudinary and returned `{ downloadUrl }`, and every one of the
+three callers above (`POST /reports/generate`, `GET /attendance/report`,
+`GET /travel-logs/report`) returned that JSON shape. This depended on Cloudinary being reachable
+and fast for every single report download, added an external-service failure mode with no upside
+(the file never needed to leave this server — it's generated here and requested by an
+already-authenticated caller of this same API), and meant a slow/unavailable Cloudinary made
+report downloads fail even though nothing about the report itself was wrong. `generateReport` now
+returns the raw buffer directly; each of the three controllers sets
+`Content-Type`/`Content-Disposition: attachment` and calls `res.send(buffer)` — the same
+direct-stream shape `GET /leads/export` and `GET /payroll/:id/payslip` already used (see
+"Explicitly out of scope" below for why those two were never part of the Cloudinary-upload
+dispatcher to begin with). `uploadReportFile` (the now-dead Cloudinary wrapper function) was
+deleted from `cloudinary.service.js` rather than left unused.
+
+**Explicitly out of scope:** `GET /payroll/:id/payslip` was **not** migrated onto the dispatcher
+and stays exactly as it was (a direct PDF stream, never routed through `generateReport` or
+Cloudinary at any point) — it's a single-document artifact, not a filtered-list report, so it
+doesn't fit the dispatcher pattern. A dedicated regression test in `payroll.test.js` confirms
+this still streams `application/pdf` directly. Leads' `GET /leads/export` also stays exactly as-is
+— a deliberately separate, pre-existing CSV/Excel export (also always a direct stream, never
+Cloudinary); the `leads` module report inside the dispatcher is additive (reuses `listLeads`, not
+`exportLeadsToExcel`), not a replacement. The 2026-08-04 Cloudinary removal above didn't touch
+either of these two endpoints — they had nothing to remove.
 
 **Per-module `filters` validation (`report.validation.js`) reuses each target module's own
 existing query validator** rather than duplicating its checks — called as a plain function
@@ -1594,7 +1611,9 @@ blocked entirely — Payroll has no manager grant at all), `leads` (a `sales_ass
 contains only their own leads, matching `listLeads`' ownership rule; an employee blocked),
 and `customers` (a manager's report contains only their team's customers, matching
 `listCustomers`' ownership rule; an employee blocked; a PDF format request). `cloudinary.service.js`
-is mocked at the module boundary — no test makes a real network call.
+is still mocked at the module boundary (other routes on the same app instance need it), and every
+report test now explicitly asserts none of its functions were called — proving the dispatcher
+genuinely never talks to Cloudinary, not just that it doesn't return a `downloadUrl`.
 
 #### Reports & Analytics (`/api/v1/reports/analytics/*`) — added §7.23
 
@@ -2062,12 +2081,13 @@ plain Mongoose schema files have no such dependency.
   exceeds the threshold (both via a follow-up heartbeat and via checkout), and `workingHours` is
   asserted to exactly equal gross duration minus gap duration (and to equal gross duration alone
   when there was no gap); `GET /attendance/team` scopes to direct reports only, 403s a role with
-  no `attendance.*` grant, and filters by month; `GET /attendance/report` (updated Phase 8, §7.11
-  — no longer streams the file, returns `{ downloadUrl }`) generates a real, non-empty `.xlsx` by
-  default — asserted against the actual buffer the mocked `uploadReportFile` was called with,
-  re-read with `exceljs` to confirm the "PK" zip signature and that only the manager's own team's
-  records appear in it, not an unaffiliated sales associate's — and a real, non-empty `.pdf` with
-  `?format=pdf` (checked for the `%PDF-` magic-number header on that same captured buffer),
+  no `attendance.*` grant, and filters by month; `GET /attendance/report` (updated Phase 8, §7.11;
+  streams directly again as of 2026-08-04's Cloudinary removal) generates a real, non-empty
+  `.xlsx` by default — asserted against the actual streamed response body, re-read with `exceljs`
+  to confirm the "PK" zip signature and that only the manager's own team's records appear in it,
+  not an unaffiliated sales associate's, plus the correct `Content-Type`/`Content-Disposition`
+  headers and that no Cloudinary function was called — and a real, non-empty `.pdf` with
+  `?format=pdf` (checked for the `%PDF-` magic-number header on that same streamed buffer),
   rejects an invalid format and an inverted date range, and 403s a role with no `attendance.*`
   grant.
 - **Leave** (18 tests): requesting creates a `pending` request, always attributes it to the caller
@@ -2129,12 +2149,12 @@ plain Mongoose schema files have no such dependency.
   scope is rejected, and a dedicated side-by-side test proves admin/manager/employee scoping
   simultaneously (three employees log travel, then admin's `scope=all`, the manager's
   `scope=team`, and one employee's default `scope=own` are each asserted against the exact
-  expected employee-id set); the report (updated Phase 8, §7.11 — no longer streams the file,
-  returns `{ downloadUrl }`) generates a real, non-empty `.xlsx` by default (asserted against the
-  actual buffer the mocked `uploadReportFile` was called with, re-read with `exceljs` to confirm
-  both the "PK" signature and team-only scoping) and a real PDF with `?format=pdf` (checked for
-  the `%PDF-` header on that same captured buffer), and 403s a role with no
-  `view_team`/`view_all` grant; (added 2026-07-13) approve/reject: both `auto`- and
+  expected employee-id set); the report (updated Phase 8, §7.11; streams directly again as of
+  2026-08-04's Cloudinary removal) generates a real, non-empty `.xlsx` by default (asserted
+  against the actual streamed response body, re-read with `exceljs` to confirm both the "PK"
+  signature and team-only scoping, plus that no Cloudinary function was called) and a real PDF
+  with `?format=pdf` (checked for the `%PDF-` header on that same streamed buffer), and 403s a
+  role with no `view_team`/`view_all` grant; (added 2026-07-13) approve/reject: both `auto`- and
   `manual`-source logs default to
   `status: "pending"`, the target employee's own manager can approve, an admin can reject, a
   manager is blocked (403) from resolving a non-report's log, a plain sales_associate is blocked
@@ -2204,8 +2224,8 @@ plain Mongoose schema files have no such dependency.
   is blocked, and an invalid date-range `filters` value is rejected via the reused
   `validateReportQuery`), `transport` (same team-scoping proof; blocked role; a `from > to`
   filter is rejected via the same reused validator), `leave` (an employee's own report succeeds
-  — now with an explicit "PK" xlsx-signature check on the captured buffer, not just a
-  `downloadUrl` check; a `sales_associate` requesting `scope=team` still 403s via the reused
+  — asserted against the actual streamed response, with an explicit "PK" xlsx-signature check on
+  the buffer; a `sales_associate` requesting `scope=team` still 403s via the reused
   `listLeaves` check even though the coarse dispatcher gate let them in; an invalid `scope`
   value is rejected via the reused `validateScopeQuery`), `payroll` (an employee's own report
   succeeds with the correct values in the rendered `.xlsx`, plus the "PK" signature check; a
@@ -2216,10 +2236,11 @@ plain Mongoose schema files have no such dependency.
   `LEAD_STATUSES`), and `customers` (a manager's report contains only their team's customers,
   matching `listCustomers`' ownership rule, plus the "PK" check; an employee blocked; a
   `format=pdf` request generates a real PDF; an invalid `status` filter is rejected against
-  `CUSTOMER_STATUSES`). Every one of the six modules' success path now asserts the real
-  magic-number file signature ("PK"/"%PDF-") on the buffer captured from the mocked
-  `uploadReportFile` call, not just some of them. `cloudinary.service.js` is mocked at the
-  module boundary — no test makes a real network call.
+  `CUSTOMER_STATUSES`). Every one of the six modules' success path asserts the real magic-number
+  file signature ("PK"/"%PDF-") directly on the streamed response body (2026-08-04 — the
+  dispatcher no longer uploads to Cloudinary; see the Cloudinary-removal note above), plus that
+  no Cloudinary function was called. `cloudinary.service.js` is still mocked at the module
+  boundary (other routes on the same app instance need it) — no test makes a real network call.
 
 Total: **365 tests**, all passing — verified via a real `npm test` run, per-file breakdown:
 19 auth + 34 leads + 20 location + 20 permissions + 33 user + 32 attendance + 21 customer +

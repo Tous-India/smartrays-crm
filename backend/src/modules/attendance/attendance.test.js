@@ -2,13 +2,13 @@ import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest
 import { startTestDatabase, stopTestDatabase } from "../../../tests/helpers/testDb.js";
 import { getTestApp } from "../../../tests/helpers/testApp.js";
 import { createUserDirectly, loginAsAgent } from "../../../tests/helpers/authHelpers.js";
+import { bufferParser } from "../../../tests/helpers/binaryResponse.js";
 import Attendance from "./attendance.model.js";
 import User from "../user/user.model.js";
 import Notification from "../notification/notification.model.js";
 
 const FAKE_PHOTO_URL = "https://fake.cloudinary.test/photo.jpg";
 const FAKE_PHOTO_PUBLIC_ID = "fake-public-id";
-const FAKE_REPORT_URL = "https://fake.cloudinary.test/report.file";
 // A photo is mandatory server-side on every check-in/check-out (see
 // attendance.validation.js) — this is the throwaway base64 payload nearly
 // every test in this file needs, since the goal of most tests here is
@@ -24,14 +24,12 @@ const TEST_PHOTO = "data:image/jpeg;base64,ZmFrZWltYWdlZGF0YQ==";
 // cron's later `cloudinary.uploader.destroy` call). `deleteCloudinaryAsset`
 // is mocked too, even though this file's own tests never call it directly
 // (that's `attendancePhotoCleanupCron.test.js`'s job) — needed since this
-// mock replaces the whole module. `uploadReportFile` (added for the Phase 8
-// report dispatcher, §7.11) is mocked too, since GET /attendance/report now
-// goes through it — the mock itself is what lets tests assert against the
-// actual generated buffer (real bytes it was called with) instead of a
-// streamed response body.
+// mock replaces the whole module. `uploadReportFile` no longer exists
+// (2026-08-04, §7.11 — the report dispatcher, including GET
+// /attendance/report, streams its buffer directly now instead of uploading
+// to Cloudinary first).
 vi.mock("../../services/cloudinary.service.js", () => ({
   uploadAttendancePhoto: vi.fn(async () => ({ secureUrl: FAKE_PHOTO_URL, publicId: FAKE_PHOTO_PUBLIC_ID })),
-  uploadReportFile: vi.fn(async () => FAKE_REPORT_URL),
   deleteCloudinaryAsset: vi.fn(async () => ({ result: "ok" })),
 }));
 
@@ -665,30 +663,32 @@ describe("GET /attendance/team", () => {
 });
 
 describe("GET /attendance/report", () => {
-  // Migrated onto the unified §7.11 report dispatcher (Phase 8) — this
-  // endpoint no longer streams the file itself, so these tests assert
-  // against the real buffer the mocked `uploadReportFile` was called with
-  // (proving a genuine, well-formed file was generated) and the
-  // `{ downloadUrl }` the mocked upload resolves to, rather than a streamed
-  // response body — the same general approach already used for mocking
-  // Cloudinary elsewhere in this project.
-  it("generates a valid, non-empty .xlsx report by default, scoped to the manager's team only, and returns a downloadUrl", async () => {
+  // Migrated onto the unified §7.11 report dispatcher (Phase 8); as of
+  // 2026-08-04 that dispatcher streams the generated buffer directly as the
+  // HTTP response instead of uploading it to Cloudinary first — these tests
+  // assert against the real response body/headers, and explicitly confirm
+  // `uploadAttendancePhoto`/`deleteCloudinaryAsset` (the two Cloudinary
+  // functions still mocked in this file for the photo-upload tests above)
+  // are never called by a report request.
+  it("generates a valid, non-empty .xlsx report by default, scoped to the manager's team only, streamed directly with no Cloudinary call", async () => {
     await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
     await sales2Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
     await sales3Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
 
-    const { uploadReportFile } = await import("../../services/cloudinary.service.js");
-    uploadReportFile.mockClear();
+    const { uploadAttendancePhoto, deleteCloudinaryAsset } = await import("../../services/cloudinary.service.js");
+    uploadAttendancePhoto.mockClear();
 
-    const response = await managerAgent.get("/api/v1/attendance/report");
+    const response = await managerAgent.get("/api/v1/attendance/report").buffer(true).parse(bufferParser);
 
     expect(response.status).toBe(200);
-    expect(response.body.data.downloadUrl).toBe(FAKE_REPORT_URL);
-    expect(uploadReportFile).toHaveBeenCalledTimes(1);
+    expect(response.headers["content-type"]).toBe(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    expect(response.headers["content-disposition"]).toContain("attendance-report.xlsx");
+    expect(uploadAttendancePhoto).not.toHaveBeenCalled();
+    expect(deleteCloudinaryAsset).not.toHaveBeenCalled();
 
-    const [buffer, format] = uploadReportFile.mock.calls[0];
-    expect(format).toBe("xlsx");
-    expect(Buffer.isBuffer(buffer)).toBe(true);
+    const buffer = response.body;
     // .xlsx is a zip archive — its first two bytes are always the "PK" local
     // file header signature. Asserting this on the actual generated buffer
     // (not just trusting the format string) is what proves a real,
@@ -713,20 +713,22 @@ describe("GET /attendance/report", () => {
     expect(employeeNames.sort()).toEqual(["Sales One", "Sales Two"].sort());
   });
 
-  it("generates a valid, non-empty PDF report when format=pdf, and returns a downloadUrl", async () => {
+  it("generates a valid, non-empty PDF report when format=pdf, streamed directly with no Cloudinary call", async () => {
     await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
 
-    const { uploadReportFile } = await import("../../services/cloudinary.service.js");
-    uploadReportFile.mockClear();
+    const { uploadAttendancePhoto } = await import("../../services/cloudinary.service.js");
+    uploadAttendancePhoto.mockClear();
 
-    const response = await managerAgent.get("/api/v1/attendance/report?format=pdf");
+    const response = await managerAgent
+      .get("/api/v1/attendance/report?format=pdf")
+      .buffer(true)
+      .parse(bufferParser);
 
     expect(response.status).toBe(200);
-    expect(response.body.data.downloadUrl).toBe(FAKE_REPORT_URL);
-    expect(uploadReportFile).toHaveBeenCalledTimes(1);
+    expect(response.headers["content-type"]).toBe("application/pdf");
+    expect(uploadAttendancePhoto).not.toHaveBeenCalled();
 
-    const [buffer, format] = uploadReportFile.mock.calls[0];
-    expect(format).toBe("pdf");
+    const buffer = response.body;
     // Every valid PDF file starts with this exact magic-number header.
     expect(buffer.subarray(0, 5).toString()).toBe("%PDF-");
   });

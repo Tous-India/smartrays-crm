@@ -1,7 +1,9 @@
-import { Modal, Row, Col, Image, Empty, Tag, Typography, Space } from "antd";
+import { useState } from "react";
+import { Modal, Row, Col, Image, Empty, Tag, Typography, Space, Button } from "antd";
 import { EnvironmentOutlined } from "@ant-design/icons";
 import ConnectivityGapBar from "./ConnectivityGapBar";
 import GeofenceViolationBar from "./GeofenceViolationBar";
+import AttendanceLocationMapModal from "./AttendanceLocationMapModal";
 import { ATTENDANCE_STATUS_COLORS, ATTENDANCE_STATUS_LABELS } from "../constants/attendance.constants";
 
 const { Text } = Typography;
@@ -73,8 +75,17 @@ function PhotoSlot({ title, photoUrl, time, coords, showPhoto, showLocation }) {
  * manager lacking the grant would see a "No photo"/"No coordinates"
  * placeholder that looks like a data problem rather than a permission
  * boundary they simply don't have.
+ *
+ * **"View on Map" (§7.4d, 2026-08-04)** — same `showLocation` gate as the
+ * rest of this section (connectivity gaps stay ungated, matching
+ * `ConnectivityGapBar`'s own existing behavior above — a gap is about
+ * *when*, not *where*, so it isn't location-sensitive the way coordinates
+ * are). Opens `AttendanceLocationMapModal`, which reuses `HistoryMapView`
+ * (Location module) rather than a new map component.
  */
 function AttendancePhotoModal({ open, record, onCancel, showPhotos, showLocation }) {
+  const [isMapOpen, setIsMapOpen] = useState(false);
+
   if (!record) {
     return null;
   }
@@ -124,14 +135,26 @@ function AttendancePhotoModal({ open, record, onCancel, showPhotos, showLocation
 
         {showLocation && (
           <div>
-            <div className="mb-1 text-sm font-medium">
-              <EnvironmentOutlined className="mr-1" />
-              Location
+            <div className="mb-1 flex items-center justify-between">
+              <div className="text-sm font-medium">
+                <EnvironmentOutlined className="mr-1" />
+                Location
+              </div>
+              <Button
+                size="small"
+                icon={<EnvironmentOutlined />}
+                aria-label="View on Map"
+                onClick={() => setIsMapOpen(true)}
+              >
+                View on Map
+              </Button>
             </div>
             <GeofenceViolationBar record={record} />
           </div>
         )}
       </Space>
+
+      <AttendanceLocationMapModal open={isMapOpen} record={record} onCancel={() => setIsMapOpen(false)} />
     </Modal>
   );
 }

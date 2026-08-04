@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest
 import { startTestDatabase, stopTestDatabase } from "../../../tests/helpers/testDb.js";
 import { getTestApp } from "../../../tests/helpers/testApp.js";
 import { loginAsAgent } from "../../../tests/helpers/authHelpers.js";
+import { bufferParser } from "../../../tests/helpers/binaryResponse.js";
 import Attendance from "../attendance/attendance.model.js";
 import Leave from "../leave/leave.model.js";
 import Payroll from "../payroll/payroll.model.js";
@@ -9,13 +10,24 @@ import TravelLog from "../transport/travelLog.model.js";
 import Lead from "../lead/lead.model.js";
 import Customer from "../customer/customer.model.js";
 
-const FAKE_REPORT_URL = "https://fake.cloudinary.test/report.file";
+const REPORT_CONTENT_TYPES = {
+  pdf: "application/pdf",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+};
 
-// No test ever makes a real Cloudinary API call — mocked at the module
-// boundary, same pattern established for the other report-generating
-// modules (Attendance/TravelLog).
+// The report dispatcher no longer talks to Cloudinary at all (2026-08-04,
+// §7.11 architecture change) — every module's report is now generated and
+// streamed directly as the HTTP response, never uploaded anywhere first.
+// `cloudinary.service.js` is still mocked here (same as
+// attendance.test.js/travelLog.test.js) purely so the app can boot without a
+// real network dependency (attendance photo routes still use it) — every
+// test below explicitly asserts NONE of its functions were called, which is
+// what actually proves the removal, not just the absence of a
+// `{ downloadUrl }` in the response.
 vi.mock("../../services/cloudinary.service.js", () => ({
-  uploadReportFile: vi.fn(async () => FAKE_REPORT_URL),
+  uploadAttendancePhoto: vi.fn(),
+  deleteCloudinaryAsset: vi.fn(),
+  uploadTicketAttachment: vi.fn(),
 }));
 
 let app;
@@ -24,6 +36,16 @@ let admin, manager1, sales1, sales2, sales3, employee1;
 
 function juneDate(day) {
   return new Date(2026, 5, day);
+}
+
+async function expectNoCloudinaryCalls() {
+  const { uploadAttendancePhoto, deleteCloudinaryAsset, uploadTicketAttachment } = await import(
+    "../../services/cloudinary.service.js"
+  );
+
+  expect(uploadAttendancePhoto).not.toHaveBeenCalled();
+  expect(deleteCloudinaryAsset).not.toHaveBeenCalled();
+  expect(uploadTicketAttachment).not.toHaveBeenCalled();
 }
 
 beforeAll(async () => {
@@ -95,6 +117,7 @@ afterEach(async () => {
   await TravelLog.deleteMany({});
   await Lead.deleteMany({});
   await Customer.deleteMany({});
+  vi.clearAllMocks();
 });
 
 afterAll(async () => {
@@ -139,7 +162,7 @@ describe("POST /reports/generate — validation", () => {
 });
 
 describe("module: attendance", () => {
-  it("gives a manager exactly their team's data — the same set GET /attendance/team already returns", async () => {
+  it("gives a manager exactly their team's data — the same set GET /attendance/team already returns — streamed directly, no Cloudinary involved", async () => {
     await Attendance.create({
       employeeId: sales1._id,
       date: juneDate(1),
@@ -165,17 +188,19 @@ describe("module: attendance", () => {
     const teamResponse = await managerAgent.get("/api/v1/attendance/team");
     const teamEmployeeIds = teamResponse.body.data.map((record) => record.employeeId).sort();
 
-    const { uploadReportFile } = await import("../../services/cloudinary.service.js");
-    uploadReportFile.mockClear();
-
     const reportResponse = await managerAgent
       .post("/api/v1/reports/generate")
-      .send({ module: "attendance", format: "xlsx" });
+      .send({ module: "attendance", format: "xlsx" })
+      .buffer(true)
+      .parse(bufferParser);
 
     expect(reportResponse.status).toBe(200);
-    expect(reportResponse.body.data.downloadUrl).toBe(FAKE_REPORT_URL);
+    expect(reportResponse.headers["content-type"]).toBe(REPORT_CONTENT_TYPES.xlsx);
+    expect(reportResponse.headers["content-disposition"]).toContain("attachment");
+    expect(reportResponse.headers["content-disposition"]).toContain("attendance-report.xlsx");
+    await expectNoCloudinaryCalls();
 
-    const [buffer] = uploadReportFile.mock.calls[0];
+    const buffer = reportResponse.body;
     // xlsx files are zip archives — real xlsx bytes start with the "PK"
     // local-file-header signature, same check attendance.test.js's own
     // (now-migrated) /attendance/report test makes on this buffer.
@@ -207,18 +232,22 @@ describe("module: attendance", () => {
 });
 
 describe("module: transport", () => {
-  it("gives a manager exactly their team's data, same as GET /travel-logs?scope=team", async () => {
+  it("gives a manager exactly their team's data, same as GET /travel-logs?scope=team — streamed directly, no Cloudinary involved", async () => {
     await TravelLog.create({ employeeId: sales1._id, date: juneDate(1), distanceKm: 10, source: "manual" });
     await TravelLog.create({ employeeId: sales2._id, date: juneDate(1), distanceKm: 20, source: "manual" });
     await TravelLog.create({ employeeId: sales3._id, date: juneDate(1), distanceKm: 30, source: "manual" });
 
-    const { uploadReportFile } = await import("../../services/cloudinary.service.js");
-    uploadReportFile.mockClear();
-
-    const response = await managerAgent.post("/api/v1/reports/generate").send({ module: "transport" });
+    const response = await managerAgent
+      .post("/api/v1/reports/generate")
+      .send({ module: "transport" })
+      .buffer(true)
+      .parse(bufferParser);
 
     expect(response.status).toBe(200);
-    const [buffer] = uploadReportFile.mock.calls[0];
+    expect(response.headers["content-type"]).toBe(REPORT_CONTENT_TYPES.xlsx);
+    await expectNoCloudinaryCalls();
+
+    const buffer = response.body;
     expect(buffer.subarray(0, 2).toString()).toBe("PK");
 
     const { default: ExcelJS } = await import("exceljs");
@@ -244,7 +273,7 @@ describe("module: transport", () => {
 });
 
 describe("module: leave", () => {
-  it("lets an employee generate a report of their own leave data", async () => {
+  it("lets an employee generate a report of their own leave data — streamed directly, no Cloudinary involved", async () => {
     await Leave.create({
       employeeId: employee1._id,
       startDate: juneDate(1),
@@ -254,15 +283,17 @@ describe("module: leave", () => {
       reason: "Test reason",
     });
 
-    const { uploadReportFile } = await import("../../services/cloudinary.service.js");
-    uploadReportFile.mockClear();
-
-    const response = await employee1Agent.post("/api/v1/reports/generate").send({ module: "leave" });
+    const response = await employee1Agent
+      .post("/api/v1/reports/generate")
+      .send({ module: "leave" })
+      .buffer(true)
+      .parse(bufferParser);
 
     expect(response.status).toBe(200);
-    expect(response.body.data.downloadUrl).toBe(FAKE_REPORT_URL);
+    expect(response.headers["content-type"]).toBe(REPORT_CONTENT_TYPES.xlsx);
+    await expectNoCloudinaryCalls();
 
-    const [buffer] = uploadReportFile.mock.calls[0];
+    const buffer = response.body;
     expect(buffer.subarray(0, 2).toString()).toBe("PK");
 
     const { default: ExcelJS } = await import("exceljs");
@@ -291,7 +322,7 @@ describe("module: leave", () => {
 });
 
 describe("module: payroll", () => {
-  it("lets an employee generate a report of their own payroll history", async () => {
+  it("lets an employee generate a report of their own payroll history — streamed directly, no Cloudinary involved", async () => {
     await Payroll.create({
       employeeId: employee1._id,
       month: 6,
@@ -308,14 +339,16 @@ describe("module: payroll", () => {
       paidOn: new Date(2026, 6, 1),
     });
 
-    const { uploadReportFile } = await import("../../services/cloudinary.service.js");
-    uploadReportFile.mockClear();
-
-    const response = await employee1Agent.post("/api/v1/reports/generate").send({ module: "payroll" });
+    const response = await employee1Agent
+      .post("/api/v1/reports/generate")
+      .send({ module: "payroll" })
+      .buffer(true)
+      .parse(bufferParser);
 
     expect(response.status).toBe(200);
+    await expectNoCloudinaryCalls();
 
-    const [buffer] = uploadReportFile.mock.calls[0];
+    const buffer = response.body;
     expect(buffer.subarray(0, 2).toString()).toBe("PK");
 
     const { default: ExcelJS } = await import("exceljs");
@@ -344,7 +377,7 @@ describe("module: payroll", () => {
 });
 
 describe("module: leads", () => {
-  it("scopes to a sales_associate's own leads only, matching listLeads' own ownership rule", async () => {
+  it("scopes to a sales_associate's own leads only, matching listLeads' own ownership rule — streamed directly, no Cloudinary involved", async () => {
     await Lead.create({
       name: "Own Lead",
       companyName: "Acme",
@@ -360,14 +393,16 @@ describe("module: leads", () => {
       clientType: "residential",
     });
 
-    const { uploadReportFile } = await import("../../services/cloudinary.service.js");
-    uploadReportFile.mockClear();
-
-    const response = await sales1Agent.post("/api/v1/reports/generate").send({ module: "leads" });
+    const response = await sales1Agent
+      .post("/api/v1/reports/generate")
+      .send({ module: "leads" })
+      .buffer(true)
+      .parse(bufferParser);
 
     expect(response.status).toBe(200);
+    await expectNoCloudinaryCalls();
 
-    const [buffer] = uploadReportFile.mock.calls[0];
+    const buffer = response.body;
     expect(buffer.subarray(0, 2).toString()).toBe("PK");
 
     const { default: ExcelJS } = await import("exceljs");
@@ -401,19 +436,21 @@ describe("module: leads", () => {
 });
 
 describe("module: customers", () => {
-  it("gives a manager their team's customers only, matching listCustomers' own ownership rule", async () => {
+  it("gives a manager their team's customers only, matching listCustomers' own ownership rule — streamed directly, no Cloudinary involved", async () => {
     await Customer.create({ companyName: "Team Customer", ownerId: sales1._id, projectManagerId: admin._id });
     await Customer.create({ companyName: "Other Customer", ownerId: sales3._id, projectManagerId: admin._id });
 
-    const { uploadReportFile } = await import("../../services/cloudinary.service.js");
-    uploadReportFile.mockClear();
-
-    const response = await managerAgent.post("/api/v1/reports/generate").send({ module: "customers" });
+    const response = await managerAgent
+      .post("/api/v1/reports/generate")
+      .send({ module: "customers" })
+      .buffer(true)
+      .parse(bufferParser);
 
     expect(response.status).toBe(200);
+    expect(response.headers["content-type"]).toBe(REPORT_CONTENT_TYPES.xlsx);
+    await expectNoCloudinaryCalls();
 
-    const [buffer, format] = uploadReportFile.mock.calls[0];
-    expect(format).toBe("xlsx");
+    const buffer = response.body;
     expect(buffer.subarray(0, 2).toString()).toBe("PK");
 
     const { default: ExcelJS } = await import("exceljs");
@@ -437,20 +474,20 @@ describe("module: customers", () => {
     expect(response.status).toBe(403);
   });
 
-  it("generates a PDF when format=pdf is requested", async () => {
+  it("generates a PDF when format=pdf is requested — streamed directly, no Cloudinary involved", async () => {
     await Customer.create({ companyName: "PDF Co", ownerId: admin._id, projectManagerId: admin._id });
-
-    const { uploadReportFile } = await import("../../services/cloudinary.service.js");
-    uploadReportFile.mockClear();
 
     const response = await adminAgent
       .post("/api/v1/reports/generate")
-      .send({ module: "customers", format: "pdf" });
+      .send({ module: "customers", format: "pdf" })
+      .buffer(true)
+      .parse(bufferParser);
 
     expect(response.status).toBe(200);
+    expect(response.headers["content-type"]).toBe(REPORT_CONTENT_TYPES.pdf);
+    await expectNoCloudinaryCalls();
 
-    const [buffer, format] = uploadReportFile.mock.calls[0];
-    expect(format).toBe("pdf");
+    const buffer = response.body;
     expect(buffer.subarray(0, 5).toString()).toBe("%PDF-");
   });
 

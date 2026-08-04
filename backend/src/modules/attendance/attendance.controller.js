@@ -79,14 +79,22 @@ export const createManual = asyncWrapper(async (req, res) => {
   res.status(201).json(new ApiResponse(201, record, "Attendance record created successfully"));
 });
 
-// Migrated onto the unified §7.11 dispatcher (Phase 8) — no longer streams
-// the file itself; internally reuses generateAttendanceReport (unchanged)
-// but returns { downloadUrl } after uploading to Cloudinary, same as
+const REPORT_CONTENT_TYPES = {
+  pdf: "application/pdf",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+};
+
+// Migrated onto the unified §7.11 dispatcher (Phase 8) — internally reuses
+// generateAttendanceReport (unchanged) via generateReport, then streams the
+// resulting buffer directly (2026-08-04 — Cloudinary's upload step was
+// removed from the whole dispatcher, this endpoint included), same as
 // POST /reports/generate with module: "attendance" would.
 export const report = asyncWrapper(async (req, res) => {
   const { from, to } = req.query;
   const format = req.query.format || "xlsx";
-  const result = await generateReport({ module: "attendance", filters: { from, to }, format }, req.user);
+  const buffer = await generateReport({ module: "attendance", filters: { from, to }, format }, req.user);
 
-  res.status(200).json(new ApiResponse(200, result, "Report generated successfully"));
+  res.setHeader("Content-Type", REPORT_CONTENT_TYPES[format]);
+  res.setHeader("Content-Disposition", `attachment; filename=attendance-report.${format}`);
+  res.status(200).send(buffer);
 });

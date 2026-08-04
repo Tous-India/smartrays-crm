@@ -2,23 +2,23 @@ import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest
 import { startTestDatabase, stopTestDatabase } from "../../../tests/helpers/testDb.js";
 import { getTestApp } from "../../../tests/helpers/testApp.js";
 import { createUserDirectly, loginAsAgent } from "../../../tests/helpers/authHelpers.js";
+import { bufferParser } from "../../../tests/helpers/binaryResponse.js";
 import TravelLog from "./travelLog.model.js";
 import Attendance from "../attendance/attendance.model.js";
 
 const FAKE_DISTANCE_KM = 12.5;
 const TEST_PHOTO = "data:image/jpeg;base64,ZmFrZWltYWdlZGF0YQ==";
-const FAKE_REPORT_URL = "https://fake.cloudinary.test/report.file";
 
 // No test ever makes a real Google Maps or Cloudinary API call — both are
 // mocked at the module boundary, the same pattern attendance.test.js already
-// established. `uploadReportFile` (added for the Phase 8 report dispatcher,
-// §7.11) is mocked too, since GET /travel-logs/report now goes through it.
+// established. `uploadReportFile` no longer exists (2026-08-04, §7.11 — the
+// report dispatcher, including GET /travel-logs/report, streams its buffer
+// directly now instead of uploading to Cloudinary first).
 vi.mock("../../services/googleMaps.service.js", () => ({
   getDistanceKm: vi.fn(async () => FAKE_DISTANCE_KM),
 }));
 vi.mock("../../services/cloudinary.service.js", () => ({
   uploadAttendancePhoto: vi.fn(async () => ({ secureUrl: "https://fake.cloudinary.test/photo.jpg", publicId: "fake-public-id" })),
-  uploadReportFile: vi.fn(async () => FAKE_REPORT_URL),
 }));
 
 let app;
@@ -371,26 +371,30 @@ describe("PATCH /travel-logs/:id/approve|reject", () => {
 });
 
 describe("GET /travel-logs/report", () => {
-  // Migrated onto the unified §7.11 report dispatcher (Phase 8) — no longer
-  // streams the file itself; these tests assert against the real buffer the
-  // mocked `uploadReportFile` was called with, and the `{ downloadUrl }` the
-  // mocked upload resolves to, rather than a streamed response body.
-  it("generates a valid, non-empty .xlsx report by default, scoped to the manager's team only, and returns a downloadUrl", async () => {
+  // Migrated onto the unified §7.11 report dispatcher (Phase 8); as of
+  // 2026-08-04 that dispatcher streams the generated buffer directly as the
+  // HTTP response instead of uploading it to Cloudinary first — these tests
+  // assert against the real response body/headers, and explicitly confirm
+  // `uploadAttendancePhoto` (the one Cloudinary function still mocked in
+  // this file) is never called by a report request.
+  it("generates a valid, non-empty .xlsx report by default, scoped to the manager's team only, streamed directly with no Cloudinary call", async () => {
     await sales1Agent.post("/api/v1/travel-logs").send({ distanceKm: 5 });
     await sales2Agent.post("/api/v1/travel-logs").send({ distanceKm: 5 });
     await sales3Agent.post("/api/v1/travel-logs").send({ distanceKm: 5 });
 
-    const { uploadReportFile } = await import("../../services/cloudinary.service.js");
-    uploadReportFile.mockClear();
+    const { uploadAttendancePhoto } = await import("../../services/cloudinary.service.js");
+    uploadAttendancePhoto.mockClear();
 
-    const response = await managerAgent.get("/api/v1/travel-logs/report");
+    const response = await managerAgent.get("/api/v1/travel-logs/report").buffer(true).parse(bufferParser);
 
     expect(response.status).toBe(200);
-    expect(response.body.data.downloadUrl).toBe(FAKE_REPORT_URL);
-    expect(uploadReportFile).toHaveBeenCalledTimes(1);
+    expect(response.headers["content-type"]).toBe(
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    expect(response.headers["content-disposition"]).toContain("transport-report.xlsx");
+    expect(uploadAttendancePhoto).not.toHaveBeenCalled();
 
-    const [buffer, format] = uploadReportFile.mock.calls[0];
-    expect(format).toBe("xlsx");
+    const buffer = response.body;
     expect(buffer.subarray(0, 2).toString()).toBe("PK");
 
     const { default: ExcelJS } = await import("exceljs");
@@ -408,20 +412,22 @@ describe("GET /travel-logs/report", () => {
     expect(employeeNames.sort()).toEqual(["Sales One", "Sales Two"].sort());
   });
 
-  it("generates a valid, non-empty PDF report when format=pdf, and returns a downloadUrl", async () => {
+  it("generates a valid, non-empty PDF report when format=pdf, streamed directly with no Cloudinary call", async () => {
     await sales1Agent.post("/api/v1/travel-logs").send({ distanceKm: 5 });
 
-    const { uploadReportFile } = await import("../../services/cloudinary.service.js");
-    uploadReportFile.mockClear();
+    const { uploadAttendancePhoto } = await import("../../services/cloudinary.service.js");
+    uploadAttendancePhoto.mockClear();
 
-    const response = await managerAgent.get("/api/v1/travel-logs/report?format=pdf");
+    const response = await managerAgent
+      .get("/api/v1/travel-logs/report?format=pdf")
+      .buffer(true)
+      .parse(bufferParser);
 
     expect(response.status).toBe(200);
-    expect(response.body.data.downloadUrl).toBe(FAKE_REPORT_URL);
-    expect(uploadReportFile).toHaveBeenCalledTimes(1);
+    expect(response.headers["content-type"]).toBe("application/pdf");
+    expect(uploadAttendancePhoto).not.toHaveBeenCalled();
 
-    const [buffer, format] = uploadReportFile.mock.calls[0];
-    expect(format).toBe("pdf");
+    const buffer = response.body;
     expect(buffer.subarray(0, 5).toString()).toBe("%PDF-");
   });
 

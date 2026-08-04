@@ -68,28 +68,3 @@ export async function uploadTicketAttachment(fileInput) {
 
   return result.secure_url;
 }
-
-const REPORT_MIME_TYPES = {
-  pdf: "application/pdf",
-  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-};
-
-/**
- * Uploads a generated report buffer (from `src/services/report.service.js`'s
- * `generateExcelReport`/`generatePdfReport`) and returns the secure URL —
- * §7.11's "upload to Cloudinary, return a download URL" behavior. Always a
- * real `Buffer` (never a base64 string) since it always comes straight from
- * `exceljs`/`pdfkit`, unlike the other upload functions here which also
- * accept a client-supplied base64 data URI.
- */
-export async function uploadReportFile(buffer, format) {
-  const mimeType = REPORT_MIME_TYPES[format] || "application/octet-stream";
-  const uploadSource = `data:${mimeType};base64,${buffer.toString("base64")}`;
-
-  const result = await cloudinary.uploader.upload(uploadSource, {
-    folder: "smartrays/reports",
-    resource_type: "auto",
-  });
-
-  return result.secure_url;
-}

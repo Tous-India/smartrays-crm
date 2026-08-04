@@ -12,10 +12,10 @@ vi.mock("antd", async (importOriginal) => {
 
 vi.mock("../../../services/reportApi", () => ({
   generateReport: vi.fn(),
-  triggerFileDownload: vi.fn(),
+  triggerBlobDownload: vi.fn(),
 }));
 
-const FAKE_DOWNLOAD_URL = "https://fake.cloudinary.test/leads-report.xlsx";
+const FAKE_BLOB = new Blob(["fake file bytes"]);
 
 function setUser(user) {
   useSessionStore.setState({ user, isAuthenticated: true, isLoading: false });
@@ -23,11 +23,11 @@ function setUser(user) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  reportApi.generateReport.mockResolvedValue({ data: { data: { downloadUrl: FAKE_DOWNLOAD_URL } } });
+  reportApi.generateReport.mockResolvedValue({ data: FAKE_BLOB });
 });
 
 describe("ExportForm", () => {
-  it("triggers the dispatcher for the default module (Leads) with no status filter, and handles the downloadUrl", async () => {
+  it("triggers the dispatcher for the default module (Leads) with no status filter, and triggers a download from the streamed blob", async () => {
     setUser({ _id: "admin-1", role: "admin", permissions: {} });
 
     render(<ExportForm />);
@@ -37,7 +37,7 @@ describe("ExportForm", () => {
     await waitFor(() => {
       expect(reportApi.generateReport).toHaveBeenCalledWith({ module: "leads", filters: {}, format: "xlsx" });
     });
-    expect(reportApi.triggerFileDownload).toHaveBeenCalledWith(FAKE_DOWNLOAD_URL, "leads-report.xlsx");
+    expect(reportApi.triggerBlobDownload).toHaveBeenCalledWith(FAKE_BLOB, "leads-report.xlsx");
   });
 
   it("only offers modules the current user actually has view access to", async () => {

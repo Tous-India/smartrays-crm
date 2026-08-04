@@ -12,7 +12,13 @@ const DEFAULT_CENTER = { lat: 20.5937, lng: 78.9629 };
  * Deliberately basic per §7.4b's stated scope: no clustering, no info
  * windows, no custom controls — just plot what's given and fit the bounds.
  *
- * `markers`: [{ lat, lng, label }] — rendered as plain `google.maps.Marker`s.
+ * `markers`: [{ lat, lng, label, color? }] — rendered as `google.maps.Marker`s.
+ * `color` (added later, Attendance map integration) selects one of Google's
+ * standard colored pin icons (`red`/`orange`/`blue`/`green`/`yellow`/
+ * `purple`/`ltblue`/`pink`) instead of the default red pin — lets a caller
+ * visually distinguish marker *types* on the same map (e.g. a connectivity-
+ * gap boundary vs. a geofence-violation point), not just plot generic
+ * points. Omitting it keeps the default marker look, unchanged from before.
  * `path`: [{ lat, lng }] — rendered as one `google.maps.Polyline`, for the
  * history trail view. A view only ever supplies one or the other in
  * practice (live view: markers only; history view: path only, plus a
@@ -48,6 +54,7 @@ function GoogleMapView({ markers = [], path = [], height = 480 }) {
           position: { lat: marker.lat, lng: marker.lng },
           map: mapRef.current,
           title: marker.label,
+          icon: marker.color ? { url: `https://maps.google.com/mapfiles/ms/icons/${marker.color}-dot.png` } : undefined,
         })
     );
 

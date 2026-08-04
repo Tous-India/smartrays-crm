@@ -6,18 +6,18 @@ import * as reportApi from "../services/reportApi";
 
 vi.mock("../services/reportApi", () => ({
   generateReport: vi.fn(),
-  triggerFileDownload: vi.fn(),
+  triggerBlobDownload: vi.fn(),
 }));
 
-const FAKE_DOWNLOAD_URL = "https://fake.cloudinary.test/attendance-report.xlsx";
+const FAKE_BLOB = new Blob(["fake file bytes"]);
 
 beforeEach(() => {
   vi.clearAllMocks();
 });
 
 describe("ReportDownloadButton", () => {
-  it("calls generateReport with the given module/filters/format and triggers a download from the { downloadUrl } response", async () => {
-    reportApi.generateReport.mockResolvedValue({ data: { data: { downloadUrl: FAKE_DOWNLOAD_URL } } });
+  it("calls generateReport with the given module/filters/format and triggers a download from the streamed blob response", async () => {
+    reportApi.generateReport.mockResolvedValue({ data: FAKE_BLOB });
 
     render(<ReportDownloadButton module="attendance" filters={{ from: "2026-06-01", to: "2026-06-30" }} filenamePrefix="my-attendance" />);
 
@@ -31,14 +31,11 @@ describe("ReportDownloadButton", () => {
       });
     });
 
-    expect(reportApi.triggerFileDownload).toHaveBeenCalledWith(
-      FAKE_DOWNLOAD_URL,
-      "my-attendance-report.xlsx"
-    );
+    expect(reportApi.triggerBlobDownload).toHaveBeenCalledWith(FAKE_BLOB, "my-attendance-report.xlsx");
   });
 
   it("uses whichever format is selected", async () => {
-    reportApi.generateReport.mockResolvedValue({ data: { data: { downloadUrl: FAKE_DOWNLOAD_URL } } });
+    reportApi.generateReport.mockResolvedValue({ data: FAKE_BLOB });
 
     render(<ReportDownloadButton module="leave" filters={{ scope: "own" }} />);
 

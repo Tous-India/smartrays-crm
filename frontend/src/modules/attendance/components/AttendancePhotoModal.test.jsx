@@ -1,6 +1,36 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import AttendancePhotoModal from "./AttendancePhotoModal";
+
+vi.mock("../../../hooks/useUserDirectory", () => ({
+  default: () => ({ users: [] }),
+}));
+
+vi.mock("../../location/hooks/useLocationHistory", () => ({
+  default: vi.fn(() => ({ pings: [], isLoading: false, error: null })),
+}));
+
+const useLocationHistory = (await import("../../location/hooks/useLocationHistory")).default;
+
+function stubGoogleMaps() {
+  window.google = {
+    maps: {
+      Map: vi.fn(function Map() {
+        this.fitBounds = vi.fn();
+      }),
+      Marker: vi.fn(function Marker() {
+        this.setMap = vi.fn();
+      }),
+      Polyline: vi.fn(function Polyline() {
+        this.setMap = vi.fn();
+      }),
+      LatLngBounds: vi.fn(function LatLngBounds() {
+        this.extend = vi.fn();
+      }),
+    },
+  };
+}
 
 const RECORD_WITH_PHOTOS = {
   _id: "att-1",
@@ -143,6 +173,30 @@ describe("AttendancePhotoModal", () => {
       expect(screen.queryByAltText("Check-In photo")).not.toBeInTheDocument();
       expect(screen.getAllByText(/Lat 12.97160, Lng 77.59460/)).toHaveLength(2);
       expect(screen.getByText("Location")).toBeInTheDocument();
+    });
+  });
+
+  describe("View on Map (§7.4d, 2026-08-04)", () => {
+    it("shows the View on Map button only when showLocation is granted, same gate as the rest of the Location section", () => {
+      render(<AttendancePhotoModal open record={RECORD_WITH_PHOTOS} onCancel={vi.fn()} showLocation={false} />);
+      expect(screen.queryByRole("button", { name: "View on Map" })).not.toBeInTheDocument();
+    });
+
+    it("opens AttendanceLocationMapModal (reusing HistoryMapView) when clicked", async () => {
+      stubGoogleMaps();
+      useLocationHistory.mockReturnValue({
+        pings: [{ coords: { lat: 12.97, lng: 77.59 }, capturedAt: "2026-06-03T09:00:00.000Z" }],
+        isLoading: false,
+        error: null,
+      });
+      render(<AttendancePhotoModal open record={RECORD_WITH_PHOTOS} onCancel={vi.fn()} showLocation />);
+
+      await userEvent.click(screen.getByRole("button", { name: "View on Map" }));
+
+      expect(await screen.findByTestId("google-map-container")).toBeInTheDocument();
+      // Locked to this record — no employee/date picker to reach for a
+      // different day.
+      expect(screen.queryByPlaceholderText("Select an employee")).not.toBeInTheDocument();
     });
   });
 });
