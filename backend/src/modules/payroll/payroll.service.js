@@ -285,28 +285,36 @@ export async function getPayslip(payrollId, requestingUser) {
 /**
  * PDF only (§7.7 — `GET /payroll/:id/payslip?format=pdf`, no xlsx option
  * unlike every other module's report endpoint). Reuses
- * `src/services/report.service.js`'s generic PDF builder for a single-record
- * "report" rather than writing new PDF-generation code.
+ * `src/services/report.service.js`'s generic PDF table builder — a payslip
+ * is a single record, not a multi-row list, so it's rendered as a two-column
+ * Field/Value table (2026-08-04 — previously a plain list of text lines;
+ * `generatePdfReport`'s signature changed to a real `columns`/`rows` table
+ * for every caller as part of §7.11's Reports PDF formatting fix, and a
+ * key/value table is the natural fit for a single-record document under
+ * that same table primitive, rather than a special-cased text layout).
  */
 export async function generatePayslipPdf(payrollId, requestingUser) {
   const payroll = await getPayslip(payrollId, requestingUser);
 
   return generatePdfReport({
-    title: `Payslip — ${payroll.employeeId.name} — ${payroll.month}/${payroll.year}`,
-    rows: [payroll],
-    formatRow: (record) =>
-      [
-        `Employee: ${record.employeeId.name}`,
-        `Period: ${record.month}/${record.year}`,
-        `Days in month: ${record.daysInMonth}`,
-        `Present days: ${record.presentDays}`,
-        `Paid leave days: ${record.paidLeaveDays}`,
-        `Unpaid deduction days: ${record.unpaidDeductionDays}`,
-        `Working hours total: ${record.workingHoursTotal.toFixed(2)}`,
-        `Mileage reimbursement: ${record.mileageReimbursement.toFixed(2)}`,
-        `Gross amount: ${record.grossAmount.toFixed(2)}`,
-        `Net amount: ${record.netAmount.toFixed(2)}`,
-        `Paid on: ${record.paidOn.toDateString()}`,
-      ].join("\n"),
+    title: `Payslip — ${payroll.employeeId.name}`,
+    subtitle: `${payroll.month}/${payroll.year}`,
+    columns: [
+      { header: "Field", key: "field", width: 1.4 },
+      { header: "Value", key: "value", width: 1 },
+    ],
+    rows: [
+      { field: "Employee", value: payroll.employeeId.name },
+      { field: "Period", value: `${payroll.month}/${payroll.year}` },
+      { field: "Days in month", value: payroll.daysInMonth },
+      { field: "Present days", value: payroll.presentDays },
+      { field: "Paid leave days", value: payroll.paidLeaveDays },
+      { field: "Unpaid deduction days", value: payroll.unpaidDeductionDays },
+      { field: "Working hours total", value: payroll.workingHoursTotal },
+      { field: "Mileage reimbursement", value: payroll.mileageReimbursement },
+      { field: "Gross amount", value: payroll.grossAmount },
+      { field: "Net amount", value: payroll.netAmount },
+      { field: "Paid on", value: payroll.paidOn },
+    ],
   });
 }

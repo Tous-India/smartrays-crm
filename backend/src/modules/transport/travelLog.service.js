@@ -238,8 +238,9 @@ export async function generateTravelLogReport({ from, to, format }, requestingUs
   }
 
   const records = await TravelLog.find(filter).sort({ date: 1 }).populate("employeeId", "name");
+  const subtitle = from || to ? `${from || "…"} to ${to || "…"}` : undefined;
 
-  return format === "pdf" ? buildPdfReport(records) : buildXlsxReport(records);
+  return format === "pdf" ? buildPdfReport(records, subtitle) : buildXlsxReport(records);
 }
 
 function addOneDay(date) {
@@ -247,6 +248,28 @@ function addOneDay(date) {
   next.setDate(next.getDate() + 1);
 
   return next;
+}
+
+// A record whose `employeeId` didn't populate is a genuinely unresolvable
+// reference (a hard-deleted user — `user.service.js#hardDeleteUser`
+// deliberately doesn't cascade-fix-up other records' references, by
+// design), not a broken lookup — this populate call is the same pattern
+// used everywhere else. Labeled distinctly from "Unknown" so a report
+// reader can tell "this was a deliberate, audited deletion" from "something
+// went wrong generating this report" (§7.11's Reports PDF fix, 2026-08-04).
+const DELETED_USER_LABEL = "[Deleted User]";
+
+// One row shape feeds both `generateExcelReport` and `generatePdfReport`
+// (2026-08-04) — previously each format re-derived its own row text
+// independently, which is how the two ended up with the same
+// employee-name fallback bug in two separate places instead of one.
+function buildTravelLogRows(records) {
+  return records.map((record) => ({
+    employee: record.employeeId?.name || DELETED_USER_LABEL,
+    date: record.date,
+    distanceKm: record.distanceKm,
+    source: record.source,
+  }));
 }
 
 function buildXlsxReport(records) {
@@ -258,25 +281,21 @@ function buildXlsxReport(records) {
       { header: "Distance (km)", key: "distanceKm", width: 15 },
       { header: "Source", key: "source", width: 12 },
     ],
-    rows: records.map((record) => ({
-      employee: record.employeeId?.name || "Unknown",
-      date: record.date,
-      distanceKm: record.distanceKm,
-      source: record.source,
-    })),
+    rows: buildTravelLogRows(records),
   });
 }
 
-function buildPdfReport(records) {
+function buildPdfReport(records, subtitle) {
   return generatePdfReport({
     title: "Travel Log Report",
-    rows: records,
-    formatRow: (record) => {
-      const employeeName = record.employeeId?.name || "Unknown";
-      const distanceKm = record.distanceKm != null ? record.distanceKm.toFixed(2) : "-";
-
-      return `${employeeName} | ${record.date.toDateString()} | ${distanceKm} km | Source: ${record.source}`;
-    },
+    subtitle,
+    columns: [
+      { header: "Employee", key: "employee", width: 2 },
+      { header: "Date", key: "date", width: 1.2 },
+      { header: "Distance (km)", key: "distanceKm", width: 1.2 },
+      { header: "Source", key: "source", width: 1 },
+    ],
+    rows: buildTravelLogRows(records),
   });
 }
 

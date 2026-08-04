@@ -52,8 +52,16 @@ const MODULE_HANDLERS = {
     generateBuffer: async (filters, format, user) => {
       const records = await listLeaves(filters.scope, user);
       await Leave.populate(records, { path: "employeeId", select: "name" });
+      const rows = buildLeaveRows(records);
 
-      return format === "pdf" ? buildLeavePdf(records) : buildLeaveXlsx(records);
+      return format === "pdf"
+        ? generatePdfReport({
+            title: "Leave Report",
+            subtitle: filters.scope ? `Scope: ${filters.scope}` : undefined,
+            columns: LEAVE_PDF_COLUMNS,
+            rows,
+          })
+        : generateExcelReport({ sheetName: "Leave", columns: LEAVE_XLSX_COLUMNS, rows });
     },
   },
   payroll: {
@@ -65,8 +73,19 @@ const MODULE_HANDLERS = {
     generateBuffer: async (filters, format, user) => {
       const records = await listPayroll({ scope: filters.scope, month: filters.month }, user);
       await Payroll.populate(records, { path: "employeeId", select: "name" });
+      const rows = buildPayrollRows(records);
+      const subtitleParts = [filters.scope && `Scope: ${filters.scope}`, filters.month && `Month: ${filters.month}`].filter(
+        Boolean
+      );
 
-      return format === "pdf" ? buildPayrollPdf(records) : buildPayrollXlsx(records);
+      return format === "pdf"
+        ? generatePdfReport({
+            title: "Payroll Report",
+            subtitle: subtitleParts.length > 0 ? subtitleParts.join(" | ") : undefined,
+            columns: PAYROLL_PDF_COLUMNS,
+            rows,
+          })
+        : generateExcelReport({ sheetName: "Payroll", columns: PAYROLL_XLSX_COLUMNS, rows });
     },
   },
   leads: {
@@ -74,8 +93,16 @@ const MODULE_HANDLERS = {
     generateBuffer: async (filters, format, user) => {
       const records = await listLeads(filters, user);
       await Lead.populate(records, { path: "ownerId", select: "name" });
+      const rows = buildLeadsRows(records);
 
-      return format === "pdf" ? buildLeadsPdf(records) : buildLeadsXlsx(records);
+      return format === "pdf"
+        ? generatePdfReport({
+            title: "Leads Report",
+            subtitle: filters.status ? `Status: ${filters.status}` : undefined,
+            columns: LEADS_PDF_COLUMNS,
+            rows,
+          })
+        : generateExcelReport({ sheetName: "Leads", columns: LEADS_XLSX_COLUMNS, rows });
     },
   },
   customers: {
@@ -83,8 +110,16 @@ const MODULE_HANDLERS = {
     generateBuffer: async (filters, format, user) => {
       const records = await listCustomers(filters, user);
       await Customer.populate(records, { path: "ownerId", select: "name" });
+      const rows = buildCustomersRows(records);
 
-      return format === "pdf" ? buildCustomersPdf(records) : buildCustomersXlsx(records);
+      return format === "pdf"
+        ? generatePdfReport({
+            title: "Customers Report",
+            subtitle: filters.status ? `Status: ${filters.status}` : undefined,
+            columns: CUSTOMERS_PDF_COLUMNS,
+            rows,
+          })
+        : generateExcelReport({ sheetName: "Customers", columns: CUSTOMERS_XLSX_COLUMNS, rows });
     },
   },
 };
@@ -116,156 +151,145 @@ export async function generateReport({ module, filters, format }, requestingUser
 }
 
 // --- Leave rendering (new — leave.service.js has no report function of its
-// own to reuse; only its scoped listLeaves query is reused here) ----------
+// own to reuse; only its scoped listLeaves query is reused here). One row
+// shape feeds both `generateExcelReport` and `generatePdfReport` (2026-08-04
+// — previously each format re-derived its own row text independently, which
+// is exactly how the two ended up with the same "Unknown" employee-name bug
+// in two separate places instead of one; see backend/README.md's Reports
+// section for the full diagnosis) ------------------------------------------
 
-function buildLeaveXlsx(records) {
-  return generateExcelReport({
-    sheetName: "Leave",
-    columns: [
-      { header: "Employee", key: "employee", width: 25 },
-      { header: "Start Date", key: "startDate", width: 15 },
-      { header: "End Date", key: "endDate", width: 15 },
-      { header: "Type", key: "type", width: 18 },
-      { header: "Status", key: "status", width: 14 },
-      { header: "Double Deduction", key: "isDoubleDeduction", width: 16 },
-    ],
-    rows: records.map((record) => ({
-      employee: record.employeeId?.name || "Unknown",
-      startDate: record.startDate,
-      endDate: record.endDate,
-      type: record.type,
-      status: record.status,
-      isDoubleDeduction: record.isDoubleDeduction,
-    })),
-  });
+// A record whose `employeeId`/`ownerId` didn't populate isn't a broken
+// lookup — `Leave.populate`/`Lead.populate`/etc. above use the exact same
+// pattern as every other populate in this codebase. It's a **genuinely
+// unresolvable reference**: `user.service.js#hardDeleteUser` deliberately
+// does NOT cascade-fix-up other records' references to a permanently
+// deleted user (by design — see that function's own docblock). "Unknown"
+// didn't communicate that distinction (looks like a generation bug, not a
+// deliberate, audited deletion) — this label does.
+const DELETED_USER_LABEL = "[Deleted User]";
+
+function buildLeaveRows(records) {
+  return records.map((record) => ({
+    employee: record.employeeId?.name || DELETED_USER_LABEL,
+    startDate: record.startDate,
+    endDate: record.endDate,
+    type: record.type,
+    status: record.status,
+    isDoubleDeduction: record.isDoubleDeduction,
+  }));
 }
 
-function buildLeavePdf(records) {
-  return generatePdfReport({
-    title: "Leave Report",
-    rows: records,
-    formatRow: (record) => {
-      const employeeName = record.employeeId?.name || "Unknown";
+const LEAVE_XLSX_COLUMNS = [
+  { header: "Employee", key: "employee", width: 25 },
+  { header: "Start Date", key: "startDate", width: 15 },
+  { header: "End Date", key: "endDate", width: 15 },
+  { header: "Type", key: "type", width: 18 },
+  { header: "Status", key: "status", width: 14 },
+  { header: "Double Deduction", key: "isDoubleDeduction", width: 16 },
+];
 
-      return (
-        `${employeeName} | ${record.startDate.toDateString()} - ${record.endDate.toDateString()} | ` +
-        `Type: ${record.type} | Status: ${record.status}`
-      );
-    },
-  });
-}
+const LEAVE_PDF_COLUMNS = [
+  { header: "Employee", key: "employee", width: 2.5 },
+  { header: "Start Date", key: "startDate", width: 1.5 },
+  { header: "End Date", key: "endDate", width: 1.5 },
+  { header: "Type", key: "type", width: 1.5 },
+  { header: "Status", key: "status", width: 1.3 },
+  { header: "2x Deduction", key: "isDoubleDeduction", width: 1.5 },
+];
 
 // --- Payroll rendering (new — payroll.service.js's only existing PDF
 // builder is generatePayslipPdf, a single-record artifact, deliberately not
 // reused here; only its scoped listPayroll query is reused) ---------------
 
-function buildPayrollXlsx(records) {
-  return generateExcelReport({
-    sheetName: "Payroll",
-    columns: [
-      { header: "Employee", key: "employee", width: 25 },
-      { header: "Month", key: "month", width: 10 },
-      { header: "Year", key: "year", width: 10 },
-      { header: "Present Days", key: "presentDays", width: 14 },
-      { header: "Gross Amount", key: "grossAmount", width: 16 },
-      { header: "Net Amount", key: "netAmount", width: 16 },
-      { header: "Mileage Reimbursement", key: "mileageReimbursement", width: 20 },
-    ],
-    rows: records.map((record) => ({
-      employee: record.employeeId?.name || "Unknown",
-      month: record.month,
-      year: record.year,
-      presentDays: record.presentDays,
-      grossAmount: record.grossAmount,
-      netAmount: record.netAmount,
-      mileageReimbursement: record.mileageReimbursement,
-    })),
-  });
+function buildPayrollRows(records) {
+  return records.map((record) => ({
+    employee: record.employeeId?.name || DELETED_USER_LABEL,
+    month: record.month,
+    year: record.year,
+    presentDays: record.presentDays,
+    grossAmount: record.grossAmount,
+    netAmount: record.netAmount,
+    mileageReimbursement: record.mileageReimbursement,
+  }));
 }
 
-function buildPayrollPdf(records) {
-  return generatePdfReport({
-    title: "Payroll Report",
-    rows: records,
-    formatRow: (record) => {
-      const employeeName = record.employeeId?.name || "Unknown";
+const PAYROLL_XLSX_COLUMNS = [
+  { header: "Employee", key: "employee", width: 25 },
+  { header: "Month", key: "month", width: 10 },
+  { header: "Year", key: "year", width: 10 },
+  { header: "Present Days", key: "presentDays", width: 14 },
+  { header: "Gross Amount", key: "grossAmount", width: 16 },
+  { header: "Net Amount", key: "netAmount", width: 16 },
+  { header: "Mileage Reimbursement", key: "mileageReimbursement", width: 20 },
+];
 
-      return (
-        `${employeeName} | ${record.month}/${record.year} | Gross: ${record.grossAmount.toFixed(2)} | ` +
-        `Net: ${record.netAmount.toFixed(2)}`
-      );
-    },
-  });
-}
+const PAYROLL_PDF_COLUMNS = [
+  { header: "Employee", key: "employee", width: 2.2 },
+  { header: "Month", key: "month", width: 0.8 },
+  { header: "Year", key: "year", width: 0.8 },
+  { header: "Present Days", key: "presentDays", width: 1.2 },
+  { header: "Gross", key: "grossAmount", width: 1.3 },
+  { header: "Net", key: "netAmount", width: 1.3 },
+  { header: "Mileage", key: "mileageReimbursement", width: 1.2 },
+];
 
 // --- Leads rendering (new — deliberately NOT lead.service.js's own
 // exportLeadsToExcel, which stays exactly as-is at GET /leads/export; only
 // the scoped listLeads query is reused here) -------------------------------
 
-function buildLeadsXlsx(records) {
-  return generateExcelReport({
-    sheetName: "Leads",
-    columns: [
-      { header: "Name", key: "name", width: 25 },
-      { header: "Company", key: "companyName", width: 25 },
-      { header: "Owner", key: "owner", width: 20 },
-      { header: "Status", key: "status", width: 16 },
-      { header: "Source", key: "source", width: 16 },
-      { header: "Budget", key: "budget", width: 14 },
-    ],
-    rows: records.map((record) => ({
-      name: record.name,
-      companyName: record.companyName,
-      owner: record.ownerId?.name || "Unknown",
-      status: record.status,
-      source: record.source,
-      budget: record.budget,
-    })),
-  });
+function buildLeadsRows(records) {
+  return records.map((record) => ({
+    name: record.name,
+    companyName: record.companyName,
+    owner: record.ownerId?.name || DELETED_USER_LABEL,
+    status: record.status,
+    source: record.source,
+    budget: record.budget,
+  }));
 }
 
-function buildLeadsPdf(records) {
-  return generatePdfReport({
-    title: "Leads Report",
-    rows: records,
-    formatRow: (record) => {
-      const ownerName = record.ownerId?.name || "Unknown";
+const LEADS_XLSX_COLUMNS = [
+  { header: "Name", key: "name", width: 25 },
+  { header: "Company", key: "companyName", width: 25 },
+  { header: "Owner", key: "owner", width: 20 },
+  { header: "Status", key: "status", width: 16 },
+  { header: "Source", key: "source", width: 16 },
+  { header: "Budget", key: "budget", width: 14 },
+];
 
-      return `${record.name} | ${record.companyName || "-"} | Owner: ${ownerName} | Status: ${record.status}`;
-    },
-  });
-}
+const LEADS_PDF_COLUMNS = [
+  { header: "Name", key: "name", width: 1.8 },
+  { header: "Company", key: "companyName", width: 1.8 },
+  { header: "Owner", key: "owner", width: 1.5 },
+  { header: "Status", key: "status", width: 1.2 },
+  { header: "Source", key: "source", width: 1.2 },
+  { header: "Budget", key: "budget", width: 1 },
+];
 
 // --- Customers rendering (new) --------------------------------------------
 
-function buildCustomersXlsx(records) {
-  return generateExcelReport({
-    sheetName: "Customers",
-    columns: [
-      { header: "Company", key: "companyName", width: 25 },
-      { header: "Owner", key: "owner", width: 20 },
-      { header: "Status", key: "customerStatus", width: 14 },
-      { header: "Email", key: "email", width: 25 },
-      { header: "Phone", key: "phone", width: 18 },
-    ],
-    rows: records.map((record) => ({
-      companyName: record.companyName,
-      owner: record.ownerId?.name || "Unknown",
-      customerStatus: record.customerStatus,
-      email: record.email,
-      phone: record.phone,
-    })),
-  });
+function buildCustomersRows(records) {
+  return records.map((record) => ({
+    companyName: record.companyName,
+    owner: record.ownerId?.name || DELETED_USER_LABEL,
+    customerStatus: record.customerStatus,
+    email: record.email,
+    phone: record.phone,
+  }));
 }
 
-function buildCustomersPdf(records) {
-  return generatePdfReport({
-    title: "Customers Report",
-    rows: records,
-    formatRow: (record) => {
-      const ownerName = record.ownerId?.name || "Unknown";
+const CUSTOMERS_XLSX_COLUMNS = [
+  { header: "Company", key: "companyName", width: 25 },
+  { header: "Owner", key: "owner", width: 20 },
+  { header: "Status", key: "customerStatus", width: 14 },
+  { header: "Email", key: "email", width: 25 },
+  { header: "Phone", key: "phone", width: 18 },
+];
 
-      return `${record.companyName} | Owner: ${ownerName} | Status: ${record.customerStatus}`;
-    },
-  });
-}
+const CUSTOMERS_PDF_COLUMNS = [
+  { header: "Company", key: "companyName", width: 2 },
+  { header: "Owner", key: "owner", width: 1.5 },
+  { header: "Status", key: "customerStatus", width: 1.2 },
+  { header: "Email", key: "email", width: 2 },
+  { header: "Phone", key: "phone", width: 1.3 },
+];

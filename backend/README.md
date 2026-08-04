@@ -795,8 +795,9 @@ reasoning as `users.*`).
 
 **Report generation goes through a new shared service, not inline controller code:**
 `src/services/report.service.js` exports `generateExcelReport({ sheetName, columns, rows })` and
-`generatePdfReport({ title, rows, formatRow })` — generic document-building primitives (`exceljs`
-for Excel, `pdfkit` for PDF). `attendance.service.js` calls these with its own column/row
+`generatePdfReport({ title, subtitle, columns, rows })` (signature updated 2026-08-04 — see the
+Reports section's PDF table-formatting write-up below) — generic document-building primitives
+(`exceljs` for Excel, `pdfkit` for PDF). `attendance.service.js` calls these with its own column/row
 shaping; the actual streaming/buffer mechanics live in the shared service. This is deliberate
 groundwork for the real cross-module reports pipeline (§7.11, Phase 8) without building that
 pipeline now — when §7.11 gets built properly, it has one real function per format to
@@ -1614,6 +1615,87 @@ and `customers` (a manager's report contains only their team's customers, matchi
 is still mocked at the module boundary (other routes on the same app instance need it), and every
 report test now explicitly asserts none of its functions were called — proving the dispatcher
 genuinely never talks to Cloudinary, not just that it doesn't return a `downloadUrl`.
+
+#### PDF report formatting + a real "Unknown" employee-name bug — fixed 2026-08-04
+
+**Diagnosis first, per the task's own instruction — the actual cause, not either of the two
+hypothesized ones exactly:**
+- **Not a broken separate name lookup.** Every report builder (Attendance, Transport, Leave,
+  Payroll, Leads, Customers) resolves the employee/owner name via the exact same
+  `Model.populate(records, { path: "employeeId"/"ownerId", select: "name" })` pattern used
+  everywhere else in this codebase — there's no second, parallel lookup mechanism to be broken.
+- **It IS a genuinely unresolvable reference — by design, not a data bug.**
+  `user.service.js#hardDeleteUser`'s own docblock states it explicitly: hard-deleting a user
+  **deliberately does NOT cascade-delete or fix up that user's id anywhere else** (`Lead.ownerId`,
+  `Attendance.employeeId`, `Leave.employeeId`, `Payroll.employeeId`, etc.) — every consumer
+  already tolerates an unresolvable reference by falling back gracefully rather than crashing, so
+  there's nothing to fix up at the database level. `populate()` sets the field to `null` when the
+  referenced document no longer exists; `record.employeeId?.name` then reads `undefined`, and the
+  `|| "Unknown"` fallback fires. **The fix, per the task's own suggested alternative:** every
+  report builder's fallback changed from `"Unknown"` to **`"[Deleted User]"`** — `"Unknown"` reads
+  like something went wrong generating the report; `"[Deleted User]"` correctly communicates that
+  this was a deliberate, audited deletion (see `DeletedUserAuditLog` — the full record still
+  exists there, just not attached to this Leave/Attendance/Payroll/etc. record anymore). A
+  dedicated regression test in `report.test.js` creates a throwaway employee, gives them a Leave
+  record, deletes the `User` document (reproducing the exact post-hard-delete state), and asserts
+  the generated report contains `"[Deleted User]"` and never `"Unknown"`.
+
+**PDF table formatting — `generatePdfReport` redesigned, affecting every module that shares it,
+not just Leave.** Before this fix, `generatePdfReport({ title, rows, formatRow })` rendered a
+centered title followed by one plain pipe-delimited text line per row — checking every caller
+confirmed this affected **all six §7.11 dispatcher modules' PDF output** (Attendance, Transport,
+Leave, Payroll, Leads, Customers) plus Payroll's separate single-record `generatePayslipPdf`
+(§7.7) — the exact same generic function, not something Leave-specific. Redesigned to
+`generatePdfReport({ title, subtitle, columns, rows })` (`src/services/report.service.js`),
+now drawing a real table with `pdfkit`'s drawing primitives (no table library — `pdfkit` has no
+built-in table support, and this project's own existing "simple enough not to need a dependency"
+precedent already applies):
+- **Header row**: bold white text on a filled navy background (`#163b78`, the same brand-navy
+  seed color `App.jsx`'s AntD `ConfigProvider` uses) — a real, immediately visible header, not
+  just the first data row.
+- **`columns: [{ header, key, width }]`** — `width` is a **relative weight** (e.g. `2` renders
+  twice as wide as `1`), not an absolute point or character measurement; actual point widths are
+  computed by proportionally distributing the page's usable width, so a caller never has to
+  hand-tune measurements or account for page size.
+- **Alternating row shading** — a subtle light gray (`#f3f4f6`) on every other row — plus a thin
+  border around each row (`#d9dce1`), for readability on longer reports.
+- **Cell value formatting is centralized**, not re-implemented per caller: a `Date` renders as a
+  locale date (`format: "time"` on a column definition instead renders `HH:MM`, for a field like
+  Attendance's Check-In/Check-Out where the time-of-day is what matters); a `boolean` renders as
+  `Yes`/`No`; a non-integer `number` renders to 2 decimals; `null`/empty renders as `-`.
+- **Title + subtitle** — the title stays prominent (18pt bold, centered); a new optional
+  `subtitle` (10pt, muted gray, centered) surfaces the report's active filters — the date range
+  for Attendance/Transport, the scope for Leave, scope+month for Payroll, the status filter for
+  Leads/Customers — directly under the title, addressing the task's own "if not already shown"
+  ask (it wasn't).
+- **Pagination**: a hand-rolled page-break check (no `pdfkit` table/pagination plugin) — once the
+  next row wouldn't fit above the bottom margin, a new page starts and the header row redraws.
+  Verified against a 32-row sample report spanning two pages.
+- **One row-mapping function per module now, not two.** Previously each module had a separate
+  row-shaping function for `.xlsx` (typed values for `exceljs`) and a separate, independently
+  re-derived text line for `.pdf` (`formatRow`) — this is *why* the "Unknown" bug existed in two
+  places per module instead of one. Each module now has a single `build*Rows(records)` function
+  producing typed values (`Date`, `number`, `boolean`, real employee-name strings) that feeds
+  **both** `generateExcelReport` and `generatePdfReport` — `generatePdfReport` itself now owns
+  all PDF-specific display formatting (via `formatCellValue` above), so there's no display logic
+  left to duplicate or drift between the two formats.
+- **Payroll's single-record payslip** (`generatePayslipPdf`, §7.7 — explicitly outside the §7.11
+  dispatcher, unaffected by any of the above architecture) also called this same shared function
+  with the old `formatRow` signature, so it needed a matching migration: rendered as a two-column
+  Field/Value table (11 rows: Employee, Period, Days in month, Present days, ..., Paid on) — the
+  natural fit for a single-record document under the same table primitive, rather than a
+  special-cased text layout kept alongside the new table code.
+
+**Verified with real generated PDFs, not just code review** (per the task's own instruction) — a
+32-row Leave report and a 2-row Attendance report were generated directly via `generatePdfReport`
+and rendered to PNG for visual inspection: real navy header row, alternating row shading, correct
+date/time formatting (`09:03 am`, not an ISO timestamp), `"[Deleted User]"` rendering correctly
+where `"Unknown"` used to, and the page-2 continuation redrawing the header row correctly.
+
+No test assertions needed to change beyond the one new regression test above — every existing
+report test already verified PDF output via the `%PDF-`/`PK` magic-number check on the actual
+response body (not via inspecting `formatRow`'s text output), so those assertions remained valid
+against the new table-rendering code unchanged. Full backend suite: **668/668 passing.**
 
 #### Reports & Analytics (`/api/v1/reports/analytics/*`) — added §7.23
 

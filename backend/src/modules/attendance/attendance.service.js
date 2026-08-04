@@ -531,8 +531,9 @@ export async function generateAttendanceReport({ from, to, format }, requestingU
   }
 
   const records = await Attendance.find(filter).sort({ date: 1 }).populate("employeeId", "name");
+  const subtitle = from || to ? `${from || "…"} to ${to || "…"}` : undefined;
 
-  return format === "pdf" ? buildPdfReport(records) : buildXlsxReport(records);
+  return format === "pdf" ? buildPdfReport(records, subtitle) : buildXlsxReport(records);
 }
 
 function addOneDay(date) {
@@ -540,6 +541,31 @@ function addOneDay(date) {
   next.setDate(next.getDate() + 1);
 
   return next;
+}
+
+// A record whose `employeeId` didn't populate is a genuinely unresolvable
+// reference (a hard-deleted user — `user.service.js#hardDeleteUser`
+// deliberately doesn't cascade-fix-up other records' references, by
+// design), not a broken lookup — this populate call is the same pattern
+// used everywhere else. Labeled distinctly from "Unknown" so a report
+// reader can tell "this was a deliberate, audited deletion" from "something
+// went wrong generating this report" (§7.11's Reports PDF fix, 2026-08-04).
+const DELETED_USER_LABEL = "[Deleted User]";
+
+// One row shape feeds both `generateExcelReport` and `generatePdfReport`
+// (2026-08-04) — previously each format re-derived its own row text
+// independently, which is how the two ended up with the same
+// employee-name fallback bug in two separate places instead of one.
+function buildAttendanceReportRows(records) {
+  return records.map((record) => ({
+    employee: record.employeeId?.name || DELETED_USER_LABEL,
+    date: record.date,
+    checkIn: record.checkIn?.time || null,
+    checkOut: record.checkOut?.time || null,
+    workingHours: record.workingHours,
+    gaps: record.connectivityGaps.length,
+    status: record.status,
+  }));
 }
 
 function buildXlsxReport(records) {
@@ -554,33 +580,24 @@ function buildXlsxReport(records) {
       { header: "Connectivity Gaps", key: "gaps", width: 18 },
       { header: "Status", key: "status", width: 14 },
     ],
-    rows: records.map((record) => ({
-      employee: record.employeeId?.name || "Unknown",
-      date: record.date,
-      checkIn: record.checkIn?.time || null,
-      checkOut: record.checkOut?.time || null,
-      workingHours: record.workingHours,
-      gaps: record.connectivityGaps.length,
-      status: record.status,
-    })),
+    rows: buildAttendanceReportRows(records),
   });
 }
 
-function buildPdfReport(records) {
+function buildPdfReport(records, subtitle) {
   return generatePdfReport({
     title: "Attendance Report",
-    rows: records,
-    formatRow: (record) => {
-      const employeeName = record.employeeId?.name || "Unknown";
-      const checkInTime = record.checkIn?.time ? record.checkIn.time.toISOString() : "-";
-      const checkOutTime = record.checkOut?.time ? record.checkOut.time.toISOString() : "-";
-      const workingHours = record.workingHours != null ? record.workingHours.toFixed(2) : "-";
-
-      return (
-        `${employeeName} | ${record.date.toDateString()} | In: ${checkInTime} | Out: ${checkOutTime} | ` +
-        `Hours: ${workingHours} | Gaps: ${record.connectivityGaps.length} | Status: ${record.status}`
-      );
-    },
+    subtitle,
+    columns: [
+      { header: "Employee", key: "employee", width: 2 },
+      { header: "Date", key: "date", width: 1.2 },
+      { header: "Check-In", key: "checkIn", width: 1, format: "time" },
+      { header: "Check-Out", key: "checkOut", width: 1, format: "time" },
+      { header: "Hours", key: "workingHours", width: 0.9 },
+      { header: "Gaps", key: "gaps", width: 0.7 },
+      { header: "Status", key: "status", width: 1.1 },
+    ],
+    rows: buildAttendanceReportRows(records),
   });
 }
 

@@ -304,6 +304,56 @@ describe("module: leave", () => {
     expect(dataRow.getCell(1).value).toBe("Employee One");
   });
 
+  it("labels a genuinely-deleted employee's leave record '[Deleted User]', not 'Unknown' (§7.11 PDF/Unknown-name fix, 2026-08-04)", async () => {
+    const { createUserDirectly } = await import("../../../tests/helpers/authHelpers.js");
+    const throwaway = await createUserDirectly({
+      name: "Throwaway Employee",
+      email: "throwaway-leave@test.local",
+      password: "Password123",
+      role: "employee",
+    });
+
+    await Leave.create({
+      employeeId: throwaway._id,
+      startDate: juneDate(1),
+      endDate: juneDate(1),
+      type: "paid",
+      status: "approved",
+      reason: "Test reason",
+    });
+
+    // Simulates the post-hard-delete state (`user.service.js#hardDeleteUser`
+    // deliberately leaves other records' employeeId references unresolved
+    // rather than cascade-fixing them up) without needing to run the full
+    // deactivate-then-hard-delete guard flow — only the resulting orphaned
+    // reference matters for this test.
+    const { default: User } = await import("../user/user.model.js");
+    await User.deleteOne({ _id: throwaway._id });
+
+    const response = await adminAgent
+      .post("/api/v1/reports/generate")
+      .send({ module: "leave", filters: { scope: "all" } })
+      .buffer(true)
+      .parse(bufferParser);
+
+    expect(response.status).toBe(200);
+
+    const { default: ExcelJS } = await import("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(response.body);
+    const worksheet = workbook.worksheets[0];
+
+    const employeeNames = [];
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber > 1) {
+        employeeNames.push(row.getCell(1).value);
+      }
+    });
+
+    expect(employeeNames).toContain("[Deleted User]");
+    expect(employeeNames).not.toContain("Unknown");
+  });
+
   it("still 403s a scope the caller doesn't hold, via the reused listLeaves check (sales_associate requesting scope=team)", async () => {
     const response = await sales1Agent
       .post("/api/v1/reports/generate")
