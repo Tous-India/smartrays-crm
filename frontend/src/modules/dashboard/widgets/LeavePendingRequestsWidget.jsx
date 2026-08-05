@@ -99,7 +99,7 @@ function LeavePendingRequestsWidget() {
       {/* No per-leave detail route exists (unlike Leads/Customers), so this
           links to the Leave list as a whole rather than fabricating one. */}
       <div className="mt-2 text-right text-sm">
-        <Link to={ROUTE_PATHS.LEAVE}>View all leave requests →</Link>
+        <Link to={ROUTE_PATHS.ATTENDANCE}>View all leave requests →</Link>
       </div>
     </WidgetCard>
   );

@@ -51,6 +51,11 @@ const RECORD_EMP2 = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The date filter defaults to Today (§B8), so "now" is pinned inside the
+  // fixtures' own month and each test widens to This Month when it needs
+  // both records.
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.setSystemTime(new Date(2026, 5, 4, 10, 0, 0));
   attendanceApi.getTeamAttendance.mockResolvedValue({ data: { data: [RECORD_EMP1, RECORD_EMP2] } });
   userApi.listUsers.mockResolvedValue({
     data: {
@@ -62,9 +67,15 @@ beforeEach(() => {
   });
 });
 
+async function renderThisMonth() {
+  render(<AdminAttendanceView />);
+  await userEvent.click(screen.getByRole("combobox", { name: "Date range" }));
+  await userEvent.click(await screen.findByTitle("This Month"));
+}
+
 describe("AdminAttendanceView — org-wide, filterable (§7.4 reversal)", () => {
   it("shows org-wide attendance (both employees), not an empty table", async () => {
-    render(<AdminAttendanceView />);
+    await renderThisMonth();
 
     expect(await screen.findByText("Employee One")).toBeInTheDocument();
     expect(screen.getByText("Employee Two")).toBeInTheDocument();
@@ -72,25 +83,24 @@ describe("AdminAttendanceView — org-wide, filterable (§7.4 reversal)", () => 
   });
 
   it("never shows an Add Record button — read-only for admin too", async () => {
-    render(<AdminAttendanceView />);
+    await renderThisMonth();
 
     await screen.findByText("Employee One");
     expect(screen.queryByRole("button", { name: /Add Record/ })).not.toBeInTheDocument();
   });
 
-  it("renders all five filters: Employee, Team, Status, month picker, custom date range", async () => {
-    render(<AdminAttendanceView />);
+  it("renders the Date range preset plus Employee, Team and Status filters", async () => {
+    await renderThisMonth();
 
     await screen.findByText("Employee One");
     expect(screen.getByRole("combobox", { name: "Employee" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Team" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Status" })).toBeInTheDocument();
-    // Month DatePicker + Custom Date Range RangePicker are both real inputs (antd renders <input>).
-    expect(document.querySelectorAll(".ant-picker").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole("combobox", { name: "Date range" })).toBeInTheDocument();
   });
 
   it("filters the table down to one team via the Team select", async () => {
-    render(<AdminAttendanceView />);
+    await renderThisMonth();
 
     await screen.findByText("Employee One");
 
@@ -102,7 +112,7 @@ describe("AdminAttendanceView — org-wide, filterable (§7.4 reversal)", () => 
   });
 
   it("filters the table down by Status", async () => {
-    render(<AdminAttendanceView />);
+    await renderThisMonth();
 
     await screen.findByText("Employee One");
 
@@ -114,7 +124,7 @@ describe("AdminAttendanceView — org-wide, filterable (§7.4 reversal)", () => 
   });
 
   it("shows a Team column resolving each employee to their team (2026-08-05)", async () => {
-    render(<AdminAttendanceView />);
+    await renderThisMonth();
 
     await screen.findByText("Employee One");
 
@@ -124,7 +134,7 @@ describe("AdminAttendanceView — org-wide, filterable (§7.4 reversal)", () => 
   });
 
   it("keeps the Employee column visible after filtering to one employee — filtered rows still identify who they belong to", async () => {
-    render(<AdminAttendanceView />);
+    await renderThisMonth();
 
     await screen.findByText("Employee One");
 
@@ -142,7 +152,7 @@ describe("AdminAttendanceView — org-wide, filterable (§7.4 reversal)", () => 
   });
 
   it("shows photo/location viewing capability unaffected (showPhotos/showLocation passed through)", async () => {
-    render(<AdminAttendanceView />);
+    await renderThisMonth();
 
     await screen.findByText("Employee One");
     const row = screen.getByRole("row", { name: /Employee One/ });
@@ -160,7 +170,6 @@ describe("AdminAttendanceView — org-wide, filterable (§7.4 reversal)", () => 
 describe("AdminAttendanceView — Mark Absent / Mark Half Day on missing days", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.setSystemTime(new Date("2026-06-04T10:00:00.000Z"));
     attendanceApi.getTeamAttendance.mockResolvedValue({ data: { data: [RECORD_EMP1, RECORD_EMP2] } });
     attendanceApi.markAttendanceStatus = vi.fn().mockResolvedValue({ data: { data: {} } });
     userApi.listUsers.mockResolvedValue({
@@ -178,14 +187,14 @@ describe("AdminAttendanceView — Mark Absent / Mark Half Day on missing days", 
   });
 
   async function filterToEmployeeOne() {
-    render(<AdminAttendanceView />);
+    await renderThisMonth();
     await screen.findByText("Employee One");
     await userEvent.click(screen.getByRole("combobox", { name: "Employee" }));
     await userEvent.click(await screen.findByTitle("Employee One"));
   }
 
   it("shows no mark actions until a single employee is selected", async () => {
-    render(<AdminAttendanceView />);
+    await renderThisMonth();
     await screen.findByText("Employee One");
 
     expect(screen.queryByRole("button", { name: "Mark Absent" })).not.toBeInTheDocument();
@@ -193,8 +202,6 @@ describe("AdminAttendanceView — Mark Absent / Mark Half Day on missing days", 
   });
 
   it("surfaces missing-day rows with both mark actions once an employee is selected", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.setSystemTime(new Date("2026-06-04T10:00:00.000Z"));
 
     await filterToEmployeeOne();
 
@@ -207,8 +214,6 @@ describe("AdminAttendanceView — Mark Absent / Mark Half Day on missing days", 
   });
 
   it("never shows mark actions on a row that already has a real record", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.setSystemTime(new Date("2026-06-04T10:00:00.000Z"));
 
     await filterToEmployeeOne();
 
@@ -218,8 +223,6 @@ describe("AdminAttendanceView — Mark Absent / Mark Half Day on missing days", 
   });
 
   it("submits the mark after confirming, with the row's own date", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.setSystemTime(new Date("2026-06-04T10:00:00.000Z"));
 
     await filterToEmployeeOne();
 

@@ -4431,6 +4431,30 @@ customer returns an empty list rather than leaking.
 
 ---
 
+## §7.36 — Attendance absorbs Leave (2026-08-05, frontend-only)
+
+**The `/leave` route is retired.** Attendance and leave answer the same question — was this person
+at work, and if not why — so they now share one page with role-shaped tabs: Employee gets
+My Attendance / Apply Leave / My Leave, Manager gets My Attendance / Team Attendance / Leave
+(their Own/Team split becoming a sub-filter inside that tab, not two more top-level tabs), Admin
+gets Attendance / Leave Requests / Leave History.
+
+**No permission or endpoint changed.** Every `leave.*` gate, the backend's own
+`ensureCanActOnLeave` scoping, and manager approve/decline/mark-absence/delete parity are exactly
+as built in §7.5c/§7.5d. `LeaveListPage` became the reusable `LeaveSection` with a `view` prop.
+
+**Pending leave renders as decision cards, decided leave as a table** — the old table hid the
+reason behind an ellipsis, which is the one field an approval decision actually turns on.
+
+**Date filtering is one preset dropdown** (Today / Yesterday / This Month / Custom); month-wise
+filtering is removed. The attendance LIST endpoints accept only `?month=`, so rather than widen a
+permission-scoped endpoint, a range fetches the months it touches and narrows client-side — the
+pattern `AdminAttendanceView` already used. A new `utils/date.utils.js` centralises local-date
+formatting specifically so nothing calls `toISOString()` on a local-midnight value again (that
+lands a day early east of UTC — the bug shipped in the previous batch).
+
+---
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a

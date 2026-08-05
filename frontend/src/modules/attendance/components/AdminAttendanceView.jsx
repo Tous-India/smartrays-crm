@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { DatePicker, Select, Space, App } from "antd";
+import { DatePicker, Select, App } from "antd";
 import AttendanceRecordsSection from "./AttendanceRecordsSection";
 import ReportDownloadButton from "../../../components/ReportDownloadButton";
 import { getTeamAttendance, markAttendanceStatus } from "../api/attendanceApi";
@@ -9,6 +9,14 @@ import useTeams from "../../team/hooks/useTeams";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import { ATTENDANCE_LIFECYCLE_FILTER_OPTIONS, deriveAttendanceLifecycleState } from "../constants/attendance.constants";
 import findMissingAttendanceDays from "../utils/missingAttendanceDays";
+import {
+  DATE_RANGE_OPTIONS,
+  DATE_RANGE_PRESETS,
+  resolveDateRange,
+  monthKeysInRange,
+  isWithinRange,
+  toLocalDateKey,
+} from "../../../utils/date.utils";
 
 const { RangePicker } = DatePicker;
 
@@ -24,15 +32,15 @@ const { RangePicker } = DatePicker;
  * manager's narrower `view_team`. Manager and Employee are completely
  * unaffected — `AttendancePage.jsx` only routes here for `role === "admin"`.
  *
- * Five filters, per this task: Employee, Team, Status (all three mirror
- * `TeamAttendanceView`'s own filter-bar pattern), a month `DatePicker`
- * (existing pattern), and a separate Custom Date Range `RangePicker` for an
- * arbitrary span. The backend's `GET /attendance/team` only accepts a single
- * `month=`, not a range — rather than adding a new backend endpoint for what
- * is fundamentally the same data, a custom range fetches every calendar
- * month it touches (almost always 1, occasionally 2 for a month-straddling
- * range) and merges the results, then narrows to the exact day span
- * client-side. The Team filter needs each employee's `managerId`, which the
+ * Filters (§B7/§B8, 2026-08-05): a single Date Range preset dropdown
+ * (Today / Yesterday / This Month / Custom — start/end inputs appear only
+ * under Custom; month-wise filtering is gone), plus Employee, Team and
+ * Status. All four and the report button sit on ONE row, with the stat
+ * cards above them.
+ *
+ * `GET /attendance/team` accepts only `month=`, never a range, so an
+ * arbitrary span fetches every calendar month it touches (almost always 1)
+ * and narrows to the exact days client-side — see `utils/date.utils.js`. The Team filter needs each employee's `managerId`, which the
  * lightweight `useUserDirectory()` dropdown doesn't return — a full roster
  * fetch (`GET /users`) is made instead, matching the same reasoning the
  * Leave module's own Admin Team filter (§7.5c) already established, and
@@ -41,7 +49,10 @@ const { RangePicker } = DatePicker;
  */
 function AdminAttendanceView() {
   const { message } = App.useApp();
-  const [month, setMonth] = useState(dayjs());
+  // §B8 (2026-08-05) — one preset dropdown replaces the old month picker
+  // AND the separate start/end range pickers. Month-wise filtering is gone
+  // entirely; "This Month" covers the only case it served.
+  const [datePreset, setDatePreset] = useState(DATE_RANGE_PRESETS.today);
   const [customRange, setCustomRange] = useState(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
   const [selectedTeamId, setSelectedTeamId] = useState("");
@@ -80,37 +91,34 @@ function AdminAttendanceView() {
     [fullDirectory]
   );
 
-  const monthKey = month.format("YYYY-MM");
+  const range = useMemo(() => resolveDateRange(datePreset, customRange), [datePreset, customRange]);
+  // Stable primitive deps — a new dayjs object every render would re-fire
+  // the fetch effect endlessly.
+  const fromKey = range ? toLocalDateKey(range.from) : null;
+  const toKey = range ? toLocalDateKey(range.to) : null;
 
   useEffect(() => {
+    // A Custom preset with no range picked yet resolves to null — skip the
+    // fetch rather than guessing a default span.
+    if (!range) {
+      setRecords([]);
+      setIsLoading(false);
+      return undefined;
+    }
+
     let cancelled = false;
     setIsLoading(true);
 
-    const monthKeys = customRange
-      ? distinctMonthKeys(customRange[0], customRange[1])
-      : [monthKey];
-
-    Promise.all(monthKeys.map((key) => getTeamAttendance(key)))
+    // The list endpoints take only `?month=` (see `date.utils.js`), so an
+    // arbitrary range fetches each month it touches and narrows locally.
+    Promise.all(monthKeysInRange(range.from, range.to).map((key) => getTeamAttendance(key)))
       .then((responses) => {
         if (cancelled) {
           return;
         }
 
         const merged = responses.flatMap((response) => response.data.data);
-
-        if (!customRange) {
-          setRecords(merged);
-          return;
-        }
-
-        const rangeStartMs = customRange[0].startOf("day").valueOf();
-        const rangeEndMs = customRange[1].endOf("day").valueOf();
-        setRecords(
-          merged.filter((record) => {
-            const recordMs = dayjs(record.date).valueOf();
-            return recordMs >= rangeStartMs && recordMs <= rangeEndMs;
-          })
-        );
+        setRecords(merged.filter((record) => isWithinRange(record.date, range.from, range.to)));
       })
       .finally(() => {
         if (!cancelled) {
@@ -121,7 +129,8 @@ function AdminAttendanceView() {
     return () => {
       cancelled = true;
     };
-  }, [monthKey, customRange, refreshToken]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromKey, toKey, refreshToken]);
 
   const employeeNameById = useMemo(() => new Map(users.map((user) => [user._id, user.name])), [users]);
 
@@ -169,10 +178,10 @@ function AdminAttendanceView() {
       return team && managerIdByEmployeeId.get(String(record.employeeId)) === String(team.headManagerId);
     });
 
-  const rangeStart = customRange ? customRange[0] : month.startOf("month");
-  const rangeEnd = customRange ? customRange[1] : month.endOf("month");
-  const from = rangeStart.format("YYYY-MM-DD");
-  const to = rangeEnd.format("YYYY-MM-DD");
+  const rangeStart = range?.from ?? dayjs().startOf("day");
+  const rangeEnd = range?.to ?? dayjs().endOf("day");
+  const from = toLocalDateKey(rangeStart);
+  const to = toLocalDateKey(rangeEnd);
 
   // Gap-filling rows (2026-08-05) — only ever generated for ONE employee at
   // a time; see `utils/missingAttendanceDays.js` for why. `records` (not
@@ -202,49 +211,59 @@ function AdminAttendanceView() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Space wrap>
-          <DatePicker
-            picker="month"
-            value={month}
-            allowClear={false}
-            disabled={Boolean(customRange)}
-            onChange={(value) => setMonth(value || dayjs())}
-          />
+      {/* §B7 — filters and actions on ONE row; the stat cards now render
+          above this, inside AttendanceRecordsSection. */}
+      <div className="flex flex-wrap items-center gap-3">
+        <Select
+          aria-label="Date range"
+          value={datePreset}
+          options={DATE_RANGE_OPTIONS}
+          style={{ width: 150 }}
+          onChange={(value) => {
+            setDatePreset(value);
+            if (value !== DATE_RANGE_PRESETS.custom) {
+              setCustomRange(null);
+            }
+          }}
+        />
+        {/* Start/end inputs exist ONLY under Custom (§B8). */}
+        {datePreset === DATE_RANGE_PRESETS.custom && (
           <RangePicker value={customRange} onChange={setCustomRange} allowClear />
-          <Select
-            aria-label="Employee"
-            value={selectedEmployeeId}
-            options={employeeOptions}
-            style={{ width: 220 }}
-            showSearch
-            optionFilterProp="label"
-            onChange={setSelectedEmployeeId}
-          />
-          <Select
-            aria-label="Team"
-            value={selectedTeamId}
-            options={teamOptions}
-            style={{ width: 200 }}
-            showSearch
-            optionFilterProp="label"
-            onChange={setSelectedTeamId}
-          />
-          <Select
-            aria-label="Status"
-            value={selectedStatus}
-            options={ATTENDANCE_LIFECYCLE_FILTER_OPTIONS}
-            style={{ width: 160 }}
-            onChange={setSelectedStatus}
-          />
-        </Space>
-        <ReportDownloadButton module="attendance" filters={{ from, to }} filenamePrefix="org-attendance" />
+        )}
+        <Select
+          aria-label="Employee"
+          value={selectedEmployeeId}
+          options={employeeOptions}
+          style={{ width: 220 }}
+          showSearch
+          optionFilterProp="label"
+          onChange={setSelectedEmployeeId}
+        />
+        <Select
+          aria-label="Team"
+          value={selectedTeamId}
+          options={teamOptions}
+          style={{ width: 200 }}
+          showSearch
+          optionFilterProp="label"
+          onChange={setSelectedTeamId}
+        />
+        <Select
+          aria-label="Status"
+          value={selectedStatus}
+          options={ATTENDANCE_LIFECYCLE_FILTER_OPTIONS}
+          style={{ width: 160 }}
+          onChange={setSelectedStatus}
+        />
+        <div className="ms-auto">
+          <ReportDownloadButton module="attendance" filters={{ from, to }} filenamePrefix="org-attendance" />
+        </div>
       </div>
 
       <AttendanceRecordsSection
         records={filteredRecords}
         isLoading={isLoading}
-        month={month}
+        month={rangeStart}
         showEmployeeColumn
         employeeNameById={employeeNameById}
         teamNameByEmployeeId={teamNameByEmployeeId}
@@ -258,19 +277,6 @@ function AdminAttendanceView() {
       />
     </div>
   );
-}
-
-function distinctMonthKeys(start, end) {
-  const keys = [];
-  let cursor = start.startOf("month");
-  const last = end.startOf("month");
-
-  while (cursor.isBefore(last) || cursor.isSame(last, "month")) {
-    keys.push(cursor.format("YYYY-MM"));
-    cursor = cursor.add(1, "month");
-  }
-
-  return keys;
 }
 
 export default AdminAttendanceView;

@@ -9,7 +9,6 @@ import {
   RiseOutlined,
   TeamOutlined,
   CalendarOutlined,
-  FileDoneOutlined,
   EnvironmentOutlined,
   WalletOutlined,
   CarOutlined,
@@ -164,19 +163,14 @@ function MainLayout() {
         icon: <CreditCardOutlined />,
         show: user?.role === "admin",
       },
-      { key: ROUTE_PATHS.ATTENDANCE, label: "Attendance", icon: <CalendarOutlined />, show: true },
       {
-        key: ROUTE_PATHS.LEAVE,
-        label: "Leave",
-        icon: <FileDoneOutlined />,
+        key: ROUTE_PATHS.ATTENDANCE,
+        label: "Attendance",
+        icon: <CalendarOutlined />,
         show: true,
-        // Unread leave-notification count (§7.29 — replaces the earlier
-        // admin-only pending-request count, §7.26). No role gate needed
-        // anymore: `leave_requested` notifications only ever go to admins
-        // (a request to review) and `leave_approved`/`leave_declined` only
-        // ever go to the employee whose request was decided, so this is
-        // already self-scoped by the Notification module itself — an admin
-        // sees pending requests, an employee sees their own outcome.
+        // Leave lives inside /attendance as of 2026-08-05, so its unread
+        // badge moved onto this item with it rather than being dropped
+        // along with the retired /leave nav entry.
         badgeCount: pendingLeaveCount,
         onNavigate: clearLeaveBadge,
       },

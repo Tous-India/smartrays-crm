@@ -28,7 +28,7 @@ function UserLeaveCard({ user }) {
         </>
       )}
       <div className="mt-2 text-right text-sm">
-        <Link to={ROUTE_PATHS.LEAVE}>View leave history →</Link>
+        <Link to={ROUTE_PATHS.ATTENDANCE}>View leave history →</Link>
       </div>
     </WidgetCard>
   );

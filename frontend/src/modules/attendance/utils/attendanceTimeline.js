@@ -69,9 +69,14 @@ export function computeTimelineSegments(record) {
   const shiftStartMs = clampToDay(checkInMs, dayStartMs, dayEndMs);
   const shiftEndMs = clampToDay(checkOutMs ?? dayEndMs, dayStartMs, dayEndMs);
 
+  // `startMs`/`endMs` ride along on every segment (2026-08-05) so the bar
+  // can label each band with the actual clock range it covers on hover,
+  // without recomputing any of this geometry a second time in the view.
   const segments = [
     {
       color: "green",
+      startMs: shiftStartMs,
+      endMs: shiftEndMs,
       leftPercent: toPercent(shiftStartMs, dayStartMs),
       widthPercent: toPercent(shiftEndMs, dayStartMs) - toPercent(shiftStartMs, dayStartMs),
     },
@@ -87,6 +92,8 @@ export function computeTimelineSegments(record) {
     if (clampedEnd > clampedStart) {
       segments.push({
         color: "amber",
+        startMs: clampedStart,
+        endMs: clampedEnd,
         leftPercent: toPercent(clampedStart, dayStartMs),
         widthPercent: toPercent(clampedEnd, dayStartMs) - toPercent(clampedStart, dayStartMs),
       });
@@ -100,6 +107,8 @@ export function computeTimelineSegments(record) {
     if (gapEndMs > gapStartMs) {
       segments.push({
         color: "red",
+        startMs: gapStartMs,
+        endMs: gapEndMs,
         leftPercent: toPercent(gapStartMs, dayStartMs),
         widthPercent: toPercent(gapEndMs, dayStartMs) - toPercent(gapStartMs, dayStartMs),
       });

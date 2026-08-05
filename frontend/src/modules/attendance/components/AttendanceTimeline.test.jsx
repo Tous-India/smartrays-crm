@@ -59,10 +59,10 @@ describe("AttendanceTimeline", () => {
     // (DAY_WITHOUT_GAP is also an 8h shift, so "Shift: 8h 0m" appears twice.)
     expect(screen.getAllByText("Shift: 8h 0m")).toHaveLength(2);
     expect(screen.getByText("Connected: 7h 30m")).toBeInTheDocument();
-    expect(screen.getByText("Issues: 30m")).toBeInTheDocument();
+    expect(screen.getByText("Not Tracked: 30m")).toBeInTheDocument();
     // DAY_WITHOUT_GAP: full 8h shift, no issues.
     expect(screen.getByText("Connected: 8h 0m")).toBeInTheDocument();
-    expect(screen.getByText("Issues: 0m")).toBeInTheDocument();
+    expect(screen.getByText("Not Tracked: 0m")).toBeInTheDocument();
   });
 
   it("renders a connectivity gap as a visually distinct red segment (real class/style, not just data presence)", () => {

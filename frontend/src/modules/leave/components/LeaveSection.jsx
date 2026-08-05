@@ -6,6 +6,7 @@ import useLeaveList from "../hooks/useLeaveList";
 import LeaveRequestModal from "./LeaveRequestModal";
 import LeaveDeclineModal from "./LeaveDeclineModal";
 import LeaveBalanceCard from "./LeaveBalanceCard";
+import LeaveApprovalCards from "./LeaveApprovalCards";
 import ReportDownloadButton from "../../../components/ReportDownloadButton";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import useTeams from "../../team/hooks/useTeams";
@@ -67,7 +68,7 @@ const EMPTY_ADMIN_FILTERS = { employeeId: "", teamId: "", status: "", dateRange:
  * `HistoryMapView.jsx` already established for the same "surface the
  * error, don't paper over it" reasoning.
  */
-function LeaveListPage() {
+function LeaveSection({ view = "all" }) {
   const { message } = App.useApp();
   const user = useSessionStore((state) => state.user);
   const { users } = useUserDirectory();
@@ -482,6 +483,19 @@ function LeaveListPage() {
     },
   ].filter(Boolean);
 
+  // §B2 (2026-08-05) — pending requests are decisions and render as cards;
+  // anything already decided is history and stays a table. `view` decides
+  // which half this instance shows, so the Admin tabs ("Leave Requests" /
+  // "Leave History") and the Manager/Employee single Leave tab all reuse
+  // this one component rather than three near-copies.
+  const pendingRequests = displayedLeaveRequests.filter((leave) => leave.status === "pending");
+  const decidedRequests = displayedLeaveRequests.filter((leave) => leave.status !== "pending");
+
+  const tableRows =
+    view === "history" ? decidedRequests : view === "pending" ? [] : displayedLeaveRequests;
+  const showApprovalCards = (view === "pending" || view === "all") && canActOnLeave;
+  const showTable = view !== "pending";
+
   return (
     <div className="flex flex-col gap-4">
       <LeaveBalanceCard />
@@ -539,6 +553,8 @@ function LeaveListPage() {
         </Space>
       )}
 
+      {/* Preserved verbatim from the standalone page (BUG 3, §7.5f): a real
+          fetch failure must never look like "this scope has no requests". */}
       {error ? (
         <Alert
           type="error"
@@ -551,7 +567,32 @@ function LeaveListPage() {
           }
         />
       ) : (
-        <Table rowKey="_id" columns={columns} dataSource={displayedLeaveRequests} loading={isLoading} scroll={{ x: "max-content" }} />
+        <>
+          {showApprovalCards && (
+            <LeaveApprovalCards
+              requests={pendingRequests}
+              employeeNameById={employeeNameById}
+              teamNameByEmployeeId={teamNameByEmployeeId}
+              canApprove={canApprove}
+              canDecline={canDecline}
+              canMarkAbsence={canMarkAbsence}
+              canActOnRow={canActOnRow}
+              onApprove={handleApprove}
+              onDecline={setDeclineTarget}
+              onMarkAbsence={handleMarkAbsence}
+            />
+          )}
+
+          {showTable && (
+            <Table
+              rowKey="_id"
+              columns={columns}
+              dataSource={tableRows}
+              loading={isLoading}
+              scroll={{ x: "max-content" }}
+            />
+          )}
+        </>
       )}
 
       <LeaveRequestModal
@@ -571,4 +612,4 @@ function LeaveListPage() {
   );
 }
 
-export default LeaveListPage;
+export default LeaveSection;

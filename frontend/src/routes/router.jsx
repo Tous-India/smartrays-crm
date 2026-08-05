@@ -15,7 +15,6 @@ import CustomerDetailPage from "../pages/CustomerDetailPage";
 import ProjectDetailPage from "../pages/ProjectDetailPage";
 import AttendancePage from "../pages/AttendancePage";
 import AttendanceTeamPage from "../pages/AttendanceTeamPage";
-import LeavePage from "../pages/LeavePage";
 import LocationPage from "../pages/LocationPage";
 import PayrollPage from "../pages/PayrollPage";
 import PayslipDetailPage from "../pages/PayslipDetailPage";
@@ -60,7 +59,6 @@ export const router = createBrowserRouter(
           <Route path="projects/:id" element={<ProjectDetailPage />} />
           <Route path="attendance" element={<AttendancePage />} />
           <Route path="attendance/team" element={<AttendanceTeamPage />} />
-          <Route path="leave" element={<LeavePage />} />
           <Route path="location" element={<LocationPage />} />
           <Route path="payroll" element={<PayrollPage />} />
           <Route path="payroll/:id/payslip" element={<PayslipDetailPage />} />

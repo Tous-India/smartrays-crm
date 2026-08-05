@@ -1950,3 +1950,39 @@ was removed. (2) That same widget still links to the now-removed `/amc` route. I
 uncommitted work from a concurrent session, so fixing it would have meant committing someone
 else's WIP; `ROUTE_PATHS.AMC` was kept so the link resolves rather than going `undefined`, and
 repointing it at `/customers` is flagged as a follow-up.
+
+### 2026-08-05 — Attendance page consolidation: Leave absorbed, tabs, date presets, timeline fixes
+
+Deleted the `/leave` route, its nav item and `LeavePage.jsx`; everything moved into role-shaped
+tabs on `/attendance` (Employee: My Attendance / Apply Leave / My Leave · Manager: My Attendance /
+Team Attendance / Leave · Admin: Attendance / Leave Requests / Leave History). The manager's
+Own/Team split stays inside their Leave tab as a sub-filter rather than becoming more top-level
+tabs. **Backend untouched — this is a relocation, not a permission change**; manager
+approve/decline/mark-unapproved-absence/delete parity is exactly as built. `LeaveListPage` became
+the reusable `LeaveSection` via `git mv`, so its history and suite moved with it; the Team column,
+fetch-error Alert, Balance card, per-row scope gate and icon+Tooltip actions all survive.
+
+**Pending requests now render as cards** with the full reason visible and the three actions
+beside it — the old table truncated the reason behind an ellipsis, which is the field an approval
+decision actually turns on. Decided requests stay a table in the history tab.
+
+**One date dropdown replaces the month picker and the start/end pickers** — Today (default),
+Yesterday, This Month, Custom, with date inputs appearing only under Custom. As reported before
+building: the attendance LIST endpoints accept only `?month=`, never `from`/`to`. Per your call we
+went frontend-only, fetching each month a range touches and narrowing client-side — the pattern
+`AdminAttendanceView` already used, so no backend change. In practice that is a single request.
+
+**New `src/utils/date.utils.js`** — no shared local-date helper existed, and
+`dayjs(x).format("YYYY-MM-DD")` was inlined in half a dozen places. It centralises that so nothing
+drifts back into `toISOString()` on a local-midnight value (a day early at UTC+5:30 — the bug
+shipped in the previous batch); a test asserts the local day survives.
+
+**Timeline:** "Issues" renamed **"Not Tracked"**, and every colour band got a hover tooltip with
+its meaning plus clock range — including the gray base, previously the one band with no
+explanation. Stat cards moved to the top with filters and actions on a single row below.
+
+Full frontend suite: 421 passing. The 9 failures are the known pre-existing set in
+LeadDetailPage / CustomersListPage / PaymentsListPage / UserManagementPage / ConvertToCustomer —
+all files this task never touched, owned by concurrent sessions, and several are 5s-timeout flaky.
+`npm run build` succeeds. Screenshotted the admin tab layout, the leave approval cards, and the
+Custom date filter.

@@ -1941,6 +1941,73 @@ should be repointed at `/customers`.
 
 ---
 
+### Attendance absorbs Leave; tabs, date presets, timeline fixes (2026-08-05)
+
+**`/leave` is gone.** Its route, nav item and `LeavePage.jsx` are deleted; everything it did now
+lives in a tab on `/attendance`. Attendance and leave were always the same question — was this
+person at work, and if not, why — split across two pages. **The backend is untouched: this is a
+relocation, not a permission change.** Managers keep the exact approve / decline /
+mark-unapproved-absence / delete parity built in §7.5c/§7.5d.
+
+**Tabs are role-shaped, not permission-derived**, matching how each role uses the page:
+
+| Role | Tabs |
+|---|---|
+| Employee | My Attendance · Apply Leave · My Leave |
+| Manager | My Attendance · Team Attendance · Leave |
+| Admin | Attendance · Leave Requests · Leave History |
+
+The manager's existing Own/Team split stays INSIDE the Leave tab as a sub-filter rather than
+becoming two more top-level tabs, so the top level stays about "whose attendance" and the
+sub-filter about "whose leave". A manager without `attendance.view_team` falls back to the
+employee set. `LeaveListPage.jsx` became `LeaveSection.jsx` — a reusable sub-component taking a
+`view` prop (`pending` / `history` / `all`) — via `git mv`, so its history and every carefully
+built behaviour move with it rather than being retyped.
+
+**Everything the old page had is preserved**, verified by its own suite moving across intact: the
+Team/Department column, the fetch-error `Alert` (a real failure must never look like "no
+requests"), the Leave Balance card, the per-row `canActOnRow` scope gate, and the icon + Tooltip +
+`aria-label` action pattern.
+
+**Pending requests are cards; decided ones stay a table.** A pending request is a decision, and
+the old table truncated the reason — the field the decision actually turns on — behind an
+ellipsis tooltip. `LeaveApprovalCards` gives it room to be read without hovering and puts the
+three actions beside it. Anything already decided is history, where scanning and comparing rows
+matters more than reading any one, so it stays tabular.
+
+**One date-range dropdown replaces the month picker AND the start/end pickers.** Today (default),
+Yesterday, This Month, Custom — start/end inputs appear only under Custom, and month-wise
+filtering is gone entirely.
+
+The list endpoints (`GET /attendance/me`, `/team`) accept **only `?month=`** — verified against
+`validateMonthQuery`, which rejects anything else; only `/attendance/report` takes a real range.
+Rather than change a permission-scoped backend endpoint, an arbitrary range fetches each calendar
+month it touches and narrows client-side, the same approach `AdminAttendanceView` already used
+for its own custom range. In practice that's one request: Today, Yesterday and This Month never
+span two months, and only a month-straddling Custom range costs a second.
+
+**New `src/utils/date.utils.js`** — created because no shared local-date helper existed and
+`dayjs(x).format("YYYY-MM-DD")` was written out inline in half a dozen components, which is
+exactly how one copy quietly drifts into `toISOString()`. It holds `toLocalDateKey`,
+`resolveDateRange`, `monthKeysInRange` and `isWithinRange`. **Nothing here ever calls
+`toISOString()` on a local-midnight value** — that lands a day early at UTC+5:30, the bug shipped
+in a previous batch; a test asserts the local calendar day survives.
+
+**Layout:** stat cards at the top, filters below them, with all filters and the report button on
+one row.
+
+**Timeline:** "Issues / Total Connectivity Issue Time" renamed **"Not Tracked"** — it describes
+what the number measures (time with no signal) without implying fault. Every colour band now has
+a hover tooltip giving its meaning AND its clock range: green = connected, red = connectivity
+issue, amber = on break, and the gray base = not tracked, which was previously the one band with
+no explanation at all. `computeTimelineSegments` carries `startMs`/`endMs` on each segment so the
+view labels them without recomputing any geometry.
+
+The leave notification badge moved from the retired Leave nav item onto Attendance, since that is
+where leave now lives.
+
+---
+
 ## Env Vars
 
 ```

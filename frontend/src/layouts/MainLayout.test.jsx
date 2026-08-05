@@ -135,13 +135,13 @@ describe("MainLayout — Leads/Leave sidebar notification badges (§7.29, 2026-0
     expect(within(leadsItem).queryByText("0")).not.toBeInTheDocument();
   });
 
-  it("shows the unread leave-notification count on the Leave nav item for an admin", async () => {
+  it("shows the unread leave-notification count on the Attendance nav item for an admin (Leave moved there, §B4)", async () => {
     mockCountsByType({ leave: 3 });
     useSessionStore.setState({ user: ADMIN_USER, isAuthenticated: true, isLoading: false });
 
     renderLayout();
 
-    const leaveItem = await screen.findByRole("menuitem", { name: /Leave/ });
+    const leaveItem = await screen.findByRole("menuitem", { name: /Attendance/ });
     expect(within(leaveItem).getByText("3")).toBeInTheDocument();
     expect(notificationApi.listNotificationsByType).toHaveBeenCalledWith(
       ["leave_requested", "leave_approved", "leave_declined"],
@@ -149,7 +149,7 @@ describe("MainLayout — Leads/Leave sidebar notification badges (§7.29, 2026-0
     );
   });
 
-  it("also shows the Leave badge for a non-admin (their own leave_approved/leave_declined notifications) — no role gate", async () => {
+  it("also shows the leave badge for a non-admin (their own leave_approved/leave_declined notifications) — no role gate", async () => {
     mockCountsByType({ leave: 2 });
     useSessionStore.setState({
       user: { _id: "manager-1", name: "Manager One", role: "manager", permissions: { leads: { view: true } } },
@@ -159,7 +159,7 @@ describe("MainLayout — Leads/Leave sidebar notification badges (§7.29, 2026-0
 
     renderLayout();
 
-    const leaveItem = await screen.findByRole("menuitem", { name: /Leave/ });
+    const leaveItem = await screen.findByRole("menuitem", { name: /Attendance/ });
     expect(within(leaveItem).getByText("2")).toBeInTheDocument();
   });
 
@@ -181,12 +181,19 @@ describe("MainLayout — Leads/Leave sidebar notification badges (§7.29, 2026-0
     });
   });
 
-  it("clicking the Leave nav item marks leave notifications as read, without touching the Leads badge", async () => {
+  it("clicking the Attendance nav item marks leave notifications as read, without touching the Leads badge", async () => {
     mockCountsByType({ leads: 5, leave: 3 });
     useSessionStore.setState({ user: ADMIN_USER, isAuthenticated: true, isLoading: false });
 
     renderLayout();
-    const leaveItem = await screen.findByRole("menuitem", { name: /Leave/ });
+    const leaveItem = await screen.findByRole("menuitem", { name: /Attendance/ });
+
+    // Asserted BEFORE the click: following the link navigates away and
+    // unmounts this layout, so the Leads badge has to be checked while the
+    // sidebar is still on screen. The point of the assertion is that the two
+    // badges are independent, which this still proves.
+    const leadsItem = screen.getByRole("menuitem", { name: /Leads/ });
+    expect(within(leadsItem).getByText("5")).toBeInTheDocument();
 
     await userEvent.click(within(leaveItem).getByRole("link"));
 
@@ -197,8 +204,10 @@ describe("MainLayout — Leads/Leave sidebar notification badges (§7.29, 2026-0
         "leave_declined",
       ]);
     });
-    const leadsItem = screen.getByRole("menuitem", { name: /Leads/ });
-    expect(within(leadsItem).getByText("5")).toBeInTheDocument();
+    expect(notificationApi.markNotificationsReadByType).not.toHaveBeenCalledWith([
+      "lead_created",
+      "lead_assigned",
+    ]);
   });
 });
 
