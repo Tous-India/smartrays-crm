@@ -112,6 +112,15 @@ export const env = {
   // a location ping may drift from the shift's check-in point before it's
   // recorded as a geofence violation. See attendance.service.js#applyGeofenceCheck.
   geofenceRadiusMeters: process.env.GEOFENCE_RADIUS_METERS || "500",
+  // Not required at boot — how long Attendance records (and their Cloudinary
+  // photos) are kept before the retention job deletes them (§6.5, 2026-08-05).
+  // Defaults to 45 days if unset. See attendance.service.js#runAttendanceRetention
+  // and backend/README.md's Data retention section.
+  attendanceRetentionDays: process.env.ATTENDANCE_RETENTION_DAYS || "45",
+  // Shared secret for POST /attendance/cleanup — the retention job is
+  // machine-only (Vercel Cron), never reachable via normal user auth. Same
+  // header-token pattern as the website lead intake webhook.
+  attendanceCleanupToken: process.env.ATTENDANCE_CLEANUP_TOKEN,
   // Google Maps Distance Matrix API key (§6.5/§7.6) — see
   // src/services/googleMaps.service.js.
   googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY,

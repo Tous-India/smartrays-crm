@@ -10,6 +10,7 @@ import {
   getTeamAttendance,
   adjustAttendance,
   markAttendanceStatus,
+  runAttendanceRetention,
   createManualAttendance,
 } from "./attendance.service.js";
 import { generateReport } from "../report/report.service.js";
@@ -104,4 +105,11 @@ export const report = asyncWrapper(async (req, res) => {
   res.setHeader("Content-Type", REPORT_CONTENT_TYPES[format]);
   res.setHeader("Content-Disposition", `attachment; filename=attendance-report.${format}`);
   res.status(200).send(buffer);
+});
+
+export const cleanup = asyncWrapper(async (req, res) => {
+  const batchLimit = Number(req.body?.batchLimit) > 0 ? Number(req.body.batchLimit) : 200;
+  const summary = await runAttendanceRetention({ batchLimit });
+
+  res.status(200).json(new ApiResponse(200, summary, "Attendance retention run complete"));
 });

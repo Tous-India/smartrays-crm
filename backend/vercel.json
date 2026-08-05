@@ -1,5 +1,11 @@
 {
   "rewrites": [
     { "source": "/(.*)", "destination": "/api/index.js" }
+  ],
+  "crons": [
+    {
+      "path": "/api/v1/attendance/cleanup",
+      "schedule": "30 2 * * *"
+    }
   ]
 }

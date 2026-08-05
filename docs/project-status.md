@@ -2020,3 +2020,42 @@ removed earlier the same day; it now points at `/attendance`.
 
 22 new tests. Full frontend suite: 437 passing; the 9 failures are the known pre-existing set in
 files this task never touched. `npm run build` succeeds.
+
+### 2026-08-05 — Attendance data retention (45-day auto-delete with photos)
+
+**The blocker check came back clear.** `Attendance.checkIn/checkOut.photoPublicId` are already
+stored (with `select: false`), explicitly so Cloudinary assets can be destroyed by id — no URL
+parsing and no "existing photos are undeletable" problem. Built on that.
+
+New `ATTENDANCE_RETENTION_DAYS` (default 45) and `ATTENDANCE_CLEANUP_TOKEN`, both documented in
+`.env.example`. New shared-secret `POST /attendance/cleanup`, deliberately **not** reachable by
+normal user auth — putting a bulk delete behind session auth would mean one compromised admin
+session could wipe attendance history. Returns 503 if no secret is configured rather than running
+open.
+
+**Ordering per record, which is the whole design:** payroll guard → Cloudinary assets → DB row.
+The guard skips any record whose month has no Payroll yet, because attendance is the input payroll
+is computed from. Cloudinary comes before the row because the `publicId` needed to find an asset
+lives *only* on that row — deleting the row first would orphan the asset permanently. So a failed
+asset deletion **leaves the record in place** for the next run, and one record's failure never
+aborts the batch. Bounded to 200 records per invocation for the serverless time limit, and
+idempotent.
+
+**Every run writes an `AttendanceRetentionLog` summary** — counts, cutoff, and the date range
+actually deleted — including runs that delete nothing. This is a direct response to the earlier
+leave-record incident: a hard delete with no trace was not just unrecoverable but uninvestigable.
+It holds **no personal data** (no employee ids, names or photo URLs), and a test asserts no
+identifiers leak into it.
+
+**Two things worth flagging.** (1) Scheduling is a `vercel.json` `crons` entry, not node-cron, as
+instructed — node-cron needs a long-lived process this backend doesn't have. (2) Vercel Cron only
+issues **GET** and cannot send custom headers, so a POST-only + `x-webhook-token`-only endpoint
+could never actually be triggered by its own cron entry. The endpoint therefore accepts both verbs
+and also `Authorization: Bearer <CRON_SECRET>` (what Vercel sends). The job's idempotency is what
+makes a mutating GET acceptable.
+
+Note the existing `cleanupOldAttendancePhotos` job strips photos while keeping rows; at the same
+threshold this new job supersedes it, and a record whose photos were already stripped passes
+through with nothing to delete.
+
+18 new tests. Full backend suite: **734/734 passing.**

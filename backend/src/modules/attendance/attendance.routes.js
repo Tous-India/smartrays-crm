@@ -2,6 +2,8 @@ import { Router } from "express";
 import multer from "multer";
 import authenticate from "../../middlewares/authenticate.middleware.js";
 import { authorizeAny, requireAdmin } from "../../middlewares/authorize.middleware.js";
+import ApiError from "../../utils/ApiError.js";
+import { env } from "../../config/env.js";
 import {
   checkIn,
   checkOut,
@@ -14,6 +16,7 @@ import {
   adjust,
   createManual,
   markStatus,
+  cleanup,
 } from "./attendance.controller.js";
 import {
   validateCheckInInput,
@@ -95,5 +98,59 @@ attendanceRouter.post(
   validateMarkAttendanceStatusInput,
   markStatus
 );
+
+/**
+ * Data retention (§6.5, 2026-08-05) — machine-only, triggered by Vercel Cron
+ * once daily. Deliberately NOT behind `authenticate`: this is not an action
+ * any human performs, and putting a bulk-delete behind session auth would
+ * mean one compromised admin session could wipe attendance history.
+ *
+ * **Registered for BOTH POST and GET, which is a platform constraint, not a
+ * preference.** POST is the real interface (and what to use when invoking it
+ * by hand). But Vercel Cron only ever issues a **GET**, and cannot attach
+ * custom headers — so a POST-only, `x-webhook-token`-only endpoint could
+ * never actually be triggered by the cron entry in `vercel.json`. The same
+ * guard and handler serve both verbs; the job is idempotent, so a GET that
+ * mutates is safe here in a way it normally would not be.
+ *
+ * Three accepted credentials, all equivalent:
+ * - `x-webhook-token` header — the project's existing webhook pattern (same
+ *   as the website lead intake), used for manual/scripted invocation.
+ * - `?token=` query param — same secret, for callers that can't set headers.
+ * - `Authorization: Bearer <CRON_SECRET>` — what Vercel Cron itself sends.
+ *
+ * Refuses outright (503) when NEITHER secret is configured, rather than
+ * running unauthenticated: an unset secret must never mean "open to
+ * everyone" on an endpoint whose entire job is deleting data.
+ */
+function verifyAttendanceCleanupToken(req, res, next) {
+  // Read from `process.env` at REQUEST time, not from the `env` snapshot
+  // taken at import time. Two reasons: a serverless invocation can be handed
+  // its environment per-request, and reading live means the guard doesn't
+  // depend on module import ORDER (which otherwise makes this endpoint
+  // untestable — `config/env.js` would already have been imported, and
+  // frozen, before a test could set the variable).
+  const sharedSecret = process.env.ATTENDANCE_CLEANUP_TOKEN || env.attendanceCleanupToken;
+  const cronSecret = process.env.CRON_SECRET;
+
+  if (!sharedSecret && !cronSecret) {
+    throw new ApiError(503, "Attendance cleanup is not configured");
+  }
+
+  const providedToken = req.headers["x-webhook-token"] || req.query.token;
+  const bearer = (req.headers.authorization || "").replace(/^Bearer /, "");
+
+  const matchesShared = Boolean(sharedSecret) && providedToken === sharedSecret;
+  const matchesCron = Boolean(cronSecret) && bearer === cronSecret;
+
+  if (!matchesShared && !matchesCron) {
+    throw new ApiError(401, "Invalid or missing cleanup token");
+  }
+
+  next();
+}
+
+attendanceRouter.post("/cleanup", verifyAttendanceCleanupToken, cleanup);
+attendanceRouter.get("/cleanup", verifyAttendanceCleanupToken, cleanup);
 
 export default attendanceRouter;

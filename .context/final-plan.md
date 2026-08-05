@@ -4476,6 +4476,29 @@ the time — it consumes that module's hooks/API/components without modifying th
 
 ---
 
+## §6.5 addendum — Attendance data retention (2026-08-05)
+
+Attendance records and their Cloudinary photos are now deleted after
+`ATTENDANCE_RETENTION_DAYS` (default 45) by a daily **Vercel Cron** entry hitting a shared-secret
+`POST`/`GET /attendance/cleanup`. Not node-cron: that needs a long-lived process this serverless
+backend doesn't have, which is why the three existing `src/cron/*` jobs never fire in production.
+
+Three properties define the design:
+
+1. **A payroll guard runs first.** Attendance for a month with no `Payroll` document yet is never
+   deleted — attendance is the input payroll is computed from, and deleting it first would
+   destroy the evidence behind an uncalculated figure.
+2. **Cloudinary before the database row.** The `publicId` needed to locate an asset lives only on
+   that row, so deleting the row first would orphan the asset permanently. A failed asset
+   deletion leaves the record in place for the next run; the job is idempotent and batched
+   (default 200/invocation) to fit the serverless execution limit.
+3. **Every run is audited.** One `AttendanceRetentionLog` summary per run — counts, cutoff and the
+   date window — holding no personal data. Written directly in response to the earlier
+   leave-record incident, where a hard delete with no trace was both unrecoverable and
+   uninvestigable.
+
+---
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a

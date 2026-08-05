@@ -8,6 +8,8 @@ import { generateAutoTravelLog } from "../transport/travelLog.service.js";
 import { createNotification } from "../notification/notification.service.js";
 import Attendance from "./attendance.model.js";
 import User from "../user/user.model.js";
+import Payroll from "../payroll/payroll.model.js";
+import AttendanceRetentionLog from "./attendanceRetentionLog.model.js";
 
 /**
  * Opens a new attendance record for "now". Rejects (403) if the requesting
@@ -839,4 +841,121 @@ function resolveMonthRange(month) {
   const end = new Date(year, monthNumber, 1);
 
   return { start, end };
+}
+
+/**
+ * Attendance data retention (§6.5, 2026-08-05) — deletes records older than
+ * `ATTENDANCE_RETENTION_DAYS` (default 45) AND their Cloudinary photos.
+ *
+ * Distinct from `cleanupOldAttendancePhotos` above, which strips PHOTOS from
+ * old records while keeping the row. This deletes the row itself, so at the
+ * same threshold it supersedes that job; a record whose photos were already
+ * stripped simply has nothing left to delete in Cloudinary and is handled
+ * without special-casing.
+ *
+ * **Ordering is the whole design, per record:**
+ *
+ * 1. **Payroll guard.** Skip any record whose month has no `Payroll`
+ *    document yet. Attendance is the input payroll is computed FROM —
+ *    deleting it first would destroy the evidence behind a figure nobody
+ *    has calculated yet, and there is no way to reconstruct it.
+ * 2. **Cloudinary first.** Delete the check-in/check-out assets.
+ * 3. **DB record last, and only if step 2 succeeded.** Deleting the row
+ *    first would orphan the Cloudinary asset permanently: the `publicId`
+ *    needed to find it again lives ONLY on that row. A failed asset
+ *    deletion therefore leaves the record in place for the next run — the
+ *    job is idempotent, so retrying is free and safe.
+ *
+ * Bounded to `batchLimit` records per invocation because this runs as a
+ * serverless function with an execution-time limit. Running it repeatedly is
+ * both safe and the intended way to work through a large backlog.
+ */
+export async function runAttendanceRetention({ referenceDate = new Date(), batchLimit = 200 } = {}) {
+  const retentionDays = Number(env.attendanceRetentionDays) || 45;
+
+  const cutoff = new Date(referenceDate);
+  cutoff.setDate(cutoff.getDate() - retentionDays);
+
+  const candidates = await Attendance.find({ date: { $lt: cutoff } })
+    .sort({ date: 1 })
+    .limit(batchLimit)
+    .select("+checkIn.photoPublicId +checkOut.photoPublicId");
+
+  let deletedCount = 0;
+  let skippedNoPayrollCount = 0;
+  let failedCount = 0;
+  let deletedFrom = null;
+  let deletedTo = null;
+
+  // Payroll existence is per month/year and identical for every record in
+  // that month, so it's resolved once per month rather than per record.
+  const payrollExistsByMonthKey = new Map();
+
+  for (const record of candidates) {
+    try {
+      const recordDate = new Date(record.date);
+      const monthKey = `${recordDate.getFullYear()}-${recordDate.getMonth() + 1}`;
+
+      if (!payrollExistsByMonthKey.has(monthKey)) {
+        const exists = await Payroll.exists({
+          year: recordDate.getFullYear(),
+          month: recordDate.getMonth() + 1,
+        });
+        payrollExistsByMonthKey.set(monthKey, Boolean(exists));
+      }
+
+      if (!payrollExistsByMonthKey.get(monthKey)) {
+        skippedNoPayrollCount += 1;
+        continue;
+      }
+
+      // Step 2 — assets before the row. Any failure throws, which lands in
+      // the catch below and deliberately leaves the record untouched.
+      await deleteRecordPhotoAssets(record);
+
+      // Step 3 — only now is the row safe to remove.
+      await record.deleteOne();
+
+      deletedCount += 1;
+      if (!deletedFrom || recordDate < deletedFrom) deletedFrom = recordDate;
+      if (!deletedTo || recordDate > deletedTo) deletedTo = recordDate;
+    } catch (error) {
+      failedCount += 1;
+      console.error(
+        `[attendance retention] Left record ${record._id} in place — its Cloudinary asset could not be deleted:`,
+        error
+      );
+    }
+  }
+
+  const summary = {
+    cutoffDate: cutoff,
+    retentionDays,
+    deletedFrom,
+    deletedTo,
+    deletedCount,
+    skippedNoPayrollCount,
+    failedCount,
+    examinedCount: candidates.length,
+    batchLimit,
+  };
+
+  await AttendanceRetentionLog.create(summary);
+
+  return summary;
+}
+
+/**
+ * Deletes both photo assets for a record. Throws if Cloudinary rejects a
+ * deletion, which is what keeps the caller from removing the row. A record
+ * with no `photoPublicId` (older data, or photos already stripped by
+ * `cleanupOldAttendancePhotos`) has nothing to delete and passes through —
+ * there is no asset left to orphan.
+ */
+async function deleteRecordPhotoAssets(record) {
+  const publicIds = [record.checkIn?.photoPublicId, record.checkOut?.photoPublicId].filter(Boolean);
+
+  for (const publicId of publicIds) {
+    await deleteCloudinaryAsset(publicId);
+  }
 }

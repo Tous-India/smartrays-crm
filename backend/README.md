@@ -601,6 +601,73 @@ fixture would now block the deactivate step it depends on — changed that lead'
 `"won"` before deactivating, which is also more realistic for what that test is actually
 checking (a closed lead surviving its owner's deletion, not an open one silently reassigned).
 
+### Attendance data retention (§6.5, 2026-08-05)
+
+Attendance records and their Cloudinary photos are deleted after
+`ATTENDANCE_RETENTION_DAYS` (default **45**, documented in `.env.example` alongside
+`GEOFENCE_RADIUS_METERS`/`ATTENDANCE_GAP_THRESHOLD_MINUTES`).
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| POST / GET | `/attendance/cleanup` | Shared secret — **NOT** normal user auth | Body `{ batchLimit? }` (default 200). Returns the run summary. |
+
+**Machine-only by design.** This is not an action a human performs, and putting a bulk delete
+behind session auth would mean one compromised admin session could wipe attendance history. It
+uses the same `x-webhook-token` pattern as the website lead intake webhook, and accepts three
+equivalent credentials: that header, `?token=`, or `Authorization: Bearer <CRON_SECRET>` (what
+Vercel Cron itself sends). With **neither** secret configured it returns **503**, never running
+unauthenticated — an unset secret must not mean "open to everyone" on a delete endpoint.
+
+**Registered for both POST and GET, which is a platform constraint rather than a preference.**
+POST is the real interface. But Vercel Cron only ever issues a **GET** and cannot attach custom
+headers, so a POST-only endpoint could never be triggered by the `crons` entry in `vercel.json`.
+The job is idempotent, which is what makes a mutating GET acceptable here.
+
+**No node-cron.** node-cron needs a long-lived process, which this backend's Vercel serverless
+function is not — the three existing `src/cron/*` jobs are registered but never actually fire in
+production (see the Deployment section). Scheduling is a `crons` entry in `vercel.json`, running
+daily at 02:30.
+
+#### Ordering per record — this IS the design
+
+1. **Payroll safety guard.** Skip any record whose month has no `Payroll` document yet.
+   Attendance is the input payroll is computed *from*; deleting it first would destroy the
+   evidence behind a figure nobody has calculated, with no way to reconstruct it. Payroll
+   existence is resolved once per month, not per record.
+2. **Cloudinary assets first.**
+3. **The DB row last, and only if step 2 succeeded.**
+
+Step 3's ordering is the important one. The `publicId` needed to find a Cloudinary asset again
+lives **only** on the attendance row. Deleting the row first would orphan that asset permanently
+— unreachable and unbillable-to-anyone. So a failed asset deletion deliberately **leaves the
+record in place** for the next run; the job is idempotent, so retrying costs nothing. One
+record's failure never aborts the rest of the batch.
+
+A record with no `photoPublicId` (older data, or photos already stripped by the separate
+`cleanupOldAttendancePhotos`) simply has nothing to delete and passes through — there is no
+asset left to orphan.
+
+**Relationship to `cleanupOldAttendancePhotos`.** That older job strips photos from old records
+while keeping the row. This one deletes the row entirely, so at the same threshold it supersedes
+it; no special-casing is needed either way.
+
+**Batching.** Bounded to `batchLimit` records per invocation (default 200) because serverless
+functions have an execution-time limit. Running it repeatedly is both safe and the intended way
+to work through a backlog.
+
+#### Retention audit log
+
+Every run writes one `AttendanceRetentionLog` summary — cutoff, retention days, deleted count,
+the date range actually deleted, count skipped by the payroll guard, count failed, count
+examined, and the batch limit. A summary is written even when nothing was deleted, so every run
+is accounted for.
+
+This exists because a hard delete with no trace is not just unrecoverable, it's
+**uninvestigable** — you cannot answer "where did that record go" afterwards. It deliberately
+holds **no personal data**: no employee ids, names, photo URLs or per-record detail, only counts
+and a date window. A retention mechanism that quietly accumulated a shadow copy of what it
+deleted would defeat its own purpose; a test asserts no identifiers leak into it.
+
 ### AMC — per-customer filter, renewal chaining, derived near-expiry (2026-08-05)
 
 AMC moved out of its own standalone page and into the Customer Detail page, which drove three
