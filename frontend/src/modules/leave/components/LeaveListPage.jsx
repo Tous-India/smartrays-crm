@@ -79,6 +79,15 @@ function LeaveListPage() {
   const canDelete = usePermission("leave", "delete");
   const canActOnLeave = canApprove || canDecline || canMarkAbsence || canDelete;
 
+  // Mirrors the backend's `leave.service.js#ensureCanActOnLeave`: admin acts
+  // org-wide, everyone else only over their own direct reports — never over
+  // their own request. Every row a non-admin can legitimately act on arrives
+  // via `scope=team` (direct reports by construction), so "not mine" is the
+  // whole check needed here.
+  function canActOnRow(leave) {
+    return isAdmin || String(leave.employeeId) !== String(user?._id);
+  }
+
   // Never includes "all" — the All tab is gone for good (§7.5e). Admin's
   // own unified view is handled entirely by the `isAdmin` branch below,
   // not through this permission-derived list.
@@ -139,6 +148,17 @@ function LeaveListPage() {
     () => new Map(teamDirectory.map((directoryUser) => [String(directoryUser._id), directoryUser.managerId ? String(directoryUser.managerId) : null])),
     [teamDirectory]
   );
+
+  const teamNameByEmployeeId = useMemo(() => {
+    const teamNameByHeadId = new Map(teams.map((team) => [String(team.headManagerId), team.name]));
+
+    return new Map(
+      teamDirectory.map((directoryUser) => [
+        String(directoryUser._id),
+        teamNameByHeadId.get(String(directoryUser.managerId)) || null,
+      ])
+    );
+  }, [teams, teamDirectory]);
 
   // Built against the real `Team` entity (`useTeams()`), not a manager-list
   // stand-in — the earlier version of this filter derived "teams" from
@@ -256,9 +276,13 @@ function LeaveListPage() {
   }
 
   async function handleApprove(leave) {
-    await approveLeaveApi(leave._id);
-    message.success("Leave approved");
-    refetch();
+    try {
+      await approveLeaveApi(leave._id);
+      message.success("Leave approved");
+      refetch();
+    } catch (error) {
+      message.error(error.response?.data?.message || "Failed to approve leave");
+    }
   }
 
   async function handleDecline(reason) {
@@ -269,21 +293,31 @@ function LeaveListPage() {
       message.success("Leave declined");
       setDeclineTarget(null);
       refetch();
+    } catch (error) {
+      message.error(error.response?.data?.message || "Failed to decline leave");
     } finally {
       setIsSubmittingDecline(false);
     }
   }
 
   async function handleMarkAbsence(leave) {
-    await markUnapprovedAbsenceApi(leave._id);
-    message.success("Marked as an unapproved absence — 2x deduction applied");
-    refetch();
+    try {
+      await markUnapprovedAbsenceApi(leave._id);
+      message.success("Marked as an unapproved absence — 2x deduction applied");
+      refetch();
+    } catch (error) {
+      message.error(error.response?.data?.message || "Failed to mark unapproved absence");
+    }
   }
 
   async function handleDelete(leave) {
-    await deleteLeaveApi(leave._id);
-    message.success("Leave request deleted");
-    refetch();
+    try {
+      await deleteLeaveApi(leave._id);
+      message.success("Leave request deleted");
+      refetch();
+    } catch (error) {
+      message.error(error.response?.data?.message || "Failed to delete leave request");
+    }
   }
 
   const columns = [
@@ -292,6 +326,18 @@ function LeaveListPage() {
       dataIndex: "employeeId",
       width: 160,
       render: (employeeId) => employeeNameById.get(String(employeeId)) || "Unknown",
+    },
+    // Team/Department (2026-08-05) — admin only, since it's derived from the
+    // full roster this page fetches for the Admin Team filter alone. Built
+    // from exactly the same two sources as that filter (`useTeams()` +
+    // each employee's `managerId`), so the column and the filter can never
+    // disagree about which team someone is in.
+    isAdmin && {
+      title: "Team",
+      key: "team",
+      dataIndex: "employeeId",
+      width: 150,
+      render: (employeeId) => teamNameByEmployeeId.get(String(employeeId)) || "—",
     },
     {
       title: "Start Date",
@@ -365,7 +411,21 @@ function LeaveListPage() {
       title: "Actions",
       key: "actions",
       width: 160,
-      render: (_, leave) => (
+      render: (_, leave) => {
+        // Per-row scope check (BUG 9/10, 2026-08-05) — holding
+        // `leave.approve`/`delete` says the caller may act on SOMEONE's
+        // request, not on this specific one. The backend's own
+        // `ensureCanActOnLeave` resolves that per record: admin org-wide,
+        // everyone else only over their own direct reports — which their
+        // OWN request never is (a manager's `managerId` points at their
+        // manager, not at themselves). Rendering the buttons off the blanket
+        // permission alone put Approve/Decline/Mark-Absence/Delete on every
+        // row of a manager's own "Own" tab, where all four always 403.
+        if (!canActOnRow(leave)) {
+          return null;
+        }
+
+        return (
         <Space>
           {leave.status === "pending" && (
             <>
@@ -417,7 +477,8 @@ function LeaveListPage() {
             </Popconfirm>
           )}
         </Space>
-      ),
+        );
+      },
     },
   ].filter(Boolean);
 

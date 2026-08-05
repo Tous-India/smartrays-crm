@@ -65,6 +65,11 @@ const INITIAL_TEMPLATE_DEFAULTS = {
     // AMC itself. No `payments` grant at all — that matrix row is "–" for
     // every role except admin.
     amc: { view: true, edit: true },
+    // Added 2026-08-05 — read-only visibility into the team(s) this manager
+    // personally heads, so "who is on my team" is answerable in the UI
+    // without granting the admin-only `teams.manage` tier. See the registry's
+    // own comment for why this is deliberately not a write grant.
+    teams: { view_team: true },
   },
   sales_associate: {
     leads: { view: true, create: true, edit: true, delete: true },

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { getMyAttendance } from "../api/attendanceApi";
+import { subscribeToAttendanceChanges } from "../utils/attendanceEvents.js";
 
 /**
  * Own attendance records for a given month (`GET /attendance/me?month=`) —
@@ -31,6 +32,11 @@ export function useMyAttendance(month) {
   useEffect(() => {
     refetch();
   }, [refetch]);
+
+  // Keeps every mounted instance consistent after a check-in/out performed
+  // elsewhere (e.g. the header button while `/attendance` is open) — see
+  // `utils/attendanceEvents.js` for why this isn't a shared store.
+  useEffect(() => subscribeToAttendanceChanges(refetch), [refetch]);
 
   const openRecord = records.find((record) => !record.checkOut?.time) || null;
 

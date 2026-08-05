@@ -27,24 +27,39 @@ import AttendancePhotoModal from "./AttendancePhotoModal";
  */
 function AttendanceRecordsSection({
   records,
+  missingDays = [],
   isLoading,
   month,
   showEmployeeColumn,
   employeeNameById,
+  teamNameByEmployeeId,
+  onMarkStatus,
   showPhotos,
   showLocation,
 }) {
   const [photoModalRecord, setPhotoModalRecord] = useState(null);
+
+  // Synthetic missing-day rows are merged into the TABLE only — never into
+  // `AttendanceSummaryStats`, which counts real outcomes (present/absent/
+  // half-day/on-leave). A day with no record has no outcome yet; counting
+  // it would silently inflate the stats the moment the Employee filter is
+  // applied, which is exactly when these rows appear.
+  const rows =
+    missingDays.length > 0
+      ? [...records, ...missingDays].sort((a, b) => new Date(b.date) - new Date(a.date))
+      : records;
 
   return (
     <div className="flex flex-col gap-4">
       <AttendanceSummaryStats records={records} month={month} />
 
       <AttendanceTimeline
-        records={records}
+        records={rows}
         isLoading={isLoading}
         showEmployeeColumn={showEmployeeColumn}
         employeeNameById={employeeNameById}
+        teamNameByEmployeeId={teamNameByEmployeeId}
+        onMarkStatus={onMarkStatus}
         onRowClick={setPhotoModalRecord}
       />
 

@@ -7,6 +7,13 @@ import mongoose from "mongoose";
 // Cloudinary, src/services/cloudinary.service.js) instead of sitting unused.
 const ATTENDANCE_STATUSES = ["present", "absent", "half_day", "on_leave"];
 
+// The subset `POST /attendance/mark-status` (2026-08-05) is allowed to set —
+// gap-filling only, on days with no record at all. "present"/"on_leave" are
+// excluded deliberately: "present" is the one claim this system requires
+// real check-in evidence for, and "on_leave" is owned by the Leave module's
+// own approval flow, not set by hand here.
+const MARKABLE_STATUSES = ["absent", "half_day"];
+
 const attendanceSchema = new mongoose.Schema(
   {
     employeeId: {
@@ -153,4 +160,4 @@ const attendanceSchema = new mongoose.Schema(
 const Attendance = mongoose.model("Attendance", attendanceSchema);
 
 export default Attendance;
-export { ATTENDANCE_STATUSES };
+export { ATTENDANCE_STATUSES, MARKABLE_STATUSES };

@@ -80,6 +80,79 @@ describe("Team access", () => {
   });
 });
 
+/**
+ * `teams.view_team` (2026-08-05) — a read-only tier so a manager can see the
+ * team they head without the admin-only `teams.manage` grant. Every write
+ * stays admin-only.
+ */
+describe("Team read scope for a manager (teams.view_team)", () => {
+  let manager1Agent, ownTeam, otherTeam;
+
+  beforeEach(async () => {
+    manager1Agent = await loginAsAgent(app, "manager1@test.local", "Password123");
+
+    ownTeam = (
+      await adminAgent.post("/api/v1/teams").send({ name: "Own Team", headManagerId: String(manager1._id) })
+    ).body.data;
+    otherTeam = (
+      await adminAgent.post("/api/v1/teams").send({ name: "Other Team", headManagerId: String(manager2._id) })
+    ).body.data;
+
+    await adminAgent.post(`/api/v1/teams/${ownTeam._id}/members`).send({ userId: String(employee1._id) });
+  });
+
+  it("lists only the team(s) the manager personally heads", async () => {
+    const response = await manager1Agent.get("/api/v1/teams");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.map((team) => team.name)).toEqual(["Own Team"]);
+  });
+
+  it("admin still sees every team — the scope never narrows an admin", async () => {
+    const response = await adminAgent.get("/api/v1/teams");
+
+    expect(response.body.data.map((team) => team.name).sort()).toEqual(["Other Team", "Own Team"]);
+  });
+
+  it("can read its own team and that team's members", async () => {
+    const teamResponse = await manager1Agent.get(`/api/v1/teams/${ownTeam._id}`);
+    expect(teamResponse.status).toBe(200);
+    expect(teamResponse.body.data.name).toBe("Own Team");
+
+    const membersResponse = await manager1Agent.get(`/api/v1/teams/${ownTeam._id}/members`);
+    expect(membersResponse.status).toBe(200);
+    expect(membersResponse.body.data.map((member) => member.name)).toEqual(["Employee One"]);
+  });
+
+  it("cannot read another manager's team, or its members", async () => {
+    expect((await manager1Agent.get(`/api/v1/teams/${otherTeam._id}`)).status).toBe(404);
+    expect((await manager1Agent.get(`/api/v1/teams/${otherTeam._id}/members`)).status).toBe(404);
+  });
+
+  it("cannot create, update, delete a team, or change its head — all still admin-only", async () => {
+    expect(
+      (await manager1Agent.post("/api/v1/teams").send({ name: "New", headManagerId: String(manager1._id) })).status
+    ).toBe(403);
+    expect((await manager1Agent.patch(`/api/v1/teams/${ownTeam._id}`).send({ name: "Renamed" })).status).toBe(403);
+    expect(
+      (await manager1Agent.patch(`/api/v1/teams/${ownTeam._id}`).send({ headManagerId: String(manager2._id) })).status
+    ).toBe(403);
+    expect((await manager1Agent.delete(`/api/v1/teams/${ownTeam._id}`)).status).toBe(403);
+  });
+
+  it("cannot add or remove members, even on its own team — membership stays admin-only", async () => {
+    expect(
+      (await manager1Agent.post(`/api/v1/teams/${ownTeam._id}/members`).send({ userId: String(employee2._id) })).status
+    ).toBe(403);
+    expect((await manager1Agent.delete(`/api/v1/teams/${ownTeam._id}/members/${employee1._id}`)).status).toBe(403);
+  });
+
+  it("a plain employee still has no team read access at all", async () => {
+    expect((await nonAdminAgent.get("/api/v1/teams")).status).toBe(403);
+    expect((await nonAdminAgent.get(`/api/v1/teams/${ownTeam._id}`)).status).toBe(403);
+  });
+});
+
 describe("Team CRUD", () => {
   it("creates a team with a valid manager head", async () => {
     const response = await adminAgent
@@ -431,5 +504,42 @@ describe("Team types (§7.30, 2026-07-31 — admin-managed, structural mirror of
       .post("/api/v1/teams")
       .send({ name: "New Sales Team", type: "Sales", headManagerId: String(manager2._id) });
     expect(newTeamResponse.status).toBe(400);
+  });
+
+  it("a team whose type has since gone inactive can still be updated as long as `type` is resubmitted unchanged — only an actual type change is validated", async () => {
+    const salesType = (await adminAgent.get("/api/v1/team-types")).body.data.find((t) => t.name === "Sales");
+
+    const team = await adminAgent
+      .post("/api/v1/teams")
+      .send({ name: "Legacy Sales Team", type: "Sales", headManagerId: String(manager1._id) });
+
+    await adminAgent.patch(`/api/v1/team-types/${salesType._id}`).send({ isActive: false });
+
+    // The frontend's edit form always resubmits the current (now-inactive) type
+    // alongside whatever the user actually changed — here, only the head.
+    const response = await adminAgent
+      .patch(`/api/v1/teams/${team.body.data._id}`)
+      .send({ name: "Legacy Sales Team", type: "Sales", headManagerId: String(manager2._id) });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.headManagerId).toBe(String(manager2._id));
+    expect(response.body.data.type).toBe("Sales");
+  });
+
+  it("switching a team to a genuinely different, inactive type is still rejected — grandfathering only covers the team's own unchanged value", async () => {
+    const salesType = (await adminAgent.get("/api/v1/team-types")).body.data.find((t) => t.name === "Sales");
+    const installType = (await adminAgent.get("/api/v1/team-types")).body.data.find((t) => t.name === "Installation");
+
+    const team = await adminAgent
+      .post("/api/v1/teams")
+      .send({ name: "Legacy Install Team", type: "Installation", headManagerId: String(manager1._id) });
+
+    await adminAgent.patch(`/api/v1/team-types/${salesType._id}`).send({ isActive: false });
+    await adminAgent.patch(`/api/v1/team-types/${installType._id}`).send({ isActive: false });
+
+    const response = await adminAgent.patch(`/api/v1/teams/${team.body.data._id}`).send({ type: "Sales" });
+
+    expect(response.status).toBe(400);
+    expect((await adminAgent.get(`/api/v1/teams/${team.body.data._id}`)).body.data.type).toBe("Installation");
   });
 });

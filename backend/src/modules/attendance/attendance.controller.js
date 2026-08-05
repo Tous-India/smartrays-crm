@@ -9,6 +9,7 @@ import {
   recordHeartbeat,
   getTeamAttendance,
   adjustAttendance,
+  markAttendanceStatus,
   createManualAttendance,
 } from "./attendance.service.js";
 import { generateReport } from "../report/report.service.js";
@@ -77,6 +78,12 @@ export const createManual = asyncWrapper(async (req, res) => {
   const record = await createManualAttendance(req.body, req.user);
 
   res.status(201).json(new ApiResponse(201, record, "Attendance record created successfully"));
+});
+
+export const markStatus = asyncWrapper(async (req, res) => {
+  const record = await markAttendanceStatus(req.body, req.user);
+
+  res.status(201).json(new ApiResponse(201, record, "Attendance status marked successfully"));
 });
 
 const REPORT_CONTENT_TYPES = {

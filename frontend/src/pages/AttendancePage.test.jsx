@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import AttendancePage from "./AttendancePage";
 import useSessionStore from "../store/sessionStore";
 import * as attendanceApi from "../modules/attendance/api/attendanceApi";
@@ -12,6 +13,9 @@ vi.mock("../modules/team/hooks/useTeams", () => ({
   default: () => ({ teams: [] }),
 }));
 vi.mock("../modules/attendance/hooks/useMyAttendance", () => ({
+  default: () => ({ records: [], isLoading: false, refetch: vi.fn() }),
+}));
+vi.mock("../modules/attendance/hooks/useTeamAttendance", () => ({
   default: () => ({ records: [], isLoading: false, refetch: vi.fn() }),
 }));
 vi.mock("../modules/attendance/api/attendanceApi", async (importOriginal) => {
@@ -71,5 +75,58 @@ describe("AttendancePage — role-based routing", () => {
     render(<AttendancePage />);
 
     expect(screen.queryByRole("combobox", { name: "Team" })).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Own/Team tabs (2026-08-05) — `TeamAttendanceView` existed and its endpoint
+ * worked, but nothing ever routed to it for a manager, so team attendance
+ * was unreachable in the UI.
+ */
+describe("AttendancePage — Own/Team tabs for a manager holding attendance.view_team", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    attendanceApi.getTeamAttendance.mockResolvedValue({ data: { data: [] } });
+    userApi.listUsers.mockResolvedValue({ data: { data: [] } });
+  });
+
+  function renderAsManagerWithTeamGrant() {
+    useSessionStore.setState({
+      user: { _id: "mgr-1", role: "manager", permissions: { attendance: { view_team: true } } },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    return render(<AttendancePage />);
+  }
+
+  it("shows Own and Team tabs, defaulting to Own", () => {
+    renderAsManagerWithTeamGrant();
+
+    expect(screen.getByText("Own")).toBeInTheDocument();
+    expect(screen.getByText("Team")).toBeInTheDocument();
+  });
+
+  it("switching to the Team tab renders the team view, which the manager could not reach before", async () => {
+    const user = userEvent.setup();
+    renderAsManagerWithTeamGrant();
+
+    await user.click(screen.getByText("Team"));
+
+    // The Status filter is rendered by TeamAttendanceView, not by
+    // PersonalAttendanceView — its presence proves the switch happened.
+    expect(await screen.findByRole("combobox", { name: "Status" })).toBeInTheDocument();
+  });
+
+  it("shows no tabs at all for a manager without the view_team grant", () => {
+    useSessionStore.setState({
+      user: { _id: "mgr-2", role: "manager", permissions: {} },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    render(<AttendancePage />);
+
+    expect(screen.queryByText("Team")).not.toBeInTheDocument();
   });
 });

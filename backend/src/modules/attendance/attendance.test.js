@@ -988,3 +988,154 @@ describe("POST /attendance/manual — admin manual creation", () => {
     expect(response.status).toBe(404);
   });
 });
+
+/**
+ * `POST /attendance/mark-status` (2026-08-05) — gap-filling only. The point
+ * of the endpoint is what it REFUSES to do: it never touches a record that
+ * already exists, so a day with real check-in evidence stays immutable
+ * through this path. See attendance.service.js#markAttendanceStatus.
+ */
+describe("POST /attendance/mark-status — gap-filling for days with no record", () => {
+  it("admin marks a missing day absent, flagged manually adjusted with no check-in data", async () => {
+    const response = await adminAgent.post("/api/v1/attendance/mark-status").send({
+      employeeId: String(sales1._id),
+      date: "2026-06-15",
+      status: "absent",
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.status).toBe("absent");
+    expect(response.body.data.checkIn.time).toBeNull();
+    expect(response.body.data.checkOut.time).toBeNull();
+    expect(response.body.data.workingHours).toBeNull();
+    expect(response.body.data.isManuallyAdjusted).toBe(true);
+    expect(response.body.data.adjustedBy).toBe(String(admin._id));
+  });
+
+  it("admin marks a missing day half_day", async () => {
+    const response = await adminAgent.post("/api/v1/attendance/mark-status").send({
+      employeeId: String(sales1._id),
+      date: "2026-06-16",
+      status: "half_day",
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.status).toBe("half_day");
+  });
+
+  it("admin is unrestricted — can mark an employee outside any team of theirs", async () => {
+    const response = await adminAgent.post("/api/v1/attendance/mark-status").send({
+      employeeId: String(sales3._id),
+      date: "2026-06-17",
+      status: "absent",
+    });
+
+    expect(response.status).toBe(201);
+  });
+
+  it("REJECTS a date that already has a record — an existing check-in is never overwritten", async () => {
+    // Local midnight, matching attendance.service.js#startOfDay's own
+    // local-time day key — a UTC-midnight Date would land on a different
+    // day for any non-UTC timezone and silently not collide.
+    const dayKey = new Date(2026, 5, 18);
+
+    await Attendance.create({
+      employeeId: sales1._id,
+      date: dayKey,
+      status: "present",
+      checkIn: { time: new Date(2026, 5, 18, 9, 0, 0) },
+    });
+
+    const response = await adminAgent.post("/api/v1/attendance/mark-status").send({
+      employeeId: String(sales1._id),
+      date: "2026-06-18",
+      status: "absent",
+    });
+
+    expect(response.status).toBe(409);
+
+    // The real record is completely untouched — still present, still has its
+    // check-in time, still not flagged as manually adjusted.
+    const untouched = await Attendance.findOne({ employeeId: sales1._id, date: dayKey });
+    expect(untouched.status).toBe("present");
+    expect(untouched.checkIn.time).not.toBeNull();
+    expect(untouched.isManuallyAdjusted).toBe(false);
+  });
+
+  it("a manager can mark a missing day for their OWN direct report", async () => {
+    const response = await managerAgent.post("/api/v1/attendance/mark-status").send({
+      employeeId: String(sales2._id),
+      date: "2026-06-19",
+      status: "half_day",
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.adjustedBy).toBe(String(manager1Id));
+  });
+
+  it("a manager is REJECTED for an employee outside their own team", async () => {
+    const response = await managerAgent.post("/api/v1/attendance/mark-status").send({
+      employeeId: String(sales3._id),
+      date: "2026-06-20",
+      status: "absent",
+    });
+
+    expect(response.status).toBe(403);
+    expect(await Attendance.countDocuments({ employeeId: sales3._id })).toBe(0);
+  });
+
+  it("a plain employee with no view_team/view_all grant is rejected outright", async () => {
+    const response = await sales1Agent.post("/api/v1/attendance/mark-status").send({
+      employeeId: String(sales2._id),
+      date: "2026-06-21",
+      status: "absent",
+    });
+
+    expect(response.status).toBe(403);
+  });
+
+  it("rejects any status other than absent/half_day — present and on_leave are not markable by hand", async () => {
+    for (const status of ["present", "on_leave", "nonsense"]) {
+      const response = await adminAgent.post("/api/v1/attendance/mark-status").send({
+        employeeId: String(sales1._id),
+        date: "2026-06-22",
+        status,
+      });
+
+      expect(response.status).toBe(400);
+    }
+
+    expect(await Attendance.countDocuments({ employeeId: sales1._id })).toBe(0);
+  });
+
+  it("rejects a missing employeeId, date, or status", async () => {
+    expect((await adminAgent.post("/api/v1/attendance/mark-status").send({ date: "2026-06-23", status: "absent" })).status).toBe(400);
+    expect((await adminAgent.post("/api/v1/attendance/mark-status").send({ employeeId: String(sales1._id), status: "absent" })).status).toBe(400);
+    expect((await adminAgent.post("/api/v1/attendance/mark-status").send({ employeeId: String(sales1._id), date: "2026-06-23" })).status).toBe(400);
+  });
+
+  it("404s for an employee that doesn't exist", async () => {
+    const response = await adminAgent.post("/api/v1/attendance/mark-status").send({
+      employeeId: "000000000000000000000001",
+      date: "2026-06-24",
+      status: "absent",
+    });
+
+    expect(response.status).toBe(404);
+  });
+
+  it("never accepts checkIn/checkOut times — a marked day carries no presence evidence", async () => {
+    const response = await adminAgent.post("/api/v1/attendance/mark-status").send({
+      employeeId: String(sales1._id),
+      date: "2026-06-25",
+      status: "half_day",
+      checkIn: { time: "2026-06-25T09:00:00.000Z" },
+      checkOut: { time: "2026-06-25T13:00:00.000Z" },
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.checkIn.time).toBeNull();
+    expect(response.body.data.checkOut.time).toBeNull();
+    expect(response.body.data.workingHours).toBeNull();
+  });
+});

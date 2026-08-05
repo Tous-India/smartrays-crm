@@ -1824,3 +1824,61 @@ resolved while Phase 0 is underway.
   allowed. Full backend suite: **678/678 passing.** `backend/README.md` updated; the two
   "stale/invalid credentials" notes above corrected in place. Deployed via
   `cd backend && vercel --prod`.
+
+### 2026-08-05 — Attendance & Leave pass: 6 features, 4 bug fixes, 1 new endpoint
+
+**Features.** Map tiles swapped from OpenStreetMap's default raster to **CARTO Positron**
+(`light_all`) across every map in the app — one `TileLayer` in `LeafletMapView.jsx` serves the Live
+map, History map and Attendance location modal, so this was a single-component change; still free
+and key-less, attribution credits both OpenStreetMap and CARTO. **Own/Team tabs on Attendance** for
+managers — `TeamAttendanceView` and its endpoint both already worked, but nothing ever routed to it,
+so team attendance was simply unreachable in the UI for that role. **Team/Department column** added
+to the Admin Attendance and Admin Leave tables, derived from the same two sources their existing
+Team filters use, so column and filter can never disagree and neither needs an extra request.
+**Fixed-header Check-In button** with a live elapsed-time badge once checked in (hidden for admin,
+who is exempt from attendance) — the camera/geolocation step was extracted from `CheckInOutWidget`
+into a shared `AttendanceCaptureFlow` so both entry points run one implementation, with a small
+pub/sub keeping the header timer and the `/attendance` widget in sync. **Manager-scoped Team view**
+via a new read-only `teams.view_team` grant: same page, scoped to the team they head, with no
+create/edit/delete and no membership editing (deliberately — adding a member sets that user's
+`managerId`, so granting it would let a manager pull any user onto their own team and inherit every
+team-scoped grant over their data).
+
+**New endpoint `POST /attendance/mark-status`** — marks a day with **no** record as
+`absent`/`half_day`; admin any employee, manager own direct reports only. Rejects (409) any date
+that already has a record, so a day with real check-in evidence is never touched. This is
+explicitly **not** a reversal of the read-only Attendance decision: create where nothing exists,
+never modify what does. In the UI, missing days now appear as synthetic "No record" rows (only when
+a single employee is filtered, since gaps are per-person) carrying the two actions; they never enter
+the summary statistics.
+
+**Four bugs — every one had a root cause different from the reported one, found by reproducing each
+live rather than trusting the description:**
+
+1. **Team edit "403 via a wrong `PATCH /users/:id`"** — actually a **400** from the correct
+   `PATCH /teams/:id`. `updateTeam` re-validated `type` whenever it was merely *present* in the
+   payload, not when it was *changing*; the edit form always resubmits the current type, so once a
+   type was deactivated, every save of that team failed — including one that only changed the head.
+2. **Attendance Employee filter blanked the Name column** — not a response-shape mismatch.
+   `showEmployeeColumn={!selectedEmployeeId}` deliberately removed the entire Employee column once
+   an employee was selected.
+3. **Leave Approve did nothing** — the endpoint works for admin and manager alike. All four Leave
+   action handlers had **no error handling**, and there is no global axios error toast, so every
+   failure was swallowed silently. Reproduced two real 409 triggers (paid request over 1 day; paid
+   monthly quota already used).
+4. **Manager couldn't delete own team's leave** — backend delete works. Buttons rendered from a
+   blanket permission check with no per-row scope test, so on the manager's **Own** tab every row is
+   their own request, which `ensureCanActOnLeave` always 403s (a manager isn't their own direct
+   report) — silently, per bug 3.
+
+**Tests: backend 699/699 passing** (22 files; 11 new for `mark-status`, 6 for the Team read tier,
+2 regression tests for bug 1). Frontend: ~26 new tests across 6 files; every bug-fix regression test
+was verified to fail without its fix. `npm run build` succeeds. Live-verified in a real browser:
+Positron tiles loading (18 requests, all 200, zero OSM), Team columns on both tables, gap rows with
+actions on exactly the missing days and none on real records, and a Team edit save returning 200
+where it previously returned 400.
+
+**Note on live data:** during cleanup of temporary QA accounts, a substring filter matched three
+pre-existing leave records ("P3 QA verification", "Personal trip - QA verification", "Family event -
+QA verification") and hard-deleted them. Leave deletion has no audit log, so they are not
+recoverable. All three referenced an employee no longer in the directory. Reported to the user.

@@ -1734,6 +1734,101 @@ cycle, self-view section omissions.
 
 ---
 
+### Attendance & Leave pass — tiles, tabs, columns, header check-in, 4 bug fixes (2026-08-05)
+
+**Map tiles -> CARTO Positron.** `LeafletMapView.jsx` is the single place a `TileLayer` is defined
+(Live map, History map, and the Attendance location modal all render through it), so the swap was
+one component. OSM's default raster competes with this app's own semantic marker colors (red =
+connectivity issue, orange = geofence issue); Positron's muted greyscale leaves those pins as the
+only saturated thing on the map. Free and key-less, same as OSM, so nothing about deploy or config
+changes. URL `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png`, `subdomains="abcd"`,
+attribution crediting both OpenStreetMap (the data) and CARTO (the styling) as CARTO's basemap
+terms require. Live-verified: 18 tile requests, all 200, zero OSM requests.
+
+**Attendance Own/Team tabs (`AttendancePage.jsx`).** `TeamAttendanceView` and its endpoint both
+already worked, but nothing ever routed to it — this page only rendered `PersonalAttendanceView`
+for non-admins, so team attendance was unreachable in the UI for a manager. Tabs are built exactly
+the way `LeaveListPage` already builds its own (§7.5e): derived from the grants actually held, and
+hidden entirely when there is only one real choice. A manager (`attendance.view_team`) now sees
+Own/Team; a plain employee still sees just their own list with no tab UI, unchanged. Admin is
+untouched — still routed straight to `AdminAttendanceView`.
+
+**Team/Department column** on both the Admin Attendance table and the Admin Leave table. Both
+derive it from exactly the two sources their own Team *filter* already uses (`useTeams()` plus each
+employee's `managerId` from the full roster fetch), so the column and the filter can never disagree
+about who is on which team, and neither needs an extra request. Falls back to an em dash for
+someone in no team. In `AttendanceTimeline` the column only renders when the caller actually passes
+the mapping, so the Personal view — which has no notion of other people's teams — is unaffected.
+
+**Fixed-header Check-In button (`HeaderCheckInButton.jsx`).** Starting a shift no longer requires
+navigating to `/attendance` first. Two states, never both: a compact "Check In" button, or — once
+checked in — a live elapsed-time badge ticking every second, which replaces the button entirely and
+opens the check-out flow when clicked. Not rendered at all for admin (exempt from attendance,
+§7.4c, so it would be a guaranteed 403); gated in `MainLayout` too, so it isn't even mounted for
+that role and fires no `GET /attendance/me`.
+
+To avoid a second divergent copy of the camera + geolocation flow, that step was **extracted** from
+`CheckInOutWidget` into `AttendanceCaptureFlow.jsx`, which both entry points now render — the widget
+inline, the header in a modal. Because two independent `useMyAttendance` instances are now mounted
+at once, `utils/attendanceEvents.js` adds a one-`Set` pub/sub: any check-in/out broadcasts, and
+every mounted instance re-reads itself, so the header timer and the `/attendance` widget can never
+disagree. It is deliberately not a store — there is no shared *state*, only a "re-read it" signal.
+
+**Manager-scoped Team view.** `TeamManagementPage` now renders for the new read-only
+`teams.view_team` tier as well as `teams.manage`, deciding for itself which it got: same table, same
+filters, but no Create button, no Edit/Delete row actions, and `TeamMembersModal` in a new
+`readOnly` mode (roster only, no add picker, no remove buttons). The backend scopes `GET /teams` to
+the team the caller heads, so a manager simply sees their own row. Reused rather than forked into a
+separate "manager teams page" so the table/filters have one implementation. See `backend/README.md`
+for why membership editing was deliberately *not* extended to managers.
+
+**Mark Absent / Mark Half Day on missing days.** The table only ever rendered real records, so a day
+nobody checked in on had no row at all — there was nothing to hang a gap-filling action off.
+`utils/missingAttendanceDays.js` synthesizes those rows, but **only when a single employee is
+selected**: "which days are missing" is a per-person question, and generating it org-wide would add
+employees x days rows to a table that otherwise shows real events only. Future dates are excluded
+(an unstarted day isn't a gap); today is included (a shift that never started is a real absence).
+
+Synthetic rows are merged into the **table only**, never into `AttendanceSummaryStats` — a day with
+no record has no outcome, and counting it would silently inflate the stats the moment the filter was
+applied. They render a "No record" tag, no timeline/location, and are not clickable (no photo to
+show). The two actions appear on those rows and **only** those rows: a real record has no actions in
+this column at all. Each opens a confirmation naming the date before submitting.
+
+`date` on a synthetic row is a plain `YYYY-MM-DD` day key, not an ISO timestamp — `toISOString()`
+converts local midnight to UTC and lands on the *previous* day for any timezone east of UTC, which
+would have rendered and submitted every gap one day off. Caught by a unit test.
+
+**Four bug fixes, each with the real root cause found by live reproduction rather than the reported
+one:**
+
+- **Attendance Employee filter blanked the name column.** Not a response-shape mismatch:
+  `showEmployeeColumn={!selectedEmployeeId}` in `AdminAttendanceView`/`TeamAttendanceView`
+  deliberately dropped the whole Employee column once a specific employee was picked, so filtered
+  rows no longer identified who they belonged to. Now always shown in these org/team-wide views.
+- **Leave Approve appeared to do nothing.** The endpoint works for both admin and manager. The
+  fault was that `handleApprove`/`handleDecline`/`handleMarkAbsence`/`handleDelete` had **no error
+  handling at all** and there is no global axios error toast, so any rejection was swallowed
+  entirely — the Popconfirm closed and nothing happened. Two real 409 triggers reproduced:
+  approving a paid request longer than 1 day, and approving one when that month's single paid leave
+  is already used. All four handlers now surface the backend's own message.
+- **Manager couldn't delete their own team's leave.** Backend delete works for a manager on a direct
+  report. The action buttons rendered from a blanket `usePermission("leave", "delete")` check with
+  no per-row scope test, so on a manager's **Own** tab — where every row is their *own* request —
+  all four actions hit `ensureCanActOnLeave`, which requires `employee.managerId === caller`, false
+  for one's own record, and 403'd silently. A `canActOnRow` gate now mirrors the backend rule.
+- **Team edit failed on save** — see `backend/README.md`; the cause was server-side.
+
+Tests: 4 new in `LeaveListPage.test.jsx` (all four verified to fail without the fix), 5 in
+`HeaderCheckInButton.test.jsx`, 7 in `missingAttendanceDays.test.js`, 4 in
+`AdminAttendanceView.test.jsx` (gap rows, actions only on gaps, submit payload), 3 in
+`AttendancePage.test.jsx` (tabs), 3 in `TeamManagementPage.test.jsx` (read-only tier), plus Team
+column coverage on both tables. `npm run build` succeeds. Live-verified in a real browser: Positron
+tiles, Team columns on both tables, gap rows with actions on exactly the missing days, and a Team
+edit save now returning 200 where it previously returned 400.
+
+---
+
 ## Env Vars
 
 ```

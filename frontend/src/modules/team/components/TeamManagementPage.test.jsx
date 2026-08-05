@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { message } from "antd";
 import TeamManagementPage from "./TeamManagementPage";
 import * as teamApi from "../api/teamApi";
+import useSessionStore from "../../../store/sessionStore";
 
 // Same pattern as UserManagementPage.test.jsx — antd's `message` toast is
 // portal-rendered outside RTL's reach under jsdom, so the mock function call
@@ -64,6 +65,13 @@ function renderPage() {
 describe("TeamManagementPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // This whole block covers the `teams.manage` (admin) tier — the
+    // read-only `teams.view_team` tier has its own describe block below.
+    useSessionStore.setState({
+      user: { _id: "admin-1", role: "admin", permissions: {} },
+      isAuthenticated: true,
+      isLoading: false,
+    });
     teamApi.listTeams.mockResolvedValue({ data: { data: SAMPLE_TEAMS } });
     teamApi.getTeamMembers.mockResolvedValue({ data: { data: [] } });
     teamApi.getTeamTypes.mockResolvedValue({ data: { data: SAMPLE_TEAM_TYPES } });
@@ -250,5 +258,53 @@ describe("TeamManagementPage", () => {
       expect(teamApi.addTeamMember).toHaveBeenCalledWith("team-1", "emp-1");
     });
     expect(message.success).toHaveBeenCalledWith("Member added");
+  });
+});
+
+/**
+ * `teams.view_team` (2026-08-05) — a manager reads the team they head. Same
+ * page, same table, no writes. The backend scopes `GET /teams` to their own
+ * team, so the list arrives already narrowed; this block covers what the UI
+ * does with that.
+ */
+describe("TeamManagementPage — read-only for the teams.view_team tier", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useSessionStore.setState({
+      user: { _id: "mgr-1", role: "manager", permissions: { teams: { view_team: true } } },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    teamApi.listTeams.mockResolvedValue({ data: { data: SAMPLE_TEAMS } });
+    teamApi.getTeamMembers.mockResolvedValue({ data: { data: [{ _id: "emp-1", name: "Employee One", role: "employee" }] } });
+    teamApi.getTeamTypes.mockResolvedValue({ data: { data: SAMPLE_TEAM_TYPES } });
+  });
+
+  it("still shows the team list itself", async () => {
+    renderPage();
+
+    expect(await screen.findByText("North Sales Team")).toBeInTheDocument();
+    expect(screen.getByText("Manager One")).toBeInTheDocument();
+  });
+
+  it("offers no Create, Edit, or Delete affordance anywhere", async () => {
+    renderPage();
+    await screen.findByText("North Sales Team");
+
+    expect(screen.queryByRole("button", { name: /Create Team/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit team" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete team" })).not.toBeInTheDocument();
+  });
+
+  it("can open the members list, but it is view-only — no add picker, no remove button", async () => {
+    renderPage();
+    await screen.findByText("North Sales Team");
+
+    await userEvent.click(screen.getByRole("button", { name: "View members" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "North Sales Team — Members" });
+    expect(within(dialog).getByText("Employee One")).toBeInTheDocument();
+    expect(within(dialog).queryByText("Select an employee or sales associate to add")).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Remove member" })).not.toBeInTheDocument();
   });
 });

@@ -23,7 +23,10 @@ function SettingsPage() {
 
   const canViewUsers = can(user, "users", "view_all") || can(user, "users", "view_team");
   const canManagePermissions = can(user, "permissions", "manage");
-  const canManageTeams = can(user, "teams", "manage");
+  // Either grant opens the Teams tab (2026-08-05); which of the two the
+  // caller holds decides whether it renders read-only — see
+  // `TeamManagementPage`, which makes that call itself.
+  const canSeeTeams = can(user, "teams", "manage") || can(user, "teams", "view_team");
 
   const items = [
     canViewUsers && {
@@ -31,7 +34,7 @@ function SettingsPage() {
       label: "User Management",
       children: <UserManagementPage />,
     },
-    canManageTeams && {
+    canSeeTeams && {
       key: ROUTE_PATHS.SETTINGS_TEAMS,
       label: "Teams",
       children: <TeamManagementPage />,

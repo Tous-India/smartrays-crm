@@ -611,12 +611,25 @@ mechanism or introduce a second one.
 
 | Method | Path | Access | Notes |
 |---|---|---|---|
-| GET | `/teams` | `teams.manage` (admin only) | List, each row's `memberCount` computed live via `User.countDocuments({ managerId: team.headManagerId })`. |
+| GET | `/teams` | `teams.manage` OR `teams.view_team` | List, each row's `memberCount` computed live via `User.countDocuments({ managerId: team.headManagerId })`. A caller holding only `view_team` sees **just the team(s) they personally head** (scoped in `listTeams`); admin/`manage` is unscoped. |
 | POST | `/teams` | `teams.manage` | `name` + `headManagerId` required; `headManagerId` must resolve to a `manager` or `admin` (`user.service.js#ensureValidManagerId`, exported for this reuse). |
 | GET/PATCH/DELETE | `/teams/:id` | `teams.manage` | Delete does not touch any member's `managerId` — a team's members simply become "unassigned" (`managerId` unchanged, still pointing at the deleted team's former head) unless separately reassigned. |
-| GET | `/teams/:id/members` | `teams.manage` | Always a live `User.find({ managerId: team.headManagerId })` — never a stored/cached list. |
+| GET | `/teams/:id/members` | `teams.manage` OR `teams.view_team` | Always a live `User.find({ managerId: team.headManagerId })` — never a stored/cached list. A `view_team` caller asking for a team they do not head gets **404**, not 403 — they have no legitimate way to learn that team id exists, so "not found" is both the honest answer from their vantage point and avoids confirming the id is real. |
 | POST | `/teams/:id/members` | `teams.manage` | Body `{ userId }`. Implemented as `assignManager(userId, team.headManagerId)` — the exact same function `PATCH /users/:id/manager` already uses, not a parallel write path. |
 | DELETE | `/teams/:id/members/:userId` | `teams.manage` | Implemented as `assignManager(userId, null)`. |
+
+**`teams.view_team` — a read-only tier for managers (2026-08-05).** Previously every Team endpoint
+was gated on the single `teams.manage` grant, which only admin holds, so a manager had no way to
+see their own team's roster in the UI at all. `view_team` (granted to `manager` by default) opens
+exactly the three GET routes above, scoped to the team(s) the caller heads. Every write —
+create, update, delete, reassigning the head, and adding/removing members — remains `teams.manage`,
+i.e. admin only.
+
+Membership editing is deliberately **not** extended to managers. Because adding a member is
+implemented as "set that user's `managerId` to this team's head", a manager holding that power
+could pull an arbitrary user in the org onto their own team and thereby inherit every
+`view_team`-scoped grant over that person's Leads/Customers/Attendance/Leave/AMC data. Org
+structure stays admin-controlled; a manager reads it.
 
 **Deliberately no stored `memberIds` array on `Team`** — membership is always derived from
 `User.managerId`, the same field every other "own team" scope in this app already reads. Adding
@@ -667,6 +680,18 @@ is later deactivated keeps displaying its type string normally, with no dangling
 reference to resolve. `ensureValidTeamType(type)` is the one place this rule is enforced, called
 from both `createTeam` and `updateTeam` (only when `type` is actually being set) — a no-op for
 an empty/undefined `type`, since the field remains optional exactly as before this change.
+
+**Fixed 2026-08-05 — a deactivated type made its own team permanently unsavable.** `updateTeam`
+re-ran `ensureValidTeamType` whenever `type` was merely *present* in the payload, not when it was
+actually *changing*. The frontend's edit form always resubmits the team's current `type` alongside
+whatever the user really edited, so once a type was deactivated, **every** subsequent save of a
+team using it failed with `400 type must match the name of an existing, active team type` — even
+a save that only changed the head manager and never touched the type at all. Reported as a "403
+from a wrong `PATCH /users/:id` call"; live reproduction showed the request correctly hitting
+`PATCH /teams/:id` and failing with a 400 from this validator instead. The guard is now
+`payload.type !== undefined && payload.type !== team.type`, so a team is grandfathered into its
+own existing value while a genuine switch to a different inactive type is still rejected. Two
+regression tests in `team.test.js` cover both halves.
 
 **No admin management UI was built on the frontend** — per this task's own explicit instruction
 not to build more UI for Team Types than the equivalent LeadSource feature has, and LeadSource
@@ -842,6 +867,32 @@ after the fact). Two new admin-only endpoints:
 has no edit-tier action, and inventing one wasn't asked for. Both gate on plain `requireAdmin`,
 the exact same precedent `POST /payroll/run` already established for a genuinely admin-only,
 no-permission-tier action.
+
+### `POST /attendance/mark-status` — gap-filling only (2026-08-05)
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| POST | `/attendance/mark-status` | `attendance.view_team` OR `view_all` (route), own-team scoping resolved per-record in the service | Body `{ employeeId, date, status }` where `status` is **`absent` or `half_day` only**. Creates a record for an employee+date that currently has **none**. Sets `isManuallyAdjusted: true` / `adjustedBy: <caller's id>`. No photo/geolocation required or accepted. Admin: any employee, any date. Manager: their own direct reports only (**403** otherwise). **409** if a record already exists for that employee+date. **404** if `employeeId` isn't a real user. **400** for any other `status`, or a missing field. |
+
+**This is explicitly NOT a reversal of the read-only decision** that removed the Attendance
+edit/delete UI. The distinction is the entire point of the endpoint:
+
+- A day that **has** a record carries verified evidence — photo, coordinates, timestamps. This
+  endpoint refuses it outright (409) and never modifies it. `PATCH /attendance/:id` remains the
+  only writer for an existing record, and it is still admin-only and still unexposed in the UI.
+- A day that has **no** record carries no evidence to contradict, and leaving it blank silently
+  understates absences in payroll. That gap is what this fills.
+
+So: create where nothing exists, never touch what does. `present` and `on_leave` are deliberately
+excluded from `MARKABLE_STATUSES` (`attendance.model.js`) — `present` is the one claim this whole
+module exists to require real check-in evidence for, and `on_leave` is owned by the Leave module's
+approval flow, not set by hand here. `checkIn`/`checkOut` times are not accepted at all: a marked
+day asserts no presence, so there is nothing for times to back up.
+
+Scoping follows the same split as `leave.service.js#ensureCanActOnLeave` — route middleware
+confirms the caller holds *some* attendance view grant, and
+`attendance.service.js#markAttendanceStatus` resolves the actual "is this employee mine?" question
+per-record, which route-level middleware cannot express.
 
 **Audit-trail integrity (`isManuallyAdjusted`/`adjustedBy`).** The whole point of this module is
 verified presence via a mandatory photo — a record either endpoint above touches must always be

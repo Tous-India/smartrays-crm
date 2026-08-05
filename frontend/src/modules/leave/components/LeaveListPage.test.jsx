@@ -186,8 +186,10 @@ describe("LeaveListPage — role-based tabs (§7.5e, 2026-07-31 — no All tab, 
     render(<LeaveListPage />);
     await screen.findByText("Paid");
 
+    // Scoped to the Segmented tab control specifically — "Team" also legitimately
+    // appears as a column header and as the filter's label (2026-08-05).
+    expect(document.querySelector(".ant-segmented")).not.toBeInTheDocument();
     expect(screen.queryByText("Own")).not.toBeInTheDocument();
-    expect(screen.queryByText("Team")).not.toBeInTheDocument();
     expect(screen.queryByText("All")).not.toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Employee" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Team" })).toBeInTheDocument();
@@ -357,6 +359,119 @@ describe("LeaveListPage — approve/decline/mark-unapproved-absence/delete, perm
   });
 });
 
+describe("LeaveListPage — action failures are surfaced, not swallowed (BUG 9/10, 2026-08-05)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    leaveApi.listLeave.mockResolvedValue({ data: { data: [PENDING_LEAVE] } });
+    leaveApi.getLeaveBalance.mockResolvedValue({ data: { data: DEFAULT_BALANCE } });
+    userApi.listUsers.mockResolvedValue({ data: { data: [] } });
+    teamsHook.default.mockReturnValue({ teams: [] });
+    useSessionStore.setState({
+      user: { _id: "admin-1", role: "admin", permissions: {} },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+  });
+
+  it("shows the backend's message when Approve fails, instead of silently doing nothing", async () => {
+    leaveApi.approveLeave.mockRejectedValue({
+      response: { status: 409, data: { message: "A single paid leave request cannot exceed 1 day — only one paid leave is provided per month." } },
+    });
+
+    render(<LeaveListPage />);
+    await screen.findByText("Paid");
+
+    await userEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Confirm Approval" }));
+
+    await waitFor(() => {
+      expect(message.error).toHaveBeenCalledWith(
+        "A single paid leave request cannot exceed 1 day — only one paid leave is provided per month."
+      );
+    });
+    expect(message.success).not.toHaveBeenCalled();
+  });
+
+  it("shows the backend's message when Delete fails", async () => {
+    leaveApi.deleteLeave.mockRejectedValue({
+      response: { status: 403, data: { message: "You can only act on leave requests from your own direct reports" } },
+    });
+
+    render(<LeaveListPage />);
+    await screen.findByText("Paid");
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Confirm Delete" }));
+
+    await waitFor(() => {
+      expect(message.error).toHaveBeenCalledWith("You can only act on leave requests from your own direct reports");
+    });
+    expect(message.success).not.toHaveBeenCalled();
+  });
+
+  it("shows the backend's message when Mark Unapproved Absence fails", async () => {
+    leaveApi.markUnapprovedAbsence.mockRejectedValue({
+      response: { status: 403, data: { message: "You can only act on leave requests from your own direct reports" } },
+    });
+
+    render(<LeaveListPage />);
+    await screen.findByText("Paid");
+
+    await userEvent.click(screen.getByRole("button", { name: "Mark Unapproved Absence" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Mark Absence (2x)" }));
+
+    await waitFor(() => {
+      expect(message.error).toHaveBeenCalledWith("You can only act on leave requests from your own direct reports");
+    });
+    expect(message.success).not.toHaveBeenCalled();
+  });
+});
+
+describe("LeaveListPage — a manager gets no actions on their OWN request (BUG 10, 2026-08-05)", () => {
+  const MANAGER_OWN_LEAVE = { ...PENDING_LEAVE, _id: "leave-own", employeeId: "mgr-1" };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    leaveApi.getLeaveBalance.mockResolvedValue({ data: { data: DEFAULT_BALANCE } });
+    userApi.listUsers.mockResolvedValue({ data: { data: [] } });
+    teamsHook.default.mockReturnValue({ teams: [] });
+    useSessionStore.setState({
+      user: {
+        _id: "mgr-1",
+        role: "manager",
+        permissions: {
+          leave: { view: true, view_team: true, approve: true, decline: true, mark_unapproved_absence: true, delete: true },
+        },
+      },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+  });
+
+  it("hides all four actions on the manager's own request — the backend always 403s them", async () => {
+    leaveApi.listLeave.mockResolvedValue({ data: { data: [MANAGER_OWN_LEAVE] } });
+
+    render(<LeaveListPage />);
+    await screen.findByText("Paid");
+
+    expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Decline" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Mark Unapproved Absence" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+  });
+
+  it("still shows the actions on a direct report's request", async () => {
+    leaveApi.listLeave.mockResolvedValue({ data: { data: [PENDING_LEAVE] } });
+
+    render(<LeaveListPage />);
+    await userEvent.click(screen.getByText("Team"));
+    await screen.findByText("Employee One");
+
+    expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
+  });
+});
+
 describe("LeaveListPage — Reason column (§7.5f, 2026-08-04 — a real column, not an expandable row)", () => {
   it("shows the Reason directly in the table, with no expand toggle anywhere", async () => {
     useSessionStore.setState({
@@ -426,6 +541,28 @@ describe("LeaveListPage — Admin filters (§7.5c/§7.5e, 2026-07-31)", () => {
     expect(await screen.findByRole("combobox", { name: "Employee" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Team" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Status" })).toBeInTheDocument();
+  });
+
+  it("shows a Team column resolving each employee to their team (2026-08-05)", async () => {
+    render(<LeaveListPage />);
+
+    await screen.findByText("Employee One");
+
+    expect(screen.getByRole("columnheader", { name: "Team" })).toBeInTheDocument();
+    expect(await within(screen.getByRole("row", { name: /Employee One/ })).findByText("Sales Team")).toBeInTheDocument();
+    expect(within(screen.getByRole("row", { name: /Employee Two/ })).getByText("Support Team")).toBeInTheDocument();
+  });
+
+  it("falls back to an em dash for an employee in no team", async () => {
+    userApi.listUsers.mockResolvedValue({
+      data: { data: [{ _id: "emp-1", name: "Employee One", role: "employee", managerId: null }] },
+    });
+    leaveApi.listLeave.mockResolvedValue({ data: { data: [PENDING_LEAVE] } });
+
+    render(<LeaveListPage />);
+    await screen.findByText("Employee One");
+
+    expect(within(screen.getByRole("row", { name: /Employee One/ })).getByText("—")).toBeInTheDocument();
   });
 
   it("filters the table down to one employee's requests via the Employee select", async () => {

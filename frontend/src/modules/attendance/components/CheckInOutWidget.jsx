@@ -1,12 +1,11 @@
 import { useEffect, useState } from "react";
 import dayjs from "dayjs";
-import { Alert, Button, Card, Space, Spin, Tag, Tooltip, App } from "antd";
-import { EnvironmentOutlined, ReloadOutlined } from "@ant-design/icons";
+import { Button, Card, Space, Spin, Tag, Tooltip, App } from "antd";
 import useMyAttendance from "../hooks/useMyAttendance";
-import useGeolocation, { requestGeolocationOnce } from "../hooks/useGeolocation";
+import { requestGeolocationOnce } from "../hooks/useGeolocation";
 import useCheckedInHeartbeatLoop from "../hooks/useCheckedInHeartbeatLoop";
-import CameraCapture from "./CameraCapture";
-import { checkIn, checkOut, breakIn, breakOut } from "../api/attendanceApi";
+import AttendanceCaptureFlow from "./AttendanceCaptureFlow";
+import { breakIn, breakOut } from "../api/attendanceApi";
 
 const CURRENT_MONTH = dayjs().format("YYYY-MM");
 
@@ -24,15 +23,11 @@ const CURRENT_MONTH = dayjs().format("YYYY-MM");
 function CheckInOutWidget() {
   const { message } = App.useApp();
   const { openRecord, isLoading, refetch } = useMyAttendance(CURRENT_MONTH);
-  const geolocation = useGeolocation();
   const [isCapturing, setIsCapturing] = useState(false);
-  const [photo, setPhoto] = useState(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmittingBreak, setIsSubmittingBreak] = useState(false);
   const [now, setNow] = useState(() => dayjs());
 
   const isCheckedIn = Boolean(openRecord);
-  const action = isCheckedIn ? "check-out" : "check-in";
 
   // Break state machine (§7.4c): Not Checked In -> Checked In -> (On Break)
   // -> Checked In -> Checked Out. A single break per shift — `hasUsedBreak`
@@ -61,40 +56,10 @@ function CheckInOutWidget() {
 
   function handleStartCapture() {
     setIsCapturing(true);
-    setPhoto(null);
-    geolocation.reset();
-    geolocation.requestLocation();
   }
 
   function handleCancelCapture() {
     setIsCapturing(false);
-    setPhoto(null);
-    geolocation.reset();
-  }
-
-  async function handleConfirm() {
-    setIsSubmitting(true);
-
-    try {
-      const payload = { coords: geolocation.coords, photo };
-
-      if (isCheckedIn) {
-        await checkOut(payload);
-        message.success("Checked out successfully");
-      } else {
-        await checkIn(payload);
-        message.success("Checked in successfully");
-      }
-
-      setIsCapturing(false);
-      setPhoto(null);
-      geolocation.reset();
-      refetch();
-    } catch {
-      message.error(`Could not ${action} — please try again.`);
-    } finally {
-      setIsSubmitting(false);
-    }
   }
 
   /**
@@ -141,8 +106,6 @@ function CheckInOutWidget() {
       </Card>
     );
   }
-
-  const canConfirm = Boolean(photo) && Boolean(geolocation.coords);
 
   return (
     <Card title="Attendance">
@@ -193,44 +156,16 @@ function CheckInOutWidget() {
         </div>
       )}
 
+      {/* No `refetch()` in `onDone` — `AttendanceCaptureFlow` broadcasts via
+          `notifyAttendanceChanged()`, which this component's own
+          `useMyAttendance` is subscribed to, so refetching here as well
+          would just fire a second identical request. */}
       {isCapturing && (
-        <div className="flex flex-col gap-4">
-          <CameraCapture onPhotoChange={setPhoto} />
-
-          <div>
-            {geolocation.isLoading && <Alert type="info" message="Capturing your location..." />}
-            {geolocation.error && <Alert type="error" showIcon message="Location unavailable" description={geolocation.error} />}
-            {geolocation.coords && (
-              <Alert
-                type="success"
-                showIcon
-                icon={<EnvironmentOutlined />}
-                message={`Location captured (${geolocation.coords.lat.toFixed(5)}, ${geolocation.coords.lng.toFixed(5)})`}
-              />
-            )}
-            {geolocation.error && (
-              <Button
-                className="mt-2"
-                icon={<ReloadOutlined />}
-                onClick={geolocation.requestLocation}
-              >
-                Retry Location
-              </Button>
-            )}
-          </div>
-
-          <div className="flex gap-2">
-            <Button onClick={handleCancelCapture}>Cancel</Button>
-            <Button
-              type="primary"
-              disabled={!canConfirm}
-              loading={isSubmitting}
-              onClick={handleConfirm}
-            >
-              Confirm {isCheckedIn ? "Check Out" : "Check In"}
-            </Button>
-          </div>
-        </div>
+        <AttendanceCaptureFlow
+          isCheckedIn={isCheckedIn}
+          onCancel={handleCancelCapture}
+          onDone={() => setIsCapturing(false)}
+        />
       )}
     </Card>
   );

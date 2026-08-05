@@ -15,13 +15,13 @@ import {
 } from "./team.service.js";
 
 export const list = asyncWrapper(async (req, res) => {
-  const teams = await listTeams(req.query);
+  const teams = await listTeams(req.query, req.user);
 
   res.status(200).json(new ApiResponse(200, teams, "Teams fetched successfully"));
 });
 
 export const getOne = asyncWrapper(async (req, res) => {
-  const team = await getTeamById(req.params.id);
+  const team = await getTeamById(req.params.id, req.user);
 
   res.status(200).json(new ApiResponse(200, team, "Team fetched successfully"));
 });
@@ -45,7 +45,7 @@ export const remove = asyncWrapper(async (req, res) => {
 });
 
 export const getMembers = asyncWrapper(async (req, res) => {
-  const members = await getTeamMembers(req.params.id);
+  const members = await getTeamMembers(req.params.id, req.user);
 
   res.status(200).json(new ApiResponse(200, members, "Team members fetched successfully"));
 });

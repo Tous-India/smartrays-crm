@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { DatePicker, Select, Space } from "antd";
+import { DatePicker, Select, Space, App } from "antd";
 import AttendanceRecordsSection from "./AttendanceRecordsSection";
 import ReportDownloadButton from "../../../components/ReportDownloadButton";
-import { getTeamAttendance } from "../api/attendanceApi";
+import { getTeamAttendance, markAttendanceStatus } from "../api/attendanceApi";
 import { listUsers } from "../../user/api/userApi";
 import useTeams from "../../team/hooks/useTeams";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import { ATTENDANCE_LIFECYCLE_FILTER_OPTIONS, deriveAttendanceLifecycleState } from "../constants/attendance.constants";
+import findMissingAttendanceDays from "../utils/missingAttendanceDays";
 
 const { RangePicker } = DatePicker;
 
@@ -39,6 +40,7 @@ const { RangePicker } = DatePicker;
  * manager-list stand-in, to avoid that same filter's now-fixed bug (§7.5d).
  */
 function AdminAttendanceView() {
+  const { message } = App.useApp();
   const [month, setMonth] = useState(dayjs());
   const [customRange, setCustomRange] = useState(null);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
@@ -46,6 +48,9 @@ function AdminAttendanceView() {
   const [selectedStatus, setSelectedStatus] = useState("");
   const [records, setRecords] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  // Bumped after a successful mark-status write so the month re-fetches and
+  // the newly-created record replaces its synthetic missing-day row.
+  const [refreshToken, setRefreshToken] = useState(0);
 
   const { users } = useUserDirectory();
   const { teams } = useTeams();
@@ -116,9 +121,24 @@ function AdminAttendanceView() {
     return () => {
       cancelled = true;
     };
-  }, [monthKey, customRange]);
+  }, [monthKey, customRange, refreshToken]);
 
   const employeeNameById = useMemo(() => new Map(users.map((user) => [user._id, user.name])), [users]);
+
+  // Team/Department column (2026-08-05) — derived from the same two sources
+  // the Team FILTER above already relies on (`useTeams()` + the full roster's
+  // `managerId`), so the column and the filter can never disagree about which
+  // team someone is in. No extra fetch.
+  const teamNameByEmployeeId = useMemo(() => {
+    const teamNameByHeadId = new Map(teams.map((team) => [String(team.headManagerId), team.name]));
+
+    return new Map(
+      fullDirectory.map((directoryUser) => [
+        String(directoryUser._id),
+        teamNameByHeadId.get(String(directoryUser.managerId)) || null,
+      ])
+    );
+  }, [teams, fullDirectory]);
 
   const employeeOptions = useMemo(() => {
     const uniqueEmployeeIds = [...new Set(records.map((record) => String(record.employeeId)))];
@@ -149,8 +169,36 @@ function AdminAttendanceView() {
       return team && managerIdByEmployeeId.get(String(record.employeeId)) === String(team.headManagerId);
     });
 
-  const from = (customRange ? customRange[0] : month.startOf("month")).format("YYYY-MM-DD");
-  const to = (customRange ? customRange[1] : month.endOf("month")).format("YYYY-MM-DD");
+  const rangeStart = customRange ? customRange[0] : month.startOf("month");
+  const rangeEnd = customRange ? customRange[1] : month.endOf("month");
+  const from = rangeStart.format("YYYY-MM-DD");
+  const to = rangeEnd.format("YYYY-MM-DD");
+
+  // Gap-filling rows (2026-08-05) — only ever generated for ONE employee at
+  // a time; see `utils/missingAttendanceDays.js` for why. `records` (not
+  // `filteredRecords`) is the source so a Status filter can't make a day
+  // that DOES have a record look like a gap.
+  const missingDays = useMemo(
+    () =>
+      findMissingAttendanceDays({
+        records,
+        employeeId: selectedEmployeeId,
+        from: rangeStart,
+        to: rangeEnd,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [records, selectedEmployeeId, from, to]
+  );
+
+  async function handleMarkStatus(row, status) {
+    try {
+      await markAttendanceStatus({ employeeId: row.employeeId, date: dayjs(row.date).format("YYYY-MM-DD"), status });
+      message.success(status === "absent" ? "Marked as Absent" : "Marked as Half Day");
+      setRefreshToken((previous) => previous + 1);
+    } catch (error) {
+      message.error(error.response?.data?.message || "Could not mark this day — please try again.");
+    }
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -197,8 +245,11 @@ function AdminAttendanceView() {
         records={filteredRecords}
         isLoading={isLoading}
         month={month}
-        showEmployeeColumn={!selectedEmployeeId}
+        showEmployeeColumn
         employeeNameById={employeeNameById}
+        teamNameByEmployeeId={teamNameByEmployeeId}
+        missingDays={missingDays}
+        onMarkStatus={handleMarkStatus}
         // Admin bypasses attendance.view_photos/view_location unconditionally
         // (§7.4c's can() admin shortcut) — photo/location viewing is
         // completely unaffected by this task's editing-UI removal.

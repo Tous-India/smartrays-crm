@@ -86,6 +86,9 @@ describe("Template CRUD", () => {
       travelLogs: { view_team: true },
       tickets: { create: true, assign: true, view_all: true },
       amc: { view: true, edit: true },
+      // Read-only org-structure visibility (2026-08-05) — scoped to the
+      // team(s) this manager heads. Deliberately not `manage`.
+      teams: { view_team: true },
     });
   });
 

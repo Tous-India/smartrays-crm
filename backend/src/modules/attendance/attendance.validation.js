@@ -1,5 +1,5 @@
 import ApiError from "../../utils/ApiError.js";
-import { ATTENDANCE_STATUSES } from "./attendance.model.js";
+import { ATTENDANCE_STATUSES, MARKABLE_STATUSES } from "./attendance.model.js";
 
 const MONTH_PATTERN = /^\d{4}-\d{2}$/;
 const DATE_PATTERN_SOURCE = "a valid date string";
@@ -159,6 +159,32 @@ export function validateCreateManualAttendanceInput(req, res, next) {
 
   validateOptionalTimeField(checkIn?.time, "checkIn.time");
   validateOptionalTimeField(checkOut?.time, "checkOut.time");
+
+  next();
+}
+
+/**
+ * Validates POST /attendance/mark-status's body (2026-08-05). Narrower than
+ * `validateCreateManualAttendanceInput` above by design: `status` is
+ * REQUIRED and restricted to `MARKABLE_STATUSES` (absent/half_day only), and
+ * `checkIn`/`checkOut` are not accepted at all — this endpoint fills a gap
+ * on a day with no record, it never asserts a presence that would need
+ * times to back it up.
+ */
+export function validateMarkAttendanceStatusInput(req, res, next) {
+  const { employeeId, date, status } = req.body;
+
+  if (!employeeId) {
+    throw new ApiError(400, "employeeId is required");
+  }
+
+  if (!date || Number.isNaN(Date.parse(date))) {
+    throw new ApiError(400, `date is required and must be ${DATE_PATTERN_SOURCE}`);
+  }
+
+  if (!MARKABLE_STATUSES.includes(status)) {
+    throw new ApiError(400, `status must be one of: ${MARKABLE_STATUSES.join(", ")}`);
+  }
 
   next();
 }

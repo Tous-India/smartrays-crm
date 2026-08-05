@@ -506,6 +506,65 @@ export async function createManualAttendance(payload, requestingUser) {
 }
 
 /**
+ * Gap-filling only (2026-08-05) — creates an `absent`/`half_day` record for
+ * an employee+date that currently has NO record at all.
+ *
+ * This is deliberately NOT a reversal of the read-only decision that removed
+ * the attendance edit/delete UI (§7.4, see `backend/README.md`). The
+ * distinction is the whole point: a day with a real check-in carries
+ * verified evidence (photo, coordinates, timestamps) and stays immutable
+ * through this path — `adjustAttendance` remains the only writer for an
+ * existing record, and it is still admin-only and still unexposed in the UI.
+ * A day with NO record carries no evidence to contradict, and leaving it
+ * blank silently understates absences in payroll. So: create where nothing
+ * exists, never touch what does.
+ *
+ * Scope mirrors every other "own team" action in this codebase (§11.9):
+ * admin any employee, a manager only their own direct reports — resolved
+ * here against the specific employee, since route middleware can't express
+ * a per-record check. No photo/geolocation: there is no presence being
+ * claimed, so there is nothing to evidence.
+ */
+export async function markAttendanceStatus(payload, requestingUser) {
+  const { employeeId, date, status } = payload;
+
+  const employee = await User.findById(employeeId);
+
+  if (!employee) {
+    throw new ApiError(404, "Employee not found");
+  }
+
+  if (requestingUser.role !== "admin") {
+    if (String(employee.managerId) !== String(requestingUser._id)) {
+      throw new ApiError(403, "You can only mark attendance for your own direct reports");
+    }
+  }
+
+  const dayStart = startOfDay(new Date(date));
+  const existing = await Attendance.findOne({ employeeId, date: dayStart });
+
+  if (existing) {
+    throw new ApiError(
+      409,
+      "This employee already has an attendance record for that date — only days with no record at all can be marked."
+    );
+  }
+
+  const record = await Attendance.create({
+    employeeId,
+    date: dayStart,
+    status,
+    checkIn: { time: null },
+    checkOut: { time: null },
+    workingHours: null,
+    isManuallyAdjusted: true,
+    adjustedBy: requestingUser._id,
+  });
+
+  return record;
+}
+
+/**
  * Same visible-employee scoping as getTeamAttendance, filtered further by an
  * optional [from, to] date range (inclusive) instead of a single month.
  */

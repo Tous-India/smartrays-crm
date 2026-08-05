@@ -80,10 +80,22 @@ function FitBounds({ points }) {
 
 /**
  * Generic marker(s) + optional polyline map, built on `react-leaflet` +
- * OpenStreetMap tiles (§11.6, 2026-08-04 — replaces the earlier Google Maps
+ * CARTO Positron tiles (§11.6, 2026-08-04 — replaces the earlier Google Maps
  * JS SDK integration, which was never actually functional in production
- * since no billing/API key was ever configured; Leaflet + OSM tiles need
- * neither). Deliberately basic per this module's own stated scope: no
+ * since no billing/API key was ever configured; Leaflet + these tiles need
+ * neither).
+ *
+ * **Tiles: CARTO "Positron" (`light_all`), 2026-08-05** — swapped from the
+ * OSM default raster, whose heavy road/landuse coloring competed with this
+ * app's own semantic marker colors (red = connectivity issue, orange =
+ * geofence issue). Positron's muted greyscale keeps those pins as the only
+ * saturated thing on the map. Free and key-less, same as OSM's own tiles,
+ * so nothing about deployment or configuration changes. Attribution credits
+ * both OpenStreetMap (the underlying data) and CARTO (the tile styling), as
+ * CARTO's basemap terms require; `{r}` resolves to "@2x" on retina displays
+ * and `subdomains` covers CARTO's a–d hosts.
+ *
+ * Deliberately basic per this module's own stated scope: no
  * clustering, no custom controls — just plot what's given and fit the
  * bounds, matching the old `GoogleMapView`'s scope exactly.
  *
@@ -100,8 +112,10 @@ function LeafletMapView({ markers = [], path = [], height = 480 }) {
     <div data-testid="leaflet-map-container" style={{ height, width: "100%" }}>
       <MapContainer center={DEFAULT_CENTER} zoom={5} style={{ height: "100%", width: "100%" }} scrollWheelZoom>
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+          url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+          subdomains="abcd"
+          maxZoom={20}
         />
         {markers.map((marker, index) => (
           <Marker

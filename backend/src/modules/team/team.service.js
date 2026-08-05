@@ -3,6 +3,7 @@ import Team from "./team.model.js";
 import TeamType from "./teamType.model.js";
 import User from "../user/user.model.js";
 import { ensureValidManagerId, assignManager } from "../user/user.service.js";
+import { can } from "../../helpers/permission.helper.js";
 
 const DEFAULT_TEAM_TYPES = ["Sales", "Installation", "Technical"];
 
@@ -84,10 +85,33 @@ export async function ensureValidTeamType(type) {
  * Management screen's member list is an admin-facing roster view, not a
  * bare picker.
  */
-export async function getTeamMembers(teamId) {
+export async function getTeamMembers(teamId, requestingUser) {
   const team = await findTeamOrThrow(teamId);
+  ensureCanReadTeam(team, requestingUser);
 
   return User.find({ managerId: team.headManagerId }).select("_id name role email").sort({ name: 1 });
+}
+
+/**
+ * Read scope for the `teams.view_team` tier (2026-08-05) — a caller holding
+ * only that grant sees exactly the team(s) they personally head, nothing
+ * else. `teams.manage` (admin) is unscoped, and `can()` short-circuits to
+ * true for admin regardless, so this never narrows an admin.
+ *
+ * A 404 rather than a 403 for someone else's team: a manager has no
+ * legitimate way to learn that a team id exists at all, so "not found" is
+ * both the honest answer from their vantage point and avoids confirming the
+ * id is real — the same reasoning `findTeamOrThrow` already applies to an id
+ * that genuinely doesn't exist.
+ */
+function ensureCanReadTeam(team, requestingUser) {
+  if (!requestingUser || can(requestingUser, "teams", "manage")) {
+    return;
+  }
+
+  if (String(team.headManagerId) !== String(requestingUser._id)) {
+    throw new ApiError(404, "Team not found");
+  }
 }
 
 async function findTeamOrThrow(teamId) {
@@ -104,12 +128,18 @@ async function findTeamOrThrow(teamId) {
  * `type`/`isActive` filters (§7.28) — plain equality matches, combined with
  * the existing full-listing query, not a replacement of it.
  */
-export async function listTeams(filters = {}) {
+export async function listTeams(filters = {}, requestingUser) {
   const typeFilter = filters.type ? { type: filters.type } : {};
   const isActiveFilter =
     filters.isActive !== undefined ? { isActive: filters.isActive === "true" || filters.isActive === true } : {};
 
-  const teams = await Team.find({ ...typeFilter, ...isActiveFilter }).sort({ name: 1 });
+  // `teams.view_team` (2026-08-05) narrows the list to the team(s) this
+  // caller personally heads; `teams.manage`/admin is unscoped. See
+  // `ensureCanReadTeam` for the same rule applied to a single team.
+  const scopeFilter =
+    requestingUser && !can(requestingUser, "teams", "manage") ? { headManagerId: requestingUser._id } : {};
+
+  const teams = await Team.find({ ...typeFilter, ...isActiveFilter, ...scopeFilter }).sort({ name: 1 });
 
   // One extra query per team for its member count — teams are an
   // infrequently-listed, small admin-facing collection (org structure, not
@@ -123,9 +153,10 @@ export async function listTeams(filters = {}) {
   );
 }
 
-export async function getTeamById(teamId) {
+export async function getTeamById(teamId, requestingUser) {
   const team = await findTeamOrThrow(teamId);
-  const members = await getTeamMembers(teamId);
+  ensureCanReadTeam(team, requestingUser);
+  const members = await getTeamMembers(teamId, requestingUser);
 
   return { ...team.toObject(), members };
 }
@@ -145,7 +176,7 @@ export async function updateTeam(teamId, payload) {
     team.headManagerId = payload.headManagerId;
   }
 
-  if (payload.type !== undefined) {
+  if (payload.type !== undefined && payload.type !== team.type) {
     await ensureValidTeamType(payload.type);
   }
 

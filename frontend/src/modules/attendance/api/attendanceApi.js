@@ -56,3 +56,14 @@ export function adjustAttendance(id, payload) {
 export function createManualAttendance(payload) {
   return apiClient.post("/attendance/manual", payload);
 }
+
+/**
+ * Gap-filling only (2026-08-05) — marks a day that has NO attendance record
+ * as absent/half_day. The backend rejects (409) any date that already has a
+ * record, so this can never overwrite real check-in data; see
+ * `backend/src/modules/attendance/attendance.service.js#markAttendanceStatus`.
+ * Admin: any employee. Manager: own direct reports only.
+ */
+export function markAttendanceStatus(payload) {
+  return apiClient.post("/attendance/mark-status", payload);
+}

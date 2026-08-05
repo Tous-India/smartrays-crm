@@ -62,6 +62,7 @@ function TeamAttendanceView() {
         <Space>
           <DatePicker picker="month" value={month} allowClear={false} onChange={(value) => setMonth(value || dayjs())} />
           <Select
+            aria-label="Employee"
             value={selectedEmployeeId}
             options={employeeOptions}
             style={{ width: 220 }}
@@ -70,6 +71,7 @@ function TeamAttendanceView() {
             onChange={setSelectedEmployeeId}
           />
           <Select
+            aria-label="Status"
             value={selectedStatus}
             options={ATTENDANCE_LIFECYCLE_FILTER_OPTIONS}
             style={{ width: 160 }}
@@ -83,7 +85,7 @@ function TeamAttendanceView() {
         records={filteredRecords}
         isLoading={isLoading}
         month={month}
-        showEmployeeColumn={!selectedEmployeeId}
+        showEmployeeColumn
         employeeNameById={employeeNameById}
         showPhotos={canSeePhotos}
         showLocation={canSeeLocation}

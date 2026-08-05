@@ -106,8 +106,17 @@ export const PERMISSION_REGISTRY = {
   // get neither — matrix marks both "–".
   amc: ["view", "edit"],
   // Team is an org-structure entity (like Permissions' own templates) —
-  // admin only, one combined `manage` tier rather than separate view/create/
-  // edit/delete actions, matching `permissions.manage`'s exact shape rather
-  // than inventing a new access pattern for another admin-only module.
-  teams: ["manage"],
+  // `manage` is the admin-only combined create/edit/delete/reassign-head
+  // tier, matching `permissions.manage`'s exact shape rather than inventing
+  // a new access pattern.
+  //
+  // `view_team` (2026-08-05) is a strictly narrower, read-only tier for a
+  // manager: see the team(s) they personally head and who is in them,
+  // nothing else. Deliberately NOT a write tier — adding a member is
+  // implemented as "set that user's managerId to this team's head"
+  // (team.service.js#addMemberToTeam), so granting it to managers would let
+  // any manager pull an arbitrary user in the org onto their own team and
+  // thereby inherit every `view_team`-scoped grant over that person's data.
+  // Changing org structure stays with admin; a manager reads it.
+  teams: ["manage", "view_team"],
 };

@@ -13,6 +13,7 @@ import {
   report,
   adjust,
   createManual,
+  markStatus,
 } from "./attendance.controller.js";
 import {
   validateCheckInInput,
@@ -23,6 +24,7 @@ import {
   validateReportQuery,
   validateAdjustAttendanceInput,
   validateCreateManualAttendanceInput,
+  validateMarkAttendanceStatusInput,
 } from "./attendance.validation.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -77,5 +79,21 @@ attendanceRouter.get(
 // than inventing a permission that in practice only admin would ever hold.
 attendanceRouter.patch("/:id", authenticate, requireAdmin, validateAdjustAttendanceInput, adjust);
 attendanceRouter.post("/manual", authenticate, requireAdmin, validateCreateManualAttendanceInput, createManual);
+
+// Gap-filling only (2026-08-05) — marks a day with NO record at all as
+// absent/half_day. Explicitly NOT a reversal of the read-only decision
+// above: a record that HAS check-in data is never editable through this
+// path (see attendance.service.js#markAttendanceStatus for the full
+// reasoning). Gated on the same view tier a manager already holds to see
+// their team's attendance in the first place — the actual "is this employee
+// mine?" scoping is per-record, so it lives in the service, matching the
+// same split `leave.service.js#ensureCanActOnLeave` uses.
+attendanceRouter.post(
+  "/mark-status",
+  authenticate,
+  authorizeAny("attendance", VIEW_ACTIONS),
+  validateMarkAttendanceStatusInput,
+  markStatus
+);
 
 export default attendanceRouter;

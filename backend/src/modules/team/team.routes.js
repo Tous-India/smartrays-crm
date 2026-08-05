@@ -1,6 +1,6 @@
 import { Router } from "express";
 import authenticate from "../../middlewares/authenticate.middleware.js";
-import { authorize } from "../../middlewares/authorize.middleware.js";
+import { authorize, authorizeAny } from "../../middlewares/authorize.middleware.js";
 import {
   list,
   getOne,
@@ -29,14 +29,22 @@ import {
 // consistent rather than a one-off hardcoded role check.
 const manage = authorize("teams", "manage");
 
+// Read-only tier (2026-08-05) — `authorize` here only confirms the caller
+// holds SOME team-read grant; WHICH teams they actually see is resolved in
+// team.service.js against `headManagerId`, the same "route confirms a grant,
+// the service resolves the scope" split `attendance`/`leave` already use for
+// their own view_team tiers. Admin passes via can()'s admin bypass and is
+// never scoped down. Every WRITE route below stays `manage` — admin only.
+const read = authorizeAny("teams", ["manage", "view_team"]);
+
 const teamRouter = Router();
 
-teamRouter.get("/", authenticate, manage, list);
+teamRouter.get("/", authenticate, read, list);
 teamRouter.post("/", authenticate, manage, validateCreateTeamInput, create);
-teamRouter.get("/:id", authenticate, manage, getOne);
+teamRouter.get("/:id", authenticate, read, getOne);
 teamRouter.patch("/:id", authenticate, manage, validateUpdateTeamInput, update);
 teamRouter.delete("/:id", authenticate, manage, remove);
-teamRouter.get("/:id/members", authenticate, manage, getMembers);
+teamRouter.get("/:id/members", authenticate, read, getMembers);
 teamRouter.post("/:id/members", authenticate, manage, validateAddMemberInput, addMember);
 teamRouter.delete("/:id/members/:userId", authenticate, manage, removeMember);
 

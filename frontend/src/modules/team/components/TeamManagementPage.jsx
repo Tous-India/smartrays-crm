@@ -6,19 +6,37 @@ import useTeams from "../hooks/useTeams";
 import { createTeam, updateTeam, deleteTeam } from "../api/teamApi";
 import TeamFormModal from "./TeamFormModal";
 import TeamMembersModal from "./TeamMembersModal";
+import useSessionStore from "../../../store/sessionStore";
+import { can } from "../../../utils/permission.utils";
 
 /**
- * `/settings/teams` — admin-only (gated by `teams.manage`, the same single-
- * tier shape as the Permissions module's own `manage` grant). List of teams
- * (name, type, head's name, derived member count), Create/Edit via
- * `TeamFormModal`, member add/remove via `TeamMembersModal`. `users`
- * (`useUserDirectory`, the same lightweight lookup every other "assign to"
- * picker in this app already uses) is fetched once here and passed down to
- * both modals rather than each fetching its own copy.
+ * `/settings/teams` — list of teams (name, type, head's name, derived member
+ * count), Create/Edit via `TeamFormModal`, member add/remove via
+ * `TeamMembersModal`. `users` (`useUserDirectory`, the same lightweight
+ * lookup every other "assign to" picker in this app already uses) is fetched
+ * once here and passed down to both modals rather than each fetching its own
+ * copy.
+ *
+ * **Two tiers (2026-08-05).** `teams.manage` (admin) is unchanged: full
+ * create/edit/delete/members. `teams.view_team` (manager) renders this exact
+ * same page READ-ONLY — same table, same filters, but no Create button and
+ * no row actions except opening the members list, which `TeamMembersModal`
+ * itself renders read-only for this tier. The backend scopes `GET /teams` to
+ * the team(s) the caller heads, so the manager simply sees one row: their
+ * own. Reusing the component rather than forking a "manager teams page"
+ * keeps one implementation of the table/filters.
+ *
+ * Membership editing is deliberately NOT extended to managers — adding a
+ * member is "set that user's managerId to this team's head," so a manager
+ * with that power could pull any user in the org onto their own team and
+ * inherit every view_team-scoped grant over that person's data. Org
+ * structure stays admin-controlled; a manager reads it.
  */
 function TeamManagementPage() {
   const { message } = App.useApp();
   const { users } = useUserDirectory();
+  const user = useSessionStore((state) => state.user);
+  const canManage = can(user, "teams", "manage");
 
   const [typeFilter, setTypeFilter] = useState(undefined);
   const [activeFilter, setActiveFilter] = useState(undefined);
@@ -102,9 +120,11 @@ function TeamManagementPage() {
             type="text"
             icon={<TeamOutlined />}
             onClick={() => setMembersTeam(team)}
-            title="Manage members"
-            aria-label="Manage members"
+            title={canManage ? "Manage members" : "View members"}
+            aria-label={canManage ? "Manage members" : "View members"}
           />
+          {canManage && (
+          <>
           <Button
             type="text"
             icon={<EditOutlined />}
@@ -131,6 +151,8 @@ function TeamManagementPage() {
           >
             <Button type="text" danger icon={<DeleteOutlined />} title="Delete team" aria-label="Delete team" />
           </Popconfirm>
+          </>
+          )}
         </Space>
       ),
     },
@@ -161,16 +183,18 @@ function TeamManagementPage() {
           />
         </Space>
 
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => {
-            setEditingTeam(null);
-            setIsFormOpen(true);
-          }}
-        >
-          Create Team
-        </Button>
+        {canManage && (
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => {
+              setEditingTeam(null);
+              setIsFormOpen(true);
+            }}
+          >
+            Create Team
+          </Button>
+        )}
       </div>
 
       <Table rowKey="_id" className="app-data-table" loading={isLoading} dataSource={teams} columns={columns} />
@@ -194,6 +218,7 @@ function TeamManagementPage() {
         users={users}
         onCancel={() => setMembersTeam(null)}
         onChanged={refetch}
+        readOnly={!canManage}
       />
     </div>
   );

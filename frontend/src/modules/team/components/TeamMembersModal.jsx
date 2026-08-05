@@ -22,7 +22,7 @@ import { getTeamMembers, addTeamMember, removeTeamMember } from "../api/teamApi"
  * consequence (silently moving them off whatever team/manager they're
  * currently under) is shown before every add instead.
  */
-function TeamMembersModal({ open, team, users, onCancel, onChanged }) {
+function TeamMembersModal({ open, team, users, onCancel, onChanged, readOnly = false }) {
   const { message } = App.useApp();
   const [members, setMembers] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -77,6 +77,10 @@ function TeamMembersModal({ open, team, users, onCancel, onChanged }) {
 
   return (
     <Modal title={team ? `${team.name} — Members` : "Members"} open={open} onCancel={onCancel} footer={null}>
+      {/* `readOnly` (2026-08-05) — the `teams.view_team` tier reads the
+          roster only; the backend rejects both writes below for it anyway,
+          so rendering them would only produce a guaranteed 403. */}
+      {!readOnly && (
       <Space.Compact className="mb-4 w-full">
         <Select
           showSearch
@@ -99,6 +103,7 @@ function TeamMembersModal({ open, team, users, onCancel, onChanged }) {
           </Button>
         </Popconfirm>
       </Space.Compact>
+      )}
 
       <List
         loading={isLoading}
@@ -106,18 +111,28 @@ function TeamMembersModal({ open, team, users, onCancel, onChanged }) {
         locale={{ emptyText: "No members yet" }}
         renderItem={(member) => (
           <List.Item
-            actions={[
-              <Popconfirm
-                key="remove"
-                title="Remove this member?"
-                description="Clears their manager assignment entirely."
-                okText="Remove"
-                okType="danger"
-                onConfirm={() => handleRemoveMember(member._id)}
-              >
-                <Button type="text" danger icon={<DeleteOutlined />} title="Remove member" aria-label="Remove member" />
-              </Popconfirm>,
-            ]}
+            actions={
+              readOnly
+                ? []
+                : [
+                    <Popconfirm
+                      key="remove"
+                      title="Remove this member?"
+                      description="Clears their manager assignment entirely."
+                      okText="Remove"
+                      okType="danger"
+                      onConfirm={() => handleRemoveMember(member._id)}
+                    >
+                      <Button
+                        type="text"
+                        danger
+                        icon={<DeleteOutlined />}
+                        title="Remove member"
+                        aria-label="Remove member"
+                      />
+                    </Popconfirm>,
+                  ]
+            }
           >
             <Space>
               <span>{member.name}</span>

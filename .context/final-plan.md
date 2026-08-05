@@ -4326,6 +4326,57 @@ a checkmark still block on client input and remain flagged as open — do not si
 
 ---
 
+## §7.33 — Attendance & Leave pass (2026-08-05)
+
+**Map tiles.** Superseding §11's Leaflet resolution only in styling, not stack: the tile source
+moved from OpenStreetMap's default raster to **CARTO Positron** (`light_all`). Still free, still
+key-less, still `react-leaflet` — the change is purely that OSM's road/landuse coloring competed
+with this app's own semantic marker colors (red = connectivity issue, orange = geofence issue).
+One `TileLayer` in `LeafletMapView.jsx` serves every map in the app, so this was a one-component
+change. Attribution credits both OpenStreetMap (data) and CARTO (styling), as CARTO's terms require.
+
+**`teams.view_team` — a second, read-only Team tier.** Every Team endpoint was gated on the single
+admin-only `teams.manage` grant, so a manager could not see their own team's roster anywhere in the
+UI. The new `view_team` action (granted to `manager` by default) opens `GET /teams`, `GET /teams/:id`
+and `GET /teams/:id/members`, each scoped to the team(s) the caller personally heads. Every write —
+create, update, delete, reassigning the head, adding/removing members — stays `teams.manage`.
+
+Membership editing was deliberately **not** granted to managers. Adding a member is implemented as
+"set that user's `managerId` to this team's head", so a manager with that power could pull any user
+in the org onto their own team and thereby inherit every `view_team`-scoped grant over that person's
+data. Org structure stays admin-controlled; a manager reads it. Asking for someone else's team
+returns **404**, not 403 — a manager has no legitimate way to learn that id exists.
+
+**`POST /attendance/mark-status` — gap-filling, explicitly not a reversal of §7.4's read-only
+decision.** Marks a day with **no** attendance record as `absent`/`half_day`. Admin: any employee.
+Manager: own direct reports only. Rejects (409) any date that already has a record, so a day with
+real check-in evidence — photo, coordinates, timestamps — is never touched through this path;
+`PATCH /attendance/:id` remains the only writer for an existing record, still admin-only and still
+unexposed in the UI. The deliberate middle ground: **create where nothing exists, never modify what
+does.** `present` and `on_leave` are excluded from the markable set (`present` is the one claim this
+module exists to require evidence for; `on_leave` belongs to Leave's approval flow). No
+photo/geolocation required or accepted — nothing is being asserted that would need evidence.
+
+Frontend: the Attendance table only ever rendered real records, so missing days had no row to hang
+an action off. Synthetic "no record" rows are now generated — but only when a single employee is
+selected, since gaps are a per-person question — carrying the two mark actions. They never enter
+the summary statistics, which count real outcomes only.
+
+**Also in this pass:** Attendance Own/Team tabs for managers (`TeamAttendanceView` existed and
+worked but nothing routed to it); a Team/Department column on the Admin Attendance and Admin Leave
+tables, derived from the same sources as their existing Team filters; and a compact Check-In
+button + live elapsed-time badge in the fixed top bar (hidden for admin), which reuses the existing
+camera/geolocation flow via a new extracted `AttendanceCaptureFlow` shared with `CheckInOutWidget`.
+
+**Four bugs fixed, all four with a root cause different from the one reported** — see
+`backend/README.md` and `frontend/README.md` for each: a deactivated team type made its own team
+permanently unsavable (400, not the reported 403 from a wrong endpoint); the Attendance Employee
+filter dropped the whole Employee column rather than mismatching a response shape; and both Leave
+"nothing happens" bugs traced to four action handlers having no error handling at all, plus action
+buttons rendering from a blanket permission check with no per-row scope test.
+
+---
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a

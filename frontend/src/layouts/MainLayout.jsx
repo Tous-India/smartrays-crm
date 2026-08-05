@@ -27,6 +27,7 @@ import BrandLogo from "../components/BrandLogo";
 import EditProfileModal from "../modules/user/components/EditProfileModal";
 import LiveClock from "./LiveClock";
 import NotificationBell from "../modules/notification/components/NotificationBell";
+import HeaderCheckInButton from "../modules/attendance/components/HeaderCheckInButton";
 
 const { Header, Sider, Content } = Layout;
 
@@ -377,7 +378,14 @@ function MainLayout() {
             horizontally, but both need to sit above scrolling Content. */}
         <Header className="app-topbar-height !flex items-center justify-between !bg-brand-navy px-6 !leading-none fixed inset-x-0 top-0 z-10 ms-0 lg:ms-[220px]">
           <LiveClock />
-          <NotificationBell />
+          <div className="flex items-center gap-4">
+            {/* Admin is exempt from attendance entirely (§7.4c) — the
+                component renders nothing for that role, but gating here too
+                means it isn't even mounted (no `GET /attendance/me` fired
+                on every page load for a role that has no records). */}
+            {user?.role !== "admin" && <HeaderCheckInButton />}
+            <NotificationBell />
+          </div>
         </Header>
         {/* `mt-16` (64px) replaces the header's old in-flow height (48px)
             plus this element's own original 1rem top margin — the header no
