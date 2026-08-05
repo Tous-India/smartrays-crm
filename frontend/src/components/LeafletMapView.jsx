@@ -104,9 +104,15 @@ function FitBounds({ points }) {
  * `title` behavior) rather than a click-to-open popup.
  * `path`: [{ lat, lng }] — rendered as one polyline, for the history trail
  * view.
+ * `paths`: [{ points: [{lat,lng}], color? }] — MULTIPLE polylines, added
+ * 2026-08-05 for the live map, which plots every checked-in employee's trail
+ * at once. Optional and additive: `path` still works exactly as before, so
+ * History and the Attendance map modal are untouched. Extending this shared
+ * component was preferred over building a second map, which would have meant
+ * a second `TileLayer` and a second place for the tile source to drift.
  */
-function LeafletMapView({ markers = [], path = [], height = 480 }) {
-  const allPoints = [...markers, ...path];
+function LeafletMapView({ markers = [], path = [], paths = [], height = 480 }) {
+  const allPoints = [...markers, ...path, ...paths.flatMap((entry) => entry.points || [])];
 
   return (
     <div data-testid="leaflet-map-container" style={{ height, width: "100%" }}>
@@ -128,6 +134,13 @@ function LeafletMapView({ markers = [], path = [], height = 480 }) {
         {path.length > 0 && (
           <Polyline positions={path.map((point) => [point.lat, point.lng])} pathOptions={{ color: "#163b78", weight: 3 }} />
         )}
+        {paths.map((entry, index) => (
+          <Polyline
+            key={entry.key || index}
+            positions={(entry.points || []).map((point) => [point.lat, point.lng])}
+            pathOptions={{ color: entry.color || "#163b78", weight: 3 }}
+          />
+        ))}
         <FitBounds points={allPoints} />
       </MapContainer>
     </div>

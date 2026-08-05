@@ -152,6 +152,11 @@ function AttendanceTimeline({
       dataSource={records}
       loading={isLoading}
       pagination={false}
+      // §B1 (2026-08-05) — the table is wider than a phone; without this it
+      // pushed the whole PAGE into horizontal scroll at 390px. AntD now
+      // scrolls it inside its own container instead, the same treatment the
+      // Leave table already had.
+      scroll={{ x: "max-content" }}
       // A synthetic missing-day row has no photo/location to show, so it's
       // not clickable — opening the viewer on it would show an empty modal.
       onRow={

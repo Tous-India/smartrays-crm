@@ -549,6 +549,10 @@ function LeaveSection({ view = "all" }) {
         <LeaveBalanceCard />
       )}
 
+      {/* §B4 — for an admin this row would hold nothing but the report
+          button, pushing the filters onto a second line. The button moves
+          into the filter row instead, so filters and actions share one row. */}
+      {!isAdmin && (
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Space wrap>
           {showScopeTabs && <Segmented options={scopeOptions} value={scope} onChange={setScope} />}
@@ -566,6 +570,7 @@ function LeaveSection({ view = "all" }) {
           )}
         </Space>
       </div>
+      )}
 
       {isAdmin && (
         <div className="flex flex-wrap items-center gap-3">
@@ -614,6 +619,9 @@ function LeaveSection({ view = "all" }) {
               onChange={(value) => setAdminFilters((previous) => ({ ...previous, dateRange: value }))}
             />
           )}
+          <div className="ms-auto">
+            <ReportDownloadButton module="leave" filters={{ scope: effectiveScope }} filenamePrefix="leave" />
+          </div>
         </div>
       )}
 

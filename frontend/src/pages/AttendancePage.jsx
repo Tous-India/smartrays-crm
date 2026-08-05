@@ -4,6 +4,7 @@ import PersonalAttendanceView from "../modules/attendance/components/PersonalAtt
 import TeamAttendanceView from "../modules/attendance/components/TeamAttendanceView";
 import AdminAttendanceView from "../modules/attendance/components/AdminAttendanceView";
 import LeaveSection from "../modules/leave/components/LeaveSection";
+import LiveTrackingMap from "../modules/location/components/LiveTrackingMap";
 import ApplyLeavePanel from "../modules/leave/components/ApplyLeavePanel";
 import useSessionStore from "../store/sessionStore";
 import { can } from "../utils/permission.utils";
@@ -35,6 +36,10 @@ function AttendancePage() {
   const user = useSessionStore((state) => state.user);
   const isAdmin = user?.role === "admin";
   const canViewTeamAttendance = can(user, "attendance", "view_team");
+  // §B6 — the live map shows other people's positions, so it's gated on the
+  // same `attendance.view_location` grant that already governs seeing
+  // coordinates at all. Admin passes via can()'s own admin bypass.
+  const canViewLiveMap = can(user, "attendance", "view_location");
 
   const items = useMemo(() => {
     if (isAdmin) {
@@ -46,6 +51,7 @@ function AttendancePage() {
         // what's shown: pending renders as approval cards, anything decided
         // as the table. Two tabs made you guess which one a request was in.
         { key: "leave-requests", label: "Leave Requests", children: <LeaveSection /> },
+        ...(canViewLiveMap ? [{ key: "live-map", label: "Live Map", children: <LiveTrackingMap /> }] : []),
       ];
     }
 
@@ -54,6 +60,7 @@ function AttendancePage() {
         { key: "my-attendance", label: "My Attendance", children: <PersonalAttendanceView /> },
         { key: "team-attendance", label: "Team Attendance", children: <TeamAttendanceView /> },
         { key: "leave", label: "Leave", children: <LeaveSection view="all" /> },
+        ...(canViewLiveMap ? [{ key: "live-map", label: "Live Map", children: <LiveTrackingMap /> }] : []),
       ];
     }
 
@@ -62,7 +69,7 @@ function AttendancePage() {
       { key: "apply-leave", label: "Apply Leave", children: <ApplyLeavePanel /> },
       { key: "my-leave", label: "My Leave", children: <LeaveSection view="all" /> },
     ];
-  }, [isAdmin, canViewTeamAttendance]);
+  }, [isAdmin, canViewTeamAttendance, canViewLiveMap]);
 
   const [activeKey, setActiveKey] = useState(items[0].key);
 

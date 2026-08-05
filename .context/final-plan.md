@@ -4523,6 +4523,27 @@ row, never both — the previous split rendered every pending request twice for 
 
 ---
 
+## §7.4b addendum — Live Map folded into Attendance (2026-08-05)
+
+The standalone `/location` page is retired; live tracking is now a tab on `/attendance`, gated on
+`attendance.view_location`. `locationApi` survives the page's removal (the heartbeat loop imports
+it).
+
+Two design notes worth recording, because the obvious assumptions are wrong:
+
+- **Geofence violations are not per-ping.** `LocationPing` carries no flag; violations are time
+  intervals on the Attendance record. Per-ping violation status is derived by intersecting a
+  ping's `capturedAt` with those windows.
+- **`LeafletMapView` gained an additive `paths` prop** so several employees' trails can share one
+  map. `HistoryMapView` renders a single employee and could not be reused directly; extending the
+  shared map was preferred over a second map component, keeping one `TileLayer` in the app.
+
+Staleness is explicit: a position older than 10 minutes is rendered red and labelled, because
+browser geolocation stops when a tab is backgrounded or a phone locks, and a frozen marker that
+reads as live is worse than no marker.
+
+---
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a

@@ -17,7 +17,6 @@ export const ROUTE_PATHS = {
   PROJECT_DETAIL: "/projects/:id",
   ATTENDANCE: "/attendance",
   ATTENDANCE_TEAM: "/attendance/team",
-  LOCATION: "/location",
   PAYROLL: "/payroll",
   PAYSLIP_DETAIL: "/payroll/:id/payslip",
   TRAVEL_LOGS: "/travel-logs",

@@ -7,7 +7,6 @@ import {
   RiseOutlined,
   TeamOutlined,
   CalendarOutlined,
-  EnvironmentOutlined,
   WalletOutlined,
   CarOutlined,
   CustomerServiceOutlined,
@@ -171,15 +170,6 @@ function MainLayout() {
         // along with the retired /leave nav entry.
         badgeCount: pendingLeaveCount,
         onNavigate: clearLeaveBadge,
-      },
-      {
-        key: ROUTE_PATHS.LOCATION,
-        label: "Location",
-        icon: <EnvironmentOutlined />,
-        show:
-          can(user, "location", "view") ||
-          can(user, "location", "view_team") ||
-          can(user, "location", "view_all"),
       },
       {
         key: ROUTE_PATHS.PAYROLL,

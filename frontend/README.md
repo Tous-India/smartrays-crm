@@ -2142,6 +2142,57 @@ every failure was pre-existing.
 
 ---
 
+### Live Map tab; standalone /location page retired (§B6, 2026-08-05)
+
+A **Live Map** tab on `/attendance` for admin and anyone holding
+`attendance.view_location`: every currently-checked-in employee's check-in point, their ping trail
+since, and their latest position. The standalone `/location` page, route and nav item are deleted.
+`locationApi` SURVIVES — `useCheckedInHeartbeatLoop` imports it — so only the page went, the same
+treatment AMC got. `LiveMapView`, its test and `useLiveLocations` were deleted as newly-dead code;
+`HistoryMapView` stays, still used by the Attendance map modal.
+
+**Two premises in the task turned out not to match the code, and are handled by derivation rather
+than a backend change:**
+
+1. **"Geofence violations are already computed per ping" — they are not.** `LocationPing` stores
+   only `{employeeId, attendanceId, coords, capturedAt}`; there is no per-ping flag. Violations
+   live on the *Attendance* record as time INTERVALS (`{start, end, maxDistanceMeters}`), computed
+   per shift. A ping is therefore marked as violating when its `capturedAt` falls inside one of
+   those windows — an open window (`end: null`) extends to now.
+2. **"Reuse HistoryMapView" doesn't fit.** That component renders ONE employee's single polyline
+   and can't show several at once. Rather than build a second map, `LeafletMapView` gained an
+   additive `paths` prop for multiple polylines; `path` still behaves exactly as before, so History
+   and the Attendance modal are untouched. There is still exactly one `TileLayer` (CARTO Positron)
+   in the app and no OSM requests.
+
+**Staleness is treated as a first-class state**, because the dangerous failure here is a frozen
+marker that still looks live — browser geolocation stops entirely when a tab is backgrounded or a
+phone locks. A position older than 10 minutes renders red on the map, its trail turns red, and the
+list shows an explicit "Stale · last updated Xm ago" tag with a tooltip explaining why tracking
+may have stopped. Fresh positions are green.
+
+Marker semantics: blue = check-in start (taken from the attendance record's existing check-in
+coords, which already serve as the geofence centre — nothing is stored twice), green = current and
+fresh, red = current but stale, orange = a ping recorded during a geofence violation.
+
+**Polling** is 45s (inside the 30-60s brief) plus a `visibilitychange` refetch, the same pattern
+`useCheckedInHeartbeatLoop` and the notification hook use — a backgrounded tab's timers are
+throttled, so a returning user must not be shown minutes-stale data. An in-flight guard prevents
+overlapping cycles.
+
+**Checked-out employees drop off by themselves**: `GET /location/live` only returns open
+attendance records. Their trail remains in History.
+
+**Known cost, flagged rather than hidden:** there is no batched trail endpoint, so each poll fans
+out to one `/location/history` call per checked-in employee. Fine for a handful of people on a 45s
+cycle; a large org would want a batched endpoint instead.
+
+**Also fixed:** the attendance table pushed the whole PAGE into horizontal scroll at 390px. It now
+scrolls inside its own container (`scroll={{ x: "max-content" }}`), the treatment the Leave table
+already had. All three tabs verified clean at 390px.
+
+---
+
 ## Env Vars
 
 ```

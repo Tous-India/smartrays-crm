@@ -2108,3 +2108,34 @@ task and flaky between runs on 5s timeouts. `npm run build` succeeds.
 
 **Still outstanding from this task: item 6 (the live map tab)** and the standalone location page
 removal. Not started.
+
+### 2026-08-05 — Live Map tab; /location page retired (item 6, completing Prompt B)
+
+Added a Live Map tab to `/attendance` (admin + `attendance.view_location`) showing every
+checked-in employee's check-in point, ping trail and latest position. Deleted the standalone
+`/location` page, route and nav item; `locationApi` was kept because `useCheckedInHeartbeatLoop`
+imports it, and `LiveMapView`/`useLiveLocations` were removed as newly-dead code.
+
+**Two premises in the brief did not match the code:**
+1. Geofence violations are NOT computed per ping — `LocationPing` has no such field. They're time
+   intervals on the Attendance record, so per-ping status is derived by intersecting timestamps.
+2. `HistoryMapView` renders one employee's single polyline and can't show several at once, so
+   `LeafletMapView` gained an additive `paths` prop instead of a second map component being built.
+   `path` is unchanged, so History and the Attendance modal are unaffected, and there is still one
+   `TileLayer` (CARTO Positron).
+
+Staleness is a first-class state: positions older than 10 minutes render red with an explicit
+"Stale · last updated Xm ago" tag, because geolocation stops when a tab is backgrounded or a phone
+locks and a frozen marker reading as live is the dangerous case. Verified against real data — a
+25h-old position correctly rendered stale. Polling is 45s plus a visibilitychange refetch, with an
+in-flight guard.
+
+**Flagged, not hidden:** each poll fans out one `/location/history` call per checked-in employee,
+since no batched trail endpoint exists. Fine at this scale, not for a large org.
+
+Also fixed: the attendance table pushed the whole page into horizontal scroll at 390px; it now
+scrolls in its own container. All three tabs verified clean at 390px, and the admin Leave filters
+now share one row with the report button.
+
+Frontend suite 481 passing; the 7 failures are the known pre-existing set in untouched files.
+`npm run build` succeeds. **Prompt B is now complete.**
