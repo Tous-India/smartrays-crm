@@ -7,6 +7,12 @@ import LeaveRequestModal from "./LeaveRequestModal";
 import LeaveDeclineModal from "./LeaveDeclineModal";
 import LeaveBalanceCard from "./LeaveBalanceCard";
 import LeaveApprovalCards from "./LeaveApprovalCards";
+import LeaveAdminStats from "./LeaveAdminStats";
+import {
+  DATE_RANGE_OPTIONS,
+  DATE_RANGE_PRESETS,
+  resolveDateRange,
+} from "../../../utils/date.utils";
 import ReportDownloadButton from "../../../components/ReportDownloadButton";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import useTeams from "../../team/hooks/useTeams";
@@ -27,7 +33,19 @@ import { LEAVE_TYPE_LABELS, LEAVE_STATUS_LABELS, LEAVE_STATUS_COLORS, LEAVE_STAT
 const { RangePicker } = DatePicker;
 const { Text } = Typography;
 
-const EMPTY_ADMIN_FILTERS = { employeeId: "", teamId: "", status: "", dateRange: null };
+const UNAPPROVED_ABSENCE_FILTER = "unapproved_absence";
+
+const EMPTY_ADMIN_FILTERS = {
+  employeeId: "",
+  teamId: "",
+  status: "",
+  // §B4 (2026-08-05) — same preset dropdown as Attendance, reusing
+  // `date.utils.js` rather than a second implementation. Defaults to This
+  // Month here (not Today, as on Attendance): a leave queue spanning only
+  // today would usually be empty, and an approver needs the month's backlog.
+  datePreset: DATE_RANGE_PRESETS.thisMonth,
+  dateRange: null,
+};
 
 /**
  * `/leave` (restructured 2026-07-31, §7.5e) — list/table only now, no
@@ -181,8 +199,19 @@ function LeaveSection({ view = "all" }) {
     ];
   }, [leaveRequests, employeeNameById]);
 
+  // §B5 (2026-08-05) — replaces the removed "Leave History" tab. "Unapproved
+  // Absence" is NOT a `status` value (see leave.constants.js: the enum is
+  // pending/approved/rejected); it's the derived `isDoubleDeduction` flag,
+  // which is why it's filtered separately below rather than added to the enum.
   const statusFilterOptions = useMemo(
-    () => [{ value: "", label: "All statuses" }, ...LEAVE_STATUSES.map((status) => ({ value: status, label: LEAVE_STATUS_LABELS[status] }))],
+    () => [
+      { value: "", label: "All statuses" },
+      ...LEAVE_STATUSES.map((status) => ({
+        value: status,
+        label: status === "rejected" ? "Declined" : LEAVE_STATUS_LABELS[status],
+      })),
+      { value: UNAPPROVED_ABSENCE_FILTER, label: "Unapproved Absence" },
+    ],
     []
   );
 
@@ -201,7 +230,11 @@ function LeaveSection({ view = "all" }) {
         return false;
       }
 
-      if (adminFilters.status && leave.status !== adminFilters.status) {
+      if (adminFilters.status === UNAPPROVED_ABSENCE_FILTER) {
+        if (!leave.isDoubleDeduction) {
+          return false;
+        }
+      } else if (adminFilters.status && leave.status !== adminFilters.status) {
         return false;
       }
 
@@ -212,9 +245,11 @@ function LeaveSection({ view = "all" }) {
         }
       }
 
-      if (adminFilters.dateRange?.[0] && adminFilters.dateRange?.[1]) {
-        const rangeStartMs = adminFilters.dateRange[0].startOf("day").valueOf();
-        const rangeEndMs = adminFilters.dateRange[1].endOf("day").valueOf();
+      const window = resolveDateRange(adminFilters.datePreset, adminFilters.dateRange);
+
+      if (window) {
+        const rangeStartMs = window.from.valueOf();
+        const rangeEndMs = window.to.valueOf();
         const leaveStartMs = dayjs(leave.startDate).valueOf();
         const leaveEndMs = dayjs(leave.endDate).valueOf();
 
@@ -491,14 +526,28 @@ function LeaveSection({ view = "all" }) {
   const pendingRequests = displayedLeaveRequests.filter((leave) => leave.status === "pending");
   const decidedRequests = displayedLeaveRequests.filter((leave) => leave.status !== "pending");
 
-  const tableRows =
-    view === "history" ? decidedRequests : view === "pending" ? [] : displayedLeaveRequests;
-  const showApprovalCards = (view === "pending" || view === "all") && canActOnLeave;
-  const showTable = view !== "pending";
+  // §B5 — a request renders as EITHER an approval card OR a table row, never
+  // both. Previously an admin saw every pending request twice: once as a card
+  // and again in the table below it.
+  //
+  // Someone who can't act on leave (an employee viewing their own) gets the
+  // plain table for everything — approval cards would be decoration, and
+  // hiding their pending requests from the table would lose them entirely.
+  const showApprovalCards = canActOnLeave && pendingRequests.length > 0;
+  const tableRows = canActOnLeave ? decidedRequests : displayedLeaveRequests;
+  const showTable = tableRows.length > 0 || !showApprovalCards;
 
   return (
     <div className="flex flex-col gap-4">
-      <LeaveBalanceCard />
+      {/* §B3 (2026-08-05) — an admin sees queue stats; the viewer's OWN
+          paid-leave balance is a personal metric that told them nothing
+          about the queue they're here to work. The balance card is
+          unchanged on the employee-facing tabs. */}
+      {isAdmin ? (
+        <LeaveAdminStats leaveRequests={leaveRequests} employeeNameById={employeeNameById} />
+      ) : (
+        <LeaveBalanceCard />
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Space wrap>
@@ -519,7 +568,7 @@ function LeaveSection({ view = "all" }) {
       </div>
 
       {isAdmin && (
-        <Space wrap>
+        <div className="flex flex-wrap items-center gap-3">
           <Select
             aria-label="Employee"
             value={adminFilters.employeeId}
@@ -545,12 +594,27 @@ function LeaveSection({ view = "all" }) {
             style={{ width: 160 }}
             onChange={(value) => setAdminFilters((previous) => ({ ...previous, status: value }))}
           />
-          <RangePicker
+          <Select
             aria-label="Date range"
-            value={adminFilters.dateRange}
-            onChange={(value) => setAdminFilters((previous) => ({ ...previous, dateRange: value }))}
+            value={adminFilters.datePreset}
+            options={DATE_RANGE_OPTIONS}
+            style={{ width: 140 }}
+            onChange={(value) =>
+              setAdminFilters((previous) => ({
+                ...previous,
+                datePreset: value,
+                dateRange: value === DATE_RANGE_PRESETS.custom ? previous.dateRange : null,
+              }))
+            }
           />
-        </Space>
+          {/* Start/end inputs appear ONLY under Custom (§B4). */}
+          {adminFilters.datePreset === DATE_RANGE_PRESETS.custom && (
+            <RangePicker
+              value={adminFilters.dateRange}
+              onChange={(value) => setAdminFilters((previous) => ({ ...previous, dateRange: value }))}
+            />
+          )}
+        </div>
       )}
 
       {/* Preserved verbatim from the standalone page (BUG 3, §7.5f): a real
@@ -576,10 +640,12 @@ function LeaveSection({ view = "all" }) {
               canApprove={canApprove}
               canDecline={canDecline}
               canMarkAbsence={canMarkAbsence}
+              canDelete={canDelete}
               canActOnRow={canActOnRow}
               onApprove={handleApprove}
               onDecline={setDeclineTarget}
               onMarkAbsence={handleMarkAbsence}
+              onDelete={handleDelete}
             />
           )}
 

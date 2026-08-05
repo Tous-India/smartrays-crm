@@ -2076,3 +2076,35 @@ expander; Renew is present on each card. Added a test asserting the leading sect
 `text-left` tweak on the line immediately above the link. Repointing it would have meant
 committing their WIP, so it was left alone per the task's own instruction. `ROUTE_PATHS.AMC` is
 still defined so the link resolves rather than going `undefined`.
+
+### 2026-08-05 — Attendance/Leave tab fixes (items 1-5 of the page rework)
+
+**Verified before rebuilding, as asked — and two items reported as done had genuinely not
+shipped.** Stat cards were still rendering below the filters (they live inside
+`AttendanceRecordsSection`, which every view renders after its filter row; a code comment claiming
+otherwise was simply wrong), and the Leave Requests tab still showed the viewer's personal
+"Your Paid Leave Balance This Month" card. Both now fixed for real and covered by tests.
+
+Stat cards moved above the filters on all three attendance views. The Employee filter no longer
+prints raw Mongo ObjectIds — the name map was built from the active-users dropdown, so
+deactivated/deleted staff had no name and fell through to the id; it now uses the full roster with
+an "Unknown employee" fallback. Admin Leave tab gets four queue cards (Pending, On Leave Today with
+names, Upcoming This Week, Unapproved Absences) replacing the personal balance card, plus the same
+date preset dropdown as Attendance reusing `date.utils.js`. Leave History tab removed in favour of
+a Status filter including a derived "Unapproved Absence" option.
+
+**Two real bugs found and fixed while doing this**, both from my own earlier work in this project:
+1. An admin saw every pending request **twice** — once as an approval card, once as a table row.
+   A request now renders as either a card or a row, never both. Delete was added to the cards,
+   since pending requests render only as cards now and would otherwise have lost that action.
+2. `LeaveSection.test.jsx` **had not executed since the `git mv`** — its import still pointed at
+   `./LeaveListPage`, so the suite failed to collect. A collection failure emits no per-test `×`
+   line, which is exactly why an earlier report that counted only `×` lines concluded all failures
+   were pre-existing. It now runs: 43 tests passing.
+
+Frontend suite: 471 passing. Remaining failures are the known pre-existing set in
+LeadDetailPage / CustomersListPage / PaymentsListPage / UserManagementPage — untouched by this
+task and flaky between runs on 5s timeouts. `npm run build` succeeds.
+
+**Still outstanding from this task: item 6 (the live map tab)** and the standalone location page
+removal. Not started.

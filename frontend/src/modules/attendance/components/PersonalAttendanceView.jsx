@@ -3,6 +3,7 @@ import dayjs from "dayjs";
 import { DatePicker, Space } from "antd";
 import CheckInOutWidget from "./CheckInOutWidget";
 import AttendanceRecordsSection from "./AttendanceRecordsSection";
+import AttendanceSummaryStats from "./AttendanceSummaryStats";
 import ReportDownloadButton from "../../../components/ReportDownloadButton";
 import useMyAttendance from "../hooks/useMyAttendance";
 import useSessionStore from "../../../store/sessionStore";
@@ -33,6 +34,9 @@ function PersonalAttendanceView() {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* §B1 — stat cards ABOVE the filters, on every tab. */}
+      <AttendanceSummaryStats records={records} month={month} />
+
       {/* Admin accounts don't track attendance at all (§7.4c) — the backend
           already rejects an admin's own check-in (403), but hiding the
           widget here too means an admin never even sees a check-in prompt

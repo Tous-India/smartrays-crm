@@ -83,14 +83,15 @@ describe("AttendancePage — role-based tabs", () => {
     expect(screen.queryByRole("tab", { name: "Leave Requests" })).not.toBeInTheDocument();
   });
 
-  it("gives an admin Attendance | Leave Requests | Leave History", () => {
+  it("gives an admin Attendance | Leave Requests, with no separate History tab", () => {
     setUser({ _id: "admin-1", role: "admin", permissions: {} });
 
     render(<AttendancePage />);
 
     expect(screen.getByRole("tab", { name: "Attendance" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Leave Requests" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Leave History" })).toBeInTheDocument();
+    // §B5 — the separate History tab is gone; a Status filter replaces it.
+    expect(screen.queryByRole("tab", { name: "Leave History" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "My Attendance" })).not.toBeInTheDocument();
   });
 

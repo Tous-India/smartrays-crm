@@ -21,9 +21,10 @@ import { can } from "../utils/permission.utils";
  *   Own/Team split stays INSIDE the Leave tab as a sub-filter rather than
  *   becoming two more top-level tabs, so the top level stays about "whose
  *   attendance" and the sub-filter about "whose leave".
- * - Admin:    Attendance | Leave Requests | Leave History — admin has no
- *   personal attendance (exempt, §7.4c) and their leave work splits cleanly
- *   into "decide these" and "look back at those".
+ * - Admin:    Attendance | Leave Requests — admin has no personal
+ *   attendance (exempt, §7.4c). Leave is ONE tab: a Status filter covers
+ *   what a separate History tab used to, without making you guess which
+ *   tab a given request currently lives in.
  *
  * **This is a UI move, not a permission change.** Managers keep exactly the
  * approve / decline / mark-unapproved-absence / delete parity built in
@@ -39,8 +40,12 @@ function AttendancePage() {
     if (isAdmin) {
       return [
         { key: "attendance", label: "Attendance", children: <AdminAttendanceView /> },
-        { key: "leave-requests", label: "Leave Requests", children: <LeaveSection view="pending" /> },
-        { key: "leave-history", label: "Leave History", children: <LeaveSection view="history" /> },
+        // §B5 (2026-08-05) — the separate "Leave History" tab is gone. One
+        // Leave Requests tab now covers the whole queue, with a Status filter
+        // (Pending / Approved / Declined / Unapproved Absence / All) deciding
+        // what's shown: pending renders as approval cards, anything decided
+        // as the table. Two tabs made you guess which one a request was in.
+        { key: "leave-requests", label: "Leave Requests", children: <LeaveSection /> },
       ];
     }
 

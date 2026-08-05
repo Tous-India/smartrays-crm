@@ -1,8 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { message } from "antd";
-import LeaveListPage from "./LeaveListPage";
+import LeaveSection from "./LeaveSection";
 import useSessionStore from "../../../store/sessionStore";
 import * as leaveApi from "../api/leaveApi";
 import * as userApi from "../../user/api/userApi";
@@ -58,17 +58,34 @@ const PENDING_LEAVE = {
   reason: "Family event",
 };
 
+// Pending requests render as CARDS for anyone who can act (§B5), so table
+// assertions need an already-decided request to have a row at all.
+const APPROVED_LEAVE = {
+  ...PENDING_LEAVE,
+  _id: "leave-approved",
+  status: "approved",
+};
+
 const DEFAULT_BALANCE = { paidLeaveUsed: 0, paidLeaveLimit: 1, paidLeaveRemaining: 1 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The admin filter bar now defaults to a "This Month" date preset (§B4), so
+  // "now" is pinned inside the fixtures' own month — otherwise every fixture
+  // dated June would be filtered out and every table assertion would fail.
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  vi.setSystemTime(new Date(2026, 5, 15, 10, 0, 0));
   leaveApi.listLeave.mockResolvedValue({ data: { data: [PENDING_LEAVE] } });
   leaveApi.getLeaveBalance.mockResolvedValue({ data: { data: DEFAULT_BALANCE } });
   userApi.listUsers.mockResolvedValue({ data: { data: [] } });
   teamsHook.default.mockReturnValue({ teams: [] });
 });
 
-describe("LeaveListPage — request flow", () => {
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe("LeaveSection — request flow", () => {
   it("submits a new leave request through POST /leave/request", async () => {
     useSessionStore.setState({
       user: { _id: "emp-1", role: "employee", permissions: { leave: { view: true } } },
@@ -77,7 +94,7 @@ describe("LeaveListPage — request flow", () => {
     });
     leaveApi.requestLeave.mockResolvedValue({ data: { data: {} } });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
     // "own" is this user's only scope, so no tabs render at all — "Paid"
     // (the Type column) is present regardless.
     await screen.findByText("Paid");
@@ -98,7 +115,7 @@ describe("LeaveListPage — request flow", () => {
       isLoading: false,
     });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
     await screen.findByText("Paid");
 
     await userEvent.click(screen.getByRole("button", { name: "Request Leave" }));
@@ -113,7 +130,7 @@ describe("LeaveListPage — request flow", () => {
   });
 });
 
-describe("LeaveListPage — admin exemption from requesting (§7.5c, 2026-07-31)", () => {
+describe("LeaveSection — admin exemption from requesting (§7.5c, 2026-07-31)", () => {
   it("hides the Request Leave button entirely for admin", async () => {
     useSessionStore.setState({
       user: { _id: "admin-1", role: "admin", permissions: {} },
@@ -121,7 +138,7 @@ describe("LeaveListPage — admin exemption from requesting (§7.5c, 2026-07-31)
       isLoading: false,
     });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
     await screen.findByText("Paid");
 
     expect(screen.queryByRole("button", { name: "Request Leave" })).not.toBeInTheDocument();
@@ -134,14 +151,14 @@ describe("LeaveListPage — admin exemption from requesting (§7.5c, 2026-07-31)
       isLoading: false,
     });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
     await screen.findByText("Paid");
 
     expect(screen.getByRole("button", { name: "Request Leave" })).toBeInTheDocument();
   });
 });
 
-describe("LeaveListPage — role-based tabs (§7.5e, 2026-07-31 — no All tab, no calendar)", () => {
+describe("LeaveSection — role-based tabs (§7.5e, 2026-07-31 — no All tab, no calendar)", () => {
   it("shows no tabs at all for an employee (view only)", async () => {
     useSessionStore.setState({
       user: { _id: "emp-1", role: "employee", permissions: { leave: { view: true } } },
@@ -149,7 +166,7 @@ describe("LeaveListPage — role-based tabs (§7.5e, 2026-07-31 — no All tab, 
       isLoading: false,
     });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
     await screen.findByText("Paid");
 
     expect(screen.queryByText("Own")).not.toBeInTheDocument();
@@ -168,7 +185,7 @@ describe("LeaveListPage — role-based tabs (§7.5e, 2026-07-31 — no All tab, 
       isLoading: false,
     });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
     await screen.findByText("Paid");
 
     expect(screen.getByText("Own")).toBeInTheDocument();
@@ -183,7 +200,7 @@ describe("LeaveListPage — role-based tabs (§7.5e, 2026-07-31 — no All tab, 
       isLoading: false,
     });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
     await screen.findByText("Paid");
 
     // Scoped to the Segmented tab control specifically — "Team" also legitimately
@@ -203,8 +220,10 @@ describe("LeaveListPage — role-based tabs (§7.5e, 2026-07-31 — no All tab, 
       isLoading: false,
     });
 
-    render(<LeaveListPage />);
-    await screen.findByText("Paid");
+    leaveApi.listLeave.mockResolvedValue({ data: { data: [APPROVED_LEAVE] } });
+
+    render(<LeaveSection />);
+    await screen.findByText("Employee One");
 
     expect(screen.queryByText("Calendar")).not.toBeInTheDocument();
     expect(screen.queryByText("List")).not.toBeInTheDocument();
@@ -212,7 +231,7 @@ describe("LeaveListPage — role-based tabs (§7.5e, 2026-07-31 — no All tab, 
   });
 });
 
-describe("LeaveListPage — approve/decline/mark-unapproved-absence/delete, permission-gated (§7.5c/§7.5d)", () => {
+describe("LeaveSection — approve/decline/mark-unapproved-absence/delete, permission-gated (§7.5c/§7.5d)", () => {
   it("shows no Actions column at all for a role with none of the four grants", async () => {
     useSessionStore.setState({
       user: { _id: "sales-1", role: "sales_associate", permissions: { leave: { view: true } } },
@@ -220,7 +239,7 @@ describe("LeaveListPage — approve/decline/mark-unapproved-absence/delete, perm
       isLoading: false,
     });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
     await screen.findByText("Paid");
 
     expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
@@ -242,7 +261,7 @@ describe("LeaveListPage — approve/decline/mark-unapproved-absence/delete, perm
       isLoading: false,
     });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
     await userEvent.click(screen.getByText("Team"));
     await screen.findByText("Employee One");
 
@@ -259,7 +278,7 @@ describe("LeaveListPage — approve/decline/mark-unapproved-absence/delete, perm
       isLoading: false,
     });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
     await screen.findByText("Paid");
 
     expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
@@ -274,7 +293,7 @@ describe("LeaveListPage — approve/decline/mark-unapproved-absence/delete, perm
       isLoading: false,
     });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
     await screen.findByText("Paid");
 
     await userEvent.click(screen.getByRole("button", { name: "Mark Unapproved Absence" }));
@@ -300,7 +319,7 @@ describe("LeaveListPage — approve/decline/mark-unapproved-absence/delete, perm
     });
     leaveApi.approveLeave.mockResolvedValue({ data: { data: {} } });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
     await screen.findByText("Paid");
 
     await userEvent.click(screen.getByRole("button", { name: "Approve" }));
@@ -319,7 +338,7 @@ describe("LeaveListPage — approve/decline/mark-unapproved-absence/delete, perm
     });
     leaveApi.declineLeave.mockResolvedValue({ data: { data: {} } });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
     await screen.findByText("Paid");
 
     await userEvent.click(screen.getByRole("button", { name: "Decline" }));
@@ -343,7 +362,7 @@ describe("LeaveListPage — approve/decline/mark-unapproved-absence/delete, perm
     });
     leaveApi.deleteLeave.mockResolvedValue({ data: { data: null } });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
     await screen.findByText("Paid");
 
     await userEvent.click(screen.getByRole("button", { name: "Delete" }));
@@ -359,7 +378,7 @@ describe("LeaveListPage — approve/decline/mark-unapproved-absence/delete, perm
   });
 });
 
-describe("LeaveListPage — action failures are surfaced, not swallowed (BUG 9/10, 2026-08-05)", () => {
+describe("LeaveSection — action failures are surfaced, not swallowed (BUG 9/10, 2026-08-05)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     leaveApi.listLeave.mockResolvedValue({ data: { data: [PENDING_LEAVE] } });
@@ -378,7 +397,7 @@ describe("LeaveListPage — action failures are surfaced, not swallowed (BUG 9/1
       response: { status: 409, data: { message: "A single paid leave request cannot exceed 1 day — only one paid leave is provided per month." } },
     });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
     await screen.findByText("Paid");
 
     await userEvent.click(screen.getByRole("button", { name: "Approve" }));
@@ -397,7 +416,7 @@ describe("LeaveListPage — action failures are surfaced, not swallowed (BUG 9/1
       response: { status: 403, data: { message: "You can only act on leave requests from your own direct reports" } },
     });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
     await screen.findByText("Paid");
 
     await userEvent.click(screen.getByRole("button", { name: "Delete" }));
@@ -414,7 +433,7 @@ describe("LeaveListPage — action failures are surfaced, not swallowed (BUG 9/1
       response: { status: 403, data: { message: "You can only act on leave requests from your own direct reports" } },
     });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
     await screen.findByText("Paid");
 
     await userEvent.click(screen.getByRole("button", { name: "Mark Unapproved Absence" }));
@@ -427,7 +446,7 @@ describe("LeaveListPage — action failures are surfaced, not swallowed (BUG 9/1
   });
 });
 
-describe("LeaveListPage — a manager gets no actions on their OWN request (BUG 10, 2026-08-05)", () => {
+describe("LeaveSection — a manager gets no actions on their OWN request (BUG 10, 2026-08-05)", () => {
   const MANAGER_OWN_LEAVE = { ...PENDING_LEAVE, _id: "leave-own", employeeId: "mgr-1" };
 
   beforeEach(() => {
@@ -451,7 +470,7 @@ describe("LeaveListPage — a manager gets no actions on their OWN request (BUG 
   it("hides all four actions on the manager's own request — the backend always 403s them", async () => {
     leaveApi.listLeave.mockResolvedValue({ data: { data: [MANAGER_OWN_LEAVE] } });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
     await screen.findByText("Paid");
 
     expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
@@ -463,7 +482,7 @@ describe("LeaveListPage — a manager gets no actions on their OWN request (BUG 
   it("still shows the actions on a direct report's request", async () => {
     leaveApi.listLeave.mockResolvedValue({ data: { data: [PENDING_LEAVE] } });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
     await userEvent.click(screen.getByText("Team"));
     await screen.findByText("Employee One");
 
@@ -472,7 +491,7 @@ describe("LeaveListPage — a manager gets no actions on their OWN request (BUG 
   });
 });
 
-describe("LeaveListPage — Reason column (§7.5f, 2026-08-04 — a real column, not an expandable row)", () => {
+describe("LeaveSection — Reason column (§7.5f, 2026-08-04 — a real column, not an expandable row)", () => {
   it("shows the Reason directly in the table, with no expand toggle anywhere", async () => {
     useSessionStore.setState({
       user: { _id: "admin-1", role: "admin", permissions: {} },
@@ -480,7 +499,7 @@ describe("LeaveListPage — Reason column (§7.5f, 2026-08-04 — a real column,
       isLoading: false,
     });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
     await screen.findByText("Employee One");
 
     expect(screen.getByText("Family event")).toBeInTheDocument();
@@ -494,13 +513,13 @@ describe("LeaveListPage — Reason column (§7.5f, 2026-08-04 — a real column,
       isLoading: false,
     });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
 
     expect(await screen.findByText("Family event")).toBeInTheDocument();
   });
 });
 
-describe("LeaveListPage — Admin filters (§7.5c/§7.5e, 2026-07-31)", () => {
+describe("LeaveSection — Admin filters (§7.5c/§7.5e, 2026-07-31)", () => {
   const OTHER_LEAVE = {
     _id: "leave-2",
     employeeId: "emp-2",
@@ -518,7 +537,11 @@ describe("LeaveListPage — Admin filters (§7.5c/§7.5e, 2026-07-31)", () => {
       isAuthenticated: true,
       isLoading: false,
     });
-    leaveApi.listLeave.mockResolvedValue({ data: { data: [PENDING_LEAVE, OTHER_LEAVE] } });
+    // Both fixtures are DECIDED here: this block asserts on the TABLE, and a
+    // pending request now renders as an approval card instead (§B5).
+    leaveApi.listLeave.mockResolvedValue({
+      data: { data: [{ ...PENDING_LEAVE, status: "approved" }, OTHER_LEAVE] },
+    });
     teamsHook.default.mockReturnValue({
       teams: [
         { _id: "team-1", name: "Sales Team", headManagerId: "mgr-1" },
@@ -536,7 +559,7 @@ describe("LeaveListPage — Admin filters (§7.5c/§7.5e, 2026-07-31)", () => {
   });
 
   it("the Admin filter bar is always present, immediately — no tab needs clicking first", async () => {
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
 
     expect(await screen.findByRole("combobox", { name: "Employee" })).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Team" })).toBeInTheDocument();
@@ -544,7 +567,7 @@ describe("LeaveListPage — Admin filters (§7.5c/§7.5e, 2026-07-31)", () => {
   });
 
   it("shows a Team column resolving each employee to their team (2026-08-05)", async () => {
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
 
     await screen.findByText("Employee One");
 
@@ -557,16 +580,16 @@ describe("LeaveListPage — Admin filters (§7.5c/§7.5e, 2026-07-31)", () => {
     userApi.listUsers.mockResolvedValue({
       data: { data: [{ _id: "emp-1", name: "Employee One", role: "employee", managerId: null }] },
     });
-    leaveApi.listLeave.mockResolvedValue({ data: { data: [PENDING_LEAVE] } });
+    leaveApi.listLeave.mockResolvedValue({ data: { data: [{ ...PENDING_LEAVE, status: "approved" }] } });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
     await screen.findByText("Employee One");
 
-    expect(within(screen.getByRole("row", { name: /Employee One/ })).getByText("—")).toBeInTheDocument();
+    expect(within(screen.getByRole("row", { name: /Employee One/ })).getAllByText("—").length).toBeGreaterThan(0);
   });
 
   it("filters the table down to one employee's requests via the Employee select", async () => {
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
     await screen.findByText("Employee One");
     expect(screen.getByText("Employee Two")).toBeInTheDocument();
 
@@ -582,7 +605,7 @@ describe("LeaveListPage — Admin filters (§7.5c/§7.5e, 2026-07-31)", () => {
   });
 
   it("filters the table down to one real team via the Team select (§7.5e fix — built against the real Team entity)", async () => {
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
     await screen.findByText("Employee One");
 
     await userEvent.click(screen.getByRole("combobox", { name: "Team" }));
@@ -593,29 +616,70 @@ describe("LeaveListPage — Admin filters (§7.5c/§7.5e, 2026-07-31)", () => {
   });
 
   it("filters the table down by Status", async () => {
-    render(<LeaveListPage />);
+    leaveApi.listLeave.mockResolvedValue({
+      data: { data: [{ ...PENDING_LEAVE, status: "approved" }, { ...OTHER_LEAVE, status: "rejected" }] },
+    });
+
+    render(<LeaveSection />);
     await screen.findByText("Employee One");
 
     await userEvent.click(screen.getByRole("combobox", { name: "Status" }));
-    await userEvent.click(await screen.findByTitle("Approved"));
+    // "rejected" is labelled "Declined" in the filter (§B5).
+    await userEvent.click(await screen.findByTitle("Declined"));
+
+    expect(await screen.findByText("Employee Two")).toBeInTheDocument();
+    expect(screen.queryByText("Employee One")).not.toBeInTheDocument();
+  });
+
+  it("filters by the derived Unapproved Absence option, which is a flag rather than a status (§B5)", async () => {
+    leaveApi.listLeave.mockResolvedValue({
+      data: {
+        data: [
+          { ...PENDING_LEAVE, status: "approved", isDoubleDeduction: false },
+          { ...OTHER_LEAVE, status: "approved", isDoubleDeduction: true },
+        ],
+      },
+    });
+
+    render(<LeaveSection />);
+    await screen.findByText("Employee One");
+
+    await userEvent.click(screen.getByRole("combobox", { name: "Status" }));
+    await userEvent.click(await screen.findByTitle("Unapproved Absence"));
 
     expect(await screen.findByText("Employee Two")).toBeInTheDocument();
     expect(screen.queryByText("Employee One")).not.toBeInTheDocument();
   });
 });
 
-describe("LeaveListPage — leave balance", () => {
-  it("always shows the caller's own balance card, regardless of scope", async () => {
+describe("LeaveSection — leave balance", () => {
+  it("shows the caller's own balance card on the employee-facing view", async () => {
+    useSessionStore.setState({
+      user: { _id: "emp-1", role: "employee", permissions: { leave: { view: true } } },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    render(<LeaveSection />);
+
+    expect(await screen.findByText("Your Paid Leave Balance This Month")).toBeInTheDocument();
+    expect(leaveApi.getLeaveBalance).toHaveBeenCalledWith(undefined);
+  });
+
+  it("replaces it with admin queue stats for an admin (§B3) — a personal balance is useless on an approval screen", async () => {
     useSessionStore.setState({
       user: { _id: "admin-1", role: "admin", permissions: {} },
       isAuthenticated: true,
       isLoading: false,
     });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
 
-    expect(await screen.findByText("Your Paid Leave Balance This Month")).toBeInTheDocument();
-    expect(leaveApi.getLeaveBalance).toHaveBeenCalledWith(undefined);
+    expect(await screen.findByText("Pending Requests")).toBeInTheDocument();
+    expect(screen.getByText("On Leave Today")).toBeInTheDocument();
+    expect(screen.getByText("Upcoming This Week")).toBeInTheDocument();
+    expect(screen.getByText("Unapproved Absences")).toBeInTheDocument();
+    expect(screen.queryByText("Your Paid Leave Balance This Month")).not.toBeInTheDocument();
   });
 });
 
@@ -630,7 +694,7 @@ describe("LeaveListPage — leave balance", () => {
 // error) rendered identically to "this scope genuinely has zero requests"
 // — indistinguishable from the outside, which is exactly what made this
 // report hard to diagnose in the first place.
-describe("LeaveListPage — surfaces a fetch error distinctly from an empty list (BUG 3, 2026-08-04)", () => {
+describe("LeaveSection — surfaces a fetch error distinctly from an empty list (BUG 3, 2026-08-04)", () => {
   it("shows an error Alert instead of silently rendering an empty table when GET /leave fails", async () => {
     leaveApi.listLeave.mockRejectedValue({ response: { status: 403 } });
     useSessionStore.setState({
@@ -639,7 +703,7 @@ describe("LeaveListPage — surfaces a fetch error distinctly from an empty list
       isLoading: false,
     });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
 
     expect(await screen.findByText("Could not load leave requests")).toBeInTheDocument();
     expect(screen.getByText("You don't have permission to view this scope.")).toBeInTheDocument();
@@ -656,7 +720,7 @@ describe("LeaveListPage — surfaces a fetch error distinctly from an empty list
       isLoading: false,
     });
 
-    render(<LeaveListPage />);
+    render(<LeaveSection />);
 
     await waitFor(() => expect(leaveApi.listLeave).toHaveBeenCalled());
     expect(screen.queryByText("Could not load leave requests")).not.toBeInTheDocument();

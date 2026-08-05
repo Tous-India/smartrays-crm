@@ -2092,6 +2092,56 @@ once that file is free.
 
 ---
 
+### Attendance/Leave tab fixes: layout, filter labels, admin leave stats, status filter (2026-08-05)
+
+**Two items in this batch were previously REPORTED as done but had not actually shipped.** Both
+are now genuinely fixed and covered by tests:
+
+- **Stat cards were still BELOW the filters.** `AttendanceSummaryStats` rendered inside
+  `AttendanceRecordsSection`, which every view renders *after* its filter row — so a code comment
+  claiming the cards had moved was simply wrong. The stats now render at the top of each of the
+  three views (Admin, Team, Personal), above the filters; `AttendanceRecordsSection` owns the
+  table and photo modal only.
+- **The Leave Requests tab still showed "Your Paid Leave Balance This Month."**
+  `LeaveBalanceCard` rendered unconditionally in `LeaveSection`, so an admin saw their own
+  personal balance on an approval screen.
+
+**`LeaveAdminStats` replaces it for admins** — four cards derived from the already-fetched list,
+no extra requests: Pending Requests (what needs action), On Leave Today (count **plus names**,
+because "3 people" isn't actionable but "Priya, Sam, Dev" is), Upcoming This Week, and Unapproved
+Absences This Month (feeds the 2× deduction rule). The employee's own balance card is untouched on
+their own tabs.
+
+**Employee filter no longer renders raw ObjectIds.** The name map was built from
+`useUserDirectory()`, which lists *active* users only, so a record belonging to a deactivated or
+deleted employee fell through to printing its Mongo id. It's now built from the full roster, and
+anything still unresolved shows "Unknown employee" rather than an id. Fixed in both the Admin and
+Team views.
+
+**The Leave Requests tab reuses the Attendance date preset** (Today / Yesterday / This Month /
+Custom) via the existing `date.utils.js` — no second implementation. It defaults to **This Month**
+rather than Today: a leave queue spanning only today is usually empty, and an approver needs the
+month's backlog.
+
+**The Leave History tab is gone**, replaced by a Status filter on Leave Requests (Pending /
+Approved / Declined / Unapproved Absence / All). Two tabs made you guess which one a request was
+currently in. "Unapproved Absence" is deliberately not in the status enum — it's the derived
+`isDoubleDeduction` flag, filtered separately.
+
+**Fixed a duplication bug introduced by the earlier tab work:** an admin saw every pending request
+TWICE, once as an approval card and again as a table row. A request now renders as *either* a card
+*or* a row, never both — pending as cards (for anyone who can act), decided as the table. Someone
+who can't act gets the plain table for everything, so an employee's own pending requests don't
+vanish. **Delete was also added to the approval cards**: pending requests now render only as cards,
+so leaving it off would have silently removed the ability to delete one.
+
+**Also fixed: `LeaveSection.test.jsx` had not run at all since the `git mv`** — its internal import
+still pointed at `./LeaveListPage`, so the suite failed to *collect*. A collection failure produces
+no per-test `×` line, which is why an earlier report counting only `×` lines wrongly concluded
+every failure was pre-existing.
+
+---
+
 ## Env Vars
 
 ```

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
 import { DatePicker, Select, App } from "antd";
 import AttendanceRecordsSection from "./AttendanceRecordsSection";
+import AttendanceSummaryStats from "./AttendanceSummaryStats";
 import ReportDownloadButton from "../../../components/ReportDownloadButton";
 import { getTeamAttendance, markAttendanceStatus } from "../api/attendanceApi";
 import { listUsers } from "../../user/api/userApi";
@@ -132,7 +133,18 @@ function AdminAttendanceView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromKey, toKey, refreshToken]);
 
-  const employeeNameById = useMemo(() => new Map(users.map((user) => [user._id, user.name])), [users]);
+  // §B2 (2026-08-05) — built from the FULL roster (`listUsers`), not the
+  // lightweight `useUserDirectory()` dropdown, which lists active users only.
+  // A record belonging to a deactivated or deleted employee therefore had no
+  // name to resolve and fell through to rendering its raw Mongo ObjectId in
+  // the filter. The full roster covers those; anything still unresolved shows
+  // a human label rather than an id.
+  const employeeNameById = useMemo(() => {
+    const names = new Map(users.map((user) => [String(user._id), user.name]));
+    fullDirectory.forEach((directoryUser) => names.set(String(directoryUser._id), directoryUser.name));
+
+    return names;
+  }, [users, fullDirectory]);
 
   // Team/Department column (2026-08-05) — derived from the same two sources
   // the Team FILTER above already relies on (`useTeams()` + the full roster's
@@ -156,7 +168,7 @@ function AdminAttendanceView() {
       { value: "", label: "All employees" },
       ...uniqueEmployeeIds.map((employeeId) => ({
         value: employeeId,
-        label: employeeNameById.get(employeeId) || employeeId,
+        label: employeeNameById.get(employeeId) || "Unknown employee",
       })),
     ];
   }, [records, employeeNameById]);
@@ -211,8 +223,10 @@ function AdminAttendanceView() {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* §B7 — filters and actions on ONE row; the stat cards now render
-          above this, inside AttendanceRecordsSection. */}
+      {/* §B1 — stat cards ABOVE the filters. */}
+      <AttendanceSummaryStats records={filteredRecords} month={rangeStart} />
+
+      {/* Filters and actions on ONE row. */}
       <div className="flex flex-wrap items-center gap-3">
         <Select
           aria-label="Date range"

@@ -249,3 +249,41 @@ describe("AdminAttendanceView — Mark Absent / Mark Half Day on missing days", 
     });
   });
 });
+
+/**
+ * §B2 (2026-08-05) — the Employee filter rendered a raw Mongo ObjectId for
+ * anyone missing from the lightweight active-users dropdown (a deactivated
+ * or deleted employee), which is meaningless to a human reading the filter.
+ */
+describe("AdminAttendanceView — Employee filter never shows a raw ObjectId", () => {
+  it("labels an employee resolved only via the full roster, not the active-user dropdown", async () => {
+    const ORPHAN_ID = "6a704caa9e775d7c64966786";
+    attendanceApi.getTeamAttendance.mockResolvedValue({
+      data: { data: [{ ...RECORD_EMP1, _id: "att-x", employeeId: ORPHAN_ID }] },
+    });
+    // Present in the FULL roster (e.g. deactivated) but not in the dropdown.
+    userApi.listUsers.mockResolvedValue({
+      data: { data: [{ _id: ORPHAN_ID, name: "Departed Person", role: "employee", managerId: null }] },
+    });
+
+    await renderThisMonth();
+    await userEvent.click(screen.getByRole("combobox", { name: "Employee" }));
+
+    expect(await screen.findByTitle("Departed Person")).toBeInTheDocument();
+    expect(screen.queryByTitle(ORPHAN_ID)).not.toBeInTheDocument();
+  });
+
+  it("falls back to a human label, never the id, when the roster cannot resolve them either", async () => {
+    const UNKNOWN_ID = "6a704caa9e775d7c64966999";
+    attendanceApi.getTeamAttendance.mockResolvedValue({
+      data: { data: [{ ...RECORD_EMP1, _id: "att-y", employeeId: UNKNOWN_ID }] },
+    });
+    userApi.listUsers.mockResolvedValue({ data: { data: [] } });
+
+    await renderThisMonth();
+    await userEvent.click(screen.getByRole("combobox", { name: "Employee" }));
+
+    expect(await screen.findByTitle("Unknown employee")).toBeInTheDocument();
+    expect(screen.queryByTitle(UNKNOWN_ID)).not.toBeInTheDocument();
+  });
+});

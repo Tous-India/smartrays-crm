@@ -1,6 +1,6 @@
 import dayjs from "dayjs";
 import { Card, Col, Row, Tag, Button, Popconfirm, Space, Tooltip, Empty, Typography } from "antd";
-import { CheckOutlined, CloseOutlined, ExclamationCircleOutlined } from "@ant-design/icons";
+import { CheckOutlined, CloseOutlined, ExclamationCircleOutlined, DeleteOutlined } from "@ant-design/icons";
 import { LEAVE_TYPE_LABELS } from "../constants/leave.constants";
 
 const { Text, Paragraph } = Typography;
@@ -29,10 +29,12 @@ function LeaveApprovalCards({
   canApprove,
   canDecline,
   canMarkAbsence,
+  canDelete,
   canActOnRow,
   onApprove,
   onDecline,
   onMarkAbsence,
+  onDelete,
 }) {
   if (requests.length === 0) {
     return <Empty description="No pending leave requests" />;
@@ -108,6 +110,22 @@ function LeaveApprovalCards({
                           icon={<ExclamationCircleOutlined />}
                           aria-label="Mark Unapproved Absence"
                         />
+                      </Tooltip>
+                    </Popconfirm>
+                  )}
+                  {/* Delete is carried over from the table (§B5) — a pending
+                      request now renders ONLY as a card, so omitting it here
+                      would silently remove the ability to delete one. */}
+                  {canDelete && (
+                    <Popconfirm
+                      title="Delete this leave request?"
+                      description="This cannot be undone."
+                      okText="Confirm Delete"
+                      okType="danger"
+                      onConfirm={() => onDelete(leave)}
+                    >
+                      <Tooltip title="Delete">
+                        <Button type="text" danger size="small" icon={<DeleteOutlined />} aria-label="Delete" />
                       </Tooltip>
                     </Popconfirm>
                   )}

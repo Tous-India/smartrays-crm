@@ -1,14 +1,11 @@
 import { useState } from "react";
 import AttendanceTimeline from "./AttendanceTimeline";
-import AttendanceSummaryStats from "./AttendanceSummaryStats";
 import AttendancePhotoModal from "./AttendancePhotoModal";
 
 /**
- * Everything below the month/employee filters on `PersonalAttendanceView`,
- * `TeamAttendanceView`, and `AdminAttendanceView` — summary stats (§7.4
- * addition) and the read-only photo-viewer modal, on top of
- * `AttendanceTimeline`'s table. Built as one shared component rather than
- * duplicating this wiring three times.
+ * The table + read-only photo-viewer modal shared by
+ * `PersonalAttendanceView`, `TeamAttendanceView` and `AdminAttendanceView` —
+ * one component rather than duplicating this wiring three times.
  *
  * List/Calendar toggle removed (2026-07-31, §7.5e) — list/timeline-only now,
  * matching the same simplification applied to Leave the same day.
@@ -24,6 +21,11 @@ import AttendancePhotoModal from "./AttendancePhotoModal";
  * for every role now, including admin. The backend's `PATCH /attendance/:id`
  * and `POST /attendance/manual` endpoints are untouched, just dormant (see
  * `backend/README.md`), matching the Credentials Vault removal precedent.
+ *
+ * **§B1 (2026-08-05)** — the summary stat cards used to render HERE, which
+ * placed them BELOW each view's filter row. Each view now renders
+ * `AttendanceSummaryStats` itself, at the top, above its filters; this
+ * component owns the table and modal only.
  */
 function AttendanceRecordsSection({
   records,
@@ -51,8 +53,6 @@ function AttendanceRecordsSection({
 
   return (
     <div className="flex flex-col gap-4">
-      <AttendanceSummaryStats records={records} month={month} />
-
       <AttendanceTimeline
         records={rows}
         isLoading={isLoading}

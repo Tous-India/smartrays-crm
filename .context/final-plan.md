@@ -4508,6 +4508,21 @@ AMC → Site & Installation → Billing → Contacts | Contracts → Activity Lo
 
 ---
 
+## §7.36 addendum — Attendance/Leave tab fixes (2026-08-05)
+
+Stat cards now sit ABOVE the filters on every attendance tab (they had been reported as moved but
+were still rendering inside the records section, below the filter row). The Employee filter no
+longer prints raw ObjectIds for deactivated/deleted staff. The admin Leave tab drops the viewer's
+personal leave-balance card in favour of four queue metrics — pending, on leave today (named),
+upcoming this week, unapproved absences this month — and gains the same date preset dropdown as
+Attendance, reusing `date.utils.js`.
+
+The separate Leave History tab is removed; a Status filter (including a derived "Unapproved
+Absence" option) covers it on one tab. A request now renders as either an approval card or a table
+row, never both — the previous split rendered every pending request twice for admins.
+
+---
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a

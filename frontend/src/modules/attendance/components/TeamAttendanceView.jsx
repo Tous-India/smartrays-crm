@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import dayjs from "dayjs";
 import { DatePicker, Select, Space } from "antd";
 import AttendanceRecordsSection from "./AttendanceRecordsSection";
+import AttendanceSummaryStats from "./AttendanceSummaryStats";
 import ReportDownloadButton from "../../../components/ReportDownloadButton";
 import useTeamAttendance from "../hooks/useTeamAttendance";
 import useUserDirectory from "../../../hooks/useUserDirectory";
@@ -44,7 +45,8 @@ function TeamAttendanceView() {
       { value: "", label: "All employees" },
       ...uniqueEmployeeIds.map((employeeId) => ({
         value: employeeId,
-        label: employeeNameById.get(employeeId) || employeeId,
+        // Never fall through to the raw ObjectId (§B2, 2026-08-05).
+        label: employeeNameById.get(employeeId) || "Unknown employee",
       })),
     ];
   }, [records, employeeNameById]);
@@ -58,6 +60,9 @@ function TeamAttendanceView() {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* §B1 — stat cards ABOVE the filters, on every tab. */}
+      <AttendanceSummaryStats records={filteredRecords} month={month} />
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Space>
           <DatePicker picker="month" value={month} allowClear={false} onChange={(value) => setMonth(value || dayjs())} />
