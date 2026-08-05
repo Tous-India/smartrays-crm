@@ -247,16 +247,37 @@ describe("POST /auth/customer/signup", () => {
 
 describe("POST /auth/login", () => {
   it("succeeds with correct credentials and sets a session cookie", async () => {
+    // Uses a role with NO mandatory 2FA. Admin/manager are stopped at the
+    // enrolment gate and deliberately receive no cookie (§7.38) — covered by
+    // its own test below and by twoFactor.test.js.
+    await createUserDirectly({
+      name: "Plain Employee",
+      email: "employee.plain@test.local",
+      password: "Password123",
+      role: "employee",
+    });
+
+    const response = await request(app)
+      .post("/api/v1/auth/login")
+      .send({ email: "employee.plain@test.local", password: "Password123" });
+
+    expect(response.status).toBe(200);
+    expect(response.headers["set-cookie"]).toBeDefined();
+    expect(response.body.data.email).toBe("employee.plain@test.local");
+    expect(response.body.data.passwordHash).toBeUndefined();
+    // The token must never appear in the response body, only in the cookie.
+    expect(JSON.stringify(response.body)).not.toMatch(/eyJhbGciOi/);
+  });
+
+  it("does NOT set a session cookie for an admin who has not enrolled in mandatory 2FA", async () => {
     const response = await request(app)
       .post("/api/v1/auth/login")
       .send({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
 
     expect(response.status).toBe(200);
-    expect(response.headers["set-cookie"]).toBeDefined();
-    expect(response.body.data.email).toBe(ADMIN_EMAIL);
-    expect(response.body.data.passwordHash).toBeUndefined();
-    // The token must never appear in the response body, only in the cookie.
-    expect(JSON.stringify(response.body)).not.toMatch(/eyJhbGciOi/);
+    expect(response.headers["set-cookie"]).toBeUndefined();
+    expect(response.body.data.requiresEnrolment).toBe(true);
+    expect(response.body.data.preAuthToken).toBeDefined();
   });
 
   it("fails with the wrong password", async () => {

@@ -601,6 +601,55 @@ fixture would now block the deactivate step it depends on — changed that lead'
 `"won"` before deactivating, which is also more realistic for what that test is actually
 checking (a closed lead surviving its owner's deletion, not an open one silently reassigned).
 
+### Two-factor authentication (§7.38, 2026-08-05)
+
+TOTP + recovery codes. **The email factor is deliberately NOT built** — production SMTP is set to
+a placeholder host (`smtp.placeholder-not-configured.local`), so `/auth/forgot-password` returns
+500 today and emailed codes would go nowhere. Shipping an email factor onto a dead sender would
+be worse than not shipping one.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| POST | `/auth/2fa/verify` | pre-auth token | Accepts a TOTP **or** a recovery code. Issues the real session cookie on success. |
+| POST | `/auth/2fa/enrol/start` | session **or** pre-auth | Returns the secret + `otpauth://` URI once. Does not enable 2FA. |
+| POST | `/auth/2fa/enrol/confirm` | session **or** pre-auth | Proves possession, enables 2FA, returns the 10 recovery codes once. |
+| POST | `/auth/2fa/recovery-codes` | session | Regenerates, invalidating the previous set. |
+| POST | `/auth/2fa/admin-reset` | session + admin | Requires the ACTING admin's own password **and** own 2FA code. |
+| POST | `/auth/change-password` | session | Requires the current password. |
+
+**The login flow is the security-critical part.** When a second factor is outstanding, `login`
+sets **no cookie at all** — the response carries only a 5-minute pre-auth token
+(`scope: "pre_auth"`). `authenticate` and `authenticatePreAuth` accept **strictly disjoint**
+scopes: a pre-auth token placed in the auth cookie is rejected, and a session token cannot be
+used to skip enrolment. The pre-auth token travels as an `Authorization: Bearer` header, never a
+cookie, so the browser cannot send it anywhere automatically.
+
+**Secrets.** The TOTP secret is AES-256-GCM encrypted at rest via the EXISTING
+`credentialEncryption.service.js` — not a second crypto path. Recovery codes are bcrypt-hashed
+and consumed by *removing the hash*, so replay is impossible by construction rather than by a
+flag. Every 2FA field is `select: false`.
+
+**Enforcement.** 2FA is mandatory for `admin` and `manager` (`constants/twoFactor.constants.js`,
+deliberately a dependency-free module — importing the rule from the service dragged
+`config/env.js` earlier into the module graph and silently broke unrelated suites that set
+`process.env` in `beforeAll`). The gate runs on **every** authenticated request, not just login,
+or an admin holding a pre-existing session would never be forced to enrol. `/2fa/enrol/*`,
+`/me` and `/logout` are exempt, or enrolment would be impossible.
+
+**Admin reset** demands the acting admin re-authenticate with password AND their own 2FA code in
+the same request — a compromised session must not be able to strip another admin's second factor.
+An admin without their own 2FA cannot perform it at all, since "re-enter your second factor"
+would otherwise degrade to "re-enter your password", which a compromised session already has.
+Every reset is logged with actor and target.
+
+**otplib v13 note:** `verifySync` THROWS on anything that isn't 6 digits rather than returning
+`{ valid: false }`. Recovery codes are 10 hex characters and arrive through the same field, so
+the TOTP check is wrapped in a try/catch — without it the request 500s and the recovery-code
+branch is never reached, i.e. recovery codes could never be redeemed.
+
+20 tests in `twoFactor.test.js` cover exactly the properties that matter, including asserting on
+the real `Set-Cookie` header.
+
 ### Attendance data retention (§6.5, 2026-08-05)
 
 Attendance records and their Cloudinary photos are deleted after

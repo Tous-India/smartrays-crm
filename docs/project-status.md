@@ -2139,3 +2139,36 @@ now share one row with the report button.
 
 Frontend suite 481 passing; the 7 failures are the known pre-existing set in untouched files.
 `npm run build` succeeds. **Prompt B is now complete.**
+
+### 2026-08-05 — Two-factor authentication: backend complete (frontend NOT yet built)
+
+TOTP + recovery codes + password change. **Email factor deliberately not built** — production
+SMTP is a placeholder host, so emailed codes would go nowhere.
+
+Login now withholds the session cookie entirely when a second factor is outstanding, issuing only
+a 5-minute pre-auth token whose scope is disjoint from a session token in both directions. TOTP
+secrets are AES-256-GCM encrypted via the existing credential-encryption service; recovery codes
+are bcrypt-hashed and consumed by deleting the hash. 2FA is mandatory for admin/manager, enforced
+on every request rather than only at login. Admin reset of someone else's 2FA requires the acting
+admin's own password AND own 2FA code, and is logged with actor and target.
+
+**Two real bugs found and fixed during the work:**
+1. `otplib` v13's `verifySync` THROWS on non-6-digit input instead of returning `{valid:false}`,
+   so a 10-character recovery code 500'd before the recovery branch ran — recovery codes could
+   never have been redeemed. Now guarded.
+2. Importing the mandatory-roles rule from the 2FA service into auth middleware pulled
+   `config/env.js` earlier into the module graph, which silently broke the 11 website-intake
+   webhook tests (they set `process.env` in `beforeAll`, after env had already been snapshotted).
+   The rule now lives in a dependency-free constants module.
+
+The shared test helper now completes the REAL 2FA login flow (provisions a secret, submits a
+genuine TOTP) rather than disabling the feature — flipping the flag alone just moves the gate
+from "enrol" to "verify". Every suite therefore exercises the true login path.
+
+Backend: **755/755 passing.**
+
+**NOT DONE — and this is a deployment blocker.** The frontend is not built: no enrolment UI, no
+recovery-code display, no 2FA step in login, no Settings account section. **Deploying this
+backend alone would lock every admin and manager out of production**, because login would return
+`requiresEnrolment` with no cookie and the current frontend has no idea what to do with it.
+Committed but deliberately NOT deployed.

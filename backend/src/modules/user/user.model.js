@@ -106,6 +106,50 @@ const userSchema = new mongoose.Schema(
       default: null,
       select: false,
     },
+
+    // --- Two-factor authentication (§7.38, 2026-08-05) ---
+    //
+    // EVERY field below is `select: false`. A 2FA secret that leaked through
+    // an ordinary `find()` would defeat the entire feature, so the only way
+    // to read them is an explicit `.select("+twoFactorSecretEncrypted ...")`
+    // inside the 2FA service itself.
+    twoFactorEnabled: {
+      type: Boolean,
+      default: false,
+    },
+    // The TOTP shared secret, AES-256-GCM encrypted at rest by the EXISTING
+    // `credentialEncryption.service.js` (CREDENTIALS_ENCRYPTION_KEY) — the
+    // same crypto path the Credentials Vault uses, deliberately not a second
+    // implementation. Stored as the ciphertext + IV pair that service
+    // returns; the plaintext secret exists only in memory, and is returned
+    // to the client exactly once, during enrolment.
+    twoFactorSecretEncrypted: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    twoFactorSecretIv: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    // BCRYPT hashes of the 10 single-use recovery codes — never the codes
+    // themselves, for the same reason `passwordHash` isn't the password. A
+    // code is consumed by removing its hash from this array, which makes
+    // reuse impossible by construction rather than by a flag someone could
+    // forget to check.
+    twoFactorRecoveryCodeHashes: {
+      type: [String],
+      default: [],
+      select: false,
+    },
+    // Consecutive failed verification attempts. Reset to 0 on success.
+    // See `twoFactor.service.js` for the lockout threshold.
+    twoFactorFailedAttempts: {
+      type: Number,
+      default: 0,
+      select: false,
+    },
   },
   {
     timestamps: true,

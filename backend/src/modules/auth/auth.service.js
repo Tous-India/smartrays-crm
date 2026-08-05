@@ -5,6 +5,8 @@ import ApiError from "../../utils/ApiError.js";
 import { env } from "../../config/env.js";
 import { sendPasswordResetEmail } from "../../services/email.service.js";
 import User from "../user/user.model.js";
+import { verifySecondFactor } from "./twoFactor.service.js";
+import { isTwoFactorMandatory } from "../../constants/twoFactor.constants.js";
 
 const SALT_ROUNDS = 10;
 const PASSWORD_RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour, per §7.17
@@ -35,13 +37,43 @@ export async function loginUser({ email, password }) {
     throw new ApiError(401, "Invalid email or password");
   }
 
-  const token = generateAuthToken(user._id);
+  // §7.38 (2026-08-05) — the security-critical branch. A user with 2FA
+  // enabled, or one who is REQUIRED to have it and hasn't enrolled yet, does
+  // NOT get a session token here. They get a pre-auth token instead, which
+  // authorises the 2FA endpoints and nothing else. The real session cookie is
+  // only ever issued after the second factor verifies (or after a mandatory
+  // enrolment completes), so a stolen password alone reaches nothing.
+  const mustEnrol = isTwoFactorMandatory(user.role) && !user.twoFactorEnabled;
 
-  return { user, token };
+  if (user.twoFactorEnabled || mustEnrol) {
+    return {
+      user,
+      requiresTwoFactor: user.twoFactorEnabled,
+      requiresEnrolment: mustEnrol,
+      preAuthToken: generatePreAuthToken(user._id),
+    };
+  }
+
+  return { user, token: generateAuthToken(user._id) };
 }
 
 function generateAuthToken(userId) {
   return jwt.sign({ userId }, env.jwtSecret, { expiresIn: env.jwtExpiresIn });
+}
+
+// Deliberately a DIFFERENT token shape from the session token: `scope:
+// "pre_auth"` is what `authenticatePreAuth` checks for, and the ordinary
+// `authenticate` middleware rejects anything carrying it. Five minutes is
+// long enough to fetch a code from a phone and short enough that an
+// intercepted pre-auth token is near-worthless.
+export const PRE_AUTH_TOKEN_TTL = "5m";
+
+export function generatePreAuthToken(userId) {
+  return jwt.sign({ userId, scope: "pre_auth" }, env.jwtSecret, { expiresIn: PRE_AUTH_TOKEN_TTL });
+}
+
+export function issueSessionToken(userId) {
+  return generateAuthToken(userId);
 }
 
 /**
@@ -161,4 +193,59 @@ export async function resetPassword(rawToken, newPassword) {
 
 function hashResetToken(rawToken) {
   return crypto.createHash("sha256").update(rawToken).digest("hex");
+}
+
+/**
+ * Password change for one's own account (§7.38). Requires the CURRENT
+ * password — without it, anyone who walked up to an unlocked laptop could
+ * change the password and lock the real owner out of their own account.
+ */
+export async function changeOwnPassword(userId, currentPassword, newPassword) {
+  const user = await User.findById(userId).select("+passwordHash");
+
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  const isCurrentValid = await bcrypt.compare(currentPassword || "", user.passwordHash);
+
+  if (!isCurrentValid) {
+    throw new ApiError(401, "Your current password is incorrect");
+  }
+
+  user.passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+  await user.save();
+}
+
+/**
+ * Re-authenticates the acting admin for a privileged action (§7.38's 2FA
+ * reset). Deliberately demands BOTH factors again, in the same request:
+ * the whole threat being defended against is a session that is already
+ * authenticated but not actually in the admin's hands, so re-checking only
+ * the session would prove nothing.
+ */
+export async function reauthenticateActingAdmin(actingAdminId, password, token) {
+  const admin = await User.findById(actingAdminId).select("+passwordHash");
+
+  if (!admin) {
+    throw new ApiError(404, "User not found");
+  }
+
+  const isPasswordValid = await bcrypt.compare(password || "", admin.passwordHash);
+
+  if (!isPasswordValid) {
+    throw new ApiError(401, "Your password is incorrect");
+  }
+
+  // An admin without 2FA of their own cannot perform this action at all —
+  // otherwise "re-authenticate with your second factor" degrades to
+  // "re-enter your password", which a compromised session already has.
+  if (!admin.twoFactorEnabled) {
+    throw new ApiError(
+      403,
+      "Enable two-factor authentication on your own account before resetting someone else's."
+    );
+  }
+
+  await verifySecondFactor(admin._id, token);
 }
