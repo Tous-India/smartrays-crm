@@ -1986,3 +1986,37 @@ LeadDetailPage / CustomersListPage / PaymentsListPage / UserManagementPage / Con
 all files this task never touched, owned by concurrent sessions, and several are 5s-timeout flaky.
 `npm run build` succeeds. Screenshotted the admin tab layout, the leave approval cards, and the
 Custom date filter.
+
+### 2026-08-05 — User controls moved to the top strip; full play/pause/stop attendance control
+
+Removed the name / gear / Sign out block from the sidebar footer and rebuilt it right-aligned in
+the fixed blue strip as `[bell] [gear] [name] [sign out]`. The notification bell was **relocated,
+not rebuilt**, so its polling and visibilitychange refetch are untouched. Clicking the name opens
+Edit Profile — the sidebar avatar had been that modal's only entry point, so removing the footer
+without rewiring it would have made Edit Profile unreachable. Below `sm` the name and Sign out
+collapse into an avatar dropdown; verified at 390px with no horizontal scroll.
+
+Extended the header check-in button into the full shift state machine: Play (check in / resume
+from break), Pause (break in), Stop (check out), alongside the live timer. Both backend rules are
+mirrored as **disabled controls with tooltips** rather than hidden ones or buttons that would
+fail — Stop is disabled during a break (the server rejects checkout with a 409) and Pause is
+disabled once the shift's single break is used. Check-in and check-out both open the existing
+camera+geolocation modal since a photo is mandatory server-side; break in/out are geolocation-only
+and submit immediately. Admin renders no control or timer at all. Screenshotted all four states,
+admin, and 390px; each state was driven through the real API to confirm: not-checked-in →
+`[Check in]`, checked-in → `[Pause, Check out]` + timer, on-break → `[Resume, Check out(disabled)]`,
+break-used → `[Pause(disabled), Check out]`.
+
+**One structural decision worth recording.** The task forbade editing
+`frontend/src/modules/attendance/` (a concurrent session owned it), but the component it asked me
+to extend — `HeaderCheckInButton.jsx` — lives inside exactly that directory. Rather than edit
+another session's area, the extended control was built in `layouts/` and consumes the attendance
+module's hooks, API and capture modal without modifying them. Consequence flagged rather than
+hidden: `HeaderCheckInButton.jsx` and its test are now unreferenced dead code and should be
+deleted by whoever owns that module next.
+
+Also fixed in passing: `NotificationBell` still routed leave notifications to the `/leave` path
+removed earlier the same day; it now points at `/attendance`.
+
+22 new tests. Full frontend suite: 437 passing; the 9 failures are the known pre-existing set in
+files this task never touched. `npm run build` succeeds.

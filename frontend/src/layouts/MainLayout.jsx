@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { Layout, Menu, Avatar, Button, Badge } from "antd";
+import { Layout, Menu, Badge } from "antd";
 import {
-  UserOutlined,
-  LogoutOutlined,
   SettingOutlined,
   DashboardOutlined,
   RiseOutlined,
@@ -24,8 +22,8 @@ import { USER_ROLE_LABELS } from "../modules/user/constants/user.constants";
 import BrandLogo from "../components/BrandLogo";
 import EditProfileModal from "../modules/user/components/EditProfileModal";
 import LiveClock from "./LiveClock";
-import NotificationBell from "../modules/notification/components/NotificationBell";
-import HeaderCheckInButton from "../modules/attendance/components/HeaderCheckInButton";
+import HeaderAttendanceControl from "./HeaderAttendanceControl";
+import HeaderUserControls from "./HeaderUserControls";
 
 const { Header, Sider, Content } = Layout;
 
@@ -299,56 +297,10 @@ function MainLayout() {
           />
         </div>
 
-        {/* Bottom — pinned, never scrolls. Same near-black background as
-            the nav list (a continuous dark region below the white header,
-            matching the reference). Clicking the avatar/name opens Edit
-            Profile directly; the gear icon is a second, always-visible
-            entry point straight to Settings; "Sign out" is its own
-            distinct, always-visible button below — matching the
-            reference's own separate sign-out element rather than burying
-            it in a click-to-open menu. */}
-        <div className="app-sidebar-dark shrink-0 border-t border-white/10 p-2">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setIsEditProfileOpen(true)}
-              className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md p-1.5 text-start hover:bg-white/10"
-            >
-              <Avatar icon={<UserOutlined />} size="small" className="!bg-brand-green" />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium text-white">{user?.name}</div>
-                <div className="truncate text-xs text-white/50">
-                  {USER_ROLE_LABELS[user?.role] || user?.role}
-                </div>
-              </div>
-            </button>
-            {canViewSettings && (
-              // `!text-white/60` (not plain `text-white/60`) — AntD's global
-              // reset styles every bare `<a>` with `color: colorLink`
-              // (brand-navy, per App.jsx's ConfigProvider) at a specificity
-              // that otherwise wins over a plain Tailwind utility class, the
-              // same gotcha already worked around elsewhere on AntD-styled
-              // elements in this file (`!bg-brand-navy`, `!h-12`, etc.) —
-              // without the `!`, this icon silently renders navy-on-navy,
-              // exactly the low-contrast bug this fix addresses.
-              <Link
-                to={ROUTE_PATHS.SETTINGS_USERS}
-                title="Settings"
-                className="flex shrink-0 items-center justify-center rounded-md p-2 !text-white/60 hover:bg-white/10 hover:!text-white"
-              >
-                <SettingOutlined />
-              </Link>
-            )}
-          </div>
-          <Button
-            block
-            icon={<LogoutOutlined />}
-            onClick={handleLogout}
-            className="!mt-2 !border-white/15 !bg-transparent !text-white hover:!border-white/30 hover:!bg-white/10 hover:!text-white"
-          >
-            Sign out
-          </Button>
-        </div>
+        {/* The sidebar footer (avatar / name / gear / Sign out) moved to
+            the fixed top strip on 2026-08-05 — see `HeaderUserControls`.
+            Nothing replaces it here: the nav list simply runs to the bottom
+            of the column now. */}
       </Sider>
 
       {/* Tailwind arbitrary value, not inline style — needs the responsive
@@ -363,15 +315,20 @@ function MainLayout() {
             breakpoint rather than duplicating a hardcoded width. `z-10`
             matches the Sider's own z-index — they never overlap
             horizontally, but both need to sit above scrolling Content. */}
-        <Header className="app-topbar-height !flex items-center justify-between !bg-brand-navy px-6 !leading-none fixed inset-x-0 top-0 z-10 ms-0 lg:ms-[220px]">
+        <Header className="app-topbar-height !flex items-center justify-between !bg-brand-navy px-4 !leading-none fixed inset-x-0 top-0 z-10 ms-0 lg:ms-[220px] sm:px-6">
           <LiveClock />
-          <div className="flex items-center gap-4">
-            {/* Admin is exempt from attendance entirely (§7.4c) — the
-                component renders nothing for that role, but gating here too
-                means it isn't even mounted (no `GET /attendance/me` fired
-                on every page load for a role that has no records). */}
-            {user?.role !== "admin" && <HeaderCheckInButton />}
-            <NotificationBell />
+          <div className="flex items-center gap-3">
+            {/* Admin is exempt from attendance entirely (§7.4c) — gating
+                here means the control isn't even mounted for that role, so
+                no `GET /attendance/me` fires. The user controls beside it
+                still render for everyone. */}
+            {user?.role !== "admin" && <HeaderAttendanceControl />}
+            <HeaderUserControls
+              user={user}
+              canViewSettings={canViewSettings}
+              onSignOut={handleLogout}
+              onEditProfile={() => setIsEditProfileOpen(true)}
+            />
           </div>
         </Header>
         {/* `mt-16` (64px) replaces the header's old in-flow height (48px)

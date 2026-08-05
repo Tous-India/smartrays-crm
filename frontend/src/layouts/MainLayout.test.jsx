@@ -261,15 +261,15 @@ describe("MainLayout — sidebar footer profile menu", () => {
     expect(screen.getAllByText("Priya Admin")).toHaveLength(1);
   });
 
-  it("renders a Settings gear icon next to the name, linking straight to /settings/users", async () => {
+  it("renders a Settings gear icon in the top strip, linking straight to /settings/users (moved out of the sidebar 2026-08-05)", async () => {
     renderLayout();
 
     await screen.findByText("Priya Admin");
-    const settingsLink = screen.getByTitle("Settings");
+    const settingsLink = screen.getByLabelText("Settings");
     expect(settingsLink).toHaveAttribute("href", "/settings/users");
   });
 
-  it("hides the footer's Settings gear icon for a user with no Settings access", async () => {
+  it("hides the Settings gear icon for a user with no Settings access", async () => {
     useSessionStore.setState({
       user: { _id: "sales-1", name: "Sam Sales", role: "sales_associate", permissions: {} },
       isAuthenticated: true,
@@ -279,7 +279,7 @@ describe("MainLayout — sidebar footer profile menu", () => {
     renderLayout();
 
     await screen.findByText("Sam Sales");
-    expect(screen.queryByTitle("Settings")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Settings")).not.toBeInTheDocument();
   });
 
   it("renders a distinct, always-visible 'Sign out' button (not tucked inside a menu) that logs out and redirects to /login", async () => {

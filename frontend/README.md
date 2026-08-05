@@ -2008,6 +2008,66 @@ where leave now lives.
 
 ---
 
+### User controls moved to the top strip; full play/pause/stop attendance control (2026-08-05)
+
+**The sidebar footer is gone.** Avatar, name, gear and Sign out moved into the fixed blue top
+strip, right-aligned as `[bell] [gear] [name] [sign out]` (`HeaderUserControls`). The
+notification bell is the SAME `NotificationBell` instance relocated — not a second one — so its
+polling and visibilitychange refetch (both in `useNotifications`) are untouched.
+
+Clicking the name opens Edit Profile. That mattered: the sidebar avatar was the only entry point
+to that modal, so removing the footer without rewiring it would have stranded `EditProfileModal`
+with no way in.
+
+**Responsive:** below `sm`, the name and Sign out collapse into an avatar dropdown — at 390px the
+full row plus the attendance controls would otherwise overflow. Nothing is dropped, just one tap
+deeper. Verified at 390px: `scrollWidth === innerWidth`, no horizontal scroll.
+
+**`HeaderAttendanceControl` extends the earlier header check-in button into the whole shift
+state machine**, so a full day can be driven without opening `/attendance`:
+
+| State | Controls |
+|---|---|
+| Not checked in | Play → check-in (camera + geolocation) |
+| Checked in | live timer · Pause → break in · Stop → check out |
+| On break | amber timer + "On break" · Play → resume (break out) · **Stop disabled** |
+| Break already used | **Pause disabled** · Stop still available |
+| Checked out | back to Play for the next shift |
+
+Two backend rules are MIRRORED, not re-implemented, and both render as a **disabled control with
+a Tooltip** rather than a hidden one — a control that vanishes leaves the user wondering what
+they did wrong, whereas a disabled one explains itself:
+- Check-out is rejected (409) during a break → Stop is disabled while on break.
+- One break per shift → Pause is disabled once `breakOut` is set.
+
+Check-in AND check-out both require a photo server-side, so both open the shared
+`AttendanceCaptureFlow` modal — there is no quiet photo-less check-in path. Break in/out need
+geolocation only and submit immediately, matching `CheckInOutWidget` exactly. Every action goes
+through the existing endpoints; `notifyAttendanceChanged()` keeps this control and the
+`/attendance` widget in agreement.
+
+**Admin renders no attendance control or timer at all** (exempt, §7.4c) — gated in `MainLayout`
+so the component isn't mounted and no `GET /attendance/me` fires. The bell/gear/name/sign-out
+block still renders for admin.
+
+**Deliberately placed in `layouts/`, not in the attendance module.** The task that created it
+also forbade editing `frontend/src/modules/attendance/` (a concurrent session owned it), and the
+component it extends — `HeaderCheckInButton.jsx` — lives inside that directory. Rather than edit
+another session's area, the extended control was built in header-owned territory and CONSUMES
+the attendance module's hooks, API and `AttendanceCaptureFlow` without modifying any of them.
+**`modules/attendance/components/HeaderCheckInButton.jsx` and its test are now unused** — nothing
+imports them — and should be deleted by whoever owns that module next.
+
+Also fixed in passing: `NotificationBell`'s `MODULE_ROUTES` still mapped leave notifications to
+the `/leave` route removed earlier the same day; it now points at `/attendance`, where leave
+lives.
+
+22 new tests across the two components cover every state transition, the two disabled-with-reason
+rules, that Play never submits a photo-less check-in, that Pause/Resume use geolocation with no
+camera step, and that the relocated bell still fetches.
+
+---
+
 ## Env Vars
 
 ```

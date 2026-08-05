@@ -9,9 +9,10 @@ import useNotifications from "../hooks/useNotifications";
 const MODULE_ROUTES = {
   leads: (id) => `/leads/${id}`,
   tickets: (id) => `/tickets/${id}`,
-  // Leave has no per-record detail route — every leave notification just
-  // goes to the list page, ignoring `relatedEntity.id`.
-  leave: () => "/leave",
+  // Leave has no per-record detail route, and as of 2026-08-05 no page of
+  // its own either — it lives in a tab on /attendance, so both leave and
+  // attendance notifications land there, ignoring `relatedEntity.id`.
+  leave: () => "/attendance",
   // Attendance (§7.4c's check-in/break-in/break-out/check-out notifications)
   // has no per-record detail route either — same treatment as Leave.
   attendance: () => "/attendance",

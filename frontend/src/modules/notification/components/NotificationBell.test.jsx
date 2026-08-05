@@ -126,12 +126,12 @@ describe("NotificationBell — leave notifications", () => {
     expect(await screen.findByText("Your paid leave request has been approved")).toBeInTheDocument();
   });
 
-  it("navigates to /leave (not a per-record detail route, which Leave has none of) when clicked", async () => {
+  it("navigates to /attendance for a leave notification — Leave has no per-record route and no page of its own since 2026-08-05", async () => {
     render(
       <MemoryRouter initialEntries={["/dashboard"]}>
         <Routes>
           <Route path="/dashboard" element={<NotificationBell />} />
-          <Route path="/leave" element={<div>Leave Page</div>} />
+          <Route path="/attendance" element={<div>Leave Page</div>} />
         </Routes>
       </MemoryRouter>
     );

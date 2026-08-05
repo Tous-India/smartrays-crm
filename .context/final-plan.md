@@ -4455,6 +4455,27 @@ lands a day early east of UTC — the bug shipped in the previous batch).
 
 ---
 
+## §7.37 — App shell: user controls in the top strip, full attendance control (2026-08-05)
+
+**The left sidebar's footer block is retired.** Notification bell, settings gear, name and Sign
+out now live right-aligned in the fixed top strip; the nav list runs to the bottom of the
+sidebar. Below `sm` the name and Sign out collapse into an avatar dropdown so the strip never
+overflows a 390px viewport. The bell is relocated, not rebuilt, so its polling behaviour is
+unchanged.
+
+**The header check-in button became the full shift state machine** — play (check in / resume),
+pause (break in), stop (check out), plus the live elapsed timer. It reuses the existing endpoints
+and the existing camera/geolocation capture modal; no backend changed. Two server rules are
+mirrored as disabled-with-tooltip controls rather than buttons that would fail: check-out is
+blocked during a break, and there is one break per shift. Admin renders none of it (exempt from
+attendance), while keeping the user-controls block.
+
+Built under `layouts/` rather than in the attendance module, which a concurrent session owned at
+the time — it consumes that module's hooks/API/components without modifying them. The older
+`HeaderCheckInButton` is left in place but is now unreferenced.
+
+---
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a
