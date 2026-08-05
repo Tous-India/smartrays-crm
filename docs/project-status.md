@@ -2059,3 +2059,20 @@ threshold this new job supersedes it, and a record whose photos were already str
 through with nothing to delete.
 
 18 new tests. Full backend suite: **734/734 passing.**
+
+### 2026-08-05 — AMC moved to the top of Customer Detail
+
+Repositioned the AMC section above Site & Installation Details, so the page now reads
+AMC → Site & Installation → Billing → Contacts | Contracts → Activity Log. An AMC nearing renewal
+is the only time-sensitive thing on the page; it previously sat below the static install spec.
+
+Verified the expiring-soon treatment is genuinely rendering rather than assuming it: cards show
+amount, start date, renewal date and status; the expiring-soon card has an amber border and tag,
+distinct from the neutral Expired styling; chains still collapse to one card with a "Renewed N×"
+expander; Renew is present on each card. Added a test asserting the leading section order.
+
+**Item 3 blocked and reported, not forced.** `AmcRenewalsDueWidget` still links to the removed
+`/amc` route, but the file STILL has another session's uncommitted change — a `text-right` →
+`text-left` tweak on the line immediately above the link. Repointing it would have meant
+committing their WIP, so it was left alone per the task's own instruction. `ROUTE_PATHS.AMC` is
+still defined so the link resolves rather than going `undefined`.

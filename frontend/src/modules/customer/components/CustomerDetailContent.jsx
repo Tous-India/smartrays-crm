@@ -19,9 +19,10 @@ import { usePermission } from "../../../hooks/usePermission";
  *
  * **Structure reworked 2026-08-05**, diverging from
  * leads-customer-functional-spec.md's original section order:
- * - **Site & Installation Details first**, above Billing — for a solar
- *   install this is the identifying "what is this job" information, so it
- *   reads before the commercial terms rather than after them.
+ * - **AMC first, then Site & Installation Details, then Billing.** AMC
+ *   leads because it's the only time-sensitive thing here (an expiring
+ *   contract needs action); Site & Installation comes next as the
+ *   identifying "what is this job" information, ahead of commercial terms.
  * - **Contacts and Contracts side by side.** Both are short list sections
  *   that wasted a full page-width row each when stacked. `xs={24} lg={12}`
  *   so they pair up only from `lg` (992px) and stack again below it — a
@@ -78,6 +79,19 @@ function CustomerDetailContent({ customer, contacts, contracts, activity, onChan
         onChanged={onChanged}
       />
 
+      {/* AMC LEADS the page (2026-08-05, second pass) — moved above Site &
+          Installation Details. For an existing customer the live question is
+          almost always "is their contract current, and when does it renew",
+          and an expiring-soon AMC is the one thing on this page that is
+          time-sensitive; burying it below the install spec meant scrolling
+          past everything static to reach it.
+
+          Fetches its own records (`GET /amc?customerId=`) rather than being
+          threaded through `useCustomerDetail`, so a customer with no AMC
+          costs nothing elsewhere and an AMC failure can't break the whole
+          detail view. */}
+      <CustomerAmcSection customerId={customer._id} />
+
       <CustomerSiteDetailsCard customer={customer} onEdit={() => setIsEditOpen(true)} />
 
       <CustomerBillingCard customer={customer} onEdit={() => setIsEditOpen(true)} />
@@ -95,13 +109,6 @@ function CustomerDetailContent({ customer, contacts, contracts, activity, onChan
           />
         </Col>
       </Row>
-
-      {/* AMC (2026-08-05) — moved here from the retired standalone `/amc`
-          page. Fetches its own records (`GET /amc?customerId=`) rather than
-          being threaded through `useCustomerDetail`, so a customer with no
-          AMC costs nothing on the rest of the page and an AMC failure can't
-          break the whole detail view. */}
-      <CustomerAmcSection customerId={customer._id} />
 
       <CustomerActivityLog activity={activity} />
 

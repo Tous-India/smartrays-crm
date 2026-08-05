@@ -2068,6 +2068,30 @@ camera step, and that the relocated bell still fetches.
 
 ---
 
+### AMC moved to the top of Customer Detail (2026-08-05, second pass)
+
+The AMC section now LEADS the page, above Site & Installation Details. For an existing customer
+the live question is almost always "is their contract current, and when does it renew" — an
+expiring-soon AMC is the only time-sensitive thing on the page, and it previously sat below the
+static install spec.
+
+Section order is now: **AMC → Site & Installation → Billing → Contacts | Contracts → Activity Log.**
+
+Verified rendering rather than assumed: cards show amount, start date, renewal date and status;
+the expiring-soon card carries an amber border/background plus an "Expiring soon" tag, visually
+distinct from the neutral "Expired" treatment; renewal chains still collapse to one card with a
+"Renewed N×" expander; and Renew appears on each card. A test asserts the three leading section
+headings in order.
+
+**Still outstanding — `AmcRenewalsDueWidget` links to the removed `/amc` route.** That file
+STILL carries another session's uncommitted change (a `text-right` → `text-left` tweak on the
+line directly above the link), so repointing it would mean committing their work-in-progress.
+Reported instead of committed, per the task's own instruction. `ROUTE_PATHS.AMC` remains defined
+so the link resolves to a string rather than `undefined`; it should be repointed at `/customers`
+once that file is free.
+
+---
+
 ## Env Vars
 
 ```

@@ -4499,6 +4499,15 @@ Three properties define the design:
 
 ---
 
+## §7.35 addendum — AMC leads the Customer Detail page (2026-08-05)
+
+AMC moved above Site & Installation Details. Rationale: an AMC nearing renewal is the only
+time-sensitive item on the page, and burying it under the static install specification meant
+scrolling past everything permanent to reach the one thing that needs action. Order is now
+AMC → Site & Installation → Billing → Contacts | Contracts → Activity Log.
+
+---
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a

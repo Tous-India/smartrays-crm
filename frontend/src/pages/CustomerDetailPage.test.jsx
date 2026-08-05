@@ -108,6 +108,19 @@ describe("CustomerDetailPage", () => {
     expect(screen.queryByRole("button", { name: /View Ledger/ })).not.toBeInTheDocument();
   });
 
+  it("shows AMC first, then Site & Installation Details, then Billing (2026-08-05)", async () => {
+    renderDetailPage();
+
+    await screen.findByText("Acme Corp");
+
+    const headings = screen.getAllByText(/^(AMC|Site & Installation Details|Billing Details)$/);
+    expect(headings.map((node) => node.textContent)).toEqual([
+      "AMC",
+      "Site & Installation Details",
+      "Billing Details",
+    ]);
+  });
+
   it("shows Site & Installation Details above Billing Details (2026-08-05)", async () => {
     renderDetailPage();
 
