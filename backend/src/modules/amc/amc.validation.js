@@ -65,3 +65,28 @@ export function validateUpdateAMCInput(req, res, next) {
 
   next();
 }
+
+/**
+ * Validates POST /amc/:id/renew's body. Every field is OPTIONAL — the point
+ * of the endpoint is that it derives sensible defaults from the record being
+ * renewed (see `amc.service.js#renewAMC`); the body only exists to override
+ * them. `status` is deliberately not accepted: a renewal is always active by
+ * definition, and the old record is always expired.
+ */
+export function validateRenewAMCInput(req, res, next) {
+  const { amount, startDate, renewalDate } = req.body || {};
+
+  if (amount !== undefined && amount !== null && Number(amount) < 0) {
+    throw new ApiError(400, "amount cannot be negative");
+  }
+
+  if (startDate !== undefined && Number.isNaN(Date.parse(startDate))) {
+    throw new ApiError(400, "startDate must be a valid date");
+  }
+
+  if (renewalDate !== undefined && Number.isNaN(Date.parse(renewalDate))) {
+    throw new ApiError(400, "renewalDate must be a valid date");
+  }
+
+  next();
+}

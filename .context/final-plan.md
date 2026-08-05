@@ -4406,6 +4406,31 @@ mobile.
 
 ---
 
+## §7.35 — AMC relocated into Customer Detail (2026-08-05)
+
+**The standalone `/amc` page is retired.** AMC is inherently per-customer, so it now lives as a
+section on the Customer Detail page; the route, its nav item and `AmcPage.jsx` are gone. The
+`amcApi` module survives the removal because the Dashboard AMC widget and Reports still consume
+it.
+
+**Renewal is now modelled as a chain, not an edit.** `POST /amc/:id/renew` creates a NEW record
+(`previousAmcId` pointing at its predecessor) and sets only `status: "expired"` on the old one —
+the old record's amount and dates are never touched. This is the deliberate choice: an AMC's
+history is a sequence of terms, each with its own price and coverage window, and editing dates
+forward in place would destroy exactly the record a renewal is supposed to create. Defaults
+(start where the previous term ended, run one calendar year, carry the amount) are all
+overridable per renewal.
+
+**Near-expiry is derived server-side.** `isExpiringSoon` — active and renewing within 30 days —
+is computed in `decorateAMC` and returned on every AMC response, so the threshold has a single
+definition rather than one on each side of the API drifting apart.
+
+**`GET /amc?customerId=`** narrows within the caller's existing role scope, never widens it —
+the filter is applied on top of the ownership-derived scope, so asking for another team's
+customer returns an empty list rather than leaking.
+
+---
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a

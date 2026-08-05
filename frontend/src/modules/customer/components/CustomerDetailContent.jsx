@@ -7,6 +7,7 @@ import CustomerSiteDetailsCard from "./CustomerSiteDetailsCard";
 import CustomerContractsSection from "./CustomerContractsSection";
 import CustomerContactsSection from "./CustomerContactsSection";
 import CustomerActivityLog from "./CustomerActivityLog";
+import CustomerAmcSection from "../../amc/components/CustomerAmcSection";
 import { updateCustomer, deleteCustomer } from "../api/customerApi";
 import { usePermission } from "../../../hooks/usePermission";
 
@@ -94,6 +95,13 @@ function CustomerDetailContent({ customer, contacts, contracts, activity, onChan
           />
         </Col>
       </Row>
+
+      {/* AMC (2026-08-05) — moved here from the retired standalone `/amc`
+          page. Fetches its own records (`GET /amc?customerId=`) rather than
+          being threaded through `useCustomerDetail`, so a customer with no
+          AMC costs nothing on the rest of the page and an AMC failure can't
+          break the whole detail view. */}
+      <CustomerAmcSection customerId={customer._id} />
 
       <CustomerActivityLog activity={activity} />
 

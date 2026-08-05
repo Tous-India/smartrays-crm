@@ -372,3 +372,269 @@ describe("PATCH /amc/:id", () => {
     expect(response.status).toBe(403);
   });
 });
+
+/**
+ * `?customerId=` (2026-08-05) — added for the Customer Detail page's AMC
+ * section. Layered ON TOP of role scoping, never replacing it.
+ */
+describe("GET /amc?customerId= — per-customer filter", () => {
+  it("returns only that customer's AMC records", async () => {
+    await adminAgent.post("/api/v1/amc").send({
+      flow: "existing_customer",
+      customerId: String(customerOwnedBySales1._id),
+      startDate: "2026-01-01",
+      renewalDate: "2027-01-01",
+    });
+    await adminAgent.post("/api/v1/amc").send({
+      flow: "existing_customer",
+      customerId: String(customerOwnedBySales2._id),
+      startDate: "2026-02-01",
+      renewalDate: "2027-02-01",
+    });
+
+    const response = await adminAgent.get(`/api/v1/amc?customerId=${customerOwnedBySales1._id}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data[0].customerId).toBe(String(customerOwnedBySales1._id));
+  });
+
+  it("without the filter, admin still sees every customer's records", async () => {
+    await adminAgent.post("/api/v1/amc").send({
+      flow: "existing_customer",
+      customerId: String(customerOwnedBySales1._id),
+      startDate: "2026-01-01",
+      renewalDate: "2027-01-01",
+    });
+    await adminAgent.post("/api/v1/amc").send({
+      flow: "existing_customer",
+      customerId: String(customerOwnedBySales2._id),
+      startDate: "2026-02-01",
+      renewalDate: "2027-02-01",
+    });
+
+    const response = await adminAgent.get("/api/v1/amc");
+
+    expect(response.body.data).toHaveLength(2);
+  });
+
+  it("STILL respects role scoping — sales1 asking for sales2's customer gets nothing, not a leak", async () => {
+    await adminAgent.post("/api/v1/amc").send({
+      flow: "existing_customer",
+      customerId: String(customerOwnedBySales2._id),
+      startDate: "2026-02-01",
+      renewalDate: "2027-02-01",
+    });
+
+    const response = await sales1Agent.get(`/api/v1/amc?customerId=${customerOwnedBySales2._id}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toHaveLength(0);
+  });
+
+  it("a manager filtering to their own team member's customer gets that customer's records", async () => {
+    await adminAgent.post("/api/v1/amc").send({
+      flow: "existing_customer",
+      customerId: String(customerOwnedBySales1._id),
+      startDate: "2026-01-01",
+      renewalDate: "2027-01-01",
+    });
+
+    const response = await manager1Agent.get(`/api/v1/amc?customerId=${customerOwnedBySales1._id}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toHaveLength(1);
+  });
+});
+
+/**
+ * Derived near-expiry flag (2026-08-05) — computed server-side so the 30-day
+ * threshold lives in one place.
+ */
+describe("GET /amc — derived isExpiringSoon", () => {
+  function isoInDays(days) {
+    const date = new Date();
+    date.setDate(date.getDate() + days);
+    return date.toISOString();
+  }
+
+  it("flags an active record renewing within 30 days", async () => {
+    await adminAgent.post("/api/v1/amc").send({
+      flow: "existing_customer",
+      customerId: String(customerOwnedBySales1._id),
+      startDate: isoInDays(-300),
+      renewalDate: isoInDays(10),
+    });
+
+    const response = await adminAgent.get("/api/v1/amc");
+
+    expect(response.body.data[0].isExpiringSoon).toBe(true);
+  });
+
+  it("does NOT flag one renewing beyond 30 days", async () => {
+    await adminAgent.post("/api/v1/amc").send({
+      flow: "existing_customer",
+      customerId: String(customerOwnedBySales1._id),
+      startDate: isoInDays(-100),
+      renewalDate: isoInDays(90),
+    });
+
+    const response = await adminAgent.get("/api/v1/amc");
+
+    expect(response.body.data[0].isExpiringSoon).toBe(false);
+  });
+
+  it("does NOT flag an already-past renewal date — that is expired, not expiring", async () => {
+    await adminAgent.post("/api/v1/amc").send({
+      flow: "existing_customer",
+      customerId: String(customerOwnedBySales1._id),
+      startDate: isoInDays(-400),
+      renewalDate: isoInDays(-5),
+    });
+
+    const response = await adminAgent.get("/api/v1/amc");
+
+    expect(response.body.data[0].isExpiringSoon).toBe(false);
+  });
+
+  it("does NOT flag a record whose status is already expired, whatever its dates", async () => {
+    const created = await adminAgent.post("/api/v1/amc").send({
+      flow: "existing_customer",
+      customerId: String(customerOwnedBySales1._id),
+      startDate: isoInDays(-300),
+      renewalDate: isoInDays(10),
+    });
+    await adminAgent.patch(`/api/v1/amc/${created.body.data._id}`).send({ status: "expired" });
+
+    const response = await adminAgent.get("/api/v1/amc");
+
+    expect(response.body.data[0].isExpiringSoon).toBe(false);
+  });
+});
+
+/**
+ * POST /amc/:id/renew (2026-08-05). The defining constraint: the OLD record's
+ * amount and dates must be provably unchanged afterwards — chaining exists
+ * precisely so historical terms stay verbatim.
+ */
+describe("POST /amc/:id/renew", () => {
+  async function createOriginal(overrides = {}) {
+    const response = await adminAgent.post("/api/v1/amc").send({
+      flow: "existing_customer",
+      customerId: String(customerOwnedBySales1._id),
+      amount: 12000,
+      startDate: "2026-01-01",
+      renewalDate: "2027-01-01",
+      ...overrides,
+    });
+    return response.body.data;
+  }
+
+  it("creates a new chained record and expires the old one", async () => {
+    const original = await createOriginal();
+
+    const response = await adminAgent.post(`/api/v1/amc/${original._id}/renew`).send({});
+
+    expect(response.status).toBe(201);
+    expect(response.body.data._id).not.toBe(original._id);
+    expect(response.body.data.previousAmcId).toBe(original._id);
+    expect(response.body.data.status).toBe("active");
+    expect(response.body.data.customerId).toBe(String(customerOwnedBySales1._id));
+
+    const oldRecord = await AMC.findById(original._id);
+    expect(oldRecord.status).toBe("expired");
+  });
+
+  it("defaults the new term to start where the old one ended, running one year", async () => {
+    const original = await createOriginal();
+
+    const response = await adminAgent.post(`/api/v1/amc/${original._id}/renew`).send({});
+
+    // No gap: new startDate === old renewalDate.
+    expect(new Date(response.body.data.startDate).toISOString()).toBe(new Date(original.renewalDate).toISOString());
+    expect(new Date(response.body.data.renewalDate).getUTCFullYear()).toBe(2028);
+  });
+
+  it("carries the amount over from the old record by default", async () => {
+    const original = await createOriginal({ amount: 34567 });
+
+    const response = await adminAgent.post(`/api/v1/amc/${original._id}/renew`).send({});
+
+    expect(response.body.data.amount).toBe(34567);
+  });
+
+  it("leaves the OLD record's amount and dates provably untouched", async () => {
+    const original = await createOriginal({ amount: 12000 });
+
+    await adminAgent.post(`/api/v1/amc/${original._id}/renew`).send({
+      amount: 99999,
+      startDate: "2027-06-01",
+      renewalDate: "2028-06-01",
+    });
+
+    const oldRecord = await AMC.findById(original._id);
+    expect(oldRecord.amount).toBe(12000);
+    expect(new Date(oldRecord.startDate).toISOString()).toBe(new Date(original.startDate).toISOString());
+    expect(new Date(oldRecord.renewalDate).toISOString()).toBe(new Date(original.renewalDate).toISOString());
+    // Only `status` changed.
+    expect(oldRecord.status).toBe("expired");
+  });
+
+  it("honours an overridden amount and renewalDate", async () => {
+    const original = await createOriginal();
+
+    const response = await adminAgent.post(`/api/v1/amc/${original._id}/renew`).send({
+      amount: 45000,
+      renewalDate: "2027-07-01",
+    });
+
+    expect(response.body.data.amount).toBe(45000);
+    expect(new Date(response.body.data.renewalDate).toISOString()).toBe(new Date("2027-07-01").toISOString());
+    // startDate still defaulted from the old record's renewalDate.
+    expect(new Date(response.body.data.startDate).toISOString()).toBe(new Date(original.renewalDate).toISOString());
+  });
+
+  it("supports a chain of several renewals, each pointing at its predecessor", async () => {
+    const first = await createOriginal();
+    const second = (await adminAgent.post(`/api/v1/amc/${first._id}/renew`).send({})).body.data;
+    const third = (await adminAgent.post(`/api/v1/amc/${second._id}/renew`).send({})).body.data;
+
+    expect(second.previousAmcId).toBe(first._id);
+    expect(third.previousAmcId).toBe(second._id);
+
+    const all = await adminAgent.get(`/api/v1/amc?customerId=${customerOwnedBySales1._id}`);
+    expect(all.body.data).toHaveLength(3);
+    expect(all.body.data.filter((record) => record.status === "active")).toHaveLength(1);
+  });
+
+  it("rejects a renewalDate that is not after the startDate", async () => {
+    const original = await createOriginal();
+
+    const response = await adminAgent.post(`/api/v1/amc/${original._id}/renew`).send({
+      renewalDate: "2026-06-01",
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("404s for an AMC outside the caller's scope — same gate as PATCH", async () => {
+    const original = await adminAgent.post("/api/v1/amc").send({
+      flow: "existing_customer",
+      customerId: String(customerOwnedBySales2._id),
+      startDate: "2026-01-01",
+      renewalDate: "2027-01-01",
+    });
+
+    const response = await sales1Agent.post(`/api/v1/amc/${original.body.data._id}/renew`).send({});
+
+    expect(response.status).toBe(404);
+  });
+
+  it("rejects a caller with no amc.edit grant", async () => {
+    const original = await createOriginal();
+
+    const response = await employee1Agent.post(`/api/v1/amc/${original._id}/renew`).send({});
+
+    expect(response.status).toBe(403);
+  });
+});

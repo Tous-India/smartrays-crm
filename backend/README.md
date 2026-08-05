@@ -601,6 +601,44 @@ fixture would now block the deactivate step it depends on — changed that lead'
 `"won"` before deactivating, which is also more realistic for what that test is actually
 checking (a closed lead surviving its owner's deletion, not an open one silently reassigned).
 
+### AMC — per-customer filter, renewal chaining, derived near-expiry (2026-08-05)
+
+AMC moved out of its own standalone page and into the Customer Detail page, which drove three
+backend additions. Existing role scoping (`amc.view`/`amc.edit` resolved through the underlying
+Customer's ownership via `getVisibleCustomerIds`) is unchanged throughout.
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| GET | `/amc?customerId=` | `amc.view` | Optional filter narrowing to one customer. Applied as an extra `$and` clause ON TOP of the role scope, never replacing it — a caller asking for a customer outside their scope gets an empty list, not a leak. |
+| POST | `/amc/:id/renew` | `amc.edit` (same gate as `PATCH /amc/:id`) | Body `{ startDate?, renewalDate?, amount? }`, all optional. **201** with the newly created record. |
+
+**`previousAmcId`** (ObjectId → AMC, nullable) records which term a record replaced. Deliberately
+a BACKWARD link: a renewal always knows what it renewed, whereas a forward `nextAmcId` would need
+a write to the OLD record on every renewal — exactly the mutation this design exists to avoid.
+
+**Renewal never mutates the old record's money or dates.** `renewAMC` creates a brand-new record
+and sets *only* `status: "expired"` on the previous one. Its `amount`, `startDate` and
+`renewalDate` are left verbatim, because preserving what each historical term actually cost and
+covered is the whole point of chaining rather than editing dates forward in place. Defaults for
+the new term, each overridable in the body:
+
+- `startDate` = the old record's `renewalDate`, so terms abut with no gap and no overlap.
+- `renewalDate` = that start date + 1 calendar year (`setFullYear`, not `+365 days` — day
+  counting drifts across leap years and a Feb-29 term should renew per the calendar).
+- `amount` = carried over from the old record.
+- `createdFromFlow` = inherited, since that field records how the AMC relationship first began
+  and a renewal doesn't rewrite that history.
+
+**`isExpiringSoon`** is computed server-side in `decorateAMC` and returned on every AMC response:
+`status === "active"` AND `renewalDate` within the next 30 days. The threshold lives in exactly
+one place — the frontend renders the flag rather than re-deriving "what counts as soon", so the
+two can never disagree. An already-past renewal date is NOT "expiring soon" (it's expired, and
+the UI treats those differently), and neither is anything already marked `expired`.
+
+17 new tests in `amc.test.js` cover the filter (including that it still respects scoping), the
+derived flag's four boundary cases, chained renewals, overrides, and — the defining assertion —
+that the old record's amount and both dates are provably unchanged after a renew.
+
 ### Teams (`/api/v1/teams`) — added 2026-07-30
 
 See `.context/final-plan.md` §7.24 for the full design writeup, and §11.9 for the design

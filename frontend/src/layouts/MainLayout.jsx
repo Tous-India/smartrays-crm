@@ -15,7 +15,6 @@ import {
   CarOutlined,
   CustomerServiceOutlined,
   CreditCardOutlined,
-  SafetyCertificateOutlined,
   BarChartOutlined,
 } from "@ant-design/icons";
 import useSessionStore from "../store/sessionStore";
@@ -202,12 +201,6 @@ function MainLayout() {
         label: "Tickets",
         icon: <CustomerServiceOutlined />,
         show: can(user, "tickets", "view_assigned") || can(user, "tickets", "view_all"),
-      },
-      {
-        key: ROUTE_PATHS.AMC,
-        label: "AMC",
-        icon: <SafetyCertificateOutlined />,
-        show: can(user, "amc", "view"),
       },
       { key: ROUTE_PATHS.REPORTS, label: "Reports", icon: <BarChartOutlined />, show: true },
     ];

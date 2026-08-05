@@ -1919,3 +1919,34 @@ Also verified and reported rather than fixed: the Customer Detail page horizonta
 390px viewport by ~43px. Measured identical with this task's changes stashed, so it is
 pre-existing — the offenders are `CustomerHeaderSection`'s button row and the two-column
 `Descriptions` tables, neither of which this task edited.
+
+### 2026-08-05 — AMC moved into Customer Detail; standalone /amc page retired
+
+**Backend.** `GET /amc` gained a `?customerId=` filter, applied on top of the existing
+ownership-derived role scope rather than replacing it (asking for another team's customer returns
+an empty list, not a leak). Added `previousAmcId` to the AMC model and a new
+`POST /amc/:id/renew` behind the same `amc.edit` gate as `PATCH /amc/:id`. Renew creates a NEW
+record chained to its predecessor and sets only `status: "expired"` on the old one — the old
+record's amount and both dates are left verbatim, which is the entire point of chaining rather
+than editing dates forward. Defaults (start where the last term ended, +1 calendar year, same
+amount) are all overridable. `isExpiringSoon` (active, renewing within 30 days) is computed
+server-side in `decorateAMC` so the threshold has one definition instead of one per side.
+**17 new tests**, including the defining one: the old record's figures are provably unchanged
+after a renew.
+
+**Frontend.** New AMC section on Customer Detail rendering stat cards four per row (stepping down
+responsively). Three visually distinct states — active, amber "expiring soon", and neutral
+"expired" — because collapsing the first two would bury the one needing action. Renewal chains
+collapse to ONE card per current term with an expandable "Renewed N×" history line, so past terms
+never compete as top-level cards. Renew opens a modal pre-filled with exactly the server's own
+defaults, all editable; dates are sent as plain `YYYY-MM-DD`, never `toISOString()` on local
+midnight (a test asserts this — it's the day-early bug from the previous batch). `AmcPage.jsx`,
+the `/amc` route and its nav item are deleted. 12 new frontend tests; `npm run build` succeeds.
+
+**Two judgment calls worth flagging.** (1) The task said to delete `frontend/src/modules/amc/`
+entirely, but `amcApi.js` is imported by the Dashboard's `AmcRenewalsDueWidget` and Reports —
+deleting it would have broken both, so the api module was kept and extended while only the page
+was removed. (2) That same widget still links to the now-removed `/amc` route. Its file has
+uncommitted work from a concurrent session, so fixing it would have meant committing someone
+else's WIP; `ROUTE_PATHS.AMC` was kept so the link resolves rather than going `undefined`, and
+repointing it at `/customers` is flagged as a follow-up.

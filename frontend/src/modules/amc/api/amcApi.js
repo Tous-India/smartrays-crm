@@ -1,16 +1,33 @@
 import apiClient from "../../../services/apiClient";
 
 /**
- * Thin wrapper over the shared apiClient for the AMC endpoint this codebase
- * currently consumes (`AmcRenewalsDueWidget`, §7.21's Dashboard widgets) —
- * matching the `lead`/`customer` modules' `api/*Api.js` pattern. `amc`
- * itself has no real frontend module yet (still a routing placeholder, see
- * `frontend/README.md`); more functions belong here once that module's own
- * frontend task is built, mirroring `backend/src/modules/amc/amc.routes.js`'s
- * full surface. No filter params — `GET /amc` takes none, scoping is
- * entirely server-side based on the caller (`amc.service.js#listAMC`).
+ * Thin wrapper over the AMC endpoints, matching the `lead`/`customer`
+ * modules' `api/*Api.js` pattern.
+ *
+ * Consumed by the Dashboard's `AmcRenewalsDueWidget` (§7.21) and — since
+ * 2026-08-05 — by the Customer Detail page's own AMC section, which is where
+ * AMC now lives. The standalone `/amc` page was retired that same day; this
+ * api module deliberately SURVIVED that removal, because the Dashboard
+ * widget and the Reports module still read from it. Scoping is entirely
+ * server-side based on the caller (`amc.service.js#listAMC`); `customerId`
+ * below narrows WITHIN that scope, it never widens it.
  */
 
-export function listAmc() {
-  return apiClient.get("/amc");
+export function listAmc(params = {}) {
+  return apiClient.get("/amc", { params });
+}
+
+export function listAmcForCustomer(customerId) {
+  return apiClient.get("/amc", { params: { customerId } });
+}
+
+/**
+ * Closes the current term and opens the next one as a NEW record — the old
+ * record's amount and dates are never mutated (see
+ * `backend/src/modules/amc/amc.service.js#renewAMC`). Every field in
+ * `payload` is optional; omitting them all takes the server's derived
+ * defaults (start where the old term ended, run one year, same amount).
+ */
+export function renewAmc(amcId, payload = {}) {
+  return apiClient.post(`/amc/${amcId}/renew`, payload);
 }

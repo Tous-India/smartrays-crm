@@ -1893,6 +1893,54 @@ tables in the Site/Billing cards, neither of which this task edited — only reo
 
 ---
 
+### AMC moved onto the Customer Detail page; standalone `/amc` retired (2026-08-05)
+
+AMC only ever made sense per-customer, and a separate top-level page meant leaving the customer
+you were looking at to check their contract. `src/pages/AmcPage.jsx` is deleted, along with the
+`/amc` route and its left-nav item.
+
+**`src/modules/amc/api/amcApi.js` deliberately SURVIVED that removal** — the Dashboard's
+`AmcRenewalsDueWidget` and the Reports module still read from it. Deleting the whole module
+directory, as the task's wording suggested, would have broken both. It gained
+`listAmcForCustomer(customerId)` and `renewAmc(id, payload)`.
+
+**One card per CURRENT term, not per record.** Renewals chain via `previousAmcId`, so a customer
+renewed three times has four records but should still read as ONE ongoing AMC. `buildChains`
+walks the links and renders only each chain's head; past terms fold into an expandable
+"Renewed N×" line instead of competing for attention as top-level cards. A chain's head is the
+record nothing else points at. Records whose predecessor isn't in the fetched set (possible if
+scoping hid it) still head their own chain rather than vanishing, and a cyclic link is guarded
+against rather than hanging the page.
+
+**Three visually distinct card states, deliberately not two.** "Expiring soon" is an amber call
+to act (still live, running out); "expired" is a neutral statement of fact about a term that
+already ended; "active" is plain. Rendering the first two alike would bury the one that needs
+attention. `isExpiringSoon` comes straight from the API — the 30-day threshold is defined once
+server-side and deliberately not recomputed here.
+
+**Four per row** via `xl={6}`, stepping down through `lg`/`sm` so cards stay readable rather than
+shrinking to four cramped columns on a tablet.
+
+**Renew** reuses the existing `amc.edit` grant through `PermissionGate` — no new permission key,
+since renewing is a management action on the record exactly like editing one. It opens a modal
+pre-filled with precisely the defaults the server would derive on its own, so confirming without
+edits produces the same record as posting an empty body, and every field stays editable first.
+Dates are sent as plain `YYYY-MM-DD` via dayjs's local formatter — never `toISOString()` on a
+local-midnight value, which lands a day early at UTC+5:30 (the bug caught in the previous batch);
+a test asserts the payload contains no `T`.
+
+The section fetches its own records rather than being threaded through `useCustomerDetail`, so a
+customer with no AMC costs nothing on the rest of the page and an AMC failure can't break the
+whole detail view. A failed fetch renders a distinct error state, not an empty list.
+
+**Follow-up needed, not done here:** `AmcRenewalsDueWidget`'s "View all AMC records →" link still
+points at the now-removed `/amc` route. That file has uncommitted work from a concurrent session,
+so fixing it would have meant either committing someone else's WIP or leaving a stray edit
+behind. `ROUTE_PATHS.AMC` was kept so the link resolves to a string rather than `undefined`; it
+should be repointed at `/customers`.
+
+---
+
 ## Env Vars
 
 ```

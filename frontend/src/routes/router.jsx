@@ -23,7 +23,6 @@ import TravelLogsPage from "../pages/TravelLogsPage";
 import TicketsPage from "../pages/TicketsPage";
 import TicketDetailPage from "../pages/TicketDetailPage";
 import PaymentsPage from "../pages/PaymentsPage";
-import AmcPage from "../pages/AmcPage";
 import ReportsPage from "../pages/ReportsPage";
 import SettingsPage from "../pages/SettingsPage";
 import UserDetailPage from "../pages/UserDetailPage";
@@ -69,7 +68,6 @@ export const router = createBrowserRouter(
           <Route path="tickets" element={<TicketsPage />} />
           <Route path="tickets/:id" element={<TicketDetailPage />} />
           <Route path="payments" element={<PaymentsPage />} />
-          <Route path="amc" element={<AmcPage />} />
           <Route path="reports" element={<ReportsPage />} />
           {/* Bare /settings redirects to the Users tab — the sidebar's one
               flat "Settings" nav item links here. Both concrete routes

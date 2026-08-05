@@ -23,9 +23,14 @@ export const ROUTE_PATHS = {
   PAYSLIP_DETAIL: "/payroll/:id/payslip",
   TRAVEL_LOGS: "/travel-logs",
   TICKETS: "/tickets",
+  // The standalone /amc PAGE was retired 2026-08-05 (AMC now lives on the
+  // Customer Detail page) — this constant deliberately outlives its route
+  // because `AmcRenewalsDueWidget` still references it, and that file has
+  // uncommitted work from a concurrent session. Its "View all AMC records"
+  // link needs repointing at /customers as a follow-up; see frontend/README.
+  AMC: "/amc",
   TICKET_DETAIL: "/tickets/:id",
   PAYMENTS: "/payments",
-  AMC: "/amc",
   REPORTS: "/reports",
   // Bare `/settings` redirects to `SETTINGS_USERS` — the sidebar's single
   // flat "Settings" nav item links here; the two concrete routes below are

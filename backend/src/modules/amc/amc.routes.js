@@ -1,8 +1,8 @@
 import { Router } from "express";
 import authenticate from "../../middlewares/authenticate.middleware.js";
 import { authorize } from "../../middlewares/authorize.middleware.js";
-import { create, list, update } from "./amc.controller.js";
-import { validateCreateAMCInput, validateUpdateAMCInput } from "./amc.validation.js";
+import { create, list, update, renew } from "./amc.controller.js";
+import { validateCreateAMCInput, validateUpdateAMCInput, validateRenewAMCInput } from "./amc.validation.js";
 
 const amcRouter = Router();
 
@@ -12,5 +12,11 @@ const amcRouter = Router();
 amcRouter.get("/", authenticate, authorize("amc", "view"), list);
 amcRouter.post("/", authenticate, authorize("amc", "edit"), validateCreateAMCInput, create);
 amcRouter.patch("/:id", authenticate, authorize("amc", "edit"), validateUpdateAMCInput, update);
+
+// Renew (2026-08-05) — same `amc.edit` gate as PATCH above, deliberately not
+// a new permission key: renewing is a management action on an AMC record,
+// exactly like editing one. Creates a NEW record and expires the old, so it
+// responds 201 (a resource was created), not 200.
+amcRouter.post("/:id/renew", authenticate, authorize("amc", "edit"), validateRenewAMCInput, renew);
 
 export default amcRouter;

@@ -38,6 +38,19 @@ const amcSchema = new mongoose.Schema(
       enum: AMC_CREATED_FROM_FLOWS,
       required: true,
     },
+    // Renewal chain (2026-08-05) — points at the term this record replaced,
+    // null for an original. Each renewal creates a NEW record rather than
+    // editing dates in place, so every past term keeps its own amount and
+    // date range verbatim; walking `previousAmcId` back reconstructs the
+    // full history. Deliberately a backward link (child -> parent), not a
+    // forward one: a renewal always knows what it renewed, whereas a
+    // forward `nextAmcId` would need a write to the OLD record on every
+    // renewal — exactly the mutation this design exists to avoid.
+    previousAmcId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "AMC",
+      default: null,
+    },
   },
   {
     timestamps: true,
