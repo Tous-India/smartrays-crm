@@ -8,8 +8,10 @@ import apiClient from "../../../services/apiClient";
  *
  * Deliberately NOT here: `GET /customers/:id/invoices` and
  * `GET /customers/:id/ledger` — neither exists on the backend yet (`Invoice`
- * is a placeholder model, real invoicing is a future phase). See
- * `CustomerInvoicePlaceholder.jsx` for how the UI handles that honestly.
+ * is a placeholder model, real invoicing is a future phase). The Customer
+ * Detail page's "Invoice History" placeholder section that used to stand in
+ * for them was removed outright on 2026-08-05, since it could never show
+ * real data — see `frontend/README.md`.
  */
 
 export function listCustomers(filters) {

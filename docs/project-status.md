@@ -1882,3 +1882,40 @@ where it previously returned 400.
 pre-existing leave records ("P3 QA verification", "Personal trip - QA verification", "Family event -
 QA verification") and hard-deleted them. Leave deletion has no audit log, so they are not
 recoverable. All three referenced an employee no longer in the directory. Reported to the user.
+
+### 2026-08-05 — Customer Detail restructure + wider Lead panel (frontend-only)
+
+Reordered the Customer Detail page so **Site & Installation Details leads, above Billing**;
+**removed the Invoice History section entirely** (component deleted, not hidden — invoicing is
+descoped, `Invoice` is a placeholder model with no service/controller, and there was no data
+fetch to remove since the placeholder was static); and put **Contacts and Contracts side by
+side** (`Col xs={24} lg={12}`, so they stack again below 992px rather than squeezing two list
+columns onto a phone). The **Add/Edit Contact form is now two fields per row** — Name +
+Designation, Email + Phone, Primary-contact toggle on its own row — reusing the existing
+`Row gutter={16}` / `Col span={12}` pattern rather than new spacing.
+
+**Activity Log now shows who performed each action, with no backend change needed.** Checked
+first, as asked: `CustomerActivity.performedBy` was already stored on every entry (required,
+`ref: "User"`) and simply never rendered. One wrinkle — `listActivity` returns it *unpopulated*,
+so the API sends a raw ObjectId; the name is resolved client-side against the existing
+`GET /users/dropdown` directory to keep the task frontend-only. Known limitation, flagged rather
+than hidden: that endpoint lists active users only, so entries by a since-deactivated or deleted
+user render "—" (never blank, never a crash). Closing that would take a one-line
+`.populate("performedBy", "name")` on the backend read — not added, since this task was scoped
+frontend-only.
+
+**Lead detail panel widened 640 -> `min(920px, 100vw)`** — Site Details was the cramped section,
+but widening the panel rather than that one section's columns means every section in the
+slide-over gains the same room and none ends up visually out of step. `min()` keeps it exactly
+viewport-width on mobile; verified 920px at 1600px viewport and 390px at 390px.
+
+Customers + Leads suites pass (2 remaining failures are the pre-existing `CustomersListPage`
+sort/wizard tests owned by another session's uncommitted `CustomersTable.jsx` work — confirmed
+they reference none of the files this task touched). `npm run build` succeeds. Screenshotted the
+restructured detail page, the two-column Add Contact modal, the mobile stacked layout, and the
+widened Lead panel.
+
+Also verified and reported rather than fixed: the Customer Detail page horizontally overflows a
+390px viewport by ~43px. Measured identical with this task's changes stashed, so it is
+pre-existing — the offenders are `CustomerHeaderSection`'s button row and the two-column
+`Descriptions` tables, neither of which this task edited.

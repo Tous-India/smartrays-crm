@@ -1829,6 +1829,70 @@ edit save now returning 200 where it previously returned 400.
 
 ---
 
+### Customer Detail restructure + wider Lead panel (2026-08-05)
+
+**Section order.** Site & Installation Details moved above Billing Details. For a solar install
+that's the identifying "what is this job" information, so it now reads before the commercial
+terms rather than after them — a deliberate divergence from
+`leads-customer-functional-spec.md`'s original ordering.
+
+**Invoice History removed entirely** — `CustomerInvoicePlaceholder.jsx` deleted, not hidden.
+Invoicing is descoped: `Invoice` is a backend placeholder model with no service or controller,
+and `GET /customers/:id/invoices`/`/ledger` were never built, so the section could never show
+real data. There was no accompanying data fetch to remove — the placeholder was static and
+`useCustomerDetail` never requested invoices. `customerApi.js`'s note about the missing
+endpoints now points at this README instead of the deleted component.
+
+**Contacts and Contracts side by side.** Both are short list sections that each wasted a
+full-page-width row when stacked. `Row gutter={16}` + `Col xs={24} lg={12}`, so they pair up
+only from `lg` (992px) and stack again below it — a two-column split on a phone or tablet would
+squeeze both list rows (name + tags + action buttons) past readability, and the point is to
+reclaim vertical space where there's width to spare, not to force two columns everywhere. No
+fixed widths, so nothing can overflow horizontally. Verified at 390px (cards stack, distinct
+top offsets) and 1600px (identical top offsets, i.e. genuinely side by side).
+
+**Add/Edit Contact form is two-column.** Every field used to be stacked full-width, making a
+five-field form taller than it needed to be. Paired by what belongs together — identity
+(Name + Designation), then reachability (Email + Phone) — with the Primary-contact checkbox
+keeping its own full-width row, since pairing a lone toggle against a text input would read as
+though the two were related. Uses the same `Row gutter={16}` / `Col span={12}` pattern as
+`CustomerEditModal`/`LeadFormModal` rather than new spacing values. One component serves both
+Add and Edit, so Edit Contact gets the identical layout.
+
+**Activity Log now shows who did it.** `CustomerActivity.performedBy` has always been stored
+(required, `ref: "User"`) — it was simply never rendered. `customer.service.js#listActivity`
+returns it UNPOPULATED, so the API hands over a raw ObjectId; the name is resolved client-side
+against `useUserDirectory()` (`GET /users/dropdown` — authenticate-only, already fetched by
+pickers across the app) rather than adding a `.populate()` server-side, keeping this change
+frontend-only as scoped. The renderer accepts either a raw id or a populated object, so it
+won't need revisiting if that backend read ever starts populating.
+
+Known limitation, deliberately not papered over: that dropdown lists `isActive: true` users
+only, so an entry performed by a since-deactivated or deleted user renders "—" rather than
+blank. Same for any entry with no `performedBy` at all. If attributing actions to departed
+staff matters, the fix is a one-line `.populate("performedBy", "name")` on the backend read.
+
+**Lead detail panel widened, 640 -> `min(920px, 100vw)`.** Site Details' two-column
+`Descriptions` was cramped at 640 — long values (site address, "Estimated Units Consumed")
+wrapped over several lines against their labels. Widening the PANEL rather than that one
+section's columns keeps every section in step: Contact Info, Site Details and Call History all
+gain the same room, and none ends up visually out of step with the others. `min()` rather than a
+bare number so the panel is exactly viewport-width on mobile — a fixed 920 would overflow a
+phone. Verified: 920px at a 1600px viewport, 390px at a 390px viewport (unchanged full-width
+behavior there).
+
+Tests: `CustomerDetailPage.test.jsx` gains an explicit "no Invoice History section" test (also
+asserting the Create Invoice/View Ledger buttons are gone) and a section-order test; its
+"renders every section" test no longer asserts the removed section. Customers + Leads suites
+otherwise unchanged and passing; `npm run build` succeeds.
+
+Pre-existing and NOT introduced here (measured identical with these changes stashed): the
+Customer Detail page horizontally overflows a 390px viewport by ~43px. The offenders are
+`CustomerHeaderSection`'s Edit/Deactivate/Delete button row and the two-column `Descriptions`
+tables in the Site/Billing cards, neither of which this task edited — only reordered.
+
+---
+
 ## Env Vars
 
 ```

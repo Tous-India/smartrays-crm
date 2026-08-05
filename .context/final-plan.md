@@ -4377,6 +4377,35 @@ buttons rendering from a blanket permission check with no per-row scope test.
 
 ---
 
+## §7.34 — Customer Detail restructure + Lead panel width (2026-08-05, frontend-only)
+
+**Invoice History is removed from the product surface.** Invoicing stays descoped: `Invoice`
+remains a placeholder model with no service or controller, and `GET /customers/:id/invoices`
+/`/ledger` were never built. The "Coming soon" placeholder section that held its place in the
+layout is now deleted outright rather than hidden — with no path to real data, an empty section
+on every customer's page was cost without benefit. The backend model is untouched.
+
+**Customer Detail section order diverges from `leads-customer-functional-spec.md`.** Site &
+Installation Details now leads, above Billing — for a solar install it is the identifying
+"what is this job" information. Contacts and Contracts render side by side from `lg` upward
+(stacked below it), reclaiming the vertical space two short list sections were each spending a
+full page-width row on.
+
+**Activity Log attribution needed no backend change.** `CustomerActivity.performedBy` was
+already stored on every entry (required, `ref: "User"`) — it had simply never been rendered.
+The read endpoint returns it unpopulated, so the actor's name is resolved client-side from the
+existing `GET /users/dropdown` directory. Consequence: entries by a since-deactivated or
+deleted user render "—", since that endpoint lists active users only. A one-line
+`.populate("performedBy", "name")` on the backend read would close that gap; deliberately not
+added, as this task was scoped frontend-only.
+
+**Lead detail panel widened 640 -> `min(920px, 100vw)`.** Site Details was the cramped section,
+but the panel was widened rather than that section's columns, so every section in the slide-over
+gains the same room and none ends up visually out of step. Still exactly viewport-width on
+mobile.
+
+---
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a

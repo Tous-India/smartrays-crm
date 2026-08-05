@@ -127,7 +127,19 @@ function LeadDetailPage() {
     <>
       <Drawer
         open
-        width={640}
+        // Widened 640 -> 920 (2026-08-05). Site Details' two-column
+        // `Descriptions` was cramped at 640 — long values (site address,
+        // "Estimated Units Consumed") wrapped over several lines against
+        // their labels. Widening the PANEL rather than that one section's
+        // columns keeps every section in step with each other: Contact
+        // Info, Site Details and Call History all gain the same room, and
+        // none ends up visually out of step with the others.
+        //
+        // `min(920px, 100vw)` not a bare number, so the panel stays exactly
+        // as wide as the viewport on mobile — a fixed 920 would otherwise
+        // exceed a phone's width. Unchanged behavior there: still
+        // effectively full-width, as before.
+        width="min(920px, 100vw)"
         onClose={handleClose}
         title={
           <Space>

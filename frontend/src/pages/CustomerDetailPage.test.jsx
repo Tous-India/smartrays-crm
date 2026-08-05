@@ -95,8 +95,26 @@ describe("CustomerDetailPage", () => {
     expect(screen.getByText(/hello@acme.com/)).toBeInTheDocument();
     expect(screen.getByText("Acme Corp Pvt Ltd")).toBeInTheDocument(); // billing name
     expect(screen.getByText("Website Retainer")).toBeInTheDocument(); // contract
-    expect(screen.getByText("Invoice History")).toBeInTheDocument();
-    expect(screen.getByText(/real invoicing.*isn't built yet/)).toBeInTheDocument();
+  });
+
+  it("no longer renders an Invoice History section — invoicing is descoped (2026-08-05)", async () => {
+    renderDetailPage();
+
+    await screen.findByText("Acme Corp");
+
+    expect(screen.queryByText("Invoice History")).not.toBeInTheDocument();
+    expect(screen.queryByText(/real invoicing.*isn't built yet/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Create Invoice/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /View Ledger/ })).not.toBeInTheDocument();
+  });
+
+  it("shows Site & Installation Details above Billing Details (2026-08-05)", async () => {
+    renderDetailPage();
+
+    await screen.findByText("Acme Corp");
+
+    const headings = screen.getAllByText(/Site & Installation Details|Billing Details/);
+    expect(headings[0]).toHaveTextContent("Site & Installation Details");
   });
 
   it("removing a contract shows the completes-project warning and calls the delete endpoint", async () => {
