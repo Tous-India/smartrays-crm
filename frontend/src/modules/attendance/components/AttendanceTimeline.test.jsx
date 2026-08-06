@@ -98,23 +98,31 @@ describe("AttendanceTimeline", () => {
     expect(screen.queryByTestId(`manual-marker-${DAY_WITHOUT_GAP._id}`)).not.toBeInTheDocument();
   });
 
-  it("renders a geofence violation as a visually distinct orange segment, not the same color as a connectivity gap", () => {
+  // Palette updated §7.4f (2026-08-06): Location moved to its own sky/violet
+  // family. Orange sat one shade from the timeline's red on a 12px bar, so a
+  // connectivity gap and a geofence violation read as one problem twice.
+  it("renders a geofence violation in Location's OWN colour family, nowhere near the timeline's red", () => {
     render(<AttendanceTimeline records={[DAY_WITH_GEOFENCE_VIOLATION]} isLoading={false} />);
 
     const violationSegment = screen.getByTestId("geofence-violation-segment");
-    expect(violationSegment).toHaveClass("bg-orange-500");
-    expect(violationSegment).not.toHaveClass("bg-red-500");
+    expect(violationSegment).toHaveClass("bg-violet-600");
+    expect(violationSegment.className).not.toMatch(/bg-(red|orange)/);
     expect(violationSegment.style.left).not.toBe("0%");
     // No connectivity gap on this record — the two bars must be independent,
     // not the same underlying data driving both columns.
     expect(screen.queryByTestId("attendance-timeline-segment-red")).not.toBeInTheDocument();
   });
 
-  it("renders a plain green bar with no orange segment when there are no geofence violations", () => {
+  it("renders a NEUTRAL GRAY Location base with no violation segment when there are none", () => {
     render(<AttendanceTimeline records={[DAY_WITHOUT_GAP]} isLoading={false} />);
 
     expect(screen.queryByTestId("geofence-violation-segment")).not.toBeInTheDocument();
-    expect(screen.getByTestId("geofence-violation-bar")).toHaveClass("bg-green-400");
+    // §7.4f — the base was green end-to-end, which claimed "inside the
+    // geofence" for the whole day including the night. Gray is now the
+    // shared "nothing here" base in both columns; the shift itself is a
+    // sky-coloured band drawn over it.
+    expect(screen.getByTestId("geofence-violation-bar")).toHaveClass("bg-gray-200");
+    expect(screen.getByTestId("geofence-inside-segment")).toHaveClass("bg-sky-300");
   });
 
   it("never renders a per-row Edit action (Attendance is UI-read-only)", () => {

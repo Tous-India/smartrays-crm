@@ -98,11 +98,12 @@ describe("AttendancePhotoModal", () => {
     expect(screen.queryByRole("button", { name: /Edit Record/ })).not.toBeInTheDocument();
   });
 
-  it("shows a plain green Location bar with no violation when none occurred", () => {
+  it("shows a gray-based Location bar with no violation when none occurred", () => {
     render(<AttendancePhotoModal open record={RECORD_WITH_PHOTOS} onCancel={vi.fn()} showLocation />);
 
     expect(screen.getByText("Location")).toBeInTheDocument();
-    expect(screen.getByTestId("geofence-violation-bar")).toHaveClass("bg-green-400");
+    // §7.4f — gray base outside the shift, sky band for the shift itself.
+    expect(screen.getByTestId("geofence-violation-bar")).toHaveClass("bg-gray-200");
     expect(screen.queryByTestId("geofence-violation-segment")).not.toBeInTheDocument();
   });
 
@@ -110,7 +111,7 @@ describe("AttendancePhotoModal", () => {
     render(<AttendancePhotoModal open record={RECORD_WITH_GEOFENCE_VIOLATION} onCancel={vi.fn()} showLocation />);
 
     const violationSegment = screen.getByTestId("geofence-violation-segment");
-    expect(violationSegment).toHaveClass("bg-orange-500");
+    expect(violationSegment).toHaveClass("bg-violet-600");
     expect(screen.getByText("Connectivity Gaps")).toBeInTheDocument();
   });
 

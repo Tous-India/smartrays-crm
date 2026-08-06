@@ -102,7 +102,7 @@ function NotificationBell() {
     <Dropdown
       trigger={["click"]}
       placement="bottomRight"
-      dropdownRender={() => panel}
+      popupRender={() => panel}
     >
       <Badge count={unreadCount} size="small" overflowCount={99} className="mx-1.25">
         <Button

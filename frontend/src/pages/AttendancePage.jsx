@@ -73,7 +73,7 @@ function AttendancePage() {
 
   const [activeKey, setActiveKey] = useState(items[0].key);
 
-  return <Tabs activeKey={activeKey} onChange={setActiveKey} items={items} destroyInactiveTabPane />;
+  return <Tabs activeKey={activeKey} onChange={setActiveKey} items={items} destroyOnHidden />;
 }
 
 export default AttendancePage;

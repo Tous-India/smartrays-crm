@@ -1,4 +1,4 @@
-const DAY_MS = 24 * 60 * 60 * 1000;
+import { clampToDay, createDayAxis, resolveShiftMs } from "./attendanceDayAxis.js";
 
 /**
  * §7.4e (2026-08-04) — replaces the separate "Connectivity Gap"/"Shift
@@ -29,21 +29,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * real precedent is genuinely a data edge case, not a normal path).
  */
 
-function dayBoundsMs(record) {
-  const dayStart = new Date(record.date);
-  dayStart.setHours(0, 0, 0, 0);
-
-  return { dayStartMs: dayStart.getTime(), dayEndMs: dayStart.getTime() + DAY_MS };
-}
-
-function clampToDay(ms, dayStartMs, dayEndMs) {
-  return Math.min(Math.max(ms, dayStartMs), dayEndMs);
-}
-
-function toPercent(ms, dayStartMs) {
-  return ((ms - dayStartMs) / DAY_MS) * 100;
-}
-
 /**
  * Returns an ordered array of `{ color, leftPercent, widthPercent }`
  * segments to render as absolutely-positioned bars over a GRAY base
@@ -58,16 +43,14 @@ function toPercent(ms, dayStartMs) {
  * so RED wins.
  */
 export function computeTimelineSegments(record) {
-  const checkInMs = record.checkIn?.time ? new Date(record.checkIn.time).getTime() : null;
-  const checkOutMs = record.checkOut?.time ? new Date(record.checkOut.time).getTime() : null;
+  const shift = resolveShiftMs(record);
 
-  if (checkInMs == null) {
+  if (!shift) {
     return [];
   }
 
-  const { dayStartMs, dayEndMs } = dayBoundsMs(record);
-  const shiftStartMs = clampToDay(checkInMs, dayStartMs, dayEndMs);
-  const shiftEndMs = clampToDay(checkOutMs ?? dayEndMs, dayStartMs, dayEndMs);
+  const { shiftStartMs, shiftEndMs } = shift;
+  const axis = createDayAxis(record);
 
   // `startMs`/`endMs` ride along on every segment (2026-08-05) so the bar
   // can label each band with the actual clock range it covers on hover,
@@ -77,8 +60,7 @@ export function computeTimelineSegments(record) {
       color: "green",
       startMs: shiftStartMs,
       endMs: shiftEndMs,
-      leftPercent: toPercent(shiftStartMs, dayStartMs),
-      widthPercent: toPercent(shiftEndMs, dayStartMs) - toPercent(shiftStartMs, dayStartMs),
+      ...axis.band(shiftStartMs, shiftEndMs),
     },
   ];
 
@@ -94,8 +76,7 @@ export function computeTimelineSegments(record) {
         color: "amber",
         startMs: clampedStart,
         endMs: clampedEnd,
-        leftPercent: toPercent(clampedStart, dayStartMs),
-        widthPercent: toPercent(clampedEnd, dayStartMs) - toPercent(clampedStart, dayStartMs),
+        ...axis.band(clampedStart, clampedEnd),
       });
     }
   }
@@ -109,8 +90,7 @@ export function computeTimelineSegments(record) {
         color: "red",
         startMs: gapStartMs,
         endMs: gapEndMs,
-        leftPercent: toPercent(gapStartMs, dayStartMs),
-        widthPercent: toPercent(gapEndMs, dayStartMs) - toPercent(gapStartMs, dayStartMs),
+        ...axis.band(gapStartMs, gapEndMs),
       });
     }
   });

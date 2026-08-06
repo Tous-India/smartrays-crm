@@ -978,6 +978,32 @@ timestamps, two of them near-identical-looking colored bars (`ConnectivityGapBar
 duplication even though the underlying data doesn't overlap. Nothing about the underlying data
 needed fixing before building this on top of it.
 
+#### Timeline and Location share one 24-hour axis (§7.4f, 2026-08-06)
+
+The two bars in an Attendance row are drawn against the same midnight→midnight axis, so a band at
+a given x-offset means the same clock time in both columns. `utils/attendanceDayAxis.js` owns that
+axis (`createDayAxis`, `resolveShiftMs`); `attendanceTimeline.js` and `attendanceGeofence.js` both
+consume it and neither computes percentages itself — two components independently deriving a day
+axis is precisely how they drifted apart. Previously Location stretched check-in→check-out across
+its full width, making the halfway mark 12:00 in one column and 13:30 in the other.
+
+Off-shift hours carry no segment in either column, so the shared `bg-gray-200` base shows through.
+The Location bar used to be `green-400` end to end, asserting "inside the geofence" for the whole
+night.
+
+Location has its own palette — `sky-300` inside the geofence, `violet-600` outside — because
+`green-400` previously meant "connected" in one column and "inside the geofence" in the other, and
+`orange-500` sat one shade from Timeline's `red-500` on a 12px bar. The violation colour is
+deliberately outside the red-orange range.
+
+An open shift (no checkout) runs to the end of the day in BOTH bars, so an in-progress shift ends
+at the same offset in each. Location previously bailed out to plain "Shift in progress" text and
+lost its axis entirely.
+
+**Known limitation, documented in `docs/project-status.md`:** the Location bar reads
+`geofenceViolations[]` only, never `LocationPing`, so a period with no pings looks identical to
+one fully inside the geofence.
+
 #### One tooltip for the whole bar, content keyed by band (2026-08-06)
 
 The bar originally carried a `Tooltip` **and** gave each colour segment its own. Since the bar is

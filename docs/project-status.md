@@ -2311,3 +2311,69 @@ failures. The 4 remaining failures are the known pre-existing timeout flakes in
 
 **Not changed:** the permission registry, every endpoint, and server-side validation. This is a
 presentation layer over the same flat keys.
+
+### 2026-08-06 — Timeline and Location columns reconciled onto one axis (§7.4f)
+
+Frontend only. The two bars in each Attendance row measured different things and looked like they
+measured the same thing.
+
+**Shared axis.** `AttendanceTimelineBar` drew a full calendar day (midnight → midnight) while
+`GeofenceViolationBar` stretched check-in → check-out across its whole width. On a 09:00–18:00
+shift the halfway mark was **12:00 noon in one column and 13:30 in the other**, so a red band in
+Timeline appearing above an orange band in Location read as a correlation that did not exist.
+Both now draw through one `createDayAxis(record)` in the new `utils/attendanceDayAxis.js`; neither
+component derives geometry itself any more, since two independent derivations is how they drifted
+apart. Verified in a real browser: both columns place the shift at left 37.5% / width 37.5% and
+the same 10:30–11:00 event at left 43.75%, and an open shift ends at the same offset (62.5%) in
+both.
+
+**Off-shift is gray, not green.** The Location bar's base was `green-400` end to end, which
+asserted "inside the geofence" for the whole day including the entire night. Gray is now the
+shared "nothing here" base in both columns, with the shift drawn as a band over it.
+
+**Its own palette.** `green-400` previously meant "connected and tracking" in Timeline and
+"inside the geofence" in Location, and `orange-500` sat a shade from Timeline's `red-500` on a
+12px bar. Location is now sky (`sky-300` inside) / violet (`violet-600` outside) — a different
+family, with the violation colour deliberately out of the red-orange range.
+
+**One controlled tooltip.** Location used native `title` attributes, which a browser can display
+at the same moment as an AntD tooltip from the neighbouring column — the same
+two-tooltips-at-once symptom fixed in §7.4e, by a different route. It now uses the same single
+controlled `Tooltip` keyed by hovered band, stating the clock range, the distance
+(`maxDistanceMeters`) on a violation, and what the gray region is. Verified across BOTH columns:
+exactly one tooltip at every band in both, and zero after a sweep across the pair.
+
+Also fixed two AntD deprecations on this page: `destroyInactiveTabPane` → `destroyOnHidden`
+(`AttendancePage`), `dropdownRender` → `popupRender` (`NotificationBell`).
+
+**Tests:** 23 new (13 axis, 10 component). Every one was run against the previous implementation
+first and observed to fail — 10 component tests against the original `GeofenceViolationBar`, and
+the 4 axis-alignment tests against the old shift-relative geometry (reinstated temporarily for
+that purpose, since deleting the module would only have produced a collection error rather than a
+real failure). Four existing tests asserting the old palette were updated. Frontend suite
+**74 files / 606 tests** (was 72/583); the 4 remaining failures are the known pre-existing
+timeout flakes in `LeadDetailPage`, `CustomersListPage`, `PaymentsListPage` and
+`UserManagementPage`, none of them touched here.
+
+## Known limitations
+
+### Location column shows geofence compliance, not tracking coverage (§7.4f, 2026-08-06)
+
+`GeofenceViolationBar` reads `record.geofenceViolations[]` and nothing else. It never consults
+`LocationPing`, so **a stretch of the shift with no pings at all renders identically to one fully
+inside the geofence** — the sky band simply continues. "Device silent" and "device present and
+compliant" are visually indistinguishable.
+
+This matters because silence is common and not necessarily suspicious: browser geolocation stops
+when a tab is backgrounded or a phone locks, so an ordinary shift produces real gaps in ping
+coverage. Today those gaps read as compliance.
+
+Note that this is NOT the same as the Timeline column's red "connectivity gap" band, which comes
+from `connectivityGaps[]` — a separately recorded heartbeat concept. A period can have
+connectivity recorded while location pings are absent, and vice versa.
+
+**Resolution when it is worth building: render ping coverage as a distinct state** on the Location
+bar — a third band (or a hatched/desaturated treatment of the sky band) meaning "checked in, but
+no position reported", derived from `LocationPing` density across the shift. That requires the bar
+to fetch ping data it does not currently receive, which is why it was explicitly out of scope for
+§7.4f rather than folded in.
