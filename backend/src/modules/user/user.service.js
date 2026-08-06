@@ -544,3 +544,126 @@ export async function assignManager(targetId, managerId) {
 
   return user;
 }
+
+// --- Employee self-service (§7.39, 2026-08-05) ---
+
+// Always self-editable: a photo asserts nothing about who someone IS in the
+// org chart, so it needs no gate.
+const ALWAYS_SELF_EDITABLE = ["photo"];
+
+// Self-editable ONLY when the user's manager/admin has granted
+// `canEditOwnProfile`. These identify a person to everyone else, so they are
+// HR-controlled by default.
+const GATED_SELF_EDITABLE = ["name", "phone"];
+
+/**
+ * Fields this endpoint must NEVER write, under any condition. Listed
+ * explicitly rather than relying on "not in the allow-list" alone, so the
+ * rejection message can name them and so the intent survives someone later
+ * widening the allow-list without thinking.
+ *
+ * `password` is absent deliberately: it is changed through
+ * `POST /auth/change-password`, which requires the CURRENT password. Routing
+ * it through here would let anyone with a live session change the password
+ * without proving they know the old one.
+ */
+const NEVER_SELF_EDITABLE = [
+  "email",
+  "role",
+  "permissions",
+  "managerId",
+  "isActive",
+  "teamId",
+  "passwordHash",
+  "password",
+  "canEditOwnProfile",
+  "baseSalary",
+  "customerId",
+];
+
+/**
+ * `PATCH /users/me` — self-update behind a SERVER-SIDE whitelist.
+ *
+ * Rejects loudly (400/403) rather than silently dropping disallowed fields.
+ * A silent drop returns 200 and looks like success, which hides both an
+ * honest client bug and a deliberate privilege-escalation attempt — and an
+ * employee PATCHing their own `role` or `managerId` is the obvious attack
+ * here, so it must fail visibly and be attributable.
+ */
+export async function updateOwnProfile(userId, payload = {}) {
+  const submittedFields = Object.keys(payload);
+
+  const forbidden = submittedFields.filter((field) => NEVER_SELF_EDITABLE.includes(field));
+
+  if (forbidden.length > 0) {
+    throw new ApiError(403, `These fields cannot be changed here: ${forbidden.join(", ")}`);
+  }
+
+  const unknown = submittedFields.filter(
+    (field) => ![...ALWAYS_SELF_EDITABLE, ...GATED_SELF_EDITABLE].includes(field)
+  );
+
+  if (unknown.length > 0) {
+    throw new ApiError(400, `Unrecognised field(s): ${unknown.join(", ")}`);
+  }
+
+  const user = await User.findById(userId);
+
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  const gatedAttempts = submittedFields.filter((field) => GATED_SELF_EDITABLE.includes(field));
+
+  if (gatedAttempts.length > 0 && !user.canEditOwnProfile) {
+    throw new ApiError(
+      403,
+      "Your profile name and phone are managed by your manager. Ask them to enable self-editing."
+    );
+  }
+
+  submittedFields.forEach((field) => {
+    user[field] = payload[field];
+  });
+
+  await user.save();
+
+  return user;
+}
+
+/** The caller's OWN role and permissions — never anyone else's. */
+export async function getOwnPermissions(userId) {
+  const user = await User.findById(userId).select("role permissions");
+
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  return { role: user.role, permissions: user.permissions || {} };
+}
+
+/**
+ * Only the target user's own manager, or an admin, may toggle
+ * `canEditOwnProfile` — the point of the flag is that it is granted TO
+ * someone BY someone else.
+ */
+export async function setCanEditOwnProfile(targetUserId, canEdit, requestingUser) {
+  const target = await User.findById(targetUserId);
+
+  if (!target) {
+    throw new ApiError(404, "User not found");
+  }
+
+  const isOwnManager = String(target.managerId) === String(requestingUser._id);
+
+  if (requestingUser.role !== "admin" && !isOwnManager) {
+    throw new ApiError(403, "Only this person's manager or an admin can change this");
+  }
+
+  target.canEditOwnProfile = Boolean(canEdit);
+  await target.save();
+
+  return target;
+}
+
+export { ALWAYS_SELF_EDITABLE, GATED_SELF_EDITABLE, NEVER_SELF_EDITABLE };

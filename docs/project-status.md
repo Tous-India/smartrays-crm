@@ -2194,3 +2194,24 @@ LeadDetailPage / CustomersListPage / PaymentsListPage / UserManagementPage). Bac
 Both builds succeed. **Deployed backend and frontend together** — deploying the backend alone
 would have locked every admin and manager out, since login returns `requiresEnrolment` with no
 cookie and the old frontend could not handle it.
+
+### 2026-08-05 — Employee self-service backend (§7.39)
+
+New `GET /users/me/permissions` (own role/permissions only — the admin-only per-user endpoint is
+untouched, not relaxed), `PATCH /users/me`, `PATCH /users/:id/can-edit-own-profile`, and
+`PATCH /teams/:id/show-contacts`. Added `photo` + `canEditOwnProfile` to User and
+`showContactsToMembers` to Team, all defaulting closed.
+
+**`PATCH /users/me` rejects rather than silently ignores.** A silent drop returns 200 and looks
+like success, hiding both client bugs and real escalation attempts — and an employee PATCHing
+their own role or managerId is the obvious attack. Always allowed: photo. Gated on
+`canEditOwnProfile`: name, phone. Never: email, role, permissions, managerId, isActive, teamId,
+passwordHash, canEditOwnProfile, baseSalary, customerId. A request containing a forbidden field is
+refused whole — its legitimate fields are not partially applied. `password` is on the never-list
+deliberately: it goes through `/auth/change-password`, which requires the current password.
+
+`showContactsToMembers` omits contact fields from the query itself, so they never reach the
+browser — not stripped afterwards, not hidden in the UI. Defaults false; only the team's own head
+or an admin can toggle it.
+
+Backend **778/778 passing** (23 new).

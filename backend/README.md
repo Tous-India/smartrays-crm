@@ -601,6 +601,48 @@ fixture would now block the deactivate step it depends on — changed that lead'
 `"won"` before deactivating, which is also more realistic for what that test is actually
 checking (a closed lead surviving its owner's deletion, not an open one silently reassigned).
 
+### Employee self-service (§7.39, 2026-08-05)
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| GET | `/users/me/permissions` | any signed-in user | The caller's OWN role + permissions. There is no id parameter, so it cannot return anyone else's. |
+| PATCH | `/users/me` | any signed-in user | Self-update behind a server-side field whitelist. |
+| PATCH | `/users/:id/can-edit-own-profile` | that user's manager, or admin | Grants/revokes self-editing of name + phone. |
+| PATCH | `/teams/:id/show-contacts` | that team's head, or admin | Opts the team into showing members' contact details. |
+
+**The admin-only `/users/:id/permissions` gate is untouched** — `/users/me/permissions` is a
+separate endpoint, not a relaxation of the existing one.
+
+**`PATCH /users/me` rejects loudly; it never silently drops fields.** A silent drop returns 200
+and looks like success, which conceals both an honest client bug and a deliberate escalation
+attempt — and an employee PATCHing their own `role` or `managerId` is the obvious attack here.
+Three tiers, enforced in the service layer:
+
+- **Always allowed:** `photo`. A photo asserts nothing about who someone is in the org chart.
+- **Allowed only when `canEditOwnProfile`:** `name`, `phone`. These identify a person to everyone
+  else, so they are HR-controlled by default (`canEditOwnProfile` defaults to **false** — letting
+  anyone rename themselves freely makes an org chart untrustworthy).
+- **Never allowed:** `email`, `role`, `permissions`, `managerId`, `isActive`, `teamId`,
+  `passwordHash`, `canEditOwnProfile`, `baseSalary`, `customerId` → **403**.
+
+`password` is deliberately on the never-list: it changes through `POST /auth/change-password`,
+which requires the CURRENT password. Routing it through here would let anyone with a live session
+change a password without proving they knew the old one. A whole request containing a forbidden
+field is refused — the legitimate fields in it are not partially applied.
+
+`canEditOwnProfile` cannot be set by the user it applies to, only by their manager or an admin;
+self-granting would make the flag meaningless.
+
+**`showContactsToMembers` omits contact fields from the QUERY**, rather than stripping them after
+the fact or hiding them client-side. A field that is never selected cannot later leak through a
+serializer change, a debug log, or a client that ignores the flag. Defaults to **false**: a
+teammate list is for knowing who you work with, and defaulting phone numbers and emails open
+would have leaked everyone's details org-wide the moment the team page shipped. Only that team's
+own head or an admin may toggle it — a manager of a different team has no business making that
+disclosure decision.
+
+23 tests in `selfService.test.js`.
+
 ### Two-factor authentication (§7.38, 2026-08-05)
 
 TOTP + recovery codes. **The email factor is deliberately NOT built** — production SMTP is set to

@@ -89,7 +89,35 @@ export async function getTeamMembers(teamId, requestingUser) {
   const team = await findTeamOrThrow(teamId);
   ensureCanReadTeam(team, requestingUser);
 
-  return User.find({ managerId: team.headManagerId }).select("_id name role email").sort({ name: 1 });
+  // §7.39 (2026-08-05) — contact details are OMITTED from the query itself
+  // when the team hasn't opted in, not stripped afterwards and not merely
+  // hidden by the UI. A field that is never selected cannot be leaked by a
+  // later serializer change, a debug log, or a client that ignores the flag.
+  const contactFields = team.showContactsToMembers ? " email phone" : "";
+
+  return User.find({ managerId: team.headManagerId })
+    .select(`_id name role photo${contactFields}`)
+    .sort({ name: 1 });
+}
+
+/**
+ * Toggling `showContactsToMembers` is restricted to the team's OWN head or an
+ * admin — it is a disclosure decision about that team's members, so a
+ * manager of some other team has no business making it.
+ */
+export async function setShowContactsToMembers(teamId, showContacts, requestingUser) {
+  const team = await findTeamOrThrow(teamId);
+
+  const isTeamHead = String(team.headManagerId) === String(requestingUser._id);
+
+  if (requestingUser.role !== "admin" && !isTeamHead) {
+    throw new ApiError(403, "Only this team's head or an admin can change this");
+  }
+
+  team.showContactsToMembers = Boolean(showContacts);
+  await team.save();
+
+  return team;
 }
 
 /**

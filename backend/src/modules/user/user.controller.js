@@ -1,4 +1,5 @@
 import asyncWrapper from "../../utils/asyncWrapper.js";
+import { getOwnPermissions, updateOwnProfile, setCanEditOwnProfile } from "./user.service.js";
 import ApiResponse from "../../utils/ApiResponse.js";
 import {
   listUsers,
@@ -72,4 +73,24 @@ export const resetPassword = asyncWrapper(async (req, res) => {
   res
     .status(200)
     .json(new ApiResponse(200, { user, tempPassword }, "Password reset successfully"));
+});
+
+// --- Employee self-service (§7.39, 2026-08-05) ---
+
+export const getMyPermissions = asyncWrapper(async (req, res) => {
+  const result = await getOwnPermissions(req.user._id);
+
+  res.status(200).json(new ApiResponse(200, result, "Your permissions fetched successfully"));
+});
+
+export const updateMe = asyncWrapper(async (req, res) => {
+  const user = await updateOwnProfile(req.user._id, req.body);
+
+  res.status(200).json(new ApiResponse(200, user, "Profile updated successfully"));
+});
+
+export const toggleCanEditOwnProfile = asyncWrapper(async (req, res) => {
+  const user = await setCanEditOwnProfile(req.params.id, req.body.canEditOwnProfile, req.user);
+
+  res.status(200).json(new ApiResponse(200, user, "Profile-editing permission updated"));
 });

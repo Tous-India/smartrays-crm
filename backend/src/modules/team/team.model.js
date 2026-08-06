@@ -42,6 +42,17 @@ const teamSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
+    // Whether members of this team may see each other's contact details
+    // (§7.39, 2026-08-05). Default false — a teammate list is for knowing WHO
+    // you work with; phone numbers and emails are a separate disclosure, and
+    // defaulting them open would leak everyone's details org-wide the moment
+    // the team page shipped. When false the contact fields are OMITTED from
+    // the response entirely rather than hidden client-side, so they never
+    // travel to a browser that shouldn't have them.
+    showContactsToMembers: {
+      type: Boolean,
+      default: false,
+    },
     isActive: {
       type: Boolean,
       default: true,

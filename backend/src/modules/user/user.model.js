@@ -45,6 +45,23 @@ const userSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
+    // Self-service profile photo (§7.39, 2026-08-05) — a Cloudinary URL,
+    // same storage approach as attendance photos. Always self-editable via
+    // `PATCH /users/me`: a photo carries no authorisation meaning, unlike
+    // name/phone which identify someone in the org chart.
+    photo: {
+      type: String,
+      default: null,
+    },
+    // Whether this user may edit their OWN name/phone (§7.39). Default false:
+    // in most orgs those fields are HR-controlled, and letting anyone rename
+    // themselves freely makes an org chart untrustworthy. Set by that user's
+    // manager or by an admin — never by the user themselves, which would
+    // make the flag meaningless.
+    canEditOwnProfile: {
+      type: Boolean,
+      default: false,
+    },
     isActive: {
       type: Boolean,
       default: true,

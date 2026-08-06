@@ -13,6 +13,7 @@ import {
   listTypes,
   createType,
   updateType,
+  toggleShowContacts,
 } from "./team.controller.js";
 import {
   validateCreateTeamInput,
@@ -47,6 +48,11 @@ teamRouter.delete("/:id", authenticate, manage, remove);
 teamRouter.get("/:id/members", authenticate, read, getMembers);
 teamRouter.post("/:id/members", authenticate, manage, validateAddMemberInput, addMember);
 teamRouter.delete("/:id/members/:userId", authenticate, manage, removeMember);
+
+// §7.39 — the team's own head may toggle this, so it is NOT behind `manage`
+// (admin-only). The head-or-admin check lives in the service, which has the
+// team document needed to answer it.
+teamRouter.patch("/:id/show-contacts", authenticate, read, toggleShowContacts);
 
 export default teamRouter;
 

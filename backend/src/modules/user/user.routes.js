@@ -12,6 +12,9 @@ import {
   changeManager,
   resetPassword,
   hardDelete,
+  getMyPermissions,
+  updateMe,
+  toggleCanEditOwnProfile,
 } from "./user.controller.js";
 import {
   validateUpdateUserInput,
@@ -30,6 +33,11 @@ userRouter.get("/dropdown", authenticate, dropdown);
 // users.* grant still gets a valid list back, scoped down to just themselves
 // by user.service.js#resolveVisibleUserFilter's fallbackToSelf. Broader
 // scoping (view_team/view_all) is still resolved entirely in the service.
+// §7.39 — registered BEFORE "/:id" so Express never matches "me" as a user
+// id. Self-service only: these never widen the admin-only endpoints below.
+userRouter.get("/me/permissions", authenticate, getMyPermissions);
+userRouter.patch("/me", authenticate, updateMe);
+
 userRouter.get("/", authenticate, list);
 
 // No route-level permission gate — self-access is always allowed regardless
@@ -63,6 +71,10 @@ userRouter.patch(
 // team-head, reason-required) live in user.service.js#hardDeleteUser so
 // their rejection order is exact and unit-testable, not split across a
 // validation middleware and the service.
+// Granting a user the right to edit their own name/phone — their manager or
+// an admin, enforced in the service since it needs the target's managerId.
+userRouter.patch("/:id/can-edit-own-profile", authenticate, toggleCanEditOwnProfile);
+
 userRouter.delete("/:id", authenticate, requireAdmin, hardDelete);
 
 export default userRouter;

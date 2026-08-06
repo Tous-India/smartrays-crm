@@ -12,6 +12,7 @@ import {
   listTeamTypes,
   createTeamType,
   updateTeamType,
+  setShowContactsToMembers,
 } from "./team.service.js";
 
 export const list = asyncWrapper(async (req, res) => {
@@ -78,4 +79,10 @@ export const updateType = asyncWrapper(async (req, res) => {
   const type = await updateTeamType(req.params.id, req.body);
 
   res.status(200).json(new ApiResponse(200, type, "Team type updated successfully"));
+});
+
+export const toggleShowContacts = asyncWrapper(async (req, res) => {
+  const team = await setShowContactsToMembers(req.params.id, req.body.showContactsToMembers, req.user);
+
+  res.status(200).json(new ApiResponse(200, team, "Team contact visibility updated"));
 });
