@@ -1,3 +1,4 @@
+import { useState } from "react";
 import dayjs from "dayjs";
 import { Space, Tooltip, Typography } from "antd";
 import { computeTimelineSegments, computeAttendanceDurations, formatDuration } from "../utils/attendanceTimeline";
@@ -17,6 +18,10 @@ const SEGMENT_LABEL = {
   red: "Connectivity issue — no tracking signal received",
   amber: "On break",
 };
+
+// The GRAY base band's own meaning — "nothing here" is a real state, not an
+// absence of information.
+const BASE_LABEL = "Not tracked — outside the checked-in period for this day";
 
 function formatClock(ms) {
   return dayjs(ms).format("h:mm A");
@@ -45,21 +50,49 @@ function AttendanceTimelineBar({ record }) {
   const segments = computeTimelineSegments(record);
   const { shiftMs, connectedMs, issueMs } = computeAttendanceDurations(record);
 
+  // Which band the cursor is over; `null` means the GRAY base.
+  const [activeIndex, setActiveIndex] = useState(null);
+
+  const activeSegment = activeIndex == null ? null : segments[activeIndex];
+  const title = activeSegment ? segmentTooltip(activeSegment) : BASE_LABEL;
+
   return (
     <div className="flex min-w-[220px] flex-col gap-1">
-      {/* The GRAY base carries its own tooltip — "nothing here" is a real
-          state (before check-in, after check-out, or never checked in at
-          all) and was previously the one band with no explanation. */}
-      <Tooltip title="Not tracked — outside the checked-in period for this day">
-        <div className="relative h-3 w-full overflow-hidden rounded bg-gray-200" data-testid="attendance-timeline-bar">
+      {/*
+        ONE tooltip for the whole bar, its content keyed by the hovered band
+        (2026-08-06). Previously the bar had a Tooltip AND each segment had
+        its own; since the bar is an ANCESTOR of every segment, its
+        mouseenter fired by bubbling on every hover and two tooltips opened
+        together — reproduced in a real browser on every coloured band, not
+        just at boundaries.
+
+        Removing the outer tooltip alone would have cost the gray base its
+        explanation, which is a real state (before check-in, after
+        check-out, or never checked in at all) and the one band that used to
+        have none. Swapping the content of a single tooltip keeps all four
+        meanings and makes two-at-once structurally impossible rather than
+        merely unlikely.
+      */}
+      <Tooltip title={title}>
+        <div
+          className="relative h-3 w-full overflow-hidden rounded bg-gray-200"
+          data-testid="attendance-timeline-bar"
+          // Leaving the bar entirely resets to the base band. Moving from a
+          // segment onto the base fires that segment's own mouseleave below.
+          onMouseLeave={() => setActiveIndex(null)}
+        >
           {segments.map((segment, index) => (
-            <Tooltip key={index} title={segmentTooltip(segment)}>
-              <div
-                className={`absolute top-0 h-full ${SEGMENT_COLOR_CLASS[segment.color]}`}
-                data-testid={`attendance-timeline-segment-${segment.color}`}
-                style={{ left: `${segment.leftPercent}%`, width: `${segment.widthPercent}%` }}
-              />
-            </Tooltip>
+            <div
+              key={index}
+              className={`absolute top-0 h-full ${SEGMENT_COLOR_CLASS[segment.color]}`}
+              data-testid={`attendance-timeline-segment-${segment.color}`}
+              style={{ left: `${segment.leftPercent}%`, width: `${segment.widthPercent}%` }}
+              onMouseEnter={() => setActiveIndex(index)}
+              // Ordering is safe when moving between two segments: the DOM
+              // fires the outgoing element's mouseleave before the incoming
+              // element's mouseenter, so the incoming index wins.
+              onMouseLeave={() => setActiveIndex((current) => (current === index ? null : current))}
+            />
           ))}
         </div>
       </Tooltip>

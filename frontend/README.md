@@ -978,6 +978,36 @@ timestamps, two of them near-identical-looking colored bars (`ConnectivityGapBar
 duplication even though the underlying data doesn't overlap. Nothing about the underlying data
 needed fixing before building this on top of it.
 
+#### One tooltip for the whole bar, content keyed by band (2026-08-06)
+
+The bar originally carried a `Tooltip` **and** gave each colour segment its own. Since the bar is
+an **ancestor** of every segment, its `mouseenter` fired by bubbling on each hover and two
+tooltips opened simultaneously — the gray-base explanation and the segment's, overlapping each
+other on screen.
+
+Reproduced in a real browser before changing anything (jsdom has no meaningful hover or pointer
+semantics), with a synthetic record covering all four bands and no database write. The
+measurements identified the cause precisely: **two tooltips in the dead centre of every coloured
+band**, gray base alone showing one. That ruled out sub-pixel segment overlap (which would only
+misbehave at boundaries — and the segments deliberately *layer*, amber/red painted over green,
+rather than abutting) and stale tooltips (a fast sweep settled back to zero).
+
+The fix is a **single controlled `Tooltip` wrapping the bar, whose `title` is keyed by the
+hovered band** — segments are plain positioned divs that set an `activeIndex`, and `null` means
+the gray base. Removing the outer tooltip alone would have been the smaller change but would have
+silently dropped the gray base band's own explanation, which is a real state (before check-in,
+after check-out, or never checked in at all). Swapping one tooltip's content keeps all four
+meanings and makes two-at-once structurally impossible rather than merely unlikely.
+
+Verified in the browser after the fix: exactly one tooltip at the centre of every band, at all
+eight segment boundaries (probed at ±1.5px, ±0.5px and dead-on), and throughout a fast sweep,
+settling to zero on exit.
+
+`AttendanceTimelineBar.tooltip.test.jsx` guards the structure. It replaces AntD's `Tooltip` with a
+passthrough that *wraps* rather than clones, so triggers become countable — a first attempt that
+asserted on the real rendered DOM passed against the **buggy** component and was discarded. The
+kept version fails on 6 of its 9 cases if the old shape is restored.
+
 **`utils/attendanceTimeline.js`** — two pure, independently-tested functions, kept separate from
 the presentational component so the actual math has its own direct test coverage (matching this
 project's established "extract pure decision logic" precedent, e.g.
