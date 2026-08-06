@@ -4583,6 +4583,30 @@ Design decisions worth keeping:
 4. **Logout does not clear the cookie** — surviving sign-out is the point of the feature. It goes
    away on revocation, password change, or expiry.
 
+## §7.41 — Permissions matrix redesign (2026-08-06)
+
+One row per module: level (None/View/Edit/Full) + scope (Own/Team/All) + capability chips,
+replacing the horizontally-scrolling checkbox grid. Frontend only — the registry, the endpoints
+and `validatePermissionsBody` are unchanged and remain the source of truth.
+
+The pre-build audit of all 46 keys across 15 modules is what shaped this:
+
+1. **The CRUD ladder is per-module, not universal.** `leave` has view+delete but no create/edit;
+   `amc` has view+edit but no create/delete; `tickets` has no plain `view`. A universal ladder
+   would emit unregistered keys and make those rows unsaveable (400).
+2. **Scope is not a permission key for Leads/Customers/Payments/AMC** — it is resolved from the
+   role and record ownership in the service layer. Those rows render scope inert, with the reason.
+3. **Tickets' tiers are own/assigned/all**, where the middle one is not "team", so all five of its
+   keys render as chips rather than being coerced into the scope control.
+4. **No stored grant is unrepresentable**, but three existing ones sit off a clean rung
+   (`manager.leave` has delete with no edit; `manager.tickets` and `customer.tickets` have create
+   with no view). They round-trip byte-for-byte because the selection carries the real key sets
+   and only re-expands on an explicit user choice — never on load.
+5. **Live template drift exists**: 2 of 3 users diverge from their role template today, including
+   `teams.view_team` granted to the manager template on 2026-08-05 that never reached the existing
+   manager user. `reconcileRoleTemplate` repairs templates only, never users — which is exactly
+   why divergence is now marked on the override screen.
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a

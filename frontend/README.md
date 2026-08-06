@@ -2229,6 +2229,48 @@ down a path that cannot work when they can simply change their password directly
 
 ---
 
+### Permissions matrix — level + scope (§7.41, 2026-08-06)
+
+Replaces the checkbox grid, which had one column per action across the union of every action in
+the registry: it scrolled horizontally on every screen and got wider each time a module gained a
+key. Now **one row per module** — a level (None/View/Edit/Full), a scope (Own/Team/All), and
+standalone capability keys as toggle chips.
+
+**The layout contract.** Both selectors are fixed-width (236px / 172px); the label column absorbs
+the remainder with `min-width: 0` and truncates, carrying the full name in `title`. That
+`min-width: 0` is load-bearing — a flex item defaults to `min-width: auto` and refuses to shrink
+below its content, which is the usual way a row like this starts scrolling. Below ~900px the row
+wraps: selectors move under the label, chips wrap onto as many lines as they need. Verified in a
+real browser at 1280 / 1024 / 390: `documentElement.scrollWidth === clientWidth` at all three,
+15 rows, zero overflowing. jsdom performs no layout (both values are 0 there), so the jsdom test
+asserts the structural cause instead — that adding actions to a module changes what a level maps
+to and adds chips, never a control.
+
+**The ladder is per-module**, derived from each module's own registry entry — see
+`permissionModel.js`. A universal view→create→edit→delete ladder would emit keys that don't exist
+for `leave` (delete, no edit), `amc` (edit, no delete) or `tickets` (no plain view), and the
+backend validator 400s on an unknown action — so it wouldn't merely mis-render those rows, it
+would make them unsaveable. Levels that would produce an identical key set aren't offered at all
+(`amc` has no Full; `leave` has no Edit).
+
+**Scope renders inert where it isn't a permission key.** Leads, Customers, Payments and AMC scope
+by record ownership resolved from the role in the service layer, not by a stored key, so the
+control is disabled with that stated as the reason rather than offering a choice with nowhere to
+save. Tickets is chips-only: its tiers are own/assigned/all, and "assigned" is not "team".
+
+**Nothing is rewritten on load.** The selection carries the actual key sets and only re-expands on
+an explicit choice. Loading `manager.location` (stored as `view_team` with no `view`) and saving
+it would otherwise silently add `location.view` — a grant nobody asked for, on a row that was only
+looked at. Same trap on a partial ladder. Confirmed live: the real manager template opens with
+Save disabled and "No unsaved changes".
+
+**Drift.** Changed rows are marked with their previous value ("was View · Team") and counted in
+the header; Save is disabled until something actually differs. On the user-override screen a
+second baseline — that user's role template — marks every divergent row, because
+`reconcileRoleTemplate` repairs templates but never existing users, so template→user drift is
+permanent until someone resets. Removing your OWN `permissions.manage` requires an explicit
+confirmation; it is the one change that locks you out of this page with no way back.
+
 ### Remember this device (§7.40, 2026-08-05)
 
 A checkbox on `TwoFactorChallenge`, **unchecked by default** — opt-in, never opt-out. Its wording

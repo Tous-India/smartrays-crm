@@ -2262,3 +2262,52 @@ checked, not just failures). One existing frontend assertion in `LoginPage.twoFa
 pinned the old 2-argument `verifyTwoFactor` call and was updated to the new signature. The four
 remaining frontend failures (`LeadDetailPage`, `CustomersListPage`, `PaymentsListPage`,
 `UserManagementPage`) are the known pre-existing timeout flakes in files this task never touched.
+
+### 2026-08-06 — Permissions matrix redesigned as level + scope (§7.41)
+
+Frontend only. The old matrix rendered one column per action across the union of every action in
+the registry, so it scrolled sideways on every screen and grew wider whenever a module gained a
+key. Now one row per module: a level (None/View/Edit/Full), a scope (Own/Team/All), and the
+standalone capability keys as toggle chips.
+
+**Audited before building, as instructed** — 46 keys across 15 modules. Three findings changed the
+design:
+
+- The CRUD ladder is **per-module**, not universal. `leave` has view+delete but no create/edit;
+  `amc` has view+edit but no create/delete; `tickets` has no plain `view`. A universal ladder
+  would emit keys outside the registry, which `validatePermissionsBody` rejects with 400 — those
+  rows would have been unsaveable, not merely mis-rendered.
+- Leads, Customers, Payments and AMC have **no scope keys at all**; scope there is resolved from
+  the role and record ownership inside the services. Their scope control renders inert with that
+  stated, rather than offering a choice with nowhere to save.
+- Three existing grants sit off a clean rung (`manager.leave` holds delete with no edit;
+  `manager.tickets` and `customer.tickets` hold create with no view). None is unrepresentable, but
+  all three would have been silently rewritten by a naive model.
+
+That last point drove the central implementation decision: **the selection carries the real key
+sets and only re-expands on an explicit user choice, never on load.** Without it, opening
+`manager.location` (stored as `view_team` with no `view`) and saving would have added
+`location.view` — a grant nobody asked for, on a row that was only looked at. Confirmed live: the
+real manager template opens with Save disabled and "No unsaved changes".
+
+**Live drift found during the audit** (this is what item 5 was about): 2 of 3 users diverge from
+their role template right now, including `teams.view_team`, granted to the manager template on
+2026-08-05, which never reached the existing manager user. `reconcileRoleTemplate` repairs
+templates but never existing users, so that drift is permanent until someone resets. The override
+screen now marks every divergent row against the user's template as a second baseline.
+
+**Layout, verified rather than assumed.** Fixed-width selectors (236px/172px), label column with
+`min-width: 0` and truncation, rows wrapping below ~900px. Measured in a real browser at 1280,
+1024 and 390: `documentElement.scrollWidth === clientWidth` at all three, 15 rows rendered, zero
+overflowing. jsdom does no layout — both values are 0 there, so a bare `scrollWidth ===
+clientWidth` assertion would pass vacuously; the jsdom test asserts the structural cause instead
+(adding actions to a module adds chips, never a control).
+
+**Tests:** 74 (50 model + 24 component), all passing. Frontend suite **71 files / 574 tests**
+(was 70/509; the old 9-test matrix file was replaced by 74 tests). Suite counts checked, not just
+failures. The 4 remaining failures are the known pre-existing timeout flakes in
+`CustomersListPage` and `PaymentsListPage` — untouched by this task, and `LeadDetailPage`,
+`LeaveSection` and `UserManagementPage` all pass when re-run in isolation.
+
+**Not changed:** the permission registry, every endpoint, and server-side validation. This is a
+presentation layer over the same flat keys.

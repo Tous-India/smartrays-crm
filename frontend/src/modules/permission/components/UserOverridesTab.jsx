@@ -1,8 +1,14 @@
 import { useEffect, useState } from "react";
 import { Select, Button, Popconfirm, Spin, App } from "antd";
 import useUserDirectory from "../../../hooks/useUserDirectory";
+import useSessionStore from "../../../store/sessionStore";
 import { USER_ROLE_LABELS } from "../../user/constants/user.constants";
-import { getUserPermissions, updateUserPermissions, resetUserPermissions } from "../api/permissionApi";
+import {
+  getUserPermissions,
+  updateUserPermissions,
+  resetUserPermissions,
+  getRoleTemplate,
+} from "../api/permissionApi";
 import PermissionMatrix from "./PermissionMatrix";
 
 /**
@@ -29,8 +35,13 @@ import PermissionMatrix from "./PermissionMatrix";
 function UserOverridesTab({ registry, initialUserId = null }) {
   const { message } = App.useApp();
   const { users } = useUserDirectory();
+  const currentUser = useSessionStore((state) => state.user);
   const [selectedUserId, setSelectedUserId] = useState(initialUserId);
   const [permissions, setPermissions] = useState(null);
+  // §7.41 — the role template is fetched as a SECOND baseline, purely so the
+  // matrix can mark which of this user's grants diverge from it. Never
+  // written back; it is a reference, not an edit target.
+  const [templatePermissions, setTemplatePermissions] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
@@ -44,17 +55,29 @@ function UserOverridesTab({ registry, initialUserId = null }) {
     let isMounted = true;
     setIsLoading(true);
 
-    getUserPermissions(selectedUserId).then((response) => {
-      if (isMounted) {
-        setPermissions(response.data.data);
-        setIsLoading(false);
-      }
-    });
+    const selectedUser = users.find((user) => user._id === selectedUserId);
+
+    Promise.all([
+      getUserPermissions(selectedUserId),
+      selectedUser ? getRoleTemplate(selectedUser.role) : Promise.resolve(null),
+    ])
+      .then(([permissionsResponse, templateResponse]) => {
+        if (isMounted) {
+          setPermissions(permissionsResponse.data.data);
+          setTemplatePermissions(templateResponse?.data?.data?.permissions ?? null);
+          setIsLoading(false);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      });
 
     return () => {
       isMounted = false;
     };
-  }, [selectedUserId]);
+  }, [selectedUserId, users]);
 
   async function handleSave(newPermissions) {
     setIsSaving(true);
@@ -127,6 +150,8 @@ function UserOverridesTab({ registry, initialUserId = null }) {
               value={permissions}
               onSave={handleSave}
               isSaving={isSaving}
+              templatePermissions={templatePermissions}
+              isEditingSelf={String(selectedUserId) === String(currentUser?._id)}
             />
           )}
         </div>
