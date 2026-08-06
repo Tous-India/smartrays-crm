@@ -19,6 +19,14 @@ import {
   changeOwnPassword,
   reauthenticateActingAdmin,
 } from "./auth.service.js";
+import {
+  rememberDevice,
+  listTrustedDevices,
+  revokeTrustedDevice,
+  revokeAllTrustedDevices,
+  getTrustedDeviceCookieName,
+  getTrustedDeviceMaxAgeMs,
+} from "./trustedDevice.service.js";
 
 export const register = asyncWrapper(async (req, res) => {
   const { name, email, phone, password, role, managerId, customerId } = req.body;
@@ -43,13 +51,27 @@ export const customerSignup = asyncWrapper(async (req, res) => {
 export const login = asyncWrapper(async (req, res) => {
   const { email, password } = req.body;
 
-  const result = await loginUser({ email, password });
+  const result = await loginUser({
+    email,
+    password,
+    // §7.40 — read but never trusted on its own. `loginUser` only consults it
+    // AFTER the password above has been verified, so this can skip the second
+    // factor and never the first.
+    trustedDeviceToken: req.cookies?.[getTrustedDeviceCookieName()],
+  });
 
   // §7.38 — THE security-critical branch. When a second factor is still
   // outstanding, NO session cookie is set: the response carries only a
   // short-lived pre-auth token, which authorises the 2FA endpoints and
   // nothing else. A stolen password therefore yields no session at all.
   if (result.preAuthToken) {
+    // A device cookie was presented and did NOT match (revoked, expired, or
+    // belonging to a different account). Clear it so the browser stops
+    // sending a dead credential on every future login.
+    if (req.cookies?.[getTrustedDeviceCookieName()]) {
+      clearTrustedDeviceCookie(res);
+    }
+
     return res.status(200).json(
       new ApiResponse(
         200,
@@ -77,6 +99,9 @@ export const login = asyncWrapper(async (req, res) => {
 });
 
 export const logout = asyncWrapper(async (req, res) => {
+  // Only the session cookie. The trusted-device cookie deliberately SURVIVES
+  // logout — "remember this device" would be meaningless if signing out
+  // discarded it. It is cleared by revocation, password change, or expiry.
   res.clearCookie(env.cookieName, getAuthCookieOptions());
 
   res.status(200).json(new ApiResponse(200, null, "Logged out successfully"));
@@ -123,6 +148,24 @@ function issueSession(res, userId) {
   });
 }
 
+/**
+ * §7.40 — the trusted-device cookie. Deliberately built from the SAME
+ * `getAuthCookieOptions()` as the session cookie rather than a new set of
+ * options: that config (httpOnly, SameSite=Lax, same-origin through the
+ * Vercel rewrite proxy) is load-bearing and was arrived at the hard way. The
+ * ONLY difference here is `maxAge` — 30 days rather than the session's.
+ */
+function issueTrustedDeviceCookie(res, rawToken) {
+  res.cookie(getTrustedDeviceCookieName(), rawToken, {
+    ...getAuthCookieOptions(),
+    maxAge: getTrustedDeviceMaxAgeMs(),
+  });
+}
+
+function clearTrustedDeviceCookie(res) {
+  res.clearCookie(getTrustedDeviceCookieName(), getAuthCookieOptions());
+}
+
 export const verifyTwoFactor = asyncWrapper(async (req, res) => {
   const user = req.preAuthUser;
 
@@ -130,6 +173,21 @@ export const verifyTwoFactor = asyncWrapper(async (req, res) => {
     const result = await verifySecondFactor(user._id, req.body.token);
 
     issueSession(res, user._id);
+
+    // §7.40 — opt-in, and only on a TOTP verification. A recovery code means
+    // the user lost their authenticator, which is exactly why
+    // `verifySecondFactor` has just revoked every trusted device; minting a
+    // fresh one in the same breath would undo that. They can tick the box on
+    // their next normal sign-in, once the authenticator is back.
+    if (req.body.rememberDevice === true && result.method === "totp") {
+      const rawToken = await rememberDevice(user._id, req.get("user-agent"));
+
+      if (rawToken) {
+        issueTrustedDeviceCookie(res, rawToken);
+      }
+    } else if (result.method === "recovery_code") {
+      clearTrustedDeviceCookie(res);
+    }
 
     res.status(200).json(new ApiResponse(200, { user, ...result }, "Signed in successfully"));
   } catch (error) {
@@ -193,7 +251,38 @@ export const adminResetTwoFactor = asyncWrapper(async (req, res) => {
 });
 
 export const changePassword = asyncWrapper(async (req, res) => {
+  // The service revokes every trusted device server-side; this also drops the
+  // now-dead cookie held by the browser making the change.
   await changeOwnPassword(req.user._id, req.body.currentPassword, req.body.newPassword);
+  clearTrustedDeviceCookie(res);
 
-  res.status(200).json(new ApiResponse(200, null, "Password changed successfully"));
+  res
+    .status(200)
+    .json(new ApiResponse(200, null, "Password changed successfully. Trusted devices were signed out."));
+});
+
+// --- Trusted devices (§7.40, 2026-08-05) ---
+
+export const getTrustedDevices = asyncWrapper(async (req, res) => {
+  const devices = await listTrustedDevices(req.user._id);
+
+  res.status(200).json(new ApiResponse(200, devices, "Trusted devices fetched successfully"));
+});
+
+/**
+ * Always scoped to `req.user._id` — the id in the URL identifies a device
+ * WITHIN the caller's own list, so passing someone else's device id simply
+ * matches nothing. There is no cross-user reachability to guard.
+ */
+export const revokeOneTrustedDevice = asyncWrapper(async (req, res) => {
+  await revokeTrustedDevice(req.user._id, req.params.id);
+
+  res.status(200).json(new ApiResponse(200, null, "That device will need a code next time"));
+});
+
+export const revokeEveryTrustedDevice = asyncWrapper(async (req, res) => {
+  await revokeAllTrustedDevices(req.user._id);
+  clearTrustedDeviceCookie(res);
+
+  res.status(200).json(new ApiResponse(200, null, "All devices will need a code next time"));
 });

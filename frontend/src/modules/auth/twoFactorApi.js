@@ -12,8 +12,25 @@ function preAuth(preAuthToken) {
   return { headers: { Authorization: `Bearer ${preAuthToken}` } };
 }
 
-export function verifyTwoFactor(preAuthToken, token) {
-  return apiClient.post("/auth/2fa/verify", { token }, preAuth(preAuthToken));
+export function verifyTwoFactor(preAuthToken, token, rememberDevice = false) {
+  return apiClient.post("/auth/2fa/verify", { token, rememberDevice }, preAuth(preAuthToken));
+}
+
+/**
+ * Trusted devices (§7.40, 2026-08-05). The device token itself is an httpOnly
+ * cookie, so it is never readable here — these endpoints deal only in the
+ * server's own safe view of the list (label and dates, never the hash).
+ */
+export function fetchTrustedDevices() {
+  return apiClient.get("/auth/trusted-devices");
+}
+
+export function revokeTrustedDevice(deviceId) {
+  return apiClient.delete(`/auth/trusted-devices/${deviceId}`);
+}
+
+export function revokeAllTrustedDevices() {
+  return apiClient.delete("/auth/trusted-devices");
 }
 
 /**

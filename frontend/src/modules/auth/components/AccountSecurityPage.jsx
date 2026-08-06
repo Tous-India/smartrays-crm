@@ -1,16 +1,23 @@
-import { useState } from "react";
-import { Alert, Button, Card, Form, Input, Modal, Tag, Typography, App } from "antd";
-import { SafetyCertificateOutlined } from "@ant-design/icons";
+import { useCallback, useEffect, useState } from "react";
+import { Alert, Button, Card, Empty, Form, Input, List, Modal, Popconfirm, Tag, Typography, App } from "antd";
+import { DesktopOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
 import useSessionStore from "../../../store/sessionStore";
 import TwoFactorEnrolment from "./TwoFactorEnrolment";
-import { changePassword, regenerateRecoveryCodes } from "../twoFactorApi";
+import {
+  changePassword,
+  regenerateRecoveryCodes,
+  fetchTrustedDevices,
+  revokeTrustedDevice,
+  revokeAllTrustedDevices,
+} from "../twoFactorApi";
 import { isTwoFactorMandatory } from "../../../utils/twoFactor.utils";
 
-const { Title, Paragraph, Text } = Typography;
+const { Paragraph, Text } = Typography;
 
 /**
  * Settings → Account (§7.38, 2026-08-05): two-factor status and enrolment,
- * recovery-code regeneration, and password change.
+ * recovery-code regeneration, password change, and the trusted-device list
+ * (§7.40).
  *
  * Deliberately NO "reset password by email" link. Production SMTP points at a
  * placeholder host, so `/auth/forgot-password` returns 500 — offering it here
@@ -30,7 +37,29 @@ function AccountSecurityPage() {
   const [passwordError, setPasswordError] = useState(null);
   const [form] = Form.useForm();
 
+  const [devices, setDevices] = useState([]);
+  const [isLoadingDevices, setIsLoadingDevices] = useState(false);
+
   const mandatory = isTwoFactorMandatory(user?.role);
+
+  const loadDevices = useCallback(async () => {
+    setIsLoadingDevices(true);
+
+    try {
+      const response = await fetchTrustedDevices();
+      setDevices(response.data.data || []);
+    } catch {
+      // A failure here shouldn't break the rest of the page — the list is
+      // informational, and every other control on this page still works.
+      setDevices([]);
+    } finally {
+      setIsLoadingDevices(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDevices();
+  }, [loadDevices]);
 
   async function handleChangePassword(values) {
     setPasswordError(null);
@@ -38,8 +67,11 @@ function AccountSecurityPage() {
 
     try {
       await changePassword(values);
-      message.success("Password changed");
+      message.success("Password changed. Trusted devices were signed out.");
       form.resetFields();
+      // The backend revokes every trusted device on a password change, so the
+      // list below is now stale.
+      loadDevices();
     } catch (error) {
       setPasswordError(error.response?.data?.message || "Could not change your password.");
     } finally {
@@ -94,6 +126,91 @@ function AccountSecurityPage() {
           </>
         )}
       </Card>
+
+      {/*
+        §7.40 — only meaningful once 2FA is on: with no second factor there is
+        nothing for a trusted device to skip.
+      */}
+      {user?.twoFactorEnabled && (
+        <Card
+          title="Trusted devices"
+          className="app-elevated-card"
+          data-testid="trusted-devices-card"
+          extra={
+            devices.length > 0 && (
+              <Popconfirm
+                title="Revoke every device?"
+                description="Each one will need a verification code the next time it signs in."
+                okText="Revoke all"
+                okType="danger"
+                onConfirm={async () => {
+                  try {
+                    await revokeAllTrustedDevices();
+                    message.success("All devices revoked");
+                    loadDevices();
+                  } catch (error) {
+                    message.error(error.response?.data?.message || "Could not revoke devices.");
+                  }
+                }}
+              >
+                <Button danger size="small">
+                  Revoke all
+                </Button>
+              </Popconfirm>
+            )
+          }
+        >
+          <Paragraph type="secondary">
+            These browsers skip the verification code when you sign in. They still need your
+            password. Revoke any you don&apos;t recognise.
+          </Paragraph>
+
+          <List
+            loading={isLoadingDevices}
+            dataSource={devices}
+            locale={{
+              emptyText: <Empty description="No trusted devices" image={Empty.PRESENTED_IMAGE_SIMPLE} />,
+            }}
+            renderItem={(device) => (
+              <List.Item
+                actions={[
+                  <Popconfirm
+                    key="revoke"
+                    title="Revoke this device?"
+                    description="It will need a verification code next time."
+                    okText="Revoke"
+                    okType="danger"
+                    onConfirm={async () => {
+                      try {
+                        await revokeTrustedDevice(device._id);
+                        message.success("Device revoked");
+                        loadDevices();
+                      } catch (error) {
+                        message.error(error.response?.data?.message || "Could not revoke that device.");
+                      }
+                    }}
+                  >
+                    <Button type="text" danger size="small">
+                      Revoke
+                    </Button>
+                  </Popconfirm>,
+                ]}
+              >
+                <List.Item.Meta
+                  avatar={<DesktopOutlined />}
+                  title={device.label}
+                  description={
+                    <span className="text-xs">
+                      Trusted {new Date(device.createdAt).toLocaleDateString()} · expires{" "}
+                      {new Date(device.expiresAt).toLocaleDateString()}
+                    </span>
+                  }
+                />
+              </List.Item>
+            )}
+          />
+        </Card>
+      )}
 
       <Card title="Change password" className="app-elevated-card">
         {passwordError && <Alert type="error" showIcon className="!mb-4" message={passwordError} />}

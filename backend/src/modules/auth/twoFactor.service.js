@@ -9,6 +9,7 @@ import ApiError from "../../utils/ApiError.js";
 import { encryptCredential, decryptCredential } from "../../services/credentialEncryption.service.js";
 import User from "../user/user.model.js";
 import { MANDATORY_2FA_ROLES, isTwoFactorMandatory } from "../../constants/twoFactor.constants.js";
+import { revokeAllTrustedDevices } from "./trustedDevice.service.js";
 
 const SALT_ROUNDS = 10;
 const RECOVERY_CODE_COUNT = 10;
@@ -103,6 +104,10 @@ export async function confirmTotpEnrolment(userId, token) {
   user.twoFactorFailedAttempts = 0;
   await user.save();
 
+  // §7.40 — re-enrolling means a NEW secret, so any device trusted against
+  // the old one is trusting a factor that no longer exists.
+  await revokeAllTrustedDevices(user._id);
+
   return { recoveryCodes: codes };
 }
 
@@ -140,6 +145,11 @@ export async function verifySecondFactor(userId, token) {
     user.twoFactorRecoveryCodeHashes.splice(matchedIndex, 1);
     user.twoFactorFailedAttempts = 0;
     await user.save();
+
+    // §7.40 — redeeming a recovery code means the user lost access to their
+    // authenticator, i.e. lost a device. Continuing to trust devices at that
+    // moment would hold a door open for whoever now has it.
+    await revokeAllTrustedDevices(user._id);
 
     return { method: "recovery_code", remainingRecoveryCodes: user.twoFactorRecoveryCodeHashes.length };
   }
@@ -187,6 +197,11 @@ export async function clearTwoFactor(userId) {
   user.twoFactorRecoveryCodeHashes = [];
   user.twoFactorFailedAttempts = 0;
   await user.save();
+
+  // §7.40 — covers BOTH a user disabling their own 2FA and an admin
+  // resetting someone else's: either way the second factor those devices
+  // were trusted against is gone.
+  await revokeAllTrustedDevices(user._id);
 }
 
 function verifyTotpForUser(user, token) {

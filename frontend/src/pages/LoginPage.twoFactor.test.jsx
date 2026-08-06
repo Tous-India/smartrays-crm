@@ -76,8 +76,10 @@ describe("LoginPage — two-factor challenge", () => {
     await userEvent.type(await screen.findByLabelText(/verification or recovery code/i), "123456");
     await userEvent.click(screen.getByRole("button", { name: /^verify$/i }));
 
+    // The third argument is "remember this device" (§7.40) — false here
+    // because the box was left alone, which is its default.
     await waitFor(() =>
-      expect(twoFactorApi.verifyTwoFactor).toHaveBeenCalledWith("pre-auth-123", "123456")
+      expect(twoFactorApi.verifyTwoFactor).toHaveBeenCalledWith("pre-auth-123", "123456", false)
     );
     await waitFor(() => expect(useSessionStore.getState().isAuthenticated).toBe(true));
   });

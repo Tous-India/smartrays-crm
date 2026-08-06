@@ -4563,6 +4563,26 @@ Three server-side rules define this feature, none of them enforced in the UI:
 
 ---
 
+## §7.40 — Remember this device (2026-08-05)
+
+An opt-in checkbox on the 2FA step lets a browser skip the **second factor** for 30 days. The
+password is always required — the device token is consulted only after the password has already
+been verified, so it can never become a standalone credential.
+
+Design decisions worth keeping:
+
+1. **The cookie reuses `getAuthCookieOptions()` verbatim**, not a parallel set of options. That
+   config (httpOnly, `SameSite=Lax`, same-origin via the Vercel rewrite proxy) is load-bearing
+   and was arrived at the hard way; only `maxAge` and the cookie name differ.
+2. **Tokens are bcrypt-hashed at rest** on `user.trustedDevices` (`select: false`) and matched
+   starting from the authenticated user's own document, so one user's token cannot be replayed
+   against another account. Expired entries are pruned on read and write; the list caps at 10.
+3. **Every trusted device is revoked** on password change, 2FA re-enrolment, 2FA reset (own or
+   admin-performed), and recovery-code redemption. A redeemed recovery code means a lost
+   authenticator, so ticking the box on a recovery-code sign-in deliberately mints nothing.
+4. **Logout does not clear the cookie** — surviving sign-out is the point of the feature. It goes
+   away on revocation, password change, or expiry.
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a

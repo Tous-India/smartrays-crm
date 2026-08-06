@@ -2238,3 +2238,27 @@ this new contract rather than worked around.
 
 Frontend **495 passing** (10 new); the 4 failing files are the long-standing pre-existing set.
 Backend **782/782**. Both builds succeed.
+
+### 2026-08-05 — "Remember this device" on the 2FA step (§7.40)
+
+An opt-in, unchecked-by-default checkbox on the verification screen lets a browser skip the
+**second factor** for 30 days. The password is always still required: `loginUser` only consults
+the device token after `bcrypt.compare` on the password has succeeded, and a test asserts that a
+wrong password from a fully trusted device still 401s with no cookie set.
+
+The trusted-device cookie reuses `getAuthCookieOptions()` verbatim (httpOnly, `SameSite=Lax`,
+`secure` in production) rather than defining new options — that config is same-origin-dependent
+through the Vercel rewrite proxy and was not worth re-deriving. Tokens are bcrypt-hashed at rest
+on `user.trustedDevices` (`select: false`), pruned on every read/write, and capped at 10.
+
+All devices are revoked on password change, 2FA re-enrolment, 2FA reset (own or admin), and
+recovery-code redemption; a recovery-code sign-in also refuses to mint a new device, since a
+redeemed code means the authenticator was lost. Settings → Account gained a trusted-device list
+with per-device Revoke and Revoke all.
+
+**Tests:** 24 new backend (`trustedDevice.test.js`) + 5 new frontend
+(`TwoFactorChallenge.test.jsx`). Backend suite: **26 files / 806 tests, all passing** (suite count
+checked, not just failures). One existing frontend assertion in `LoginPage.twoFactor.test.jsx`
+pinned the old 2-argument `verifyTwoFactor` call and was updated to the new signature. The four
+remaining frontend failures (`LeadDetailPage`, `CustomersListPage`, `PaymentsListPage`,
+`UserManagementPage`) are the known pre-existing timeout flakes in files this task never touched.

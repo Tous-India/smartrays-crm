@@ -692,6 +692,45 @@ branch is never reached, i.e. recovery codes could never be redeemed.
 20 tests in `twoFactor.test.js` cover exactly the properties that matter, including asserting on
 the real `Set-Cookie` header.
 
+#### Trusted devices — "remember this device" (§7.40, 2026-08-05)
+
+A browser the user has chosen to trust skips the **second** factor for 30 days. **It never skips
+the password.** `loginUser` consults the device token only *after* `bcrypt.compare` on the
+password has already succeeded, so a stolen device cookie on its own reaches nothing — it turns a
+two-factor login into a one-factor login for that browser, which is the whole (accepted) trade,
+and never into a zero-factor one. `trustedDevice.test.js` pins this directly: a wrong password
+from a fully trusted device still 401s and sets no cookie.
+
+| Method | Path | Auth | Notes |
+|---|---|---|---|
+| GET | `/auth/trusted-devices` | session | Label + dates only. The hash is never serialised. |
+| DELETE | `/auth/trusted-devices/:id` | session | Scoped to the caller's own list. |
+| DELETE | `/auth/trusted-devices` | session | Revoke all, and clear this browser's cookie. |
+
+`POST /auth/2fa/verify` additionally accepts `rememberDevice: true` — opt-in, absent by default.
+
+**The cookie deliberately reuses `getAuthCookieOptions()` verbatim** (httpOnly, `SameSite=Lax`,
+`secure` in production) rather than defining its own options. That configuration is load-bearing:
+the frontend proxies `/api/*` through a Vercel Rewrite so the request is same-origin, which is
+why `Lax` works and why `None` was wrong. The only difference here is `maxAge` (30 days) and the
+cookie name (`smartrays_trusted_device`, distinct from the session cookie).
+
+**Storage.** Tokens are 32 random bytes, stored **bcrypt-hashed** on `user.trustedDevices`
+(`select: false`, like every other secret on the model) — a database leak yields nothing
+replayable. Matching starts from the authenticated user's own document, so a token cannot be
+replayed against a different account. Expired entries are pruned on every read and write, and the
+list is capped at 10 with oldest-first eviction.
+
+**All trusted devices are revoked** on: password change, 2FA re-enrolment, 2FA reset (a user's own
+or an admin's reset of someone else's), and **recovery-code redemption**. That last one matters —
+a redeemed recovery code means the user lost their authenticator, so continuing to honour trusted
+devices would hold a door open for whoever now has it. For the same reason, ticking the box while
+signing in *with a recovery code* deliberately does **not** mint a device.
+
+`logout` does **not** clear this cookie — surviving sign-out is the entire point of the feature.
+
+24 tests in `trustedDevice.test.js`.
+
 ### Attendance data retention (§6.5, 2026-08-05)
 
 Attendance records and their Cloudinary photos are deleted after

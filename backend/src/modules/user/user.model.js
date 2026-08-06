@@ -162,6 +162,28 @@ const userSchema = new mongoose.Schema(
     },
     // Consecutive failed verification attempts. Reset to 0 on success.
     // See `twoFactor.service.js` for the lockout threshold.
+    // Devices the user has chosen to trust, letting them skip the SECOND
+    // factor on subsequent logins (§7.40, 2026-08-05). Never the first — the
+    // password is always required.
+    //
+    // This array is a set of CREDENTIALS, so it stores bcrypt hashes of the
+    // device tokens, never the tokens themselves — same reasoning as
+    // `passwordHash` and the 2FA recovery codes. `select: false` like every
+    // other secret on this model.
+    trustedDevices: {
+      type: [
+        {
+          tokenHash: { type: String, required: true },
+          // A user-agent summary, so the revoke UI can say "Chrome on
+          // Windows" rather than showing an opaque id.
+          label: { type: String, default: "Unknown device" },
+          createdAt: { type: Date, default: Date.now },
+          expiresAt: { type: Date, required: true },
+        },
+      ],
+      default: [],
+      select: false,
+    },
     twoFactorFailedAttempts: {
       type: Number,
       default: 0,

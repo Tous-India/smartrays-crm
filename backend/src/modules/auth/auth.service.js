@@ -7,6 +7,7 @@ import { sendPasswordResetEmail } from "../../services/email.service.js";
 import User from "../user/user.model.js";
 import { verifySecondFactor } from "./twoFactor.service.js";
 import { isTwoFactorMandatory } from "../../constants/twoFactor.constants.js";
+import { isDeviceTrusted, revokeAllTrustedDevices } from "./trustedDevice.service.js";
 
 const SALT_ROUNDS = 10;
 const PASSWORD_RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour, per §7.17
@@ -20,7 +21,7 @@ const PASSWORD_RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour, per §7.17
  * Verifies email/password and issues a JWT for the matching user.
  * The controller is responsible for putting the token in an httpOnly cookie.
  */
-export async function loginUser({ email, password }) {
+export async function loginUser({ email, password, trustedDeviceToken }) {
   const user = await User.findOne({ email }).select("+passwordHash");
 
   if (!user) {
@@ -44,6 +45,15 @@ export async function loginUser({ email, password }) {
   // only ever issued after the second factor verifies (or after a mandatory
   // enrolment completes), so a stolen password alone reaches nothing.
   const mustEnrol = isTwoFactorMandatory(user.role) && !user.twoFactorEnabled;
+
+  // §7.40 — a trusted device skips the SECOND factor only, and only AFTER
+  // the password above has already been verified. A stolen device cookie on
+  // its own therefore reaches nothing. Enrolment is never skippable this way:
+  // someone who must enrol has no second factor to remember in the first
+  // place, so `mustEnrol` deliberately isn't consulted here.
+  if (user.twoFactorEnabled && (await isDeviceTrusted(user._id, trustedDeviceToken))) {
+    return { user, token: generateAuthToken(user._id), usedTrustedDevice: true };
+  }
 
   if (user.twoFactorEnabled || mustEnrol) {
     return {
@@ -215,6 +225,12 @@ export async function changeOwnPassword(userId, currentPassword, newPassword) {
 
   user.passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
   await user.save();
+
+  // §7.40 — a password change invalidates every trusted device. The old
+  // trust was granted to a session proving the OLD password; after a change
+  // (often prompted by a suspected compromise) that assumption no longer
+  // holds.
+  await revokeAllTrustedDevices(user._id);
 }
 
 /**

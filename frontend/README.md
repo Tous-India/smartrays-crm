@@ -2229,6 +2229,22 @@ down a path that cannot work when they can simply change their password directly
 
 ---
 
+### Remember this device (§7.40, 2026-08-05)
+
+A checkbox on `TwoFactorChallenge`, **unchecked by default** — opt-in, never opt-out. Its wording
+is deliberately specific ("Skip the code on this browser next time. You'll still enter your
+password.") rather than the usual vague "keep me signed in", which invites people to assume it
+does more than it does. `verifyTwoFactor(preAuthToken, token, rememberDevice)` passes it through;
+everything else about the flag lives server-side.
+
+The device token itself is an httpOnly cookie, so **no frontend code can read it**. Settings →
+Account therefore renders the server's own safe view of the list — label ("Chrome on Windows")
+plus trusted/expires dates — with per-device **Revoke** and a **Revoke all**. That card only
+renders when 2FA is on: with no second factor there is nothing for a trusted device to skip.
+
+Changing your password revokes every trusted device server-side, so the success message says so
+and the list refetches rather than sitting stale.
+
 ### Employee-facing pages (§7.39, 2026-08-05)
 
 Employees get their own destinations; **admin and manager keep the combined tabbed Attendance

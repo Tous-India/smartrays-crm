@@ -14,6 +14,9 @@ import {
   regenerateTwoFactorRecoveryCodes,
   adminResetTwoFactor,
   changePassword,
+  getTrustedDevices,
+  revokeOneTrustedDevice,
+  revokeEveryTrustedDevice,
 } from "./auth.controller.js";
 import {
   validateRegisterInput,
@@ -88,5 +91,15 @@ authRouter.post("/2fa/recovery-codes", authenticate, regenerateTwoFactorRecovery
 authRouter.post("/2fa/admin-reset", authenticate, requireAdmin, validateAdminResetInput, adminResetTwoFactor);
 
 authRouter.post("/change-password", authenticate, validateChangePasswordInput, changePassword);
+
+// --- Trusted devices (§7.40, 2026-08-05) ---
+//
+// All three are `authenticate` (full session) only — never `authenticatePreAuth`.
+// Managing which devices skip the second factor is itself a post-authentication
+// action; reaching it with a pre-auth token would let a half-authenticated
+// caller inspect or grant that trust.
+authRouter.get("/trusted-devices", authenticate, getTrustedDevices);
+authRouter.delete("/trusted-devices/:id", authenticate, revokeOneTrustedDevice);
+authRouter.delete("/trusted-devices", authenticate, revokeEveryTrustedDevice);
 
 export default authRouter;

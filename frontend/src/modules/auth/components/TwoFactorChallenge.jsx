@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, Button, Form, Input, Typography } from "antd";
+import { Alert, Button, Checkbox, Form, Input, Typography } from "antd";
 import { verifyTwoFactor } from "../twoFactorApi";
 
 const { Title, Paragraph } = Typography;
@@ -27,7 +27,7 @@ function TwoFactorChallenge({ preAuthToken, onVerified, onRestart }) {
     setIsSubmitting(true);
 
     try {
-      await verifyTwoFactor(preAuthToken, values.token);
+      await verifyTwoFactor(preAuthToken, values.token, values.rememberDevice === true);
       await onVerified();
     } catch (verifyError) {
       const status = verifyError.response?.status;
@@ -64,6 +64,22 @@ function TwoFactorChallenge({ preAuthToken, onVerified, onRestart }) {
           >
             <Input autoFocus autoComplete="one-time-code" />
           </Form.Item>
+
+          {/*
+            §7.40 — opt-in, and unchecked by default. Ticking it means this
+            browser skips the CODE next time, never the password; the wording
+            says so explicitly rather than the usual vague "keep me signed
+            in", which invites people to assume more than it does.
+          */}
+          <Form.Item name="rememberDevice" valuePropName="checked" initialValue={false}>
+            <Checkbox data-testid="remember-device">
+              Remember this device for 30 days
+              <div className="text-xs text-gray-500">
+                Skip the code on this browser next time. You&apos;ll still enter your password.
+              </div>
+            </Checkbox>
+          </Form.Item>
+
           <Button type="primary" htmlType="submit" block loading={isSubmitting}>
             Verify
           </Button>
