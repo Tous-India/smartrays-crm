@@ -978,6 +978,34 @@ timestamps, two of them near-identical-looking colored bars (`ConnectivityGapBar
 duplication even though the underlying data doesn't overlap. Nothing about the underlying data
 needed fixing before building this on top of it.
 
+#### One explicit row action, no whole-row click (§7.4h, 2026-08-06)
+
+`AttendanceTimeline` has no `onRow` handler. It used to, and that made the entire row a button:
+every column opened the same `AttendancePhotoModal`, byte-identical, with nothing signalling it —
+the two columns carrying visual widgets got clicked most and so *appeared* to share a behaviour
+they didn't own. Date, Status and Employee opened it too.
+
+The single route in is a **"View details"** action in the Actions cell, matching `PaymentsTable`'s
+pattern (`type="text"` icon button + `Tooltip` + `aria-label`). A Date-cell link was the
+alternative and was rejected: no table here links a cell to open a modal — links go to routes.
+
+The Actions column is now always rendered; it was previously gated on `onMarkStatus`, which is
+admin-only, so gating Details on it would have left Personal and Team views unable to open the
+modal at all. Missing-day rows get no Details action, and keep their Popconfirm gap-filling
+buttons. The Geofence chip keeps its own direct route to the map modal via `stopPropagation`.
+
+#### ConnectivityGapBar shares the Timeline's segment function (§7.4h, 2026-08-06)
+
+The last bar still using its own check-in→check-out scaling, a full-width green base, and native
+`title` attributes — and it sat directly above the Geofence chip in the modal.
+
+It now calls **`computeTimelineSegments`**, the same function the Timeline column uses, filtering
+out only the break band. Sharing the function rather than the axis helper alone makes alignment
+true by construction — there is one piece of code deciding where a gap goes, so it cannot land at
+two different offsets. Off-shift hours show the shared gray base; the palette is identical to
+Timeline (`green-400` connected, `red-500` gap) so a gap looks the same everywhere, and stays out
+of the sky/violet geofence family. One controlled Tooltip, content keyed by hovered band.
+
 #### The Geofence column is a chip, not a bar (§7.4g, 2026-08-06)
 
 `GeofenceViolationBar` renders a status chip. §7.4f had already put it on the timeline's axis,

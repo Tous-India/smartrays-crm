@@ -2426,3 +2426,55 @@ failures are the known pre-existing timeout flakes in `LeadDetailPage`, `Custome
 The two AntD deprecations named in the task (`destroyInactiveTabPane` → `destroyOnHidden`,
 `dropdownRender` → `popupRender`) were already fixed under §7.4f and were verified still in place,
 not re-applied.
+
+### 2026-08-06 — Explicit row action, and the last old-style bar retired (§7.4h)
+
+Frontend only. Two related fixes on the Attendance table and its detail modal.
+
+**The whole row was a button.** `onRow` gave every cell the same `onClick`, so Timeline, Geofence,
+Date, Status and Employee all opened the same `AttendancePhotoModal` — byte-identical, with
+nothing signalling it. The two columns carrying visual widgets simply got clicked most, which is
+why they *looked* like they "did the same thing"; they were never special.
+
+Replaced with an explicit **"View details"** action in the Actions cell, following
+`PaymentsTable`'s established pattern (`type="text"` icon button + `Tooltip` + `aria-label`).
+Chosen over linking the Date cell because no table in this app links a cell to open a modal —
+links go to routes (`UserManagementPage`'s Permissions link) — and Attendance already had an
+Actions column shape to extend rather than a new interaction to invent. The row handler is gone
+entirely; keeping both would have re-created the ambiguity.
+
+The Actions column is now **always** rendered. It used to appear only when `onMarkStatus` was
+supplied, which is admin-only, so gating Details on it would have left the Personal and Team views
+with no way into the modal at all. Missing-day rows still get no Details action (there is nothing
+to show), and their Popconfirm gap-filling actions are unchanged.
+
+**`ConnectivityGapBar` was the last bar in the old style** — its own check-in→check-out scaling, a
+green base across the full width, and native `title` attributes — sitting directly above the new
+Geofence chip in the modal. It now derives its bands from **`computeTimelineSegments`, the very
+function the Timeline column uses**, dropping only the break band. Sharing the function rather
+than just the axis makes alignment true by construction: verified that a 10:30 gap renders at
+`left: 43.75%` in both, and the connected band at `left: 37.5%` in both. Off-shift hours are the
+shared gray base, not green — green there asserted "connected" for hours nobody was working, the
+same false claim the Location bar used to make. Palette matches Timeline exactly (gray base,
+`green-400` connected, `red-500` gap) and stays clear of the sky/violet geofence family.
+
+**Verified in a real browser:** clicking Date / Timeline / Geofence / Status / Employee opens
+nothing; "View details" opens `Attendance — <date>`; the Geofence chip still opens
+`Location — <date>` directly without the detail modal; every band of the connectivity bar and the
+chip shows exactly one tooltip; a normal sweep across the modal peaks at one and settles to zero.
+
+One honest caveat from that run: an **instant** jump between two adjacent tooltip triggers peaks
+at 2 for roughly one frame before settling to 1. Measured, it is AntD's crossfade — the outgoing
+tooltip sits at ~0.04 opacity carrying `ant-zoom-big-fast-leave-active` while the incoming one
+appears. This is a property of AntD transitions between any two adjacent tooltip triggers
+anywhere in the app, not something this modal introduces, and it never persists. It is not the
+nested-tooltip bug of §7.4e, which held two at full opacity indefinitely.
+
+**Tests:** 25 new (13 row-action, 12 connectivity bar). 16 of the 25 were run against the previous
+components and observed to fail; the other 9 pin invariants that already held (the gap was already
+`red-500`, missing-day rows were already inert, the chip route already worked). Three existing
+tests were updated: two opened the modal by clicking a row, and one asserted "no buttons at all",
+which only held while the row click was the sole affordance. Frontend suite **77 files / 652
+tests** (was 75/627); the 8 remaining failures are the known pre-existing timeout flakes —
+confirmed by re-running `LeadDetailPage`, `LeaveRequestModal` and `UserManagementPage` in
+isolation, where all 33 pass.

@@ -5,6 +5,7 @@ import {
   AimOutlined,
   CloseCircleOutlined,
   ClockCircleOutlined,
+  EyeOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import AttendanceTimelineBar from "./AttendanceTimelineBar";
@@ -18,8 +19,13 @@ import { ATTENDANCE_STATUS_COLORS, ATTENDANCE_STATUS_LABELS } from "../constants
  * view (`records` = the selected employee's records, filtered client-side
  * from the team fetch) rather than duplicating this table twice.
  *
- * `onRowClick` (opens `AttendancePhotoModal` in the parent) makes a row
- * double as the "click a day's record" entry point the photo viewer needs.
+ * `onRowClick` (opens `AttendancePhotoModal` in the parent) is reached from
+ * the explicit "View details" action in the Actions cell (§7.4h, 2026-08-06).
+ * It used to be wired to `onRow`, making the WHOLE row a button: every column
+ * opened the same modal, byte-identical, with nothing signalling it. The two
+ * columns carrying visual widgets got clicked and looked like they "did the
+ * same thing" — in fact Date and Status did too. One explicit affordance
+ * replaces that; the row itself is inert.
  * A manually-adjusted record (§7.4's admin-correction addition) gets a small
  * exclamation badge next to its Status Tag so it's never confused with a
  * real verified check-in at a glance. The per-row Edit action that used to
@@ -120,45 +126,62 @@ function AttendanceTimeline({
           </Space>
         ),
     },
-    // Gap-filling actions (2026-08-05) — rendered ONLY on synthetic
-    // missing-day rows, never on a real record. A record with real check-in
-    // data has no actions here at all; Attendance stays read-only for those
-    // (see `AttendanceRecordsSection`'s own docblock).
-    ...(onMarkStatus
-      ? [
-          {
-            title: "Actions",
-            key: "actions",
-            width: 110,
-            render: (_, record) =>
-              record.isMissingDay ? (
-                <Space size={0}>
-                  <Popconfirm
-                    title="Mark this day as Absent?"
-                    description={`${dayjs(record.date).format("DD MMM YYYY")} has no attendance record. This creates one — it can't be undone from here.`}
-                    okText="Mark Absent"
-                    okType="danger"
-                    onConfirm={() => onMarkStatus(record, "absent")}
-                  >
-                    <Tooltip title="Mark Absent">
-                      <Button type="text" danger size="small" icon={<CloseCircleOutlined />} aria-label="Mark Absent" />
-                    </Tooltip>
-                  </Popconfirm>
-                  <Popconfirm
-                    title="Mark this day as Half Day?"
-                    description={`${dayjs(record.date).format("DD MMM YYYY")} has no attendance record. This creates one — it can't be undone from here.`}
-                    okText="Mark Half Day"
-                    onConfirm={() => onMarkStatus(record, "half_day")}
-                  >
-                    <Tooltip title="Mark Half Day">
-                      <Button type="text" size="small" icon={<ClockCircleOutlined />} aria-label="Mark Half Day" />
-                    </Tooltip>
-                  </Popconfirm>
-                </Space>
-              ) : null,
-          },
-        ]
-      : []),
+    // §7.4h (2026-08-06) — this column is now ALWAYS rendered, because it
+    // carries the only way to open the detail modal. It used to appear only
+    // when `onMarkStatus` was supplied, which is admin-only.
+    //
+    // Gap-filling actions (2026-08-05) are still rendered ONLY on synthetic
+    // missing-day rows, never on a real record. Attendance stays read-only
+    // for those (see `AttendanceRecordsSection`'s own docblock).
+    {
+      title: "Actions",
+      key: "actions",
+      width: 130,
+      render: (_, record) =>
+        record.isMissingDay ? (
+          onMarkStatus ? (
+            <Space size={0}>
+              <Popconfirm
+                title="Mark this day as Absent?"
+                description={`${dayjs(record.date).format("DD MMM YYYY")} has no attendance record. This creates one — it can't be undone from here.`}
+                okText="Mark Absent"
+                okType="danger"
+                onConfirm={() => onMarkStatus(record, "absent")}
+              >
+                <Tooltip title="Mark Absent">
+                  <Button type="text" danger size="small" icon={<CloseCircleOutlined />} aria-label="Mark Absent" />
+                </Tooltip>
+              </Popconfirm>
+              <Popconfirm
+                title="Mark this day as Half Day?"
+                description={`${dayjs(record.date).format("DD MMM YYYY")} has no attendance record. This creates one — it can't be undone from here.`}
+                okText="Mark Half Day"
+                onConfirm={() => onMarkStatus(record, "half_day")}
+              >
+                <Tooltip title="Mark Half Day">
+                  <Button type="text" size="small" icon={<ClockCircleOutlined />} aria-label="Mark Half Day" />
+                </Tooltip>
+              </Popconfirm>
+            </Space>
+          ) : null
+        ) : (
+          // A missing-day row has no photo/location/timeline to show, so it
+          // gets no Details action — opening the modal on it would show an
+          // empty record.
+          onRowClick && (
+            <Tooltip title="View details">
+              <Button
+                type="text"
+                size="small"
+                icon={<EyeOutlined />}
+                aria-label="View details"
+                data-testid={`attendance-details-${record._id}`}
+                onClick={() => onRowClick(record)}
+              />
+            </Tooltip>
+          )
+        ),
+    },
   ];
 
   return (
@@ -174,16 +197,12 @@ function AttendanceTimeline({
       // scrolls it inside its own container instead, the same treatment the
       // Leave table already had.
       scroll={{ x: "max-content" }}
-      // A synthetic missing-day row has no photo/location to show, so it's
-      // not clickable — opening the viewer on it would show an empty modal.
-      onRow={
-        onRowClick
-          ? (record) =>
-              record.isMissingDay
-                ? {}
-                : { onClick: () => onRowClick(record), className: "cursor-pointer" }
-          : undefined
-      }
+      // §7.4h — NO row-level onClick. It made every cell open the same modal
+      // with no signal that it would, so the two columns that look
+      // interactive (the Timeline bar, the Geofence chip) got clicked and
+      // appeared to "do the same thing" — they were not special; Date and
+      // Status opened it too. The explicit Details action above is the only
+      // route now. Keeping both would just re-create the ambiguity.
     />
     <AttendanceLocationMapModal
       open={Boolean(mapRecord)}

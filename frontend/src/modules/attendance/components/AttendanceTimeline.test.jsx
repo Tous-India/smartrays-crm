@@ -128,9 +128,15 @@ describe("AttendanceTimeline", () => {
     expect(screen.getByTestId("geofence-chip")).toHaveTextContent("Within range");
   });
 
-  it("never renders a per-row Edit action (Attendance is UI-read-only)", () => {
+  it("never renders a per-row Edit or Delete action (Attendance is UI-read-only)", () => {
     render(<AttendanceTimeline records={[DAY_WITHOUT_GAP]} isLoading={false} onRowClick={vi.fn()} />);
 
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    // Assert on MUTATING actions specifically. This used to assert "no
+    // buttons at all", which only held while the sole affordance was the
+    // row-level click; §7.4h added an explicit read-only "View details"
+    // action, which is not an edit.
+    expect(screen.queryByRole("button", { name: /edit/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /delete/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "View details" })).toBeInTheDocument();
   });
 });

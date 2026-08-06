@@ -1,58 +1,88 @@
+import { useState } from "react";
+import dayjs from "dayjs";
+import { Tooltip } from "antd";
+import { computeTimelineSegments } from "../utils/attendanceTimeline";
+
 /**
- * Renders one day's shift as a horizontal bar (green = time worked) with
- * connectivity gaps (`record.connectivityGaps[]`, §6.5) overlaid as visually
- * distinct red segments, proportional to when in the shift they occurred —
- * a specific, real requirement per §7.4's "mark red," not decoration. Falls
- * back to a plain "No connectivity gaps" caption when there are none, and to
- * a simple in-progress note for a still-open shift (no `checkOut.time` yet
- * to measure a duration against).
+ * Connectivity over the day, inside `AttendancePhotoModal` (§7.4h,
+ * 2026-08-06).
+ *
+ * This was the last surviving instance of the old bar style — its own
+ * check-in→check-out scaling, a green base covering the full width, and
+ * native `title` attributes — and it sat directly above the new Geofence
+ * chip, which made it read as the thing that column used to be.
+ *
+ * It now derives its bands from **`computeTimelineSegments`, the exact
+ * function the Timeline column uses**, dropping only the break band (this
+ * section is about connectivity, and an amber break here would answer a
+ * question nobody asked at this point in the modal). Sharing the function
+ * rather than the axis helper alone makes alignment true by construction: a
+ * gap cannot land at a different offset here than in the table, because
+ * there is only one piece of code deciding where it goes.
+ *
+ * Palette is deliberately identical to the Timeline column — gray base,
+ * `green-400` connected, `red-500` gap — so a connectivity gap looks the same
+ * everywhere it appears. It stays well clear of the sky/violet family, which
+ * now means geofence: keeping the two failure types visually separate is the
+ * entire point of that earlier palette split.
+ *
+ * One controlled AntD Tooltip, content keyed by the hovered band. The native
+ * `title` attributes it used before could put a browser tooltip on screen
+ * beside an AntD one — two visible tooltips at once, the failure mode that
+ * was structurally eliminated everywhere else.
  */
-function ConnectivityGapBar({ record }) {
-  const checkInTime = record.checkIn?.time;
-  const checkOutTime = record.checkOut?.time;
 
-  if (!checkInTime || !checkOutTime) {
-    return <span className="text-gray-400">Shift in progress</span>;
-  }
+const SEGMENT_CLASS = {
+  green: "bg-green-400",
+  red: "bg-red-500",
+};
 
-  const shiftStart = new Date(checkInTime).getTime();
-  const shiftEnd = new Date(checkOutTime).getTime();
-  const totalMs = shiftEnd - shiftStart;
+const SEGMENT_LABEL = {
+  green: "Connected — checked in and tracking normally",
+  red: "Connectivity issue — no tracking signal received",
+};
 
-  if (!record.connectivityGaps || record.connectivityGaps.length === 0) {
-    return (
-      <div className="h-3 w-full rounded bg-green-400" data-testid="connectivity-gap-bar" title="No connectivity gaps" />
-    );
-  }
+const BASE_LABEL = "Not tracked — outside the checked-in period for this day";
 
-  return (
-    <div
-      className="relative h-3 w-full overflow-hidden rounded bg-green-400"
-      data-testid="connectivity-gap-bar"
-      title={`${record.connectivityGaps.length} connectivity gap(s)`}
-    >
-      {record.connectivityGaps.map((gap, index) => {
-        const gapStart = new Date(gap.start).getTime();
-        const gapEnd = new Date(gap.end).getTime();
-        const leftPercent = clampPercent(((gapStart - shiftStart) / totalMs) * 100);
-        const widthPercent = clampPercent(((gapEnd - gapStart) / totalMs) * 100);
-
-        return (
-          <div
-            key={index}
-            className="absolute top-0 h-full bg-red-500"
-            data-testid="connectivity-gap-segment"
-            style={{ left: `${leftPercent}%`, width: `${widthPercent}%` }}
-            title={`Gap: ${new Date(gap.start).toLocaleTimeString()} – ${new Date(gap.end).toLocaleTimeString()}`}
-          />
-        );
-      })}
-    </div>
-  );
+function formatClock(ms) {
+  return dayjs(ms).format("h:mm A");
 }
 
-function clampPercent(value) {
-  return Math.min(100, Math.max(0, value));
+function segmentTooltip(segment) {
+  return `${SEGMENT_LABEL[segment.color]} · ${formatClock(segment.startMs)} – ${formatClock(segment.endMs)}`;
+}
+
+function ConnectivityGapBar({ record }) {
+  // The break band is dropped; everything else is exactly what the Timeline
+  // column draws for this record.
+  const segments = computeTimelineSegments(record).filter((segment) => segment.color !== "amber");
+  const [activeIndex, setActiveIndex] = useState(null);
+
+  const activeSegment = activeIndex == null ? null : segments[activeIndex];
+  const title = activeSegment ? segmentTooltip(activeSegment) : BASE_LABEL;
+
+  return (
+    <Tooltip title={title}>
+      <div
+        className="relative h-3 w-full overflow-hidden rounded bg-gray-200"
+        data-testid="connectivity-gap-bar"
+        onMouseLeave={() => setActiveIndex(null)}
+      >
+        {segments.map((segment, index) => (
+          <div
+            key={index}
+            className={`absolute top-0 h-full ${SEGMENT_CLASS[segment.color]}`}
+            data-testid={
+              segment.color === "red" ? "connectivity-gap-segment" : "connectivity-connected-segment"
+            }
+            style={{ left: `${segment.leftPercent}%`, width: `${segment.widthPercent}%` }}
+            onMouseEnter={() => setActiveIndex(index)}
+            onMouseLeave={() => setActiveIndex((current) => (current === index ? null : current))}
+          />
+        ))}
+      </div>
+    </Tooltip>
+  );
 }
 
 export default ConnectivityGapBar;

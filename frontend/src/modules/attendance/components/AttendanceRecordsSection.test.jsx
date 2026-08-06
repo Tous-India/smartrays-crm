@@ -40,17 +40,23 @@ describe("AttendanceRecordsSection — list/timeline only (§7.5e, 2026-07-31 �
   });
 });
 
-function clickFirstDataRow() {
+/**
+ * §7.4h (2026-08-06) — opens the detail modal through the explicit "View
+ * details" action. This used to click a cell in the row, because the whole
+ * ROW was the button; that handler is gone deliberately, so every column
+ * opening the same modal with no signal is no longer possible.
+ */
+function openFirstRowDetails() {
   const rows = screen.getAllByRole("row");
   // rows[0] is the header row.
-  return userEvent.click(within(rows[1]).getByText("Present"));
+  return userEvent.click(within(rows[1]).getByRole("button", { name: "View details" }));
 }
 
 describe("AttendanceRecordsSection — photo viewer", () => {
-  it("opens the photo modal when a list row is clicked", async () => {
+  it("opens the photo modal from the row's View details action", async () => {
     renderSection();
 
-    await clickFirstDataRow();
+    await openFirstRowDetails();
 
     expect(await screen.findByText(/Attendance —/)).toBeInTheDocument();
     // Read-only — no Edit Record action inside the modal either.

@@ -155,8 +155,9 @@ describe("AdminAttendanceView — org-wide, filterable (§7.4 reversal)", () => 
     await renderThisMonth();
 
     await screen.findByText("Employee One");
+    // §7.4h — through the explicit action, not by clicking the row itself.
     const row = screen.getByRole("row", { name: /Employee One/ });
-    await userEvent.click(row);
+    await userEvent.click(within(row).getByRole("button", { name: "View details" }));
 
     expect(await screen.findByText(/Attendance —/)).toBeInTheDocument();
   });
