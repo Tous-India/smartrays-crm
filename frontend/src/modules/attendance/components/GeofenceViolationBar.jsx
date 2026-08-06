@@ -1,89 +1,128 @@
-import { useState } from "react";
 import dayjs from "dayjs";
-import { Tooltip } from "antd";
-import { computeGeofenceSegments } from "../utils/attendanceGeofence";
+import { Tag, Tooltip } from "antd";
+import {
+  CheckCircleOutlined,
+  QuestionCircleOutlined,
+  SyncOutlined,
+  WarningOutlined,
+} from "@ant-design/icons";
+import {
+  GEOFENCE_STATE,
+  formatDistance,
+  geofenceChipLabel,
+  summarizeGeofence,
+} from "../utils/geofenceSummary";
 
 /**
- * The "Location" column: where the person was, on the SAME 24-hour
- * midnight→midnight axis as the "Timeline" column beside it (§7.4f,
- * 2026-08-06).
+ * The Geofence column: how far the employee strayed from their check-in
+ * point, as a STATUS CHIP (§7.4g, 2026-08-06).
  *
- * **Shared axis.** This used to stretch check-in → check-out across the full
- * width while the timeline measured the whole calendar day, so the same
- * x-offset meant different clock times in two columns of one row — a band at
- * the halfway mark was noon in one and mid-shift in the other. Both now draw
- * through `createDayAxis`, so the columns are readable against each other and
- * a violation lines up vertically with whatever the timeline shows at that
- * moment.
+ * It used to be a bar, and that was the problem. Two bars of identical width
+ * sat side by side in one row measuring unrelated things — the timeline
+ * covers "was the device connected" across the whole day, this covers "how
+ * far from the check-in point" across the shift. Even after both were put on
+ * a shared axis (§7.4f), the shapes still invited reading one against the
+ * other. A chip reads as a value, like every other column in this table, and
+ * cannot be visually diffed against a bar.
  *
- * **Its own colour family.** `green-400` previously meant "connected and
- * tracking" on the timeline AND "inside the geofence" here, which invited
- * reading the two columns as the same measurement; and `orange-500` sat close
- * enough to the timeline's `red-500` that a connectivity gap and a geofence
- * violation looked like one problem reported twice. Location is now blue/
- * violet throughout: SKY = inside the geofence, VIOLET = outside it. Gray
- * stays the shared "nothing here" base in both columns.
+ * Four states, and `no_data` is the one that earns the rewrite: the old bar
+ * painted a shift with no position data exactly like one fully inside the
+ * geofence. "We never heard where they were" and "they were where they
+ * should be" are opposite findings and no longer share a colour — this one is
+ * gray AND dashed, because a solid gray chip beside a green one still scans
+ * as a pass.
  *
- * **One controlled tooltip**, matching `AttendanceTimelineBar`. This column
- * previously used native `title` attributes, which a browser can show at the
- * same time as an AntD tooltip from the neighbouring column — two visible
- * tooltips again, by a different route than the nested-Tooltip bug that
- * prompted the pattern.
+ * The tooltip is the same controlled AntD `Tooltip` the timeline uses — never
+ * a native `title`, which a browser can render at the same moment as an AntD
+ * tooltip from the neighbouring column.
  */
 
-const SEGMENT_CLASS = {
-  inside: "bg-sky-300",
-  outside: "bg-violet-600",
+const CHIP = {
+  [GEOFENCE_STATE.NO_DATA]: {
+    color: "default",
+    icon: <QuestionCircleOutlined />,
+    className: "!border-dashed !text-gray-500",
+  },
+  [GEOFENCE_STATE.IN_PROGRESS]: { color: "processing", icon: <SyncOutlined />, className: "" },
+  [GEOFENCE_STATE.WITHIN_RANGE]: { color: "success", icon: <CheckCircleOutlined />, className: "" },
+  [GEOFENCE_STATE.VIOLATIONS]: { color: "warning", icon: <WarningOutlined />, className: "" },
 };
 
-const BASE_LABEL = "Off shift — no location tracking outside the checked-in period";
-
-function formatClock(ms) {
-  return dayjs(ms).format("h:mm A");
+function formatClock(value) {
+  return dayjs(value).format("h:mm A");
 }
 
-function segmentTooltip(segment) {
-  const range = `${formatClock(segment.startMs)} – ${formatClock(segment.endMs)}`;
-
-  if (segment.kind === "inside") {
-    return `Within the geofence · ${range}`;
+function tooltipContent(summary) {
+  if (summary.state === GEOFENCE_STATE.NO_DATA) {
+    return "No location data for this shift — the geofence was never evaluated, so this is not a pass.";
   }
 
-  const distance =
-    segment.maxDistanceMeters == null ? null : `${Math.round(segment.maxDistanceMeters)} m`;
+  if (summary.state === GEOFENCE_STATE.IN_PROGRESS) {
+    return "Shift still open — no excursions recorded yet.";
+  }
 
-  return distance
-    ? `Outside the geofence · ${range} · up to ${distance} from check-in`
-    : `Outside the geofence · ${range}`;
-}
-
-function GeofenceViolationBar({ record }) {
-  const segments = computeGeofenceSegments(record);
-  const [activeIndex, setActiveIndex] = useState(null);
-
-  const activeSegment = activeIndex == null ? null : segments[activeIndex];
-  const title = activeSegment ? segmentTooltip(activeSegment) : BASE_LABEL;
+  if (summary.state === GEOFENCE_STATE.WITHIN_RANGE) {
+    return "Stayed within the geofence radius of the check-in point for the whole shift.";
+  }
 
   return (
-    <Tooltip title={title}>
-      <div
-        className="relative h-3 w-full overflow-hidden rounded bg-gray-200"
-        data-testid="geofence-violation-bar"
-        onMouseLeave={() => setActiveIndex(null)}
-      >
-        {segments.map((segment, index) => (
-          <div
-            key={index}
-            className={`absolute top-0 h-full ${SEGMENT_CLASS[segment.kind]}`}
-            data-testid={
-              segment.kind === "outside" ? "geofence-violation-segment" : "geofence-inside-segment"
-            }
-            style={{ left: `${segment.leftPercent}%`, width: `${segment.widthPercent}%` }}
-            onMouseEnter={() => setActiveIndex(index)}
-            onMouseLeave={() => setActiveIndex((current) => (current === index ? null : current))}
-          />
-        ))}
-      </div>
+    <div>
+      <div className="mb-1 font-medium">Outside the geofence</div>
+      {summary.violations.map((violation, index) => (
+        <div key={index}>
+          {formatClock(violation.start)} – {violation.end ? formatClock(violation.end) : "checkout"}
+          {violation.maxDistanceMeters != null &&
+            ` · up to ${formatDistance(violation.maxDistanceMeters)}`}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function GeofenceViolationBar({ record, onInvestigate }) {
+  const summary = summarizeGeofence(record);
+  const chip = CHIP[summary.state];
+
+  // Only an excursion is worth opening a map for, and only where the caller
+  // supplied somewhere to go. `AttendancePhotoModal` deliberately passes
+  // nothing — it already has its own "View on Map" button, and a modal
+  // opening another modal from inside itself is worse than one extra click.
+  const isInteractive = summary.state === GEOFENCE_STATE.VIOLATIONS && Boolean(onInvestigate);
+
+  const interactiveProps = isInteractive
+    ? {
+        role: "button",
+        tabIndex: 0,
+        // The table row has its own onClick (it opens the photo modal);
+        // without stopping propagation the chip would trigger both.
+        onClick: (event) => {
+          event.stopPropagation();
+          onInvestigate(record);
+        },
+        onKeyDown: (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.stopPropagation();
+            event.preventDefault();
+            onInvestigate(record);
+          }
+        },
+      }
+    : {};
+
+  return (
+    <Tooltip title={tooltipContent(summary)}>
+      <span data-testid="geofence-chip-wrapper">
+        <Tag
+          color={chip.color}
+          icon={chip.icon}
+          className={`!mr-0 whitespace-nowrap ${chip.className} ${isInteractive ? "cursor-pointer" : ""}`}
+          data-testid="geofence-chip"
+          data-state={summary.state}
+          {...interactiveProps}
+        >
+          {geofenceChipLabel(summary)}
+        </Tag>
+      </span>
     </Tooltip>
   );
 }

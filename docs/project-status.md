@@ -2357,23 +2357,72 @@ timeout flakes in `LeadDetailPage`, `CustomersListPage`, `PaymentsListPage` and
 
 ## Known limitations
 
-### Location column shows geofence compliance, not tracking coverage (§7.4f, 2026-08-06)
+### Geofence column cannot see ping coverage (§7.4f, revised §7.4g 2026-08-06)
 
-`GeofenceViolationBar` reads `record.geofenceViolations[]` and nothing else. It never consults
-`LocationPing`, so **a stretch of the shift with no pings at all renders identically to one fully
-inside the geofence** — the sky band simply continues. "Device silent" and "device present and
-compliant" are visually indistinguishable.
+The Geofence chip reads `record.geofenceViolations[]`. It never consults `LocationPing`, so **a
+shift that checked in and then reported no positions at all still shows "Within range"** —
+violations are only ever written from `location.service.js#submitPing`, so zero pings stores
+`geofenceViolations: []`, byte-identical to a shift whose every ping was in range.
 
-This matters because silence is common and not necessarily suspicious: browser geolocation stops
-when a tab is backgrounded or a phone locks, so an ordinary shift produces real gaps in ping
-coverage. Today those gaps read as compliance.
+§7.4g narrowed this as far as the record allows. "No data" now covers the case the record *can*
+prove — no check-in at all — and is rendered gray **and dashed** so it cannot be mistaken for the
+green "Within range". What remains is only the silent-after-check-in case.
 
-Note that this is NOT the same as the Timeline column's red "connectivity gap" band, which comes
-from `connectivityGaps[]` — a separately recorded heartbeat concept. A period can have
-connectivity recorded while location pings are absent, and vice versa.
+Two things block closing it from the client, both verified rather than assumed:
 
-**Resolution when it is worth building: render ping coverage as a distinct state** on the Location
-bar — a third band (or a hatched/desaturated treatment of the sky band) meaning "checked in, but
-no position reported", derived from `LocationPing` density across the shift. That requires the bar
-to fetch ping data it does not currently receive, which is why it was explicitly out of scope for
-§7.4f rather than folded in.
+1. **The record carries no ping count.** `lastHeartbeatAt` is not a proxy: heartbeats
+   (`recordHeartbeat`) and location pings (`submitPing`) are separate client loops against
+   separate endpoints, and a ping never advances `lastHeartbeatAt`.
+2. **`checkIn.coords` cannot stand in for it.** `applyGeofenceCheck` does return immediately
+   without check-in coords — but `applyVisibilityRules` also nulls those same coords for any
+   viewer lacking `attendance.view_location`. Keying "No data" off coords would therefore label
+   an entire perfectly-tracked month "No data" for a manager without that grant. (This is why the
+   violation branch is evaluated first: `geofenceViolations` is never stripped, so it stays
+   trustworthy for every viewer.)
+
+**Resolution: put a ping count on the attendance payload** — e.g. `locationPingCount` aggregated
+per record in `listAttendance`/`getTeamAttendance` — and add a fifth chip state, "No positions
+reported", for a closed shift with a check-in and zero pings. That is a backend change, which is
+why §7.4g stopped short of it rather than quietly widening its own scope.
+
+### 2026-08-06 — Location column replaced by a Geofence status chip (§7.4g)
+
+Frontend only. §7.4f had put both columns on a shared 24-hour axis, which fixed the *arithmetic*
+but not the *reading*: two bars of identical width still sat side by side inviting comparison,
+when one measures "was the device connected" across the whole day and the other "how far from the
+check-in point". A chip reads as a value, like every other column in the table, and cannot be
+visually diffed against a bar.
+
+Four states — "Within range", "In progress", "N excursions · max 1.2 km" (count plus the largest
+`maxDistanceMeters`, metres under 1 km and kilometres to one decimal above), and "No data". The
+last is deliberately gray **and dashed**: a solid gray chip beside a green one still scans as a
+pass. Verified in a browser — `no data` renders `bg rgb(250,250,250) / dashed`, `within range`
+`bg rgb(246,255,237) / solid`.
+
+The column header is now **Geofence**, not "Location" — the old name read as "where were they",
+which is the Live Map's question, not this column's.
+
+The chip uses the same controlled AntD `Tooltip` as the timeline (never a native `title`, which a
+browser can show alongside an AntD one), listing every violation's clock range and distance.
+Verified: exactly one tooltip at every band of the Timeline bar AND every chip state, zero after
+sweeping between the two columns.
+
+**Deep-link.** An excursion chip opens `AttendanceLocationMapModal` for that record — the correct
+employee and date, with violation points already plotted. It is NOT wired to the Live Map tab:
+`LiveTrackingMap` is live-only (`GET /location/live`, open shifts, plus history for today) and
+takes no employee/date input, so it can never show a past row's trail. Clicking stops propagation
+so it does not also fire the row's own click.
+
+The bar rendering and `utils/attendanceGeofence.js` are deleted. `attendanceDayAxis.js` stays —
+the timeline still uses it — but its cross-column alignment tests went with the bar.
+
+**Tests:** 39 new (25 util, 14 component). The 13 discriminating component tests were run against
+the previous bar component first and all 13 observed to fail; the 25 util tests cover
+`geofenceSummary`, a module with no prior version to run against. Four existing tests asserting
+the old bar were updated. Frontend suite **75 files / 627 tests** (was 74/606); the 11 remaining
+failures are the known pre-existing timeout flakes in `LeadDetailPage`, `CustomersListPage`,
+`PaymentsListPage` and `UserManagementPage`, none touched here.
+
+The two AntD deprecations named in the task (`destroyInactiveTabPane` → `destroyOnHidden`,
+`dropdownRender` → `popupRender`) were already fixed under §7.4f and were verified still in place,
+not re-applied.

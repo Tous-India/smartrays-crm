@@ -98,20 +98,20 @@ describe("AttendancePhotoModal", () => {
     expect(screen.queryByRole("button", { name: /Edit Record/ })).not.toBeInTheDocument();
   });
 
-  it("shows a gray-based Location bar with no violation when none occurred", () => {
+  it("shows a 'Within range' chip when no violation occurred", () => {
     render(<AttendancePhotoModal open record={RECORD_WITH_PHOTOS} onCancel={vi.fn()} showLocation />);
 
     expect(screen.getByText("Location")).toBeInTheDocument();
-    // §7.4f — gray base outside the shift, sky band for the shift itself.
-    expect(screen.getByTestId("geofence-violation-bar")).toHaveClass("bg-gray-200");
-    expect(screen.queryByTestId("geofence-violation-segment")).not.toBeInTheDocument();
+    // §7.4g — the bar became a chip. The modal keeps its "Location" heading:
+    // it also holds the map, so "where were they" is apt there.
+    expect(screen.getByTestId("geofence-chip")).toHaveTextContent("Within range");
+    expect(screen.queryByTestId("geofence-violation-bar")).not.toBeInTheDocument();
   });
 
   it("shows the geofence violation info alongside connectivity gaps when a violation occurred", () => {
     render(<AttendancePhotoModal open record={RECORD_WITH_GEOFENCE_VIOLATION} onCancel={vi.fn()} showLocation />);
 
-    const violationSegment = screen.getByTestId("geofence-violation-segment");
-    expect(violationSegment).toHaveClass("bg-violet-600");
+    expect(screen.getByTestId("geofence-chip")).toHaveTextContent("1 excursion · max 950 m");
     expect(screen.getByText("Connectivity Gaps")).toBeInTheDocument();
   });
 

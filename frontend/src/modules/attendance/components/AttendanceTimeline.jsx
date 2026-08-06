@@ -1,13 +1,15 @@
+import { useState } from "react";
 import { Table, Tag, Tooltip, Space, Button, Popconfirm } from "antd";
 import {
   ExclamationCircleFilled,
-  EnvironmentOutlined,
+  AimOutlined,
   CloseCircleOutlined,
   ClockCircleOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import AttendanceTimelineBar from "./AttendanceTimelineBar";
 import GeofenceViolationBar from "./GeofenceViolationBar";
+import AttendanceLocationMapModal from "./AttendanceLocationMapModal";
 import { ATTENDANCE_STATUS_COLORS, ATTENDANCE_STATUS_LABELS } from "../constants/attendance.constants";
 
 /**
@@ -42,6 +44,14 @@ function AttendanceTimeline({
   onMarkStatus,
   onRowClick,
 }) {
+  // §7.4g — the Geofence chip opens the map for THIS record's employee and
+  // date. `LiveTrackingMap` cannot serve that: it is live-only
+  // (`GET /location/live`, open shifts, today) and takes no employee/date
+  // input, so it can never show a past row's trail. `AttendanceLocationMapModal`
+  // already locks `HistoryMapView` to one record's employee/day and plots the
+  // violation points, so the chip reuses it rather than inventing a route.
+  const [mapRecord, setMapRecord] = useState(null);
+
   const columns = [
     ...(showEmployeeColumn
       ? [
@@ -77,15 +87,21 @@ function AttendanceTimeline({
       render: (_, record) => (record.isMissingDay ? null : <AttendanceTimelineBar record={record} />),
     },
     {
+      // Renamed from "Location" (§7.4g) — that read as "where were they",
+      // which is the Live Map's question. This column answers "how far from
+      // the check-in point", which is the geofence.
       title: (
         <Space size={4}>
-          <EnvironmentOutlined />
-          Location
+          <AimOutlined />
+          Geofence
         </Space>
       ),
       key: "geofence",
-      width: 220,
-      render: (_, record) => (record.isMissingDay ? null : <GeofenceViolationBar record={record} />),
+      width: 200,
+      render: (_, record) =>
+        record.isMissingDay ? null : (
+          <GeofenceViolationBar record={record} onInvestigate={setMapRecord} />
+        ),
     },
     {
       title: "Status",
@@ -146,6 +162,7 @@ function AttendanceTimeline({
   ];
 
   return (
+    <>
     <Table
       rowKey="_id"
       columns={columns}
@@ -168,6 +185,12 @@ function AttendanceTimeline({
           : undefined
       }
     />
+    <AttendanceLocationMapModal
+      open={Boolean(mapRecord)}
+      record={mapRecord}
+      onCancel={() => setMapRecord(null)}
+    />
+    </>
   );
 }
 

@@ -978,7 +978,37 @@ timestamps, two of them near-identical-looking colored bars (`ConnectivityGapBar
 duplication even though the underlying data doesn't overlap. Nothing about the underlying data
 needed fixing before building this on top of it.
 
-#### Timeline and Location share one 24-hour axis (§7.4f, 2026-08-06)
+#### The Geofence column is a chip, not a bar (§7.4g, 2026-08-06)
+
+`GeofenceViolationBar` renders a status chip. §7.4f had already put it on the timeline's axis,
+which fixed the arithmetic but not the reading — two bars of equal width side by side still
+invited comparison, when one measures "was the device connected" across the day and the other
+"how far from the check-in point". A chip reads as a value, like every other column.
+
+Four states from `utils/geofenceSummary.js#summarizeGeofence`: **Within range**, **In progress**,
+**N excursions · max 1.2 km** (count plus the largest `maxDistanceMeters`; metres under 1 km,
+kilometres to one decimal above), and **No data** — gray *and dashed*, because a solid gray chip
+beside a green one still scans as a pass. Header renamed from "Location", which read as "where
+were they" — the Live Map's question, not this column's.
+
+`no_data` is keyed on "no check-in on this record" and deliberately NOT on missing
+`checkIn.coords`: `applyVisibilityRules` nulls those for any viewer without
+`attendance.view_location`, so that would label a fully-tracked month "No data" for a manager
+lacking the grant. The violation branch runs first because `geofenceViolations` is never stripped.
+
+An excursion chip opens `AttendanceLocationMapModal` for that record's employee and date, with
+violation points already plotted, and stops propagation so it doesn't also fire the row's click.
+It is not wired to the Live Map tab — `LiveTrackingMap` is live-only and takes no employee/date
+input, so it cannot show a past row's trail.
+
+Tooltip is the same controlled AntD `Tooltip` the timeline uses, listing each violation's clock
+range and distance. Never a native `title`, which a browser can render at the same time as an AntD
+tooltip from the neighbouring column.
+
+**Known limitation** (`docs/project-status.md`): a shift that checked in and then reported no
+positions still reads "Within range". Closing it needs a ping count on the attendance payload.
+
+#### Timeline and the (former) Location bar shared one 24-hour axis (§7.4f, 2026-08-06)
 
 The two bars in an Attendance row are drawn against the same midnight→midnight axis, so a band at
 a given x-offset means the same clock time in both columns. `utils/attendanceDayAxis.js` owns that
@@ -987,22 +1017,9 @@ consume it and neither computes percentages itself — two components independen
 axis is precisely how they drifted apart. Previously Location stretched check-in→check-out across
 its full width, making the halfway mark 12:00 in one column and 13:30 in the other.
 
-Off-shift hours carry no segment in either column, so the shared `bg-gray-200` base shows through.
-The Location bar used to be `green-400` end to end, asserting "inside the geofence" for the whole
-night.
-
-Location has its own palette — `sky-300` inside the geofence, `violet-600` outside — because
-`green-400` previously meant "connected" in one column and "inside the geofence" in the other, and
-`orange-500` sat one shade from Timeline's `red-500` on a 12px bar. The violation colour is
-deliberately outside the red-orange range.
-
-An open shift (no checkout) runs to the end of the day in BOTH bars, so an in-progress shift ends
-at the same offset in each. Location previously bailed out to plain "Shift in progress" text and
-lost its axis entirely.
-
-**Known limitation, documented in `docs/project-status.md`:** the Location bar reads
-`geofenceViolations[]` only, never `LocationPing`, so a period with no pings looks identical to
-one fully inside the geofence.
+Superseded by §7.4g above, which replaced that column with a chip — the axis helper stays because
+the timeline still uses it, and it keeps its own tests for the midnight-bounds and
+open-shift-runs-to-end-of-day edge cases.
 
 #### One tooltip for the whole bar, content keyed by band (2026-08-06)
 
