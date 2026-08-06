@@ -2193,6 +2193,42 @@ already had. All three tabs verified clean at 390px.
 
 ---
 
+### Two-factor authentication — frontend (§7.38, 2026-08-05)
+
+**Login is now two-step when a second factor is outstanding.** `sessionStore.login` no longer
+assumes a session: when the backend returns a `preAuthToken` it does NOT mark the store
+authenticated, because doing so would render a signed-in shell to someone who has supplied only a
+password. `LoginPage` holds the pre-auth token in component state for the few seconds between the
+two steps — never persisted, since it is deliberately not a cookie.
+
+Two challenge screens, both blocking:
+- **`TwoFactorChallenge`** — one field accepting a TOTP *or* a recovery code (the backend decides
+  which). Asking someone locked out of their phone to first find the right input is friction at
+  the worst possible moment. On a 429 the form is replaced by "Start again", because further
+  codes — even correct ones — are refused until the login restarts.
+- **`TwoFactorEnrolment`** — the mandatory gate for admin/manager, and voluntary enrolment from
+  Settings. One component serves both; `preAuthToken` decides which credential the calls carry.
+
+The QR is generated **client-side** from the `otpauth://` URI, never via a third-party chart
+service — that is exactly how a 2FA secret quietly leaks. The manual key is always shown too,
+since many desktop authenticators cannot scan.
+
+Recovery codes appear once, behind an explicit "I've saved these codes somewhere safe" checkbox
+that gates the Continue button. They cannot be retrieved afterwards, so the confirmation is the
+point rather than ceremony.
+
+**Settings → Account** is available to EVERY signed-in user (2FA status/enrolment, recovery-code
+regeneration, password change) — personal security settings, not administrative ones. As a
+result Settings is no longer wholly off-limits to a non-admin; the administrative tabs remain
+permission-gated exactly as before.
+
+**Deliberately NO "reset password by email" link here.** Production SMTP points at a placeholder
+host and `/auth/forgot-password` returns 500, so offering it to a signed-in user would send them
+down a path that cannot work when they can simply change their password directly. The signed-out
+`/forgot-password` page is untouched.
+
+---
+
 ## Env Vars
 
 ```

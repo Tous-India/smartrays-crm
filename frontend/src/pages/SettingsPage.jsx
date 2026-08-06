@@ -6,6 +6,7 @@ import { ROUTE_PATHS } from "../constants/routePaths.constants";
 import UserManagementPage from "../modules/user/components/UserManagementPage";
 import TeamManagementPage from "../modules/team/components/TeamManagementPage";
 import PermissionManagementPage from "../modules/permission/components/PermissionManagementPage";
+import AccountSecurityPage from "../modules/auth/components/AccountSecurityPage";
 
 /**
  * `/settings/users` and `/settings/permissions` both render this one page —
@@ -29,6 +30,13 @@ function SettingsPage() {
   const canSeeTeams = can(user, "teams", "manage") || can(user, "teams", "view_team");
 
   const items = [
+    // Account is available to EVERY signed-in user — 2FA and password change
+    // are personal security settings, not administrative ones.
+    {
+      key: ROUTE_PATHS.SETTINGS_ACCOUNT,
+      label: "Account",
+      children: <AccountSecurityPage />,
+    },
     canViewUsers && {
       key: ROUTE_PATHS.SETTINGS_USERS,
       label: "User Management",

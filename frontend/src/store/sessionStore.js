@@ -27,8 +27,33 @@ export const useSessionStore = create((set) => ({
     }
   },
 
+  /**
+   * §7.38 — login no longer always produces a session. When a second factor
+   * is outstanding the backend returns `preAuthToken` and sets NO cookie, so
+   * this must NOT mark the store authenticated; it returns the challenge and
+   * lets `LoginPage` render the code or enrolment step. Treating that
+   * response as a session would show a logged-in shell to someone who has
+   * only supplied a password.
+   */
   async login(email, password) {
     const response = await loginRequest({ email, password });
+    const data = response.data.data;
+
+    if (data?.preAuthToken) {
+      return data;
+    }
+
+    set({ user: data, isAuthenticated: true, isLoading: false });
+    return data;
+  },
+
+  /**
+   * Called once the second factor has verified and the real cookie exists.
+   * Re-reads `/auth/me` rather than trusting the verify response, keeping the
+   * store's "identity always comes from the server" rule intact.
+   */
+  async completeTwoFactor() {
+    const response = await fetchCurrentUser();
     set({ user: response.data.data, isAuthenticated: true, isLoading: false });
     return response.data.data;
   },

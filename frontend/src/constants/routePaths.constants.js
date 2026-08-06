@@ -35,6 +35,7 @@ export const ROUTE_PATHS = {
   // rendered as tabs on the same `SettingsPage`, not separate pages.
   SETTINGS: "/settings",
   SETTINGS_PERMISSIONS: "/settings/permissions",
+  SETTINGS_ACCOUNT: "/settings/account",
   SETTINGS_USERS: "/settings/users",
   SETTINGS_TEAMS: "/settings/teams",
   // A real standalone route (not a SettingsPage tab, unlike the three

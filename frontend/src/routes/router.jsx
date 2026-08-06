@@ -71,6 +71,7 @@ export const router = createBrowserRouter(
               the current path (§ sidebar redesign). */}
           <Route path="settings" element={<Navigate to="settings/users" replace />} />
           <Route path="settings/permissions" element={<SettingsPage />} />
+          <Route path="settings/account" element={<SettingsPage />} />
           <Route path="settings/users" element={<SettingsPage />} />
           <Route path="settings/users/:id" element={<UserDetailPage />} />
           <Route path="settings/teams" element={<SettingsPage />} />

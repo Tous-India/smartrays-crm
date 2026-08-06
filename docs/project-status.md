@@ -2172,3 +2172,25 @@ recovery-code display, no 2FA step in login, no Settings account section. **Depl
 backend alone would lock every admin and manager out of production**, because login would return
 `requiresEnrolment` with no cookie and the current frontend has no idea what to do with it.
 Committed but deliberately NOT deployed.
+
+### 2026-08-05 — 2FA frontend complete; backend + frontend deployed together
+
+Built the 2FA login step, the blocking enrolment gate, client-side QR + manual key, one-time
+recovery-code display behind an explicit confirmation, and Settings → Account (2FA status,
+recovery-code regeneration, password change).
+
+The store change matters most: `login` no longer marks the session authenticated when a
+`preAuthToken` comes back, so the UI cannot show a signed-in shell to someone who has only
+supplied a password. Six frontend tests assert exactly that, plus the rate-limit restart path and
+the recovery-code confirmation gate.
+
+Settings → Account is available to every signed-in user, so Settings is no longer entirely
+off-limits to a non-admin; administrative tabs stay permission-gated. Its test was updated
+accordingly. No password-reset-by-email link is offered to signed-in users, since that endpoint
+500s in production.
+
+Frontend 484 passing (the remaining failures are the long-standing pre-existing set in
+LeadDetailPage / CustomersListPage / PaymentsListPage / UserManagementPage). Backend 755/755.
+Both builds succeed. **Deployed backend and frontend together** — deploying the backend alone
+would have locked every admin and manager out, since login returns `requiresEnrolment` with no
+cookie and the old frontend could not handle it.
