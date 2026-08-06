@@ -72,7 +72,7 @@ describe("MainLayout — nav composition and Settings gating", () => {
     expect(screen.queryByText("Permission Settings")).not.toBeInTheDocument();
   });
 
-  it("hides the Settings group entirely for a user with neither users.* nor permissions.manage", async () => {
+  it("still shows Settings for a user with no admin grants — it holds their own Account (§7.39)", async () => {
     useSessionStore.setState({
       user: { _id: "sales-1", name: "Sam Sales", role: "sales_associate", permissions: {} },
       isAuthenticated: true,
@@ -82,7 +82,9 @@ describe("MainLayout — nav composition and Settings gating", () => {
     renderLayout();
 
     await screen.findByText("Dashboard Content");
-    expect(screen.queryByText("Settings")).not.toBeInTheDocument();
+    // Settings is no longer admin-gated (§7.39): it carries every user's own
+    // Account (2FA, password). Which TABS appear inside is still gated.
+    expect(screen.getAllByText("Settings").length).toBeGreaterThan(0);
   });
 
   it("marks the current page's nav item as selected", async () => {
@@ -269,7 +271,7 @@ describe("MainLayout — sidebar footer profile menu", () => {
     expect(settingsLink).toHaveAttribute("href", "/settings/users");
   });
 
-  it("hides the Settings gear icon for a user with no Settings access", async () => {
+  it("still shows the Settings gear for a user with no admin grants (§7.39)", async () => {
     useSessionStore.setState({
       user: { _id: "sales-1", name: "Sam Sales", role: "sales_associate", permissions: {} },
       isAuthenticated: true,
@@ -279,7 +281,7 @@ describe("MainLayout — sidebar footer profile menu", () => {
     renderLayout();
 
     await screen.findByText("Sam Sales");
-    expect(screen.queryByLabelText("Settings")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Settings")).toBeInTheDocument();
   });
 
   it("renders a distinct, always-visible 'Sign out' button (not tucked inside a menu) that logs out and redirects to /login", async () => {

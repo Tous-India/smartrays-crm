@@ -117,7 +117,7 @@ describe("SettingsPage", () => {
     expect(screen.queryByRole("tab", { name: "User Management" })).not.toBeInTheDocument();
   });
 
-  it("shows ONLY the Account tab for a user with no administrative Settings access (§7.38)", async () => {
+  it("renders the employee's own settings view, not the administrative tab set (§7.39)", async () => {
     useSessionStore.setState({
       user: { _id: "emp-1", role: "employee", permissions: {} },
       isAuthenticated: true,
@@ -126,12 +126,10 @@ describe("SettingsPage", () => {
 
     renderSettings("/settings/users");
 
-    // Account is everyone's own security settings (2FA, password), so
-    // Settings is no longer wholly off-limits to a non-admin — but the
-    // administrative tabs stay hidden.
-    expect(await screen.findByRole("tab", { name: "Account" })).toBeInTheDocument();
+    // Employees get their own read-only access view plus Account, not the
+    // admin tabs — and never a 403, since Account is everyone's.
+    expect(await screen.findByText("Your access")).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "User Management" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "Permissions" })).not.toBeInTheDocument();
     expect(screen.queryByText("Not authorized")).not.toBeInTheDocument();
   });
 });

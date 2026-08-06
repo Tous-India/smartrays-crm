@@ -4544,6 +4544,25 @@ reads as live is worse than no marker.
 
 ---
 
+## §7.39 — Employee self-service pages (2026-08-05)
+
+Employees get dedicated routes (`/attendance` attendance-only, `/leave`, `/team`, `/profile`,
+`/settings`) and a narrower nav. Admin and manager keep the combined tabbed Attendance page.
+
+Three server-side rules define this feature, none of them enforced in the UI:
+
+1. **`PATCH /users/me` rejects rather than ignores.** photo always; name/phone only with
+   `canEditOwnProfile`; email/role/permissions/managerId/isActive/teamId never. A request carrying
+   a forbidden field is refused whole. `password` routes through `/auth/change-password`, which
+   requires the current password.
+2. **`showContactsToMembers` omits contact fields from the query**, so they never reach a browser
+   that shouldn't have them. Defaults false; only the team's head or an admin toggles it.
+3. **`GET /users/me/permissions` and `GET /teams/mine` are SELF endpoints**, added rather than
+   relaxing the admin-only equivalents. `/teams/mine` exists because an employee holds no
+   `teams.*` grant at all.
+
+---
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a

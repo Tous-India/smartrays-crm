@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
-import { Table, Button, Popconfirm, Space, App, Tag, Select } from "antd";
+import { Table, Button, Popconfirm, Space, App, Tag, Select, Switch, Tooltip } from "antd";
 import { PlusOutlined, EditOutlined, DeleteOutlined, TeamOutlined } from "@ant-design/icons";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import useTeams from "../hooks/useTeams";
-import { createTeam, updateTeam, deleteTeam } from "../api/teamApi";
+import { createTeam, updateTeam, deleteTeam, setTeamShowContacts } from "../api/teamApi";
 import TeamFormModal from "./TeamFormModal";
 import TeamMembersModal from "./TeamMembersModal";
 import useSessionStore from "../../../store/sessionStore";
@@ -105,6 +105,31 @@ function TeamManagementPage() {
       title: "Members",
       dataIndex: "memberCount",
       render: (value) => <Tag>{value}</Tag>,
+    },
+    {
+      // §7.39 — a team's head may toggle this even without `teams.manage`;
+      // the backend enforces head-or-admin, so this renders for anyone who
+      // can see the row and simply surfaces the server's refusal otherwise.
+      title: "Member contacts",
+      dataIndex: "showContactsToMembers",
+      render: (showContacts, team) => (
+        <Tooltip title="When off, teammates' email and phone are never sent to the browser at all">
+          <Switch
+            size="small"
+            checked={Boolean(showContacts)}
+            aria-label={`Toggle contact visibility for ${team.name}`}
+            onChange={async (checked) => {
+              try {
+                await setTeamShowContacts(team._id, checked);
+                message.success(checked ? "Contacts visible to members" : "Contacts hidden from members");
+                refetch();
+              } catch (error) {
+                message.error(error.response?.data?.message || "Could not update contact visibility");
+              }
+            }}
+          />
+        </Tooltip>
+      ),
     },
     {
       title: "Status",

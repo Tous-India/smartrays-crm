@@ -248,3 +248,54 @@ describe("Team contact visibility", () => {
     expect(response.status).toBe(200);
   });
 });
+
+/**
+ * §7.39 — `GET /teams/mine` exists because an employee holds NO `teams.*`
+ * grant, so `GET /teams` 403s for them and the employee Team page would be
+ * impossible without a self endpoint.
+ */
+describe("GET /teams/mine", () => {
+  async function createTeamHeadedByManager() {
+    return (
+      await adminAgent.post("/api/v1/teams").send({ name: "Self Team", headManagerId: String(manager._id) })
+    ).body.data;
+  }
+
+  it("returns the caller's own team, naming the head separately from the members", async () => {
+    await createTeamHeadedByManager();
+
+    const response = await employeeAgent.get("/api/v1/teams/mine");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.name).toBe("Self Team");
+    expect(response.body.data.head.name).toBe("Manager");
+    expect(response.body.data.members.map((m) => m.name)).toContain("Employee");
+  });
+
+  it("omits contact fields for head AND members when the team hasn't opted in", async () => {
+    await createTeamHeadedByManager();
+
+    const response = await employeeAgent.get("/api/v1/teams/mine");
+
+    expect(response.body.data.head).not.toHaveProperty("email");
+    expect(response.body.data.members[0]).not.toHaveProperty("email");
+  });
+
+  it("includes contacts once opted in", async () => {
+    const team = await createTeamHeadedByManager();
+    await managerAgent
+      .patch(`/api/v1/teams/${team._id}/show-contacts`)
+      .send({ showContactsToMembers: true });
+
+    const response = await employeeAgent.get("/api/v1/teams/mine");
+
+    expect(response.body.data.head.email).toBe("manager@self.local");
+  });
+
+  it("returns null for someone with no manager, rather than erroring", async () => {
+    const response = await adminAgent.get("/api/v1/teams/mine");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toBeNull();
+  });
+});

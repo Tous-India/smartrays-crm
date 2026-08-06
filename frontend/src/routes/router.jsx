@@ -23,6 +23,9 @@ import TicketDetailPage from "../pages/TicketDetailPage";
 import PaymentsPage from "../pages/PaymentsPage";
 import ReportsPage from "../pages/ReportsPage";
 import SettingsPage from "../pages/SettingsPage";
+import EmployeeLeavePage from "../pages/EmployeeLeavePage";
+import EmployeeTeamPage from "../pages/EmployeeTeamPage";
+import EmployeeProfilePage from "../pages/EmployeeProfilePage";
 import UserDetailPage from "../pages/UserDetailPage";
 import PortalHomePage from "../pages/PortalHomePage";
 import NotFoundPage from "../pages/NotFoundPage";
@@ -71,6 +74,11 @@ export const router = createBrowserRouter(
               the current path (§ sidebar redesign). */}
           <Route path="settings" element={<Navigate to="settings/users" replace />} />
           <Route path="settings/permissions" element={<SettingsPage />} />
+          {/* §7.39 — employee-facing routes. Admin/manager keep the combined
+              tabbed Attendance page and are unaffected. */}
+          <Route path="leave" element={<EmployeeLeavePage />} />
+          <Route path="team" element={<EmployeeTeamPage />} />
+          <Route path="profile" element={<EmployeeProfilePage />} />
           <Route path="settings/account" element={<SettingsPage />} />
           <Route path="settings/users" element={<SettingsPage />} />
           <Route path="settings/users/:id" element={<UserDetailPage />} />

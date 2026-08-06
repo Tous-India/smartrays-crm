@@ -5,7 +5,6 @@ import TeamAttendanceView from "../modules/attendance/components/TeamAttendanceV
 import AdminAttendanceView from "../modules/attendance/components/AdminAttendanceView";
 import LeaveSection from "../modules/leave/components/LeaveSection";
 import LiveTrackingMap from "../modules/location/components/LiveTrackingMap";
-import ApplyLeavePanel from "../modules/leave/components/ApplyLeavePanel";
 import useSessionStore from "../store/sessionStore";
 import { can } from "../utils/permission.utils";
 
@@ -17,7 +16,8 @@ import { can } from "../utils/permission.utils";
  *
  * **Tabs are role-shaped, not permission-derived**, matching how each role
  * actually uses the page:
- * - Employee: My Attendance | Apply Leave | My Leave
+ * - Employee: attendance only — their leave lives at `/leave` (§7.39), so
+ *   a single tab renders with no tab bar.
  * - Manager:  My Attendance | Team Attendance | Leave — their existing
  *   Own/Team split stays INSIDE the Leave tab as a sub-filter rather than
  *   becoming two more top-level tabs, so the top level stays about "whose
@@ -64,11 +64,11 @@ function AttendancePage() {
       ];
     }
 
-    return [
-      { key: "my-attendance", label: "My Attendance", children: <PersonalAttendanceView /> },
-      { key: "apply-leave", label: "Apply Leave", children: <ApplyLeavePanel /> },
-      { key: "my-leave", label: "My Leave", children: <LeaveSection view="all" /> },
-    ];
+    // §7.39 (2026-08-05) — an employee's Attendance page is attendance ONLY.
+    // Apply Leave and My Leave moved to their own `/leave` route, so this
+    // role has one tab and therefore no tab bar at all. Admin and manager
+    // keep the combined tabbed page above, unchanged.
+    return [{ key: "my-attendance", label: "My Attendance", children: <PersonalAttendanceView /> }];
   }, [isAdmin, canViewTeamAttendance, canViewLiveMap]);
 
   const [activeKey, setActiveKey] = useState(items[0].key);

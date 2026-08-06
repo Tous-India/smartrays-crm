@@ -2215,3 +2215,26 @@ browser — not stripped afterwards, not hidden in the UI. Defaults false; only 
 or an admin can toggle it.
 
 Backend **778/778 passing** (23 new).
+
+### 2026-08-05 — Employee-facing pages (§7.39, frontend)
+
+Employees now have `/attendance` (attendance only), `/leave`, `/team`, `/profile` and `/settings`,
+plus their own nav. Admin and manager keep the combined tabbed Attendance page untouched.
+`LeaveSection` is reused via a thin wrapper rather than a second leave component.
+
+**One backend addition beyond the brief, because item 7 was impossible without it:**
+`GET /teams/mine`. `GET /teams` requires `teams.manage`/`teams.view_team` and an employee holds
+neither — `view_team` is scoped to teams you HEAD, which an employee never does — so the Team page
+would have 403'd. The endpoint also returns the head as a named person, since `getTeamMembers`
+lists users whose `managerId` IS the head and therefore never includes them. 4 extra tests.
+
+The profile page renders name/phone as read-only TEXT when `canEditOwnProfile` is false, not a
+disabled input that fails on save, and only ever sends fields the server accepts for that user.
+Admin/manager toggles added: contact visibility per team row, and self-editing on user detail.
+
+Settings is no longer admin-gated (it holds everyone's own Account); its tabs remain
+permission-gated and employees get a read-only access view. Three existing tests were updated to
+this new contract rather than worked around.
+
+Frontend **495 passing** (10 new); the 4 failing files are the long-standing pre-existing set.
+Backend **782/782**. Both builds succeed.

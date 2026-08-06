@@ -101,6 +101,48 @@ export async function getTeamMembers(teamId, requestingUser) {
 }
 
 /**
+ * The caller's OWN team (§7.39, 2026-08-05) — resolved through their
+ * `managerId`, the same managerId-derived membership the Team model already
+ * uses, so nothing new is stored.
+ *
+ * A self endpoint is REQUIRED here rather than reusing `GET /teams`: that is
+ * gated on `teams.manage`/`teams.view_team`, and an employee holds neither —
+ * `view_team` is scoped to teams you HEAD, which an employee never does. So
+ * the employee Team page would 403 without this.
+ *
+ * Returns the head as a named person alongside the members. `getTeamMembers`
+ * lists users whose `managerId` IS the head, so the head is by construction
+ * not in that list and has to be resolved separately.
+ */
+export async function getMyTeam(requestingUser) {
+  if (!requestingUser.managerId) {
+    return null;
+  }
+
+  const team = await Team.findOne({ headManagerId: requestingUser.managerId, isActive: true });
+
+  if (!team) {
+    return null;
+  }
+
+  const contactFields = team.showContactsToMembers ? " email phone" : "";
+
+  const [head, members] = await Promise.all([
+    User.findById(team.headManagerId).select(`_id name role photo${contactFields}`),
+    User.find({ managerId: team.headManagerId }).select(`_id name role photo${contactFields}`).sort({ name: 1 }),
+  ]);
+
+  return {
+    _id: team._id,
+    name: team.name,
+    type: team.type,
+    showContactsToMembers: team.showContactsToMembers,
+    head,
+    members,
+  };
+}
+
+/**
  * Toggling `showContactsToMembers` is restricted to the team's OWN head or an
  * admin — it is a disclosure decision about that team's members, so a
  * manager of some other team has no business making it.

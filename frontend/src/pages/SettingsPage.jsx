@@ -7,6 +7,7 @@ import UserManagementPage from "../modules/user/components/UserManagementPage";
 import TeamManagementPage from "../modules/team/components/TeamManagementPage";
 import PermissionManagementPage from "../modules/permission/components/PermissionManagementPage";
 import AccountSecurityPage from "../modules/auth/components/AccountSecurityPage";
+import EmployeeSettingsPage from "./EmployeeSettingsPage";
 
 /**
  * `/settings/users` and `/settings/permissions` both render this one page —
@@ -28,6 +29,12 @@ function SettingsPage() {
   // caller holds decides whether it renders read-only — see
   // `TeamManagementPage`, which makes that call itself.
   const canSeeTeams = can(user, "teams", "manage") || can(user, "teams", "view_team");
+
+  // §7.39 — an employee's Settings is their own read-only role/permissions
+  // plus Account, not a tab set of administrative screens they can't use.
+  if (user?.role === "employee") {
+    return <EmployeeSettingsPage />;
+  }
 
   const items = [
     // Account is available to EVERY signed-in user — 2FA and password change

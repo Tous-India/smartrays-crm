@@ -2229,6 +2229,49 @@ down a path that cannot work when they can simply change their password directly
 
 ---
 
+### Employee-facing pages (§7.39, 2026-08-05)
+
+Employees get their own destinations; **admin and manager keep the combined tabbed Attendance
+page unchanged.**
+
+| Route | What it shows |
+|---|---|
+| `/attendance` | Attendance ONLY for this role — one tab, so no tab bar renders |
+| `/leave` | Apply + own history, via `LeaveSection view="all"` |
+| `/team` | Team head + teammate names; contacts only if the team opted in |
+| `/profile` | Own details; photo always editable, name/phone gated, email read-only |
+| `/settings` | Own role + permissions READ-ONLY, plus Account (2FA, password) |
+
+**`LeaveSection` is reused, not rebuilt** — `/leave` is a thin wrapper. Writing a second leave
+component would duplicate the Balance card, the fetch-error Alert, the per-row scope gate and the
+request modal, and let the two drift.
+
+**`/team` reads `GET /teams/mine`, a self endpoint added for this.** `GET /teams` is gated on
+`teams.manage`/`teams.view_team` and an employee holds neither (`view_team` is scoped to teams you
+HEAD, which an employee never does), so the page would have 403'd without it. It also returns the
+head as a named person: `getTeamMembers` lists users whose `managerId` IS the head, so the head is
+by construction absent from that list.
+
+**Contact details are omitted by the SERVER**, not hidden here. The component renders whatever it
+is given, so there is no client-side check to bypass — and it deliberately shows no attendance or
+leave status of teammates, which is a manager-level question and would leak colleagues'
+whereabouts to their peers.
+
+**`/profile` renders name and phone as read-only TEXT when `canEditOwnProfile` is false** — not a
+disabled-looking input that fails on save. It also only ever SENDS the fields the server will
+accept for that user, because `PATCH /users/me` refuses a whole request containing a gated field
+rather than ignoring it. Email is never an input in either state.
+
+**Settings is no longer admin-gated** — it carries every user's own Account. Which tabs appear
+inside is still permission-gated, and an employee gets their own read-only access view instead of
+the administrative tab set.
+
+**Admin/manager controls:** a contact-visibility switch per row on the Team page (the team's own
+head may use it, not just admin — the backend enforces head-or-admin), and a "let them edit their
+own name and phone" switch on the user detail page (that person's manager, or admin).
+
+---
+
 ## Env Vars
 
 ```

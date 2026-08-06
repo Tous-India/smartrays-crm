@@ -12,6 +12,7 @@ import UserBasicInfoCard from "../modules/user/components/UserBasicInfoCard";
 import UserAttendanceSummaryCard from "../modules/user/components/UserAttendanceSummaryCard";
 import UserLeaveCard from "../modules/user/components/UserLeaveCard";
 import UserTeamCard from "../modules/user/components/UserTeamCard";
+import UserSelfEditCard from "../modules/user/components/UserSelfEditCard";
 import UserOwnedLeadsCard from "../modules/user/components/UserOwnedLeadsCard";
 import UserPermissionsCard from "../modules/user/components/UserPermissionsCard";
 import UserPayrollHistoryCard from "../modules/user/components/UserPayrollHistoryCard";
@@ -123,6 +124,12 @@ function UserDetailPage() {
         </Col>
         <Col xs={24} md={12} lg={8}>
           <UserTeamCard user={user} teams={teams} isLoading={isTeamsLoading} />
+
+          {/* §7.39 — grants this person the right to edit their OWN name and
+              phone. Their manager or an admin only; the backend enforces
+              that, so a manager viewing someone else's report simply gets a
+              refusal rather than a hidden control that half-works. */}
+          <UserSelfEditCard user={user} onChanged={refetch} />
         </Col>
         <Col xs={24} md={12} lg={8}>
           <UserLeaveCard user={user} />

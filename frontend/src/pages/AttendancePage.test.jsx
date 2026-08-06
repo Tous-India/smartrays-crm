@@ -56,14 +56,14 @@ beforeEach(() => {
  * that the move didn't change any permission.
  */
 describe("AttendancePage — role-based tabs", () => {
-  it("gives an employee My Attendance | Apply Leave | My Leave", () => {
+  it("gives an employee attendance ONLY — leave moved to its own /leave page (§7.39)", () => {
     setUser({ _id: "emp-1", role: "employee", permissions: { leave: { view: true } } });
 
     render(<AttendancePage />);
 
     expect(screen.getByRole("tab", { name: "My Attendance" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Apply Leave" })).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "My Leave" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Apply Leave" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "My Leave" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Team Attendance" })).not.toBeInTheDocument();
   });
 
@@ -101,7 +101,7 @@ describe("AttendancePage — role-based tabs", () => {
     render(<AttendancePage />);
 
     expect(screen.queryByRole("tab", { name: "Team Attendance" })).not.toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: "Apply Leave" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "My Attendance" })).toBeInTheDocument();
   });
 
   it("switching a manager to Team Attendance renders the team view", async () => {

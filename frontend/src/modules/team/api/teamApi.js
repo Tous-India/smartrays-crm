@@ -42,3 +42,16 @@ export function removeTeamMember(teamId, userId) {
 export function getTeamTypes() {
   return apiClient.get("/team-types");
 }
+
+/**
+ * The caller's OWN team (§7.39) — authenticate-only, no `teams.*` grant
+ * needed. `GET /teams` requires manage/view_team, neither of which an
+ * employee holds, so the employee Team page depends on this endpoint.
+ */
+export function getMyTeam() {
+  return apiClient.get("/teams/mine");
+}
+
+export function setTeamShowContacts(teamId, showContactsToMembers) {
+  return apiClient.patch(`/teams/${teamId}/show-contacts`, { showContactsToMembers });
+}

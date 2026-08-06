@@ -14,6 +14,7 @@ import {
   createType,
   updateType,
   toggleShowContacts,
+  myTeam,
 } from "./team.controller.js";
 import {
   validateCreateTeamInput,
@@ -39,6 +40,11 @@ const manage = authorize("teams", "manage");
 const read = authorizeAny("teams", ["manage", "view_team"]);
 
 const teamRouter = Router();
+
+// Registered BEFORE "/:id" so Express never matches "mine" as a team id.
+// Authenticate-only: this returns the caller's OWN team, so it needs no
+// teams.* grant — an employee holds none. See team.service.js#getMyTeam.
+teamRouter.get("/mine", authenticate, myTeam);
 
 teamRouter.get("/", authenticate, read, list);
 teamRouter.post("/", authenticate, manage, validateCreateTeamInput, create);
