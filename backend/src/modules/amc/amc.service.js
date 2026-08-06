@@ -75,6 +75,17 @@ export function decorateAMC(amc, now = new Date()) {
   const record = typeof amc.toObject === "function" ? amc.toObject() : { ...amc };
   const renewalDate = record.renewalDate ? new Date(record.renewalDate) : null;
 
+  // When `customerId` was populated, flatten it back to a plain id and lift
+  // the name onto `customerName`. Existing callers keep receiving a bare
+  // `customerId` exactly as before — the Customer Detail page compares it as
+  // a string — and the panel gets the name without a second request.
+  if (record.customerId && typeof record.customerId === "object" && record.customerId._id) {
+    // `companyName` is the Customer model's display field — there is no
+    // `name` on it.
+    record.customerName = record.customerId.companyName ?? null;
+    record.customerId = record.customerId._id;
+  }
+
   const soonCutoff = new Date(now);
   soonCutoff.setDate(soonCutoff.getDate() + EXPIRING_SOON_DAYS);
 
@@ -95,16 +106,51 @@ export function decorateAMC(amc, now = new Date()) {
 export async function listAMC(requestingUser, filters = {}) {
   const scopeFilter = await resolveAMCFilter(requestingUser);
   const query = { ...scopeFilter };
+  const conditions = [];
 
   if (filters.customerId) {
     // Intersect rather than overwrite — `scopeFilter.customerId` is an
     // `$in` over the caller's visible customers when they aren't admin.
-    query.$and = [{ customerId: filters.customerId }];
+    conditions.push({ customerId: filters.customerId });
   }
 
-  const records = await AMC.find(query).sort({ renewalDate: 1 });
+  if (filters.expiringSoon) {
+    conditions.push(expiringSoonCondition());
+  }
+
+  if (conditions.length > 0) {
+    query.$and = conditions;
+  }
+
+  // `populate` — ONE query with a join, not one lookup per record. The
+  // Customers list already fires a `/customers/:id/contracts` request per row
+  // (a known N+1); the renewals panel above it must not add a second, so the
+  // customer's name rides along on the same query that fetched the AMCs.
+  const records = await AMC.find(query).populate("customerId", "companyName").sort({ renewalDate: 1 });
 
   return records.map((record) => decorateAMC(record));
+}
+
+/**
+ * "Needs attention": ACTIVE records that either expire within the next
+ * `EXPIRING_SOON_DAYS` or have already passed their renewal date.
+ *
+ * Deliberately WIDER than `decorateAMC`'s `isExpiringSoon` flag, which
+ * excludes already-expired records because that flag drives an amber
+ * "expiring soon" badge and an overdue record is a different (worse) state.
+ * The renewals panel wants both — an AMC that lapsed last week is the most
+ * urgent thing on the list, not something to hide — so the two are separate
+ * on purpose rather than one reused for both jobs.
+ *
+ * `status: "active"` is the gate in both cases: a record already marked
+ * `expired` (typically because it was renewed, which sets that status) has
+ * been dealt with and must not reappear in the panel.
+ */
+export function expiringSoonCondition(now = new Date()) {
+  const cutoff = new Date(now);
+  cutoff.setDate(cutoff.getDate() + EXPIRING_SOON_DAYS);
+
+  return { status: "active", renewalDate: { $lte: cutoff } };
 }
 
 const AMC_UPDATABLE_FIELDS = ["amount", "startDate", "renewalDate", "status"];

@@ -9,7 +9,11 @@ export const create = asyncWrapper(async (req, res) => {
 });
 
 export const list = asyncWrapper(async (req, res) => {
-  const records = await listAMC(req.user, { customerId: req.query.customerId });
+  const records = await listAMC(req.user, {
+    customerId: req.query.customerId,
+    // Any truthy string except "false" — the frontend sends `true`.
+    expiringSoon: req.query.expiringSoon === "true" || req.query.expiringSoon === true,
+  });
 
   res.status(200).json(new ApiResponse(200, records, "AMC records fetched successfully"));
 });

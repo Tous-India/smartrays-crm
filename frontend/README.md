@@ -978,6 +978,31 @@ timestamps, two of them near-identical-looking colored bars (`ConnectivityGapBar
 duplication even though the underlying data doesn't overlap. Nothing about the underlying data
 needed fixing before building this on top of it.
 
+#### Renewals due, above the Customers table (§7.42, 2026-08-06)
+
+`ExpiringAmcPanel` surfaces AMCs renewing within 30 days or already overdue, so a renewal is
+visible without opening each customer.
+
+**Deliberately not the four-across card grid** `CustomerAmcSection` uses. That grid answers "what
+does THIS customer's contract look like", where a card per term with amount and history earns its
+space. This answers "whose renewals need action" — a worklist: one dense row per record, sorted
+most-urgent-first by the server, with customer, renewal date, amount, days remaining and Renew.
+Rendering both the same way would invite reading one as the other, the mistake Timeline and
+Location made by both being bars.
+
+**Hidden entirely when nothing is due** — not an empty state, not a collapsed shell. A permanently
+empty panel above the table trains people to ignore that space. When there is something, the count
+sits in the header so a collapsed panel still says how many, with overdue called out separately.
+Overdue and expiring-soon get different tag colours, not just different words.
+
+Renew reuses `AmcRenewModal` and `POST /amc/:id/renew` — one renew path, not two — and the row
+leaves via refetch rather than a local splice, because the server's "renewed terms are marked
+expired and drop out" rule then lives in one place. Gated on the existing `amc.edit`
+`PermissionGate`, the same grant as the Customer Detail page's Renew button.
+
+`customerName` arrives on each record from the single list query, so the panel costs one request
+regardless of row count. Verified in a browser: six rows cost the same number of requests as two.
+
 #### One explicit row action, no whole-row click (§7.4h, 2026-08-06)
 
 `AttendanceTimeline` has no `onRow` handler. It used to, and that made the entire row a button:

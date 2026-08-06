@@ -8,6 +8,7 @@ import useCustomers from "../hooks/useCustomers";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import { createCustomer, createContract, createContact, bulkUpdateCustomers } from "../api/customerApi";
 import { CONTRACT_TYPE_LABELS } from "../constants/customer.constants";
+import ExpiringAmcPanel from "../../amc/components/ExpiringAmcPanel";
 
 const AUTOMATION_CONTRACT_TYPES = ["monthly", "onetime"];
 
@@ -131,6 +132,10 @@ function CustomersListPage() {
 
   return (
     <div>
+      {/* §7.42 — renewals due, so they are visible without opening each
+          customer. Renders nothing at all when nothing is due. */}
+      <ExpiringAmcPanel />
+
       <CustomersFiltersBar
         filters={filters}
         onFilterChange={handleFilterChange}

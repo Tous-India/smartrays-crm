@@ -692,6 +692,31 @@ branch is never reached, i.e. recovery codes could never be redeemed.
 20 tests in `twoFactor.test.js` cover exactly the properties that matter, including asserting on
 the real `Set-Cookie` header.
 
+### AMC: expiring-soon across all customers (§7.42, 2026-08-06)
+
+`GET /amc?expiringSoon=true` returns every ACTIVE record renewing within 30 days **or already
+overdue**, across every customer the caller can see. It backs the renewals panel above the
+Customers table.
+
+Deliberately WIDER than the `isExpiringSoon` flag `decorateAMC` already puts on each record: that
+flag excludes already-past renewal dates because it drives an amber "expiring soon" badge, and an
+overdue contract is a different, worse state. The panel wants both — a contract that lapsed last
+week is the most urgent row on the list. The two live side by side (`expiringSoonCondition` vs
+`decorateAMC`) rather than one being bent to do both jobs. A record already marked `expired`
+(which is what renewing does to the old term) is excluded from both.
+
+**Scoping is untouched.** The filter is pushed into the same `$and` array as `?customerId=`, on
+top of `resolveAMCFilter`'s ownership scope — it narrows within what the caller can already see
+and can never widen it. Tests cover a sales associate seeing only their own customers' records,
+another associate seeing none of them, and a role with no `amc` grant still getting 403.
+
+**One query, not N+1.** The list `populate`s `customerId` with `companyName` and `decorateAMC`
+lifts it onto `customerName`, flattening `customerId` back to a plain id so existing callers (the
+Customer Detail page compares it as a string) are unaffected. The Customers list already fires a
+`/customers/:id/contracts` request per row; the panel above it must not add a second N+1. The test
+asserts the actual count of `customers` collection operations via Mongoose's debug hook — five
+AMCs, one join — rather than merely asserting the names came back, which would pass either way.
+
 #### Trusted devices — "remember this device" (§7.40, 2026-08-05)
 
 A browser the user has chosen to trust skips the **second** factor for 30 days. **It never skips

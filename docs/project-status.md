@@ -2478,3 +2478,58 @@ which only held while the row click was the sole affordance. Frontend suite **77
 tests** (was 75/627); the 8 remaining failures are the known pre-existing timeout flakes —
 confirmed by re-running `LeadDetailPage`, `LeaveRequestModal` and `UserManagementPage` in
 isolation, where all 33 pass.
+
+### 2026-08-06 — AMC renewals surfaced above the Customers table (§7.42)
+
+`GET /amc?expiringSoon=true` returns every active AMC renewing within 30 days or already overdue,
+across every customer the caller can see, and `ExpiringAmcPanel` renders them above the Customers
+table so a renewal no longer requires opening each customer in turn.
+
+**The filter is deliberately wider than the existing badge.** `decorateAMC`'s `isExpiringSoon`
+excludes already-past renewal dates because it drives an amber "expiring soon" chip; an overdue
+contract is a worse, different state. The panel wants both — the lapsed one is the most urgent row
+— so `expiringSoonCondition` is a separate concept rather than the flag stretched to cover two
+jobs. Records already marked `expired` (what renewing does to the old term) are excluded from
+both, which is also what makes a renewed row leave the panel by itself.
+
+**Scoping is untouched**: the filter is `$and`-ed onto `resolveAMCFilter`'s ownership scope, so it
+narrows within what the caller can see and cannot widen it. Covered by tests for a sales associate
+seeing only their own, another seeing none of them, and a role with no `amc` grant still getting
+403.
+
+**One query, not N+1.** `populate("customerId", "companyName")` and the name lifted onto
+`customerName`, with `customerId` flattened back to a plain id so the Customer Detail page's
+string comparison still works. The test counts actual `customers` collection operations through
+Mongoose's debug hook — five AMCs, one join — because asserting the names came back would pass
+against an N+1 too. Two cheaper approaches were tried and rejected first: driver command
+monitoring needs `monitorCommands: true`, which this app deliberately does not set, and
+`vi.spyOn(Customer, "find")` never fires because populate does not go through the model's `find`.
+
+**The panel is a worklist, not the Customer Detail card grid** — one dense row per record
+(customer, renewal date, amount, days remaining, Renew), server-sorted most-urgent-first. That
+grid answers "what is this customer's contract"; this answers "whose renewals need action".
+Rendering both alike would invite the same confusion Timeline and Location had by both being bars.
+Hidden entirely when nothing is due, count in the header when collapsed, overdue in red vs
+expiring-soon in amber, renew via the single existing `POST /amc/:id/renew` and the existing
+`amc.edit` gate.
+
+**Verified in a browser:** panel renders above the table, overdue and soon carry different tag
+classes, renewing removes only that row and leaves the other, and the panel disappears when
+nothing is due while the table stays. On the N+1 check, the raw request count is 2 rather than 1
+because React StrictMode double-invokes effects in dev — so the meaningful assertion is that the
+count is CONSTANT, not proportional: **six rows cost the same two requests as two rows**.
+
+**Tests:** 28 new (14 backend, 14 frontend). Of the backend 14, **6 were run against the
+pre-change code and observed to fail**; the other 8 pass either way — the unfiltered endpoint
+happens to return the same set for those cases, and the scoping ones are regression guards for
+behaviour that was already correct, which is the point. The 14 frontend tests target
+`ExpiringAmcPanel` and `listExpiringAmc`, **new modules with no prior version**, so they were not
+and could not be proven to fail first — stated rather than claimed. Backend suite **27 files / 820
+tests, all passing** (was 26/806). Frontend **78 files / 666 tests** (was 77/652); the 7 failures
+are the known pre-existing flakes. `CustomersListPage.test.jsx` was checked with the panel
+mounted and unmounted and behaves identically, so mounting it there made nothing worse.
+
+**NOT done, reported instead:** `AmcRenewalsDueWidget` still links to the removed `/amc` route and
+should point at `/customers`. It still carries another session's uncommitted edit (`text-right` →
+`text-left`) on the line directly adjacent to the `<Link>` that needs changing, so per the task's
+own instruction it was left untouched rather than committing someone else's work.

@@ -4607,6 +4607,28 @@ The pre-build audit of all 46 keys across 15 modules is what shaped this:
    manager user. `reconcileRoleTemplate` repairs templates only, never users — which is exactly
    why divergence is now marked on the override screen.
 
+## §7.42 — AMC renewals surfaced above the Customers table (2026-08-06)
+
+`GET /amc?expiringSoon=true` + `ExpiringAmcPanel` above the Customers list, so renewals are
+visible without opening each customer.
+
+1. **The filter is wider than the badge.** `expiringSoonCondition` returns active records renewing
+   within 30 days OR already overdue; `decorateAMC`'s `isExpiringSoon` flag deliberately excludes
+   overdue ones because it drives an amber badge. Two concepts, kept separate rather than one
+   bent to serve both.
+2. **Scoping unchanged.** The filter is `$and`-ed on top of `resolveAMCFilter`'s ownership scope,
+   so it narrows within what the caller can see and never widens it.
+3. **One query, not N+1.** `populate("customerId", "companyName")` with the name lifted onto
+   `customerName`; `customerId` is flattened back to a plain id so existing callers are
+   unaffected. Asserted by counting collection operations, not by checking the names came back.
+4. **The panel is a worklist, not the card grid.** `CustomerAmcSection`'s four-across cards answer
+   "what is this customer's contract"; this answers "whose renewals need action". Same data,
+   different question, deliberately different shape — the Timeline/Location lesson applied before
+   the fact rather than after.
+5. **Hidden when empty**, count in the header when collapsed, overdue visually distinct from
+   expiring-soon, renew reusing the single existing `POST /amc/:id/renew` path and the existing
+   `amc.edit` gate.
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a
