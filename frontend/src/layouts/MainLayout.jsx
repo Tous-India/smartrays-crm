@@ -7,11 +7,13 @@ import {
   RiseOutlined,
   TeamOutlined,
   CalendarOutlined,
+  FileDoneOutlined,
   WalletOutlined,
   CarOutlined,
   CustomerServiceOutlined,
   CreditCardOutlined,
   BarChartOutlined,
+  IdcardOutlined,
 } from "@ant-design/icons";
 import useSessionStore from "../store/sessionStore";
 import { can } from "../utils/permission.utils";
@@ -123,12 +125,16 @@ function MainLayout() {
   }, [location.pathname, isMobileViewport]);
 
   const canViewSettings = useMemo(() => {
-    return (
-      can(user, "users", "view_all") || can(user, "users", "view_team") || can(user, "permissions", "manage")
-    );
+    // Every signed-in user reaches Settings now — it holds their own Account
+    // (2FA, password) and, for an employee, their read-only permissions.
+    // Which TABS appear inside is still permission-gated (SettingsPage).
+    return true;
   }, [user]);
 
   const canViewLeads = can(user, "leads", "view");
+  // Employees get a narrower, self-service nav (§7.39); every other role's
+  // nav is untouched.
+  const isEmployee = user?.role === "employee";
   const { newLeadsCount, pendingLeaveCount, clearLeadsBadge, clearLeaveBadge } = useSidebarBadgeCounts({
     canViewLeads,
   });
@@ -185,6 +191,12 @@ function MainLayout() {
         show: can(user, "tickets", "view_assigned") || can(user, "tickets", "view_all"),
       },
       { key: ROUTE_PATHS.REPORTS, label: "Reports", icon: <BarChartOutlined />, show: true },
+      // §7.39 (2026-08-05) — employee-only destinations. Leave is its own
+      // page for this role (it's a tab inside Attendance for admin/manager),
+      // and Team/Profile have no admin equivalent.
+      { key: ROUTE_PATHS.LEAVE, label: "Leave", icon: <FileDoneOutlined />, show: isEmployee },
+      { key: ROUTE_PATHS.TEAM, label: "Team", icon: <TeamOutlined />, show: isEmployee },
+      { key: ROUTE_PATHS.PROFILE, label: "Profile", icon: <IdcardOutlined />, show: isEmployee },
     ];
 
     const items = allItems.filter((item) => item.show).map((item) => ({
@@ -211,7 +223,7 @@ function MainLayout() {
         // concrete routes live under this same prefix.
         key: ROUTE_PATHS.SETTINGS,
         icon: <SettingOutlined />,
-        label: <Link to={ROUTE_PATHS.SETTINGS_USERS}>Settings</Link>,
+        label: <Link to={isEmployee ? ROUTE_PATHS.SETTINGS_ACCOUNT : ROUTE_PATHS.SETTINGS_USERS}>Settings</Link>,
       });
     }
 
