@@ -50,8 +50,9 @@ Analytics (§7.23 — the app's first real analytics feature, `@ant-design/chart
 built — and **Phase 9 is now complete on both sides**: the Web Push client half (service
 worker, subscription module, Settings → Account toggle) was built 2026-08-07, so a browser can
 finally receive what the backend has been able to send since July. The rest of the frontend
-module-by-module build-out remains (Payroll/Transport/Tickets/AMC/Permissions still render
-placeholder pages).
+module-by-module build-out remains (Payroll/Transport/AMC still render placeholder pages).
+**Tickets was deferred from the UI 2026-08-07** — hidden, not removed; its backend is untouched
+and it stays a core module in the plan (§7.8).
 Location Tracking and
 Attendance are proven to work together end-to-end through real HTTP endpoints, not just against
 directly-seeded test data — see the changelog. Photo capture on check-in/check-out is now
@@ -2741,3 +2742,52 @@ into the frontend project's build environment on every deploy with no reason to 
 Production re-verified after the fix: `/sw.js` served (200, 4424 bytes), the worker registers on
 load, no push-related console errors, and no VAPID key of either origin in the bundle — so the
 toggle correctly renders nothing until the production key is set.
+
+---
+
+### Tickets deferred from the UI (2026-08-07)
+
+**Hidden, not removed.** Tickets stays a core module in `.context/final-plan.md` §7.8 with a
+Customer Portal dependency, and **the backend module, routes, model and data were not touched** —
+all 35 backend ticket tests still pass untouched. This is a scope deferral.
+
+**Checked what depended on it before removing anything**, per the AMC precedent where deleting
+the directory would have broken the Dashboard widget and Reports. 16 files referenced tickets;
+the ones that mattered:
+
+| Depends on tickets | Decision |
+|---|---|
+| `TicketsOpenWidget` → `ticketApi.listTickets` | **Kept.** Live backend, real counts. Only its `/tickets` link was removed |
+| `DashboardPage.test.jsx` (11 ticket assertions, incl. the widget-error test) | **Untouched** — the widget still renders, so none of them needed changing |
+| `permissionModel.js` (`tickets.*` tiers, `CAPABILITY_ONLY_MODULES`) | **Kept.** The backend enforces these; removing them would break admins' ability to manage ticket permissions |
+| `notificationRoutes.js` + `public/sw.js` | Entry removed from **both** route tables |
+| `MainLayout.jsx`, `router.jsx`, `routePaths.constants.js` | Nav item, routes and constants commented out / removed |
+| `TicketsPage.jsx`, `TicketDetailPage.jsx` | Deleted — both were 7-line `PlaceholderPage` stubs |
+
+**Notification routing (one of only four modules that create notifications).** The backend still
+creates ticket-assignment notifications and was deliberately left alone, so rather than stop
+generating them, `tickets` was removed from the shared route table in both copies. They now
+resolve to `null`: the bell shows and marks them read in place without navigating, and a push
+opens the app root. A dead `/tickets/:id` would be strictly worse than not moving the user.
+
+**The links were the actual point.** `/amc` was retired months ago and `AmcRenewalsDueWidget` has
+linked to the dead route ever since because nothing checked. New `src/routes/deferredModules.test.js`
+scans every source file for client-side navigation to `/tickets` and fails on any hit — while
+deliberately **not** flagging `apiClient.get("/tickets")`, which is a live endpoint the widget
+still calls. It also asserts the walker found >100 files, so a broken scan can't pass vacuously.
+
+**Contested files.** `MainLayout.jsx` and `TicketsOpenWidget.jsx` both held another concurrent
+session's uncommitted work. MainLayout's was on a different line (they had commented out Travel
+Logs) so it was layered cleanly. **TicketsOpenWidget's was not**: their `text-right` → `text-left`
+change was on the very `<div>` wrapping the dead link, so removing the link superseded it. Only
+this task's own hunks were committed; nothing of theirs was.
+
+**Tests:** suite **84 files / 742 tests**, up from 83/736 — net +6, reconciled exactly: +5 in the
+new `deferredModules.test.js`, +1 MainLayout nav assertion, +1 notification-routing assertion,
+**−1** because the sw.js drift guard's `it.each(Object.keys(MODULE_ROUTES))` now generates three
+cases instead of four. **5 of the new/changed tests were confirmed to fail against the pre-change
+code** by temporarily restoring every touched file to HEAD and re-running. The 4 failing files are
+the known pre-existing flakes (`CustomersListPage`, `PaymentsListPage`, `UserManagementPage`,
+`LeadDetailPage`). `npm run build` clean. Lint went 69 → 67 problems: two `no-undef` errors on
+`process.cwd()` in this task's and the previous task's file-scanning tests were fixed by
+resolving from `import.meta.dirname` instead, which is also cwd-independent.

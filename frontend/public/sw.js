@@ -15,9 +15,12 @@
  * both files and fails if they diverge; without that guard a push and an
  * in-app click would silently drift to different destinations.
  */
+// Must stay identical to src/modules/notification/notificationRoutes.js —
+// notificationRoutes.test.js parses this file and fails on drift. `tickets`
+// was dropped from both 2026-08-07 when Tickets was deferred from the UI; a
+// ticket push now opens the app root rather than a dead /tickets/:id.
 const MODULE_ROUTES = {
   leads: (id) => `/leads/${id}`,
-  tickets: (id) => `/tickets/${id}`,
   leave: () => "/attendance",
   attendance: () => "/attendance",
 };

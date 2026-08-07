@@ -18,8 +18,7 @@ import AttendanceTeamPage from "../pages/AttendanceTeamPage";
 import PayrollPage from "../pages/PayrollPage";
 import PayslipDetailPage from "../pages/PayslipDetailPage";
 import TravelLogsPage from "../pages/TravelLogsPage";
-import TicketsPage from "../pages/TicketsPage";
-import TicketDetailPage from "../pages/TicketDetailPage";
+// Tickets is DEFERRED from the UI, 2026-08-07 — see the routes below.
 import PaymentsPage from "../pages/PaymentsPage";
 import ReportsPage from "../pages/ReportsPage";
 import SettingsPage from "../pages/SettingsPage";
@@ -64,8 +63,13 @@ export const router = createBrowserRouter(
           <Route path="payroll" element={<PayrollPage />} />
           <Route path="payroll/:id/payslip" element={<PayslipDetailPage />} />
           <Route path="travel-logs" element={<TravelLogsPage />} />
-          <Route path="tickets" element={<TicketsPage />} />
-          <Route path="tickets/:id" element={<TicketDetailPage />} />
+          {/* Tickets DEFERRED from the UI 2026-08-07 — hidden, not removed.
+              A core module in final-plan.md with a Customer Portal
+              dependency; backend module/routes/model/data all untouched.
+              Both pages were placeholders (`PlaceholderPage`), so they were
+              deleted rather than commented out — restoring means recreating
+              two 7-line files, re-adding their imports above, and
+              uncommenting the nav block in `MainLayout.jsx`. */}
           <Route path="payments" element={<PaymentsPage />} />
           <Route path="reports" element={<ReportsPage />} />
           {/* Bare /settings redirects to the Users tab — the sidebar's one

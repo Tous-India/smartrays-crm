@@ -2232,6 +2232,17 @@ the January→prior-December wraparound. `registerPayrollCron` is tested by mock
 
 ### 7.8 Support & Ticketing
 
+⏸️ **FRONTEND DEFERRED 2026-08-07 — hidden, NOT removed.** The nav item, both `/tickets` routes
+and the two placeholder pages are gone from the UI; **the backend module, routes, model and data
+are completely untouched and every test below still passes.** This is a scope deferral on a
+module that remains core to this plan and still carries the Customer Portal dependency in §7.0 —
+not a removal, and not a change of intent. What deliberately stayed: the `tickets.*` permission
+tiers (the backend enforces them and the Permissions matrix still manages them), the frontend
+`ticketApi` module, and the Dashboard's `TicketsOpenWidget`, which keeps reporting real counts
+from the live endpoint. Ticket notifications are still created by the backend; their deep link
+was removed from the shared notification route table rather than left pointing at a dead route.
+See `frontend/README.md` → "Tickets deferred from the UI" for the restore steps.
+
 ✅ **Built (Phase 5)** — 35 tests (`ticket.test.js`), no application bugs found. Two-part task:
 (A) Customer Portal self-signup — see §7.0 for the full write-up (User/auth-side); (B) the
 `Ticket` module itself, below. Module folder is `src/modules/ticket/`.

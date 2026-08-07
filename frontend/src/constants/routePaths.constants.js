@@ -20,14 +20,19 @@ export const ROUTE_PATHS = {
   PAYROLL: "/payroll",
   PAYSLIP_DETAIL: "/payroll/:id/payslip",
   TRAVEL_LOGS: "/travel-logs",
-  TICKETS: "/tickets",
+  // Tickets DEFERRED from the UI 2026-08-07 — hidden, not removed. Unlike
+  // AMC below, nothing references these any more (the nav block is commented
+  // out and the Dashboard widget's link is gone), so they are commented out
+  // rather than left live: an exported constant for a route that does not
+  // exist is what let the AMC dead link survive unnoticed.
+  // TICKETS: "/tickets",
+  // TICKET_DETAIL: "/tickets/:id",
   // The standalone /amc PAGE was retired 2026-08-05 (AMC now lives on the
   // Customer Detail page) — this constant deliberately outlives its route
   // because `AmcRenewalsDueWidget` still references it, and that file has
   // uncommitted work from a concurrent session. Its "View all AMC records"
   // link needs repointing at /customers as a follow-up; see frontend/README.
   AMC: "/amc",
-  TICKET_DETAIL: "/tickets/:id",
   PAYMENTS: "/payments",
   REPORTS: "/reports",
   // Bare `/settings` redirects to `SETTINGS_USERS` — the sidebar's single

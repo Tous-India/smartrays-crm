@@ -443,7 +443,8 @@ in later frontend tasks — mirroring how the backend was built phase-by-phase.
 | `payment` (Payments) | ✅ **Built** — the first real UI for this previously backend-only module (`/payments`, admin-only per §5's matrix). `PaymentsListPage` — a `Segmented` date-range filter (Today/Yesterday/This Month/Financial Year/All Time, computed client-side and sent as `from`/`to`; Financial Year is April 1–March 31, no existing FY utility anywhere else in this codebase, added fresh) driving a server-paginated `PaymentsTable` (Date/Customer/Amount/Notes/Recorded By — `customerId`/`recordedBy` resolved to names via the same Map-lookup convention `CustomersTable`'s Owner column already uses, not a backend join). `GET /payments` gained real `from`/`to`/`page`/`limit` support for this — the first server-side pagination in this backend, everything else paginates client-side (see `backend/README.md`'s Payments section). A "Record Payment" modal (`RecordPaymentModal`, gated separately behind `payments.create`) — its Customer field is a genuinely debounced search-as-you-type `Select` against the existing `GET /customers?search=` endpoint, not the fully-fetched-once-then-client-filtered `showSearch` pattern every other picker in this app uses (Owner/Project Manager pickers), since fetching every Customer up front defeats the purpose. Scoped to system customers only for this first version — `manualClientName` (cash/non-system entries) and invoice-linking (partial reconciliation against an outstanding Invoice) are backend-supported but deliberately left for a future pass. **Edit/delete audit trail added 2026-07-30** — an Actions column (History/Edit/Delete icon buttons, Edit/Delete gated behind `payments.edit`/`payments.delete` via `PermissionGate`) drives `EditPaymentModal` (pre-filled amount/date/notes/collectedBy plus a required "Reason for edit"; customerId/manualClientName/invoiceId are read-only in this form, matching the backend's own restriction), `DeletePaymentModal` (a small dedicated modal, not a bare `Popconfirm`, since deleting needs a typed reason — required "Reason for deletion"), and `PaymentAuditLogModal` ("View History," read-only, fetched fresh on every open; no per-row "has history" badge on the main table — that would need either an N+1 request per row or a backend list-shape change, noted as a reasonable future addition rather than built now). Soft-delete (see `backend/README.md`'s Payments section for the full soft-vs-hard-delete reasoning) means a deleted row simply disappears from the table on refetch, not a client-side filter. 20 tests total (`PaymentsListPage.test.jsx`), all passing. |
 | `reports` (Reports & Analytics) | ✅ **Built (§7.23)** — the app's first real analytics feature and first chart library (`@ant-design/charts`, new dependency), replacing the `PlaceholderPage` at `/reports`. See "Reports & Analytics module" below for the full write-up. |
 | `permission` (Permissions Management) | ✅ **Built (§7.27, 2026-07-30)** — replaces the long-standing `PlaceholderPage` at `/settings/permissions`. See "Permissions Management module" below for the full write-up. |
-| Every other module (`payroll`, `travel-logs`, `tickets`, `amc`) | Routing skeleton + placeholder page only — real components/api/hooks not built yet, see `docs/project-status.md` for what's next. |
+| `ticket` (Tickets) | ⏸️ **DEFERRED from the UI 2026-08-07 — hidden, not removed.** The nav item and both `/tickets` routes are gone; the two placeholder pages were deleted. Everything still load-bearing stayed: `modules/ticket/api/ticketApi.js` (the Dashboard's `TicketsOpenWidget` calls it), the `tickets.*` permission tiers, and the entire backend module/routes/model/data, all untouched. See "Tickets deferred from the UI" below. |
+| Every other module (`payroll`, `travel-logs`, `amc`) | Routing skeleton + placeholder page only — real components/api/hooks not built yet, see `docs/project-status.md` for what's next. |
 
 ### Credentials Vault removal (2026-07-29)
 
@@ -2545,6 +2546,38 @@ the administrative tab set.
 **Admin/manager controls:** a contact-visibility switch per row on the Team page (the team's own
 head may use it, not just admin — the backend enforces head-or-admin), and a "let them edit their
 own name and phone" switch on the user detail page (that person's manager, or admin).
+
+### Tickets deferred from the UI (2026-08-07)
+
+**Hidden, not removed.** Tickets is still a core module in `final-plan.md` (§7.8, Phase 5) with a
+Customer Portal dependency — this is a scope deferral, and the backend module, routes, model and
+data were not touched at all.
+
+| Gone | Kept, and why |
+|---|---|
+| The Tickets nav item (commented out in `MainLayout.jsx`) | `modules/ticket/api/ticketApi.js` — `TicketsOpenWidget` still calls it |
+| `/tickets` and `/tickets/:id` routes | The `TicketsOpenWidget` itself; its counts come from a live backend |
+| `TicketsPage.jsx`, `TicketDetailPage.jsx` (both `PlaceholderPage` stubs) | `tickets.*` permission tiers — the backend enforces them and the Permissions matrix still manages them |
+| `ROUTE_PATHS.TICKETS` / `TICKET_DETAIL` | The whole backend `ticket` module and all its data |
+
+**The point of the exercise was the links, not the route.** `/amc` was retired months ago and
+`AmcRenewalsDueWidget` has been pointing at the dead route ever since, because nothing checked.
+So the widget's "View all tickets →" link is gone (the counts stay — they're still real), and
+`src/routes/deferredModules.test.js` now scans every source file for client-side navigation to
+`/tickets` and fails if any comes back. That scan deliberately ignores
+`apiClient.get("/tickets")` — the backend endpoint is live and still in use; only navigation to a
+route that no longer exists is a defect.
+
+**Notification routing.** Tickets is one of only four modules that create notifications, and the
+backend still creates them. Rather than stop generating them (that would mean touching the
+backend, which was out of scope) their entry was removed from the shared route table in
+`notificationRoutes.js` *and* `public/sw.js`, so they now resolve to `null`: the bell shows and
+marks them read in place without navigating, and a push opens the app root. Sending someone to a
+dead `/tickets/:id` would be strictly worse than not moving them at all.
+
+To restore: uncomment the nav block in `MainLayout.jsx`, uncomment the two constants in
+`routePaths.constants.js`, re-add the two routes and their imports in `router.jsx` (the pages
+were 7-line placeholders), and put `tickets` back in both route tables.
 
 ### Web Push — the client half (§6.7, 2026-08-07)
 

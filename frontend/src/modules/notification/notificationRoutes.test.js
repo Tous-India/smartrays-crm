@@ -12,7 +12,8 @@ import { MODULE_ROUTES, routeForNotification } from "./notificationRoutes";
  * parses the real `sw.js` off disk and compares.
  */
 
-const SW_PATH = path.resolve(process.cwd(), "public/sw.js");
+// Resolved from this file, not `process.cwd()` — see deferredModules.test.js.
+const SW_PATH = path.resolve(import.meta.dirname, "../../../public/sw.js");
 
 /** Pulls `key: (id) => \`...\`` pairs out of the service worker's own source. */
 function parseServiceWorkerRoutes() {
@@ -67,7 +68,15 @@ describe("routeForNotification", () => {
 
   it("builds a per-record path where one exists", () => {
     expect(routeForNotification(note("leads", "lead-1"))).toBe("/leads/lead-1");
-    expect(routeForNotification(note("tickets", "t-9"))).toBe("/tickets/t-9");
+  });
+
+  it("sends ticket notifications NOWHERE, now that Tickets is deferred from the UI", () => {
+    // The backend still creates these (it was deliberately left untouched),
+    // so they keep arriving. Resolving to null means the bell marks them read
+    // in place and a push opens the app root — a dead /tickets/:id would be
+    // strictly worse than not moving the user at all.
+    expect(routeForNotification(note("tickets", "t-9"))).toBeNull();
+    expect(MODULE_ROUTES.tickets).toBeUndefined();
   });
 
   it("returns null for a module with no route rather than a broken path", () => {

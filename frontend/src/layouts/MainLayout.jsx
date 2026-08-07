@@ -183,12 +183,18 @@ function MainLayout() {
         show: can(user, "payroll", "view") || can(user, "payroll", "run"),
       },
       { key: ROUTE_PATHS.TRAVEL_LOGS, label: "Travel Logs", icon: <CarOutlined />, show: true },
-      {
-        key: ROUTE_PATHS.TICKETS,
-        label: "Tickets",
-        icon: <CustomerServiceOutlined />,
-        show: can(user, "tickets", "view_assigned") || can(user, "tickets", "view_all"),
-      },
+      // Tickets is DEFERRED from the UI, 2026-08-07 — hidden, not removed. It
+      // is still a core module in final-plan.md with a Customer Portal
+      // dependency, and its backend module, routes, model and data are all
+      // untouched. Restoring it is this block plus the two routes in
+      // `router.jsx`; the permission tiers, the api module and the Dashboard
+      // widget were all deliberately left in place.
+      // {
+      //   key: ROUTE_PATHS.TICKETS,
+      //   label: "Tickets",
+      //   icon: <CustomerServiceOutlined />,
+      //   show: can(user, "tickets", "view_assigned") || can(user, "tickets", "view_all"),
+      // },
       { key: ROUTE_PATHS.REPORTS, label: "Reports", icon: <BarChartOutlined />, show: true },
       // §7.39 (2026-08-05) — employee-only destinations. Leave is its own
       // page for this role (it's a tab inside Attendance for admin/manager),

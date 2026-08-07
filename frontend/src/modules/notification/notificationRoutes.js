@@ -11,10 +11,17 @@
  * Leave and Attendance have no per-record detail route: Leave lives in a tab
  * on `/attendance` and attendance records open from the table itself, so both
  * land on `/attendance` and ignore `relatedEntity.id`.
+ *
+ * `tickets` was REMOVED from this table 2026-08-07 when Tickets was deferred
+ * from the UI. The backend still creates ticket-assignment notifications and
+ * was deliberately left untouched, so they keep arriving — they simply resolve
+ * to `null` now, which means the bell shows and marks them read in place
+ * without navigating, and a push opens the app root instead of a route that no
+ * longer exists. Sending a user to a dead `/tickets/:id` would be strictly
+ * worse than not moving them at all.
  */
 export const MODULE_ROUTES = {
   leads: (id) => `/leads/${id}`,
-  tickets: (id) => `/tickets/${id}`,
   leave: () => "/attendance",
   attendance: () => "/attendance",
 };

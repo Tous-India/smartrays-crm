@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import { Row, Col, Statistic } from "antd";
 import { usePermission } from "../../../hooks/usePermission";
 import { listTickets } from "../../ticket/api/ticketApi";
-import { ROUTE_PATHS } from "../../../constants/routePaths.constants";
 import WidgetCard from "./WidgetCard";
 
 /**
@@ -76,9 +74,12 @@ function TicketsOpenWidget() {
           />
         </Col>
       </Row>
-      <div className="mt-2 text-right text-sm">
-        <Link to={ROUTE_PATHS.TICKETS}>View all tickets →</Link>
-      </div>
+      {/* The "View all tickets →" link was removed 2026-08-07 when Tickets
+          was deferred from the UI: /tickets no longer resolves, and a link to
+          a dead route is exactly the state AmcRenewalsDueWidget has been sat
+          in for weeks. The counts themselves still come from a live backend
+          that was never touched, so the widget keeps earning its place — it
+          just no longer offers a destination that does not exist. */}
     </WidgetCard>
   );
 }

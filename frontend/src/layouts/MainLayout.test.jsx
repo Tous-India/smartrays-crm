@@ -76,6 +76,27 @@ describe("MainLayout — nav composition and Settings gating", () => {
     expect(screen.queryByText("Permission Settings")).not.toBeInTheDocument();
   });
 
+  it("shows NO Tickets nav item, even for a user holding every tickets permission", async () => {
+    // Tickets was deferred from the UI 2026-08-07. The permission tiers still
+    // exist (the backend enforces them and the permissions matrix still
+    // manages them), so granting them explicitly is the case that would
+    // regress if the nav block were ever uncommented by accident.
+    useSessionStore.setState({
+      user: {
+        ...ADMIN_USER,
+        role: "manager",
+        permissions: { tickets: { view_all: true, view_assigned: true, assign: true } },
+      },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+
+    renderLayout();
+
+    await screen.findByText("Dashboard Content");
+    expect(screen.queryByRole("menuitem", { name: /Tickets/ })).not.toBeInTheDocument();
+  });
+
   it("still shows Settings for a user with no admin grants — it holds their own Account (§7.39)", async () => {
     useSessionStore.setState({
       user: { _id: "sales-1", name: "Sam Sales", role: "sales_associate", permissions: {} },
