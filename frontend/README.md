@@ -2613,3 +2613,14 @@ VITE_VAPID_PUBLIC_KEY=
 ```
 
 `.env`/`.env.local` are gitignored (see `.gitignore`) — only `.env.example` is committed.
+
+**Gitignored is not the same as not-deployed.** The Vercel CLI uploads `.env` anyway, and Vite
+inlines a `.env` value for any variable that is **not also set in the Vercel project's own env
+settings** — a real env var wins, an absent one does not. So a var that exists locally but not
+in Vercel gets its *local* value baked into the production bundle. That shipped the local dev
+VAPID key to production on 2026-08-07 before it was caught.
+
+The guard is `.vercelignore` **at the repo root** — not here. Vercel uploads from the repo root
+and the project's Root Directory setting (`frontend`) only says where to *build*; a
+`frontend/.vercelignore` is never read. It also *replaces* `.gitignore` for upload filtering, so
+`node_modules`/`dist` have to be restated in it rather than inherited.

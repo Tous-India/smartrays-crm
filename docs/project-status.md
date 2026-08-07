@@ -2711,3 +2711,33 @@ implied.
 **Outstanding:** `VITE_VAPID_PUBLIC_KEY` must be set on the frontend Vercel project (Production)
 to the **production** backend's public key. Until then the toggle correctly renders nothing in
 production.
+
+**Deploy defect found and fixed in the same pass (2026-08-07).** The first production deploy of
+this feature **shipped the LOCAL dev VAPID public key**. Found by checking the deployed bundle
+rather than trusting that the deploy had done what it was meant to.
+
+Mechanism: `frontend/.env` is gitignored, but the **Vercel CLI uploads it anyway**, and Vite
+inlines a `.env` value for any variable **not also set in the Vercel project's own env
+settings** — a real env var wins, an absent one does not. `VITE_API_BASE_URL` was therefore safe
+(Vercel has its own value, `/api/v1`), while `VITE_VAPID_PUBLIC_KEY` was not. Only the *public*
+key was exposed — the private key is backend-only and was confirmed absent from the bundle — but
+the wrong key is **worse than no key**: subscriptions are cryptographically bound to the key
+that created them, so production would have handed out subscriptions its own backend could never
+push to, 403'd and swallowed per-subscription, behind a toggle that looked like it worked.
+Precisely the failure the unset-key path was designed to avoid.
+
+The first fix attempt put `.vercelignore` in `frontend/` and **silently did nothing** — caught
+only because the redeployed bundle still contained the key. **Vercel uploads from the repo
+root**; the project's Root Directory setting (`frontend`) only says where to *build*. The build
+log settles it: `Downloading 535 deployment files` against 533 files in the repo and 350 under
+`frontend/`. Moved to `/.vercelignore`, after which the upload dropped to **352 files** and the
+key is gone from the bundle (`index-BYgly3tm.js` → `index-DX9Sw_c2.js`).
+
+A `.vercelignore` **replaces** `.gitignore` for upload filtering, so `node_modules`/`dist`/
+`coverage` are restated in it rather than inherited. It also now excludes `backend/`, whose
+`.env` carries `MONGODB_URI`, `JWT_SECRET` and the **VAPID private key** and was being uploaded
+into the frontend project's build environment on every deploy with no reason to be there.
+
+Production re-verified after the fix: `/sw.js` served (200, 4424 bytes), the worker registers on
+load, no push-related console errors, and no VAPID key of either origin in the bundle — so the
+toggle correctly renders nothing until the production key is set.
