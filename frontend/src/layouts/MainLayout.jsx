@@ -135,7 +135,7 @@ function MainLayout() {
   // Employees get a narrower, self-service nav (§7.39); every other role's
   // nav is untouched.
   const isEmployee = user?.role === "employee";
-  const { newLeadsCount, pendingLeaveCount, clearLeadsBadge, clearLeaveBadge } = useSidebarBadgeCounts({
+  const { newLeadsCount, pendingLeaveCount } = useSidebarBadgeCounts({
     canViewLeads,
   });
 
@@ -150,9 +150,9 @@ function MainLayout() {
         // Unread `lead_created`/`lead_assigned` notification count (§7.29 —
         // replaces the earlier `GET /leads/count` record-count approach,
         // §7.26, with the Notification module itself as the source of
-        // truth). Clicking this nav item marks those types read.
+        // truth). Clicking this nav item does NOT mark them read (§7.43) —
+        // navigating is not dealing with a notification.
         badgeCount: newLeadsCount,
-        onNavigate: clearLeadsBadge,
       },
       {
         key: ROUTE_PATHS.CUSTOMERS,
@@ -175,7 +175,6 @@ function MainLayout() {
         // badge moved onto this item with it rather than being dropped
         // along with the retired /leave nav entry.
         badgeCount: pendingLeaveCount,
-        onNavigate: clearLeaveBadge,
       },
       {
         key: ROUTE_PATHS.PAYROLL,
@@ -203,7 +202,7 @@ function MainLayout() {
       key: item.key,
       icon: item.icon,
       label: (
-        <Link to={item.key} className="flex items-center justify-between" onClick={item.onNavigate}>
+        <Link to={item.key} className="flex items-center justify-between">
           <span>{item.label}</span>
           {Boolean(item.badgeCount) && <Badge count={item.badgeCount} size="small" className="mx-1.25" />}
         </Link>
@@ -228,7 +227,7 @@ function MainLayout() {
     }
 
     return items;
-  }, [user, canViewSettings, canViewLeads, newLeadsCount, pendingLeaveCount, clearLeadsBadge, clearLeaveBadge]);
+  }, [user, canViewSettings, canViewLeads, newLeadsCount, pendingLeaveCount]);
 
   const allKnownKeys = useMemo(() => menuItems.map((item) => item.key), [menuItems]);
 

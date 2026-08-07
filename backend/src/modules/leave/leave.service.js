@@ -403,7 +403,36 @@ export async function markUnapprovedAbsence(leaveId, requestingUser) {
   leave.approvedBy = requestingUser._id;
   await leave.save();
 
+  await notifyUnapprovedAbsence(leave, requestingUser);
+
   return leave;
+}
+
+/**
+ * Tells the employee they were marked an unapproved absence (§7.43,
+ * 2026-08-06). This decision previously notified nobody, despite being the
+ * only one of the three that also sets `isDoubleDeduction` — so the employee
+ * found out by noticing their balance.
+ *
+ * Its own message and type rather than reusing `leave_approved`: the handler
+ * above sets `status: "approved"` for internal bookkeeping, and telling
+ * someone their leave was "approved" when it was in fact recorded against
+ * them would be actively misleading.
+ *
+ * Same self-skip as the other two decisions — an admin marking their own
+ * record notifies nobody.
+ */
+async function notifyUnapprovedAbsence(leave, actingUser) {
+  if (String(leave.employeeId) === String(actingUser._id)) {
+    return;
+  }
+
+  const message = `Your leave (${formatDate(leave.startDate)} to ${formatDate(leave.endDate)}) has been recorded as an unapproved absence — this is deducted at double rate`;
+
+  await createNotification(leave.employeeId, "leave_unapproved_absence", message, {
+    module: "leave",
+    id: leave._id,
+  });
 }
 
 /**

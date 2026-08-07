@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
-import useSidebarBadgeCounts from "./useSidebarBadgeCounts";
+import { NOTIFICATIONS_CHANGED_EVENT } from "../modules/notification/notificationEvents";
+import useSidebarBadgeCounts, { LEAVE_NOTIFICATION_TYPES } from "./useSidebarBadgeCounts";
 import * as notificationApi from "../modules/notification/api/notificationApi";
 
 vi.mock("../modules/notification/api/notificationApi", () => ({
   listNotificationsByType: vi.fn(),
-  markNotificationsReadByType: vi.fn(),
 }));
 
 const POLL_INTERVAL_MS = 60000;
@@ -27,7 +27,6 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
   mockCountsByType();
-  notificationApi.markNotificationsReadByType.mockResolvedValue({ data: {} });
 });
 
 afterEach(() => {
@@ -65,7 +64,7 @@ describe("useSidebarBadgeCounts", () => {
     await advance(0);
 
     expect(notificationApi.listNotificationsByType).toHaveBeenCalledWith(
-      ["leave_requested", "leave_approved", "leave_declined"],
+      LEAVE_NOTIFICATION_TYPES,
       { unreadOnly: true }
     );
     expect(result.current.pendingLeaveCount).toBe(2);
@@ -96,34 +95,58 @@ describe("useSidebarBadgeCounts", () => {
     expect(result.current.newLeadsCount).toBe(3);
   });
 
-  it("clearLeadsBadge marks lead_created/lead_assigned as read and zeroes the count immediately", async () => {
-    mockCountsByType({ leads: 5 });
-
-    const { result } = renderHook(() => useSidebarBadgeCounts({ canViewLeads: true }));
-    await advance(0);
-    expect(result.current.newLeadsCount).toBe(5);
-
-    await act(() => result.current.clearLeadsBadge());
-
-    expect(notificationApi.markNotificationsReadByType).toHaveBeenCalledWith(["lead_created", "lead_assigned"]);
-    expect(result.current.newLeadsCount).toBe(0);
-  });
-
-  it("clearLeaveBadge marks leave notifications as read and zeroes the count immediately, without touching the leads count", async () => {
+  /**
+   * §7.43 (2026-08-06) — `clearLeadsBadge`/`clearLeaveBadge` are gone. They
+   * were wired to nav `onNavigate` and marked every unread notification of a
+   * type read merely because the user clicked a nav item.
+   */
+  it("exposes NO badge-clearing function — navigation must not dismiss anything", async () => {
     mockCountsByType({ leads: 5, leave: 3 });
 
     const { result } = renderHook(() => useSidebarBadgeCounts({ canViewLeads: true }));
     await advance(0);
-    expect(result.current.pendingLeaveCount).toBe(3);
 
-    await act(() => result.current.clearLeaveBadge());
+    expect(result.current.clearLeadsBadge).toBeUndefined();
+    expect(result.current.clearLeaveBadge).toBeUndefined();
+    expect(Object.keys(result.current).sort()).toEqual(["newLeadsCount", "pendingLeaveCount"]);
+  });
 
-    expect(notificationApi.markNotificationsReadByType).toHaveBeenCalledWith([
-      "leave_requested",
-      "leave_approved",
-      "leave_declined",
-    ]);
-    expect(result.current.pendingLeaveCount).toBe(0);
-    expect(result.current.newLeadsCount).toBe(5);
+  it("counts leave_unapproved_absence toward the Leave badge", async () => {
+    // If this list drifts from the backend enum, the bell shows a
+    // notification the sidebar badge never counts.
+    expect(LEAVE_NOTIFICATION_TYPES).toContain("leave_unapproved_absence");
+  });
+
+  it("refetches when the tab becomes visible again", async () => {
+    mockCountsByType({ leads: 1, leave: 1 });
+
+    renderHook(() => useSidebarBadgeCounts({ canViewLeads: true }));
+    await advance(0);
+    const before = notificationApi.listNotificationsByType.mock.calls.length;
+
+    // Browsers throttle a backgrounded tab's timers, so without this listener
+    // the badge stayed stale on return while the bell (which has it) updated.
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    expect(notificationApi.listNotificationsByType.mock.calls.length).toBeGreaterThan(before);
+  });
+
+  it("refetches when the bell announces an explicit dismissal", async () => {
+    mockCountsByType({ leads: 2, leave: 2 });
+
+    renderHook(() => useSidebarBadgeCounts({ canViewLeads: true }));
+    await advance(0);
+    const before = notificationApi.listNotificationsByType.mock.calls.length;
+
+    // The bell and this hook read the same data with no shared store; without
+    // this the badge showed a stale count for a full poll interval after the
+    // user dismissed something.
+    await act(async () => {
+      window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED_EVENT));
+    });
+
+    expect(notificationApi.listNotificationsByType.mock.calls.length).toBeGreaterThan(before);
   });
 });

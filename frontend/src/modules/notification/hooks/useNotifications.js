@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { listNotifications, markNotificationRead, markAllNotificationsRead } from "../api/notificationApi";
+import { announceNotificationsChanged } from "../notificationEvents";
 
 // Within this task's own "~30-60s" stated polling range.
 const POLL_INTERVAL_MS = 45000;
@@ -58,16 +59,22 @@ export function useNotifications() {
     };
   }, [refetch]);
 
+  // Both of these are EXPLICIT user dismissals — opening a notification, or
+  // pressing "Mark all as read". Nothing marks read on render, on hover, or
+  // on navigation (§7.43). Each announces the change so the sidebar badges
+  // update immediately rather than after their own poll interval.
   async function markAsRead(id) {
     await markNotificationRead(id);
     setNotifications((current) =>
       current.map((notification) => (notification._id === id ? { ...notification, isRead: true } : notification))
     );
+    announceNotificationsChanged();
   }
 
   async function markAllAsRead() {
     await markAllNotificationsRead();
     setNotifications((current) => current.map((notification) => ({ ...notification, isRead: true })));
+    announceNotificationsChanged();
   }
 
   const unreadCount = notifications.filter((notification) => !notification.isRead).length;

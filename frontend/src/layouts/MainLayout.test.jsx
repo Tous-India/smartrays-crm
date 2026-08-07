@@ -3,6 +3,7 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import MainLayout from "./MainLayout";
+import { LEAVE_NOTIFICATION_TYPES } from "../hooks/useSidebarBadgeCounts";
 import useSessionStore from "../store/sessionStore";
 import * as userApi from "../modules/user/api/userApi";
 import * as notificationApi from "../modules/notification/api/notificationApi";
@@ -26,6 +27,10 @@ vi.mock("../modules/notification/api/notificationApi", () => ({
   listNotificationsByType: vi.fn(),
   markNotificationRead: vi.fn(),
   markAllNotificationsRead: vi.fn(),
+  // Deliberately still mocked even though §7.43 REMOVED this export from the
+  // real module: asserting it is never called is what proves the nav-click
+  // auto-clear is gone. Without it here, these tests would pass against the
+  // old code too, since the old code called this and not markAllNotificationsRead.
   markNotificationsReadByType: vi.fn(),
 }));
 
@@ -56,7 +61,6 @@ describe("MainLayout — nav composition and Settings gating", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     notificationApi.listNotificationsByType.mockResolvedValue({ data: { data: [] } });
-    notificationApi.markNotificationsReadByType.mockResolvedValue({ data: {} });
     useSessionStore.setState({ user: ADMIN_USER, isAuthenticated: true, isLoading: false });
   });
 
@@ -101,7 +105,6 @@ describe("MainLayout — nav composition and Settings gating", () => {
 describe("MainLayout — Leads/Leave sidebar notification badges (§7.29, 2026-07-31)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    notificationApi.markNotificationsReadByType.mockResolvedValue({ data: {} });
   });
 
   function mockCountsByType({ leads = 0, leave = 0 } = {}) {
@@ -146,7 +149,7 @@ describe("MainLayout — Leads/Leave sidebar notification badges (§7.29, 2026-0
     const leaveItem = await screen.findByRole("menuitem", { name: /Attendance/ });
     expect(within(leaveItem).getByText("3")).toBeInTheDocument();
     expect(notificationApi.listNotificationsByType).toHaveBeenCalledWith(
-      ["leave_requested", "leave_approved", "leave_declined"],
+      LEAVE_NOTIFICATION_TYPES,
       { unreadOnly: true }
     );
   });
@@ -165,7 +168,15 @@ describe("MainLayout — Leads/Leave sidebar notification badges (§7.29, 2026-0
     expect(within(leaveItem).getByText("2")).toBeInTheDocument();
   });
 
-  it("clicking the Leads nav item marks lead_created/lead_assigned notifications as read", async () => {
+  /**
+   * §7.43 (2026-08-06) — the inverse of what these two tests used to assert.
+   * Clicking a nav item marked every unread notification of that type read,
+   * so an admin who opened Attendance to look at ATTENDANCE silently
+   * destroyed their own pending-leave badge. That is the whole "the admin
+   * never receives leave notifications" report: the record was created and
+   * delivered correctly, then dismissed by a navigation.
+   */
+  it("clicking the Leads nav item does NOT mark anything read", async () => {
     mockCountsByType({ leads: 5 });
     useSessionStore.setState({ user: ADMIN_USER, isAuthenticated: true, isLoading: false });
 
@@ -175,41 +186,26 @@ describe("MainLayout — Leads/Leave sidebar notification badges (§7.29, 2026-0
 
     await userEvent.click(within(leadsItem).getByRole("link"));
 
-    await waitFor(() => {
-      expect(notificationApi.markNotificationsReadByType).toHaveBeenCalledWith([
-        "lead_created",
-        "lead_assigned",
-      ]);
-    });
+    expect(notificationApi.markNotificationsReadByType).not.toHaveBeenCalled();
+    expect(notificationApi.markAllNotificationsRead).not.toHaveBeenCalled();
   });
 
-  it("clicking the Attendance nav item marks leave notifications as read, without touching the Leads badge", async () => {
+  it("clicking the Attendance nav item leaves the Leave badge intact", async () => {
     mockCountsByType({ leads: 5, leave: 3 });
     useSessionStore.setState({ user: ADMIN_USER, isAuthenticated: true, isLoading: false });
 
     renderLayout();
     const leaveItem = await screen.findByRole("menuitem", { name: /Attendance/ });
-
-    // Asserted BEFORE the click: following the link navigates away and
-    // unmounts this layout, so the Leads badge has to be checked while the
-    // sidebar is still on screen. The point of the assertion is that the two
-    // badges are independent, which this still proves.
-    const leadsItem = screen.getByRole("menuitem", { name: /Leads/ });
-    expect(within(leadsItem).getByText("5")).toBeInTheDocument();
+    expect(within(leaveItem).getByText("3")).toBeInTheDocument();
 
     await userEvent.click(within(leaveItem).getByRole("link"));
 
-    await waitFor(() => {
-      expect(notificationApi.markNotificationsReadByType).toHaveBeenCalledWith([
-        "leave_requested",
-        "leave_approved",
-        "leave_declined",
-      ]);
-    });
-    expect(notificationApi.markNotificationsReadByType).not.toHaveBeenCalledWith([
-      "lead_created",
-      "lead_assigned",
-    ]);
+    // Nothing was dismissed, by either route. The badge's own survival after
+    // navigation is asserted at the hook level (it exposes no clearing
+    // function at all) and end-to-end in a browser — following the link
+    // unmounts this layout, so it cannot be re-queried here.
+    expect(notificationApi.markNotificationsReadByType).not.toHaveBeenCalled();
+    expect(notificationApi.markAllNotificationsRead).not.toHaveBeenCalled();
   });
 });
 
@@ -217,7 +213,6 @@ describe("MainLayout — sidebar footer profile menu", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     notificationApi.listNotificationsByType.mockResolvedValue({ data: { data: [] } });
-    notificationApi.markNotificationsReadByType.mockResolvedValue({ data: {} });
     useSessionStore.setState({ user: ADMIN_USER, isAuthenticated: true, isLoading: false });
   });
 
@@ -317,7 +312,6 @@ describe("MainLayout — mobile hamburger auto-closes on route change", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     notificationApi.listNotificationsByType.mockResolvedValue({ data: { data: [] } });
-    notificationApi.markNotificationsReadByType.mockResolvedValue({ data: {} });
     useSessionStore.setState({ user: ADMIN_USER, isAuthenticated: true, isLoading: false });
   });
 

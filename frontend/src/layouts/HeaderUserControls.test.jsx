@@ -10,7 +10,6 @@ vi.mock("../modules/notification/api/notificationApi", () => ({
   listNotificationsByType: vi.fn(),
   markNotificationRead: vi.fn(),
   markAllNotificationsRead: vi.fn(),
-  markNotificationsReadByType: vi.fn(),
 }));
 
 const USER = { _id: "u1", name: "Vinay", role: "admin" };

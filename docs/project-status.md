@@ -2533,3 +2533,57 @@ mounted and unmounted and behaves identically, so mounting it there made nothing
 should point at `/customers`. It still carries another session's uncommitted edit (`text-right` →
 `text-left`) on the line directly adjacent to the `<Link>` that needs changing, so per the task's
 own instruction it was left untouched rather than committing someone else's work.
+
+### 2026-08-06 — Leave notifications: dismissal fixed, and every decision now notifies (§7.43)
+
+**The reported bug was not what it looked like.** "An employee submits a leave request; the admin
+never receives a notification" was traced end to end against production first: recipients
+(manager + all admins, deduplicated, subject skipped), the `Notification` documents, the bell's
+query and the sidebar badge's query were **all correct**, and `createNotification` was awaited.
+A real employee submission wrote two unread rows and the admin's bell returned it.
+
+The bug was **dismissal**. `clearLeaveBadge` was wired as `onNavigate` on the Attendance nav item
+and called `markAllRead` for every leave type, so an admin who opened Attendance to look at
+*attendance* silently marked every unread leave notification read — including ones never
+displayed. `clearLeadsBadge` did the same on the Leads item. Corroborated in live data: two
+notifications created minutes apart were both already `isRead: true` with nobody having dismissed
+them.
+
+**Fixed:** both `onNavigate` wirings removed along with the clear functions and the
+`markNotificationsReadByType` wrapper (so the pattern cannot be re-wired by accident); the backend
+`markAllRead` endpoint is unchanged, since it was always correct for an explicit action — the bug
+was the caller. Dismissal is now only opening a notification from the bell, or its "Mark all as
+read". Nothing marks read on render, hover, or route change.
+
+**Also fixed, the one genuine gap in the recipient work:** `markUnapprovedAbsence` sent no
+notification at all, despite being the only decision that also applies `isDoubleDeduction` — the
+employee learned about a double deduction by noticing their balance. It now writes a new
+`leave_unapproved_absence` type, deliberately not reusing `leave_approved`: the handler sets
+`status: "approved"` internally, and calling it "approved" would be worse than silence.
+
+**Two staleness fixes:** `useSidebarBadgeCounts` gained the `visibilitychange` refetch the bell
+already had (the badge sat stale on tab return while the bell updated), and now listens for a
+`NOTIFICATIONS_CHANGED_EVENT` the bell fires on every dismissal — the two hooks read the same
+endpoint with no shared store, so the badge previously showed a stale count for up to 60s after
+the user acted.
+
+**Trace cleanup:** the leave record created by the investigation (`6a746f9c6756155efcdf575b`) and
+its two notification rows were deleted **by exact `_id`**, after printing them, with an abort if
+the counts did not match exactly 1 and 2. No substring or reason-text matching — a substring
+cleanup previously hard-deleted three real leave records in this project.
+
+**Verified in a browser:** four navigations (Attendance, Leads, Customers, Payments) fired zero
+mark-read calls and left both unread notifications and the badges intact; opening a notification
+marked exactly that one read and the sidebar badge dropped immediately rather than after its poll;
+a simulated tab return triggered three refetches (bell + both sidebar queries) and the badge
+picked up a new notification.
+
+**Tests:** 11 new backend (`leaveNotifications.test.js`), of which **3 fail against the previous
+code** — the mark-unapproved-absence ones; the other 8 pin request-side behaviour that was already
+correct and are labelled as regression guards. 6 frontend tests new or inverted, **all 6 verified
+to fail against the previous code**. Two of those needed a second pass: asserting only on
+`markAllNotificationsRead` passed either way, because the old code called
+`markNotificationsReadByType` instead — the mock deliberately still carries that export so its
+absence is what proves the auto-clear is gone. Backend **28 files / 831 tests, all passing** (was
+27/820). Frontend **78 files / 668 tests** (was 78/666); the 10 failures are the known pre-existing
+flakes in `LeadDetailPage`, `CustomersListPage`, `PaymentsListPage` and `UserManagementPage`.

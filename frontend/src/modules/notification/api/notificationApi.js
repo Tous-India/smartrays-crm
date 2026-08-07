@@ -30,9 +30,16 @@ export function markAllNotificationsRead() {
   return apiClient.patch("/notifications/read-all");
 }
 
-// Scoped mark-as-read for the Leads/Leave sidebar nav-click behavior (§7.29)
-// — marks only the given type(s) read, leaving unrelated unread
-// notifications (and the bell's own "Mark all as read" scope) untouched.
-export function markNotificationsReadByType(types) {
-  return apiClient.patch("/notifications/read-all", null, { params: { type: types.join(",") } });
-}
+/*
+ * The scoped `markNotificationsReadByType` wrapper was REMOVED (§7.43,
+ * 2026-08-06). Its only caller was the sidebar nav-click auto-clear, which
+ * marked every unread notification of a type read merely because the user
+ * clicked a nav item — the cause of "the admin never receives leave
+ * notifications" (the record was created and delivered correctly, then
+ * dismissed by a navigation).
+ *
+ * The backend endpoint is unchanged and still accepts `?type=`; it is correct
+ * for an explicit scoped dismissal and may be wanted again. The wrapper is
+ * gone so the auto-clear cannot be re-wired without deliberately re-adding
+ * it.
+ */

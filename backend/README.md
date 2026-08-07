@@ -692,6 +692,26 @@ branch is never reached, i.e. recovery codes could never be redeemed.
 20 tests in `twoFactor.test.js` cover exactly the properties that matter, including asserting on
 the real `Set-Cookie` header.
 
+### Leave: every decision now notifies the employee (§7.43, 2026-08-06)
+
+`markUnapprovedAbsence` sent **no notification at all**. It was the only one of the three
+decisions that also sets `isDoubleDeduction`, so the employee found out by noticing their balance.
+
+It now writes a `leave_unapproved_absence` notification — a new type in the enum, deliberately not
+reusing `leave_approved`. The handler sets `status: "approved"` internally for bookkeeping, and
+telling someone their leave was "approved" when it was in fact recorded against them at double
+rate would be worse than silence. Same self-skip as approve/decline: an admin marking their own
+record notifies nobody.
+
+**The request side was already correct** and is now pinned by regression tests rather than
+changed: recipients are the employee's `managerId` (when set) **plus every admin**, collected in a
+`Set` so a manager who *is* an admin gets exactly one notification — which is the live situation,
+since the real team is headed by the admin account. An employee with no `managerId` still reaches
+admins. `notifyLeaveRequested` is `await`ed, not fire-and-forget, and `createNotification` writes
+the record before any push attempt, with push failures caught per-subscription. Verified against
+production: a real employee submission wrote two rows (manager + admin), both unread, and the
+admin's bell returned it.
+
 ### AMC: expiring-soon across all customers (§7.42, 2026-08-06)
 
 `GET /amc?expiringSoon=true` returns every ACTIVE record renewing within 30 days **or already

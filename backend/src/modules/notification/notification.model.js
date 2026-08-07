@@ -12,6 +12,15 @@ const NOTIFICATION_TYPES = [
   "leave_requested",
   "leave_approved",
   "leave_declined",
+  // Added 2026-08-06 (§7.43) — being marked an unapproved absence is a
+  // DECISION on a request, and the most consequential of the three: it flips
+  // the type and applies `isDoubleDeduction`. It had no notification at all,
+  // so the employee learned about a double deduction only by noticing it.
+  // Not folded into `leave_approved`, even though the handler sets
+  // `status: "approved"` internally — telling someone their leave was
+  // "approved" when it was recorded as an unapproved absence would be worse
+  // than silence.
+  "leave_unapproved_absence",
   // Added 2026-07-31 (§7.4c) — check-in/break-in/break-out/check-out, each
   // notifying the employee themselves, their manager, and every admin (see
   // attendance.service.js#notifyAttendanceEvent).

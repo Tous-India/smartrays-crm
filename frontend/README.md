@@ -978,6 +978,40 @@ timestamps, two of them near-identical-looking colored bars (`ConnectivityGapBar
 duplication even though the underlying data doesn't overlap. Nothing about the underlying data
 needed fixing before building this on top of it.
 
+#### Notifications are dismissed by the user, never by navigating (§7.43, 2026-08-06)
+
+`clearLeadsBadge`/`clearLeaveBadge` are gone. They were wired as `onNavigate` on the Leads and
+Attendance nav items and called `markAllRead` for every type in that badge — so clicking
+"Attendance" for **any** reason marked every unread leave notification read, whether or not it had
+ever been displayed.
+
+That is the whole "the admin never receives leave notifications" report. The pipeline was correct
+end to end — recipients, records, and both queries all verified — and a navigation then dismissed
+the result. Corroborated in the live data: two notifications created minutes apart were both
+already `isRead: true` with nobody having deliberately dismissed them.
+
+Dismissal is now only ever explicit:
+- opening a notification from the bell dropdown (which already routes to it), or
+- the dropdown's "Mark all as read".
+
+Nothing marks read on render, on hover, or on route change. The scoped
+`markNotificationsReadByType` API wrapper was removed so the auto-clear cannot be re-wired without
+deliberately re-adding it; the backend endpoint is unchanged and still accepts `?type=`, since it
+is correct for an explicit scoped dismissal.
+
+`useSidebarBadgeCounts` gained the **visibilitychange refetch** the bell and
+`useCheckedInHeartbeatLoop` already had — without it the sidebar badge sat stale on tab return
+while the bell updated, and the two visibly disagreed. It also listens for
+`NOTIFICATIONS_CHANGED_EVENT` (`modules/notification/notificationEvents.js`), which the bell fires
+on every explicit dismissal: the two hooks read the same endpoint with no shared store, so
+otherwise the badge showed a stale count for up to a full 60s poll after the user acted. A window
+event rather than lifted state keeps them decoupled — neither imports the other, and §3 reserves
+Zustand for genuine cross-page state, which a refresh ping is not.
+
+`LEAVE_NOTIFICATION_TYPES` gained `leave_unapproved_absence` alongside the backend enum. Tests
+assert against that exported constant rather than a literal array, so the badge filter cannot
+silently drift from the enum and leave the bell showing a type the badge never counts.
+
 #### Renewals due, above the Customers table (§7.42, 2026-08-06)
 
 `ExpiringAmcPanel` surfaces AMCs renewing within 30 days or already overdue, so a renewal is
