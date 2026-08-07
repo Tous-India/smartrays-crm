@@ -1,0 +1,33 @@
+# Vercel uploads from the REPO ROOT. The project's Root Directory setting
+# ("frontend", in .vercel/project.json) only says where to BUILD — not what to
+# UPLOAD — so a frontend/.vercelignore is never read and this file has to live
+# here. Confirmed from the build log: "Downloading 535 deployment files", which
+# is the whole repo, not the 350 under frontend/.
+#
+# This file also REPLACES .gitignore for upload filtering, which is why the
+# ordinary exclusions have to be restated below rather than inherited.
+
+node_modules
+dist
+build
+coverage
+.git
+.vercel
+
+# Local env files must never reach a build. Being gitignored is NOT enough.
+#
+# Vite inlines a .env value for any variable that is not ALSO set in the Vercel
+# project's own env settings — a real env var wins, an absent one does not. On
+# 2026-08-07 (§6.7) that shipped the LOCAL dev VAPID public key to production:
+# VITE_API_BASE_URL was safe because Vercel had its own value, but
+# VITE_VAPID_PUBLIC_KEY did not exist there. Push subscriptions are
+# cryptographically bound to the key that created them, so production would
+# have handed out subscriptions its own backend could never push to — 403,
+# swallowed per-subscription, behind a toggle that looked like it worked.
+.env
+.env.*
+
+# The frontend build has no use for the backend, and backend/.env carries real
+# secrets (MONGODB_URI, JWT_SECRET, the VAPID *private* key). It deploys as its
+# own separate Vercel project.
+backend
