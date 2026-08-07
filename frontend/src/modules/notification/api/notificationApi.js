@@ -1,11 +1,12 @@
 import apiClient from "../../../services/apiClient";
 
 /**
- * Thin wrappers over the shared apiClient for the existing backend
- * Notification endpoints (`backend/src/modules/notification/notification.routes.js`).
- * Deliberately NOT here: `/notifications/subscribe` / `/unsubscribe` (browser
- * push) — this module is in-app notifications only, per this task's explicit
- * exclusion of push subscription setup.
+ * Thin wrappers over the shared apiClient for the backend Notification
+ * endpoints (`backend/src/modules/notification/notification.routes.js`).
+ *
+ * `subscribe`/`unsubscribe` were added 2026-08-07 (§6.7) — browser push was
+ * previously scoped out on the client, so these existed server-side with no
+ * caller. See `pushSubscription.js`.
  */
 
 export function listNotifications() {
@@ -43,3 +44,17 @@ export function markAllNotificationsRead() {
  * gone so the auto-clear cannot be re-wired without deliberately re-adding
  * it.
  */
+
+/**
+ * The body is `subscription.toJSON()` from the Push API — the backend
+ * validates `endpoint` plus `keys.p256dh`/`keys.auth`.
+ */
+export function subscribeToPush(subscription) {
+  return apiClient.post("/notifications/subscribe", subscription);
+}
+
+// POST, not DELETE — matching the backend route, which avoids REST-purist
+// verbs for this pair.
+export function unsubscribeFromPush(endpoint) {
+  return apiClient.post("/notifications/unsubscribe", { endpoint });
+}

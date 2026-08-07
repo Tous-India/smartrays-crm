@@ -2,21 +2,11 @@ import { Badge, Dropdown, Button, Empty, Spin } from "antd";
 import { BellOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import useNotifications from "../hooks/useNotifications";
+import { routeForNotification } from "../notificationRoutes";
 
 // Maps `relatedEntity.module` (see backend/src/modules/notification/
 // notification.service.js#createNotification callers) to the route that
 // entity's detail page lives at.
-const MODULE_ROUTES = {
-  leads: (id) => `/leads/${id}`,
-  tickets: (id) => `/tickets/${id}`,
-  // Leave has no per-record detail route, and as of 2026-08-05 no page of
-  // its own either — it lives in a tab on /attendance, so both leave and
-  // attendance notifications land there, ignoring `relatedEntity.id`.
-  leave: () => "/attendance",
-  // Attendance (§7.4c's check-in/break-in/break-out/check-out notifications)
-  // has no per-record detail route either — same treatment as Leave.
-  attendance: () => "/attendance",
-};
 
 function timeAgo(dateString) {
   const seconds = Math.floor((Date.now() - new Date(dateString).getTime()) / 1000);
@@ -44,12 +34,12 @@ function NotificationBell() {
       await markAsRead(notification._id);
     }
 
-    const buildRoute = notification.relatedEntity?.module
-      ? MODULE_ROUTES[notification.relatedEntity.module]
-      : null;
+    // §6.7 — shared with the service worker's own copy so a push and an
+    // in-app click land in the same place.
+    const target = routeForNotification(notification);
 
-    if (buildRoute && notification.relatedEntity?.id) {
-      navigate(buildRoute(notification.relatedEntity.id));
+    if (target) {
+      navigate(target);
     }
   }
 

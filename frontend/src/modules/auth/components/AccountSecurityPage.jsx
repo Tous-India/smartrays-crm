@@ -3,6 +3,7 @@ import { Alert, Button, Card, Empty, Form, Input, List, Modal, Popconfirm, Tag, 
 import { DesktopOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
 import useSessionStore from "../../../store/sessionStore";
 import TwoFactorEnrolment from "./TwoFactorEnrolment";
+import PushNotificationToggle from "../../notification/components/PushNotificationToggle";
 import {
   changePassword,
   regenerateRecoveryCodes,
@@ -211,6 +212,16 @@ function AccountSecurityPage() {
           />
         </Card>
       )}
+
+      {/*
+        §6.7 — browser push opt-in lives here because this is where a user
+        manages how the app reaches them. The toggle renders nothing at all
+        when the browser lacks Push support or the VAPID public key is not
+        configured, so it never shows a control that cannot work.
+      */}
+      <Card title="Notifications" className="app-elevated-card">
+        <PushNotificationToggle />
+      </Card>
 
       <Card title="Change password" className="app-elevated-card">
         {passwordError && <Alert type="error" showIcon className="!mb-4" message={passwordError} />}

@@ -3,6 +3,7 @@ import { RouterProvider } from "react-router-dom";
 import { ConfigProvider, App as AntApp } from "antd";
 import router from "./routes/router";
 import useSessionStore from "./store/sessionStore";
+import { registerServiceWorker, syncSubscription } from "./modules/notification/pushSubscription";
 
 // Smartrays Solutions brand — navy as the primary color so every AntD
 // component (buttons, links, focus rings, selected menu items, form
@@ -48,6 +49,12 @@ function App() {
   // itself lives in an httpOnly cookie the JS layer can't read anyway.
   useEffect(() => {
     initializeSession();
+
+    // §6.7 — registering the worker prompts for NOTHING; the permission
+    // prompt is deferred to the Settings toggle. `syncSubscription` re-sends
+    // a subscription the browser rotated behind our back, which would
+    // otherwise sit dead on the server until a push 410'd it away.
+    registerServiceWorker().then(() => syncSubscription());
   }, [initializeSession]);
 
   return (

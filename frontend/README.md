@@ -24,6 +24,12 @@ cp .env.example .env.local   # optional, for personal machine overrides
 Fill in `.env`:
 - `VITE_API_BASE_URL` — the backend's API base URL, default `http://localhost:5000/api/v1`
   (must match `backend`'s `PORT` + its `/api/v1` mount prefix, see `backend/src/route.js`)
+- `VITE_VAPID_PUBLIC_KEY` — optional. The **public** half of the backend's VAPID keypair, so
+  the browser can subscribe to Web Push. It must be the key belonging to the backend that
+  `VITE_API_BASE_URL` points at: a subscription is cryptographically bound to the key it was
+  created with, and a mismatched pair fails at delivery time with a 403, silently. Unset is a
+  supported state — the Settings → Account push toggle renders nothing at all. See
+  "Web Push — the client half" below.
 
 No map API key is needed — the Location live-map/history views and the Attendance map
 integration all run on `react-leaflet` + free OpenStreetMap tiles (§11.6, migrated
@@ -2540,6 +2546,62 @@ the administrative tab set.
 head may use it, not just admin — the backend enforces head-or-admin), and a "let them edit their
 own name and phone" switch on the user detail page (that person's manager, or admin).
 
+### Web Push — the client half (§6.7, 2026-08-07)
+
+The backend has been able to send pushes since Phase 9 (2026-07-16); nothing could receive
+them, because a browser only gets a push through a **service worker**, and there was none.
+This is that half.
+
+| File | Role |
+|---|---|
+| `public/sw.js` | The worker. `push` → show a notification; `notificationclick` → go to the record |
+| `src/modules/notification/pushSubscription.js` | Subscribe/unsubscribe, permission state, rotation |
+| `src/modules/notification/components/PushNotificationToggle.jsx` | The Settings → Account control |
+| `src/modules/notification/notificationRoutes.js` | One route table, shared with the bell |
+
+**The worker is registered on load; permission is NOT requested on load.** Those are separate
+things and conflating them is the classic mistake: a browser shows the permission prompt once,
+users reflexively deny it, and **a denial cannot be re-requested programmatically — ever.** So
+`App.jsx` registers the worker silently at startup, and the only thing that ever calls
+`Notification.requestPermission()` is the user clicking the toggle in Settings → Account.
+
+The toggle reports the four states honestly rather than pretending:
+
+| State | What renders |
+|---|---|
+| Unsupported (no `serviceWorker`/`PushManager`) | **Nothing** — a control that errors on click is worse than no control |
+| `VITE_VAPID_PUBLIC_KEY` unset | **Nothing** — subscribing is impossible without it, so don't offer it |
+| `default` | Switch, off. Clicking it prompts |
+| `granted` | Switch, reflecting whether a subscription actually exists |
+| `denied` | Switch **disabled**, plus a notice saying it has to be changed in browser settings |
+
+That last row is the one worth stating plainly: with `denied`, an enabled-looking switch would
+do nothing at all when clicked, forever, with no way for the user to work out why.
+
+`sw.js` deliberately **caches nothing** and has no `fetch` handler. A cache here would serve
+stale HTML after a deploy — trading the problem push solves for a worse one. It also carries
+its own copy of the route table, because a service worker is a standalone script served from
+the site root and cannot import from `src/`. `notificationRoutes.test.js` parses the real
+`sw.js` off disk and asserts the two copies agree, so a route added in one and not the other
+fails the suite instead of quietly sending pushes to a dead URL.
+
+Clicking a notification **focuses an existing tab** and navigates it, only opening a new window
+if the app isn't already open — otherwise every push costs the user their current page state.
+
+Subscriptions rotate: a browser can silently issue a new endpoint. `syncSubscription()` runs on
+load, compares the current endpoint against the last one sent (localStorage), and re-POSTs on a
+mismatch. Without that, pushes keep going to the old endpoint, 410, and get deactivated
+server-side — push stops working with no visible cause.
+
+**Verified in a real browser, not jsdom** — neither service workers nor `PushManager` exist
+there. A real push was signed by the backend's own `sendPush()`, accepted by FCM (`201`), and
+observed being displayed by the worker with the correct title, body and click target. Two
+things that cost time and are worth writing down: **Chrome disables the Push API in incognito**
+(so Playwright needs `launch_persistent_context`, since ordinary contexts are
+incognito-equivalent), and **headless Chromium always reports `Notification.permission ===
+"denied"`** no matter what `grant_permissions` says — the enable path is simply unreachable
+headless.
+
 ---
 
 ## Env Vars
@@ -2547,6 +2609,7 @@ own name and phone" switch on the user detail page (that person's manager, or ad
 ```
 VITE_API_BASE_URL=http://localhost:5000/api/v1
 VITE_GOOGLE_MAPS_API_KEY=
+VITE_VAPID_PUBLIC_KEY=
 ```
 
 `.env`/`.env.local` are gitignored (see `.gitignore`) — only `.env.example` is committed.

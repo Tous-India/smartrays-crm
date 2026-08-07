@@ -190,7 +190,7 @@ Full statements live where cited — this is a summary index, not a restatement:
 |---|---|---|
 | Cloudinary | File storage — attendance photos, ticket attachments | ✅ Wired and in use — `src/services/cloudinary.service.js`, Attendance check-in/check-out photos (§7.4, 2026-07-13) and Ticket attachments (§7.8, `uploadTicketAttachment`, `resource_type: "auto"` since attachments aren't guaranteed to be images). Generated PDF/Excel reports (§7.11) briefly went through Cloudinary too (Phase 8) but were moved off it 2026-08-04 — reports are now streamed directly, never uploaded anywhere |
 | Google Maps Distance Matrix | Computing per-shift travel distance for the Transport/Travel module | ✅ Wired and in use (§7.6, 2026-07-13) — `src/services/googleMaps.service.js`, no SDK dependency (calls the REST API via `fetch`) |
-| Web Push (VAPID) | Push notifications — lead assignment, follow-up reminders, ticket assignment | ✅ Wired and in use (§6.7/§7.16, Phase 9, 2026-07-16) — `src/services/webPush.service.js`, no SDK beyond the `web-push` npm package itself. Browser-side receipt (PWA service worker) is a frontend follow-up |
+| Web Push (VAPID) | Push notifications — lead assignment, follow-up reminders, ticket assignment | ✅ Wired and in use (§6.7/§7.16, Phase 9, 2026-07-16) — `src/services/webPush.service.js`, no SDK beyond the `web-push` npm package itself. ✅ Browser-side receipt (service worker + Settings toggle) built 2026-08-07, §6.7 — end-to-end, verified against a real push service |
 
 ---
 
@@ -672,7 +672,7 @@ what to build next and why.
 | Global state | Zustand — only for genuine cross-page state (session/user, active running task timer, notification count) |
 | Styling | Tailwind CSS (layout/utility) + Ant Design (production components) |
 | Auth | JWT in httpOnly + secure + sameSite cookies — never localStorage/sessionStorage |
-| Push notifications | Web Push (VAPID) via a PWA service worker + `web-push` npm package — ✅ **backend half wired 2026-07-16** (§7.16, Phase 9): `web-push` sender, `Notification`/`PushSubscription` models, VAPID keypair now required env vars. The PWA service worker (browser-side receipt/display) is a frontend concern, still planned |
+| Push notifications | Web Push (VAPID) via a PWA service worker + `web-push` npm package — ✅ **backend half wired 2026-07-16** (§7.16, Phase 9): `web-push` sender, `Notification`/`PushSubscription` models, VAPID keypair now required env vars. ✅ **Client half wired 2026-08-07** (§6.7): `public/sw.js`, `pushSubscription.js`, a Settings → Account toggle, and the optional `VITE_VAPID_PUBLIC_KEY` frontend env var |
 | Scheduled jobs | `node-cron` (in-process) — ✅ monthly payroll run wired 2026-07-13 (`src/cron/payrollCron.js`, §7.7); ✅ **lead follow-up reminder cron wired 2026-07-16** (`src/cron/leadFollowUpReminderCron.js`, §7.16, every 5 minutes); recurring invoice generation still planned |
 | PDF/Excel export | `pdfkit` (PDF) — resolved 2026-07-13, `exceljs` already in use for Leads' export. Generic building blocks now live in `src/services/report.service.js` (`generateExcelReport`/`generatePdfReport`, added alongside Attendance's report endpoint) — groundwork for §7.11's real shared pipeline, not the pipeline itself. Leads' export predates this service and was not migrated onto it |
 | File storage | **Cloudinary** — resolved 2026-07-13 (see §11.6). Used uniformly across all environments for attendance login photos, ticket attachments, and generated PDF/Excel reports; no separate local-disk path for dev, to avoid a dev/prod behavior split |
@@ -1136,6 +1136,47 @@ fields added or changed. See §7.16 for the full write-up.
 
 **`PushSubscription`** — userId, endpoint, keys (VAPID)
 **`Notification`** — userId, type, message, isRead, relatedEntity (module + id)
+
+✅ **Client half built 2026-08-07** — the browser can now actually receive a push. Until this,
+the backend had been sending into nothing: a push only reaches a browser through a **service
+worker**, and none existed.
+
+- `frontend/public/sw.js` — `push` shows the notification, `notificationclick` focuses an
+  already-open tab and navigates it (opening a new window only if the app is closed). It
+  **caches nothing and has no `fetch` handler** — a cache would serve stale HTML after a
+  deploy, which is a worse problem than the one push solves.
+- `frontend/src/modules/notification/pushSubscription.js` — subscribe/unsubscribe, permission
+  reporting, and re-sending a **rotated** subscription. A browser can silently issue a new
+  endpoint; if the server never hears about it, every push 410s and the subscription is
+  deactivated, so push dies with no visible cause. `syncSubscription()` on load compares
+  against the last endpoint sent (localStorage) and re-POSTs on a mismatch.
+- `PushNotificationToggle` in Settings → Account — the **only** thing that ever calls
+  `Notification.requestPermission()`.
+- `notificationRoutes.js` — one route table shared with the bell, so a push and an in-app click
+  land in the same place. `sw.js` must carry a duplicate (a worker is a standalone script
+  served from the site root and cannot import from `src/`), so its test parses the real
+  `sw.js` off disk and asserts the copies agree.
+
+**The worker registers on load; permission is deliberately not requested on load.** A browser
+prompts once, users reflexively deny, and **a denial can never be re-requested
+programmatically** — so the prompt is tied to a deliberate click, and the `denied` state
+renders a *disabled* switch plus an explanation that it must be changed in browser settings,
+rather than an enabled-looking control that would silently do nothing forever.
+
+**New optional env var `VITE_VAPID_PUBLIC_KEY`** — the **public** half only; the private key
+must never reach the browser. It has to belong to the same backend `VITE_API_BASE_URL` points
+at, since a subscription is cryptographically bound to the key that created it and a mismatch
+fails at delivery with a 403, silently. Unset is a supported state, handled the same way as
+`ATTENDANCE_CLEANUP_TOKEN`'s 503: **the toggle renders nothing** rather than offering a control
+that cannot work.
+
+Verified in a real browser (jsdom has neither service workers nor `PushManager`): a real push
+signed by the backend's own `sendPush()` was accepted by FCM (`201`) and observed being
+displayed by the worker with the right title, body and click target. Two environment traps
+worth recording — **Chrome disables the Push API in incognito**, so Playwright needs
+`launch_persistent_context`; and **headless Chromium always reports
+`Notification.permission === "denied"`** regardless of `grant_permissions`, making the enable
+path unreachable headless.
 
 Manager-scoped "own team" views (Leads, Customers, Attendance, Leave, AMC) are computed by
 looking up `User` documents where `managerId` equals the requesting manager's `_id` (see §6.1),
@@ -4194,7 +4235,7 @@ frontend/
 | 6 | ✅ **Built and verified 2026-07-13:** Transport/Travel (Google Maps Distance Matrix integration — §7.6, `transport` module, 28 tests). Auto-generates a `TravelLog` from Attendance checkout coords (direct call into `attendance.service.js#checkOut`, never fails checkout); manual entry with coords or a direct `distanceKm` override; `GET /travel-logs?scope=own\|team\|all` (mirrors Leave's shape) + `PATCH /travel-logs/:id/approve\|reject` (added 2026-07-13, resolves §11.4) + `GET /travel-logs/report` (reuses `src/services/report.service.js`). `GOOGLE_MAPS_API_KEY` is now a required env var. §11.4 (feeds payroll?) resolved 2026-07-13 — only `status: "approved"` entries feed Payroll mileage reimbursement. | Phase 3 |
 | 7 | ✅ **Built and verified:** Payments + AMC (§7.9/§7.10, `payment`/`amc` modules, 16 + 20 tests). `Payment` (admin-only, no ownership scoping at all per §5) can optionally attach to a real `Invoice` via a new `invoiceId` field — applying it reduces `Invoice.balance` and updates `Invoice.status` (`paid` at 0, the newly-added `partially_paid` otherwise) — **§11.3 resolved: partial reconciliation, not a standalone log and not full invoicing**. `AMC`'s two-flow creation (`new_customer` reuses `customer.service.js#createCustomer` directly; `existing_customer` requires an in-scope `customerId`) matches smartrays.md's "ask which create client or convert client"; `view`/`edit` scoping ("own team"/"own") is resolved via the underlying Customer's ownership (new `customer.service.js#getVisibleCustomerIds` export), since AMC has no `ownerId` field of its own — Manager's "own team" tier is the "PM" role smartrays.md describes elsewhere. No automation on renewal for v1 (stated simplification). Full suite: **340 tests, all passing.** ✅ **Payments frontend built — see §7.22**: `/payments` (date-range filter tabs, server-paginated table, a Record Payment modal with a genuinely debounced customer search) — the first server-side pagination/date-filtering added to this backend for it, everything else still paginates client-side. AMC's own frontend remains a placeholder — not part of this task. | Phase 2 |
 | 8 | ✅ **Built and verified:** Reports (§7.11, `report` module, 24 tests). Single `POST /reports/generate` `{module, filters, format}` dispatching to `attendance`/`leave`/`payroll`/`transport`/`leads`/`customers` — each via that module's own existing, already-scoped data-fetcher (`generateAttendanceReport`/`generateTravelLogReport` reused unmodified; `listLeaves`/`listPayroll`/`listLeads`/`listCustomers` reused with new column/row rendering added in `report.service.js` itself). No new `reports.generate` permission — gated per-module by reusing `can()` against that module's own actions. Per-module `filters` shape validated by reusing each target module's own existing query validator (`validateReportQuery`/`validateScopeQuery`/`validateListQuery`) rather than duplicating checks; `leads`/`customers` fall back to their model's own status enum since neither has a dedicated query validator to reuse. `GET /attendance/report`/`GET /travel-logs/report` internally call this dispatcher rather than duplicating report generation. **Cloudinary removed 2026-08-04:** all three callers (`POST /reports/generate` and both of the above) briefly uploaded every report to Cloudinary and returned `{ downloadUrl }` (Phase 8) before streaming the buffer directly again as of 2026-08-04, matching `GET /leads/export`/`GET /payroll/:id/payslip`'s pre-existing direct-stream shape — existing tests rewritten to assert against the real streamed response and to confirm no Cloudinary function is called. `GET /leads/export` and `GET /payroll/:id/payslip` were both deliberately excluded from the dispatcher itself (pre-existing separate export; single-document artifact, respectively; neither was ever routed through Cloudinary) — the payslip exclusion has a dedicated regression test proving it still streams directly. Full suite: **365 tests, all passing.** | All prior phases have data to report on |
-| 9 | ✅ **Backend half built 2026-07-16 — see §7.16:** Notification module (§6.7), Web Push (VAPID) delivery, lead follow-up reminder cron — wired into Leads (assignment + reminders) and Ticket assignment. **This closes out every backend phase.** ✅ **Frontend half — Dashboard — built, see §7.20/§7.21:** the `/dashboard` shell composing Leads + Customers widgets (§7.20) plus 6 operational glance widgets — Attendance/Leave/Tickets/AMC/Payments/Payroll (§7.21) — by role via a declarative catalog (`dashboardConfig.js`), permission-gated per-widget on top of the role-level config. An Employee-facing own-scoped widget is a future incremental addition using the same pattern, not a gap. Remaining: PWA service worker wiring for push receipt/display (no dashboard-side work left). | All |
+| 9 | ✅ **Backend half built 2026-07-16 — see §7.16:** Notification module (§6.7), Web Push (VAPID) delivery, lead follow-up reminder cron — wired into Leads (assignment + reminders) and Ticket assignment. **This closes out every backend phase.** ✅ **Frontend half — Dashboard — built, see §7.20/§7.21:** the `/dashboard` shell composing Leads + Customers widgets (§7.20) plus 6 operational glance widgets — Attendance/Leave/Tickets/AMC/Payments/Payroll (§7.21) — by role via a declarative catalog (`dashboardConfig.js`), permission-gated per-widget on top of the role-level config. An Employee-facing own-scoped widget is a future incremental addition using the same pattern, not a gap. ✅ **Push receipt/display built 2026-08-07 (§6.7)** — service worker, subscription module, Settings → Account toggle; a real push was signed by the backend, accepted by FCM and displayed by the worker. **Phase 9 is now complete on both sides.** Production still needs `VITE_VAPID_PUBLIC_KEY` set on the frontend Vercel project (the *production* backend's public key) — until then the toggle correctly renders nothing. | All |
 | — | ✅ **Built 2026-07-17 — see §7.19:** password reset (self-service email flow + admin override) and the User Management frontend screen (`/settings/users`, closing a gap that existed since Phase 0 — the backend `user` module had endpoints with no frontend consumer). Bundled login page visual redesign in the same task. Not a numbered roadmap phase — a cross-cutting fix/gap-closure task, not new module scope. **Also: first production deployment, to Vercel — see the Deployment section below.** | Phase 0 (`user` module) |
 
 Phases 1–2 and 3 can be built in parallel by two developers since they don't share models

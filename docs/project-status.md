@@ -47,9 +47,11 @@ screen (`/settings/users`) plus self-service/admin password reset (§7.19), the 
 (§7.13/§7.20/§7.21 — Leads/Customers widgets plus 6 operational glance widgets for Attendance/
 Leave/Tickets/AMC/Payments/Payroll), the Payments frontend module (§7.22), and now Reports &
 Analytics (§7.23 — the app's first real analytics feature, `@ant-design/charts`) are also
-built — Phase 9's frontend half is down to just PWA service worker wiring, and the rest of the
-frontend module-by-module build-out remains (Payroll/Transport/Tickets/AMC/Permissions still
-render placeholder pages).
+built — and **Phase 9 is now complete on both sides**: the Web Push client half (service
+worker, subscription module, Settings → Account toggle) was built 2026-08-07, so a browser can
+finally receive what the backend has been able to send since July. The rest of the frontend
+module-by-module build-out remains (Payroll/Transport/Tickets/AMC/Permissions still render
+placeholder pages).
 Location Tracking and
 Attendance are proven to work together end-to-end through real HTTP endpoints, not just against
 directly-seeded test data — see the changelog. Photo capture on check-in/check-out is now
@@ -234,9 +236,10 @@ Leads, Customers, Attendance, Leave, Location, User Management, and Dashboard fr
 modules are all done, including the heartbeat/location-ping submission loop (no longer an
 open gap); next step is filling in the rest of the frontend module-by-module (Payroll/
 Transport are reasonable next candidates — each would also add its own Dashboard widget
-via `dashboardConfig.js`, not a separate task), the PWA service worker wiring (Phase 9's last
-remaining piece), or real invoicing (still deferred — `Invoice` remains a placeholder,
-Phase 7 only added partial reconciliation on top of it) — whichever is prioritized next.
+via `dashboardConfig.js`, not a separate task) or real invoicing (still deferred — `Invoice`
+remains a placeholder, Phase 7 only added partial reconciliation on top of it) — whichever is
+prioritized next. Phase 9's last remaining piece, the service worker wiring for push
+receipt/display, was built 2026-08-07 (see the changelog).
 
 ---
 
@@ -259,7 +262,7 @@ Phase 7 only added partial reconciliation on top of it) — whichever is priorit
 | Frontend 3 | Attendance/Leave frontend modules + a new Location live-map view (three module folders, built together) | ✅ **Built; extended 2026-07-29 with an admin photo viewer, a calendar-grid view, summary stats, and an admin manual-correction UI for Attendance, again with half-day support, a balance card, a Decline action, and a team leave calendar for Leave, and again with geofence-violation display (a "Location" column/section/marker) for Attendance — see the 2026-07-29 changelog entries for the full write-ups.** `frontend/src/modules/attendance/` — `CheckInOutWidget` fetches current status on mount (never assumes "not checked in"), requiring both a native-`getUserMedia`+`<canvas>`-captured photo and native-`Geolocation` coords before Confirm enables (mirroring the backend's server-side-enforced photo requirement); shows a live elapsed-time counter once checked in. `PersonalAttendanceView`/`TeamAttendanceView` share one `AttendanceTimeline` table; connectivity gaps (`connectivityGaps[]`) render as visually distinct red segments on a proportional bar (`ConnectivityGapBar`), positioned/sized by real gap timing, not just present in the data. Team Attendance is gated by `attendance.view_team`/`view_all` via an inline `can()` OR-check rendering a 403 `Result` (`PermissionGate`/`usePermission` only express one module+action pair each). `frontend/src/modules/leave/` — `LeaveListPage`'s scope tabs are built from whichever `leave.view*` grants the user holds (defaulting to "own", matching the backend's own default); Approve/Mark Unapproved Absence render admin-only, and the mark-absence confirmation shows its 2x-deduction consequence directly in the `Popconfirm` description text, not a tooltip. `frontend/src/modules/location/` — a genuinely new `/location` route (Location had zero frontend before this task): `LiveMapView` re-polls `GET /location/live` every ~12s and plots one marker per visible checked-in employee; `HistoryMapView` renders a selected employee/date's `GET /location/history` trail as a polyline; both via a generic `LeafletMapView` component (`react-leaflet` + free OpenStreetMap tiles, no API key — migrated 2026-08-04 from a Google Maps JS SDK `GoogleMapView`/`useGoogleMapsScript` pairing that was never actually functional in production, since no billing/key was ever configured; see the 2026-08-04 changelog entry). New shared `ReportDownloadButton`/`reportApi.js` (hits `POST /reports/generate`, triggers a real download from the streamed blob response — updated 2026-08-04, was `{ downloadUrl }` through Phase 8) used by every §7.11 module. **No new dependencies** — camera capture and Google Maps were both deliberate native-API choices, stated explicitly rather than defaulting to a library. 25 tests total (`vitest` + React Testing Library + `@testing-library/user-event`), all passing, no real network calls — the first frontend tests mocking `getUserMedia`/`getCurrentPosition`/the Google Maps SDK, with the mocking pattern written up in `frontend/README.md`'s Testing section for later modules to reuse. See `.context/final-plan.md` §7.18 for the full write-up. **Gap closed in a same-phase follow-up:** `useCheckedInHeartbeatLoop` (`attendance/hooks/`) now runs both the `POST /attendance/heartbeat` and `POST /location/pings` loops for as long as the user is checked in — driven by the same `isCheckedIn` boolean the widget already computes, so it starts on a fresh check-in and resumes identically if the page loads mid-shift, with no separate code path for either case. Heartbeat every 3 minutes (inside the backend's own stated ~2-5 minute assumption behind its 10-minute-default `ATTENDANCE_GAP_THRESHOLD_MINUTES`); location pings on whatever `GET /location/config` currently returns, re-fetched every time the loop (re)starts. Both intervals pause on `visibilitychange: hidden` and resume on visible; a failed call is logged and swallowed, never blocking check-out. A small pulsing "Tracking active" badge next to the Checked In tag surfaces it. 7 more tests using fake timers (`vi.useFakeTimers()`/`vi.advanceTimersByTimeAsync()`) covering fresh-start, resume-on-mount, stop-on-checkout, cleanup-on-unmount (no leaked intervals), and failure-doesn't-throw. 32 tests total for this task line. |
 | Frontend 4 | Dashboard (Leads + Customers widgets, §7.20) | ✅ **Built.** `frontend/src/modules/dashboard/` — a declarative widget catalog, not a runtime plugin/registry (no precedent for one anywhere in this codebase). `widgets/*.jsx` are small, self-contained components (own data fetch, own loading/error/empty state via a shared `WidgetCard` shell — one widget's fetch failing never breaks another widget on the page); `dashboardConfig.js` maps role → ordered widget-component list; `DashboardPage.jsx` reads the session's role, looks up the candidate list, renders a responsive `Row`/`Col` grid. **Permission-gating is real defense in depth, not just the role config:** every widget also calls `usePermission(module, action)` itself and renders nothing on a failed check, since a per-user permission override (§7.12) can diverge from the role's template default — the config alone can't be the only gate. **Scoping always reused, never reinvented:** every widget calls the exact same scoped fetch its module's list page already calls (`listLeads()`, `listCustomers()`) — the backend already scopes org-wide/team/own by caller role, so a `sales_associate`'s widgets automatically reflect only their own data. Widgets built: `LeadsPipelineWidget` (count per status), `LeadsFollowUpWidget` (today/overdue counts + short linked list), `LeadsHotWidget` (hot leads, filtered client-side since `GET /leads` has no server-side `isHot` filter — the same precedent `TeamAttendanceView`'s employee selector already set), `CustomersOverviewWidget` (active count + contract-type counts, derived by fetching every visible customer's contracts in parallel, mirroring `useCustomers.js`'s own precedent since no aggregation endpoint exists), `CustomersRecentWidget` (last few customers created, already server-sorted by `createdAt` descending). admin/manager/sales_associate get all 5 as candidates; employee/customer get an empty list for now (neither holds a `leads`/`customers` grant by default) — **explicitly a future incremental addition, not a gap:** an own-scoped Employee widget follows the same pattern (write the widget, add one line to `dashboardConfig.js`). 21 tests total (one file per widget + `DashboardPage.test.jsx` covering role-based composition, the empty-candidate-list message, permission-gating overriding a role's config, and one widget's mocked API rejection not affecting any other widget on the page), all passing, no real network calls. |
 | Frontend 5 | Dashboard — operational widgets (Attendance/Leave/Tickets/AMC/Payments/Payroll, §7.21) | ✅ **Built.** 6 more glance-only widgets added to the same catalog §7.20 established, for 6 modules with a real tested backend API but no frontend page of their own yet — deliberately glance-only, not a substitute for each module's eventual full CRUD page; each "view all" link points at the existing placeholder route. `AttendancePresentTodayWidget` (present/half_day count **today**, admin/manager only — reuses `getTeamAttendance(month)`, the same call `TeamAttendanceView` makes, filtering to today's date client-side since `GET /attendance/team` has no single-day filter). `LeavePendingRequestsWidget` (pending-approval count, **admin-only** — there's no `leave.approve` action in `PERMISSION_REGISTRY` at all, approval being a structural `requireAdmin` check, but `usePermission("leave", "approve")` still correctly gates admin-only via the frontend `can()` helper's admin bypass; resolves employee names via the shared `useUserDirectory` hook). `TicketsOpenWidget` (open + open-and-unassigned counts, admin/manager per `tickets.view_all`). `AmcRenewalsDueWidget` (renewals due within 30 days — reuses `amc.service.js#listAMC`'s existing server-side scoping; deliberately **not** a sales_associate candidate even though they hold `amc.view` "own" by default, since this widget is grouped with the other 5 admin/manager-only operational widgets by explicit design). `PaymentsThisMonthWidget` (sum of this month's payment amounts, **admin-only**, matching `payments.view` having no ownership scoping at all). `PayrollStatusWidget` (has payroll run this month + how many employees processed, **admin-only**, matching `payroll.run` having no manager tier at all). **No new backend endpoints** — every widget checked against each module's existing service first; none were needed. New minimal `api/*Api.js` files for the four modules with no frontend module folder yet (`ticket`, `amc`, `payment`, `payroll`) — just the one `list*` function each widget needs. **Role composition:** admin gets all 6; manager gets the 3 matching their narrower default grants (Attendance/Tickets/AMC); sales_associate/employee get none (all 6 are admin/manager-level operational metrics by design, not owner-scoped data). 20 new tests (one file per widget) + `DashboardPage.test.jsx` extended with a manager-scoped composition test and a second cross-widget failure-isolation test. Full frontend suite: 136 tests, all passing (2 pre-existing flaky failures unchanged). |
-| 9 | Push notifications end-to-end (backend) + Dashboard (frontend) | ✅ **Backend half built and verified 2026-07-16 — see `.context/final-plan.md` §7.16.** `notification` module: 17 tests (`notification.test.js`) — `Notification`/`PushSubscription` models exactly per §6.7, self-scoped subscribe (upsert-by-`endpoint`)/unsubscribe/list/mark-read/mark-all-read, no `PERMISSION_REGISTRY` entry needed (every action is inherently self-scoped, same reasoning as `users.*`/`attendance.*`'s always-reachable own-data endpoints). `src/services/webPush.service.js` wraps `web-push`, configured from new **required** `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` env vars (optional `VAPID_SUBJECT`) — real keypair generated via `web-push`'s own `generateVAPIDKeys()`, no safe placeholder exists for a crypto keypair. `createNotification` creates the DB record and attempts a push to every active subscription independently; a push failure is logged and swallowed per-subscription, never blocking the notification record; a 404/410 response deactivates that subscription. Wired into **Leads** (assignment on create/reassign, skipped when self-assigning — exactly the spec's own requirement) and, **a deliberate small addition beyond the Leads-only spec**, **Ticket assignment** (stated explicitly as scope added on top of what was asked, not silent). New `src/cron/leadFollowUpReminderCron.js` (9 tests) runs every 5 minutes — far finer-grained than the monthly payroll cron, since "24h before"/"15min before" are precise moments, not a once-a-day batch; checks a "due within window, not yet reminded" condition (robust to cron downtime) rather than an exact-time match; `won`/`lost` leads excluded; already-passed follow-ups never remind (the existing `followUp=overdue` filter covers that). New `Lead.followUpReminder24hSentAt`/`followUpReminder15mSentAt` (`Date`, nullable) — necessary idempotency-guard schema addition, same treatment as Attendance's `lastHeartbeatAt`; both reset to `null` when `followUpDate` changes so a reschedule re-arms both reminders. No application bugs found. **Dashboard (permission-driven widget composition) is now built — see the Frontend 4 and Frontend 5 rows above.** Remaining, frontend-only: PWA service worker wiring so a browser can actually receive/display a push. |
+| 9 | Push notifications end-to-end (backend) + Dashboard (frontend) | ✅ **Backend half built and verified 2026-07-16 — see `.context/final-plan.md` §7.16.** `notification` module: 17 tests (`notification.test.js`) — `Notification`/`PushSubscription` models exactly per §6.7, self-scoped subscribe (upsert-by-`endpoint`)/unsubscribe/list/mark-read/mark-all-read, no `PERMISSION_REGISTRY` entry needed (every action is inherently self-scoped, same reasoning as `users.*`/`attendance.*`'s always-reachable own-data endpoints). `src/services/webPush.service.js` wraps `web-push`, configured from new **required** `VAPID_PUBLIC_KEY`/`VAPID_PRIVATE_KEY` env vars (optional `VAPID_SUBJECT`) — real keypair generated via `web-push`'s own `generateVAPIDKeys()`, no safe placeholder exists for a crypto keypair. `createNotification` creates the DB record and attempts a push to every active subscription independently; a push failure is logged and swallowed per-subscription, never blocking the notification record; a 404/410 response deactivates that subscription. Wired into **Leads** (assignment on create/reassign, skipped when self-assigning — exactly the spec's own requirement) and, **a deliberate small addition beyond the Leads-only spec**, **Ticket assignment** (stated explicitly as scope added on top of what was asked, not silent). New `src/cron/leadFollowUpReminderCron.js` (9 tests) runs every 5 minutes — far finer-grained than the monthly payroll cron, since "24h before"/"15min before" are precise moments, not a once-a-day batch; checks a "due within window, not yet reminded" condition (robust to cron downtime) rather than an exact-time match; `won`/`lost` leads excluded; already-passed follow-ups never remind (the existing `followUp=overdue` filter covers that). New `Lead.followUpReminder24hSentAt`/`followUpReminder15mSentAt` (`Date`, nullable) — necessary idempotency-guard schema addition, same treatment as Attendance's `lastHeartbeatAt`; both reset to `null` when `followUpDate` changes so a reschedule re-arms both reminders. No application bugs found. **Dashboard (permission-driven widget composition) is now built — see the Frontend 4 and Frontend 5 rows above.** ✅ **Client half built and verified 2026-08-07 — `.context/final-plan.md` §6.7.** `public/sw.js` (push + notificationclick, caches nothing), `pushSubscription.js`, `PushNotificationToggle` in Settings → Account, and `notificationRoutes.js` shared with the bell. 45 new frontend tests (13 + 22 + 10). Verified in a real browser end to end: a push signed by the backend's own `sendPush()` was accepted by FCM (`201`) and displayed by the worker with the right title, body and click target. **Phase 9 is complete on both sides.** Production still needs `VITE_VAPID_PUBLIC_KEY` set on the frontend Vercel project. |
 
 ---
 
@@ -2641,3 +2644,70 @@ asserting the old "all nulls for an open shift" behaviour was inverted. Frontend
 691 tests** (was 78/668); the 15 failures are the known pre-existing flakes, now including
 `LeaveRequestModal` under full-suite parallelism — it and the whole leave module pass in isolation
 (4 files / 46 tests).
+
+---
+
+### Web Push — the client half (§6.7, 2026-08-07)
+
+The backend has been able to send pushes since 2026-07-16. **Nothing could receive them.** A
+browser only gets a push through a service worker, and the app had none — so every push the
+backend sent went nowhere. This is that half.
+
+**Checked first, as asked, and two things had to be reported before building:**
+
+1. The frontend Vercel project has **only** `VITE_API_BASE_URL`. There is no
+   `VITE_VAPID_PUBLIC_KEY`, so `pushManager.subscribe()` could not work in production at all.
+2. **Production and local backends hold different VAPID keypairs** (prod `BKWphfvxobPJ…`, local
+   `BPoNIIS0JDsYd4…` — both valid, `identical: false`). A subscription is cryptographically
+   bound to the key that created it, so shipping the wrong one means every push is rejected
+   with a 403 and swallowed per-subscription by `attemptPush` — **failing silently**, which is
+   the worst shape this can fail in.
+
+Handled on the existing `ATTENDANCE_CLEANUP_TOKEN` precedent rather than inventing a new one:
+documented in `.env.example`, read at runtime, **degrades safely when unset**, and reported for
+the user to set. No Vercel env var was set from here.
+
+**Built:** `frontend/public/sw.js` (push + notificationclick),
+`src/modules/notification/pushSubscription.js`, `components/PushNotificationToggle.jsx` in
+Settings → Account, and `notificationRoutes.js` — one route table now shared with the bell,
+which previously kept its own copy.
+
+**The worker registers on load; permission is not requested on load.** Those are separate
+actions and conflating them is the classic mistake: the prompt appears once, users reflexively
+deny, and **a denial can never be re-requested programmatically.** So the only caller of
+`Notification.requestPermission()` is the user's click on the toggle. `denied` therefore renders
+a *disabled* switch plus an explanation that it has to be changed in browser settings — an
+enabled-looking control would do nothing when clicked, forever, with no way to work out why.
+Unsupported browsers and an unset VAPID key both render **nothing at all**.
+
+`sw.js` caches nothing and has no `fetch` handler — a cache would serve stale HTML after a
+deploy, trading push's problem for a worse one. It must carry a duplicate route table (a worker
+is a standalone script served from the site root and cannot import from `src/`), so
+`notificationRoutes.test.js` parses the real `sw.js` off disk and asserts the copies agree.
+**That guard was initially wrong in a way worth recording:** its regex matched only template
+literals, so `leave: () => "/attendance"` was silently skipped and the test reported green while
+checking half the table. Fixed to match both shapes.
+
+**Verified in a real browser, and the last hop was actually proven** rather than assumed: a real
+push, signed by the backend's own `sendPush()` with the real VAPID pair, was accepted by FCM
+(`PUSH_STATUS=201`) and then **observed being displayed by the service worker** — title
+`Leave request`, body `Employee requested unpaid leave`, tag `leave_requested`, click target
+`/attendance`. Subscribe and unsubscribe both POSTed, with a genuine FCM endpoint and both
+`auth`/`p256dh` keys. Two environment traps cost real time here: **Chrome disables the Push API
+in incognito**, and Playwright's ordinary contexts are incognito-equivalent, so
+`launch_persistent_context` is required; and **headless Chromium always reports
+`Notification.permission === "denied"`** regardless of `grant_permissions` (which only affects
+the Permissions API), making the enable path unreachable headless. An earlier run reported "all
+checks passed" while subscribing zero times, because the payload assertions were conditional —
+flagged as misleading and re-run rather than accepted.
+
+**Tests:** 45 new (13 routes/drift-guard, 22 subscription, 10 toggle). Frontend suite **83 files
+/ 736 tests** (was 80/691) — exactly +3 files and +45 tests, confirmed per file. The 4 failing
+files are the known pre-existing flakes. **Every module in this task is new with no prior
+version** (`sw.js`, `notificationRoutes.js`, `pushSubscription.js`, `PushNotificationToggle.jsx`),
+so none of the 45 could be proven to fail against earlier code — stated plainly rather than
+implied.
+
+**Outstanding:** `VITE_VAPID_PUBLIC_KEY` must be set on the frontend Vercel project (Production)
+to the **production** backend's public key. Until then the toggle correctly renders nothing in
+production.
