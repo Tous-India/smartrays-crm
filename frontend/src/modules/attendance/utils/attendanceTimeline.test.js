@@ -87,7 +87,20 @@ describe("computeAttendanceDurations", () => {
   it("returns all nulls for a record with no checkout yet", () => {
     const record = { checkIn: { time: localDate(9) }, checkOut: { time: null } };
 
-    expect(computeAttendanceDurations(record)).toEqual({ shiftMs: null, connectedMs: null, issueMs: null });
+    // §7.45 — an open shift now reports elapsed-so-far instead of nulls. It
+    // previously rendered three "-" labels beside a green band, which is the
+    // contradiction that change removed. Only a record with NO check-in has
+    // nothing measurable.
+    const { shiftMs, isOpen } = computeAttendanceDurations(record);
+    expect(isOpen).toBe(true);
+    expect(shiftMs).toBeGreaterThan(0);
+
+    const noCheckIn = { ...record, checkIn: { time: null } };
+    expect(computeAttendanceDurations(noCheckIn)).toMatchObject({
+      shiftMs: null,
+      connectedMs: null,
+      issueMs: null,
+    });
   });
 
   it("computes shift/connected/issue durations correctly for a shift with a gap and a break", () => {

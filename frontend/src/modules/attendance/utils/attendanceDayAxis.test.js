@@ -1,5 +1,4 @@
 import { describe, it, expect } from "vitest";
-import { computeTimelineSegments } from "./attendanceTimeline";
 import { createDayAxis, resolveShiftMs, DAY_MS } from "./attendanceDayAxis";
 
 /**
@@ -48,8 +47,6 @@ const NO_CHECK_IN = {
   geofenceViolations: [],
   status: "absent",
 };
-
-const find = (segments, predicate) => segments.find(predicate);
 
 describe("createDayAxis — one 24-hour axis", () => {
   it("maps midnight to 0% and the next midnight to 100%", () => {

@@ -2587,3 +2587,57 @@ to fail against the previous code**. Two of those needed a second pass: assertin
 absence is what proves the auto-clear is gone. Backend **28 files / 831 tests, all passing** (was
 27/820). Frontend **78 files / 668 tests** (was 78/666); the 10 failures are the known pre-existing
 flakes in `LeadDetailPage`, `CustomersListPage`, `PaymentsListPage` and `UserManagementPage`.
+
+### 2026-08-06 — Dismissal on engagement (§7.44) and bar/summary agreement (§7.45)
+
+**§7.44 — badges clear when the user acts on the item, not when they navigate.** Approving,
+declining or marking-unapproved-absence a leave request now marks that request's notification read
+via `markNotificationsForEntity`, resolved through `relatedEntity`. Only that record's — acting on
+one request never clears another's badge, which is what separates this from the §7.43 bulk-clear
+bug. Opening a lead from a notification already marked it read; that path was unchanged. The helper
+fires `NOTIFICATIONS_CHANGED_EVENT`, so the bell and both sidebar badges move in the same tick.
+
+It reads `GET /notifications` and PATCHes the matches rather than calling a dedicated endpoint. A
+`PATCH /notifications/read-by-entity` would be one round trip instead of two and is the cleaner
+shape — this stayed frontend-only because that endpoint does not exist and adding one would mean a
+backend deploy for a UI dismissal rule. Flagged as worth revisiting if this grows past a few call
+sites.
+
+**No dismiss affordance on the badge itself** — a deliberate call. The badge lives inside a nav
+`Link`, so a click target there would re-create exactly the ambiguity §7.43 removed. A badge is a
+count, not a control; the bell is the surface whose purpose is notifications and it already has
+per-item dismissal and "Mark all as read".
+
+**§7.45 — the bar and its own labels now describe one window.** Both derive from `resolveShiftMs`.
+Two contradictions are gone:
+
+- A shift crossing midnight drew a bar ending at midnight beside `Shift: 49h 23m`. **Decision: a
+  row reports THAT DAY's portion**, because the row is a day. The full span stays in
+  `workingHours`, computed once at checkout from untouched timestamps, so payroll is unaffected.
+- An open shift returned nulls (three `-` labels) beside a green band. It now reports
+  elapsed-so-far, and the bar stops at `min(now, end of day)` rather than running to midnight —
+  drawing to midnight would claim time that has not happened.
+
+A 1-minute `MIN_SEGMENT_MS` floor suppresses the 0.004% slivers produced by `breakIn`/`breakOut`
+seconds apart, applied to gaps too.
+
+**One regression caught by the tests:** moving durations onto the shared window made them depend on
+`record.date`, which they never needed before — a fixture without it produced `NaN`. Real records
+always carry `date` (the model requires it), but `dayBoundsMs` now falls back to the check-in's own
+day rather than emitting `NaN`.
+
+**Verified in a browser:** approving one of two pending requests marked only `n-A` read, left `n-B`
+unread, and the badge dropped 2 to 1 immediately; an in-progress shift rendered a green band of
+22.94% against 22.92% expected for 5h30m, with the label reading `Shift: 5h 30m so far` rather than
+`-`.
+
+**Tests:** 23 new (12 bar/summary agreement, 8 `markForEntity`, 3 `LeaveSection` integration).
+**9 of the 12 agreement tests and 2 of the 3 integration tests fail against the previous code**; the
+remaining agreement cases cover the normal single-day shift, which always agreed, and the third
+integration test asserts nothing is dismissed when the decision itself fails — true either way, an
+invariant guard rather than a discriminator. The 8 `markForEntity` tests target a **new module with
+no prior version**, so they were not and could not be proven to fail first. One existing test
+asserting the old "all nulls for an open shift" behaviour was inverted. Frontend suite **80 files /
+691 tests** (was 78/668); the 15 failures are the known pre-existing flakes, now including
+`LeaveRequestModal` under full-suite parallelism — it and the whole leave module pass in isolation
+(4 files / 46 tests).

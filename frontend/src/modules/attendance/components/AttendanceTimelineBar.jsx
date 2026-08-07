@@ -48,7 +48,7 @@ function segmentTooltip(segment) {
  */
 function AttendanceTimelineBar({ record }) {
   const segments = computeTimelineSegments(record);
-  const { shiftMs, connectedMs, issueMs } = computeAttendanceDurations(record);
+  const { shiftMs, connectedMs, issueMs, isOpen, isClamped } = computeAttendanceDurations(record);
 
   // Which band the cursor is over; `null` means the GRAY base.
   const [activeIndex, setActiveIndex] = useState(null);
@@ -97,8 +97,25 @@ function AttendanceTimelineBar({ record }) {
         </div>
       </Tooltip>
       <Space size={8} wrap>
-        <Tooltip title="Total Shift Time">
-          <Text className="text-xs text-gray-500">Shift: {formatDuration(shiftMs)}</Text>
+        {/*
+          §7.45 — these numbers describe THIS DAY and match the bar exactly.
+          A shift crossing midnight contributes only its slice to each day it
+          touches, and an open shift reports elapsed-so-far, so the label is
+          qualified rather than silently reading as a final total.
+        */}
+        <Tooltip
+          title={
+            isOpen
+              ? "Time since check-in — this shift is still open"
+              : isClamped
+                ? "This day's portion of a shift that crosses midnight"
+                : "Total Shift Time"
+          }
+        >
+          <Text className="text-xs text-gray-500">
+            Shift: {formatDuration(shiftMs)}
+            {isOpen && shiftMs != null && " so far"}
+          </Text>
         </Tooltip>
         <Tooltip title="Total Connected/Normal Time">
           <Text className="text-xs text-gray-500">Connected: {formatDuration(connectedMs)}</Text>

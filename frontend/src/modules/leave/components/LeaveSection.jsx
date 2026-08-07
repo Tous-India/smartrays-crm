@@ -28,6 +28,7 @@ import {
   deleteLeave as deleteLeaveApi,
   getLeaveBalance as getLeaveBalanceApi,
 } from "../api/leaveApi";
+import { markNotificationsForEntity } from "../../notification/markForEntity";
 import { LEAVE_TYPE_LABELS, LEAVE_STATUS_LABELS, LEAVE_STATUS_COLORS, LEAVE_STATUSES } from "../constants/leave.constants";
 
 const { RangePicker } = DatePicker;
@@ -315,6 +316,10 @@ function LeaveSection({ view = "all" }) {
     try {
       await approveLeaveApi(leave._id);
       message.success("Leave approved");
+      // §7.44 — deciding on a request IS engaging with it, so its own
+      // notification is dismissed. Only this request's; other pending
+      // requests keep their badges.
+      await markNotificationsForEntity("leave", leave._id);
       refetch();
     } catch (error) {
       message.error(error.response?.data?.message || "Failed to approve leave");
@@ -325,9 +330,11 @@ function LeaveSection({ view = "all" }) {
     setIsSubmittingDecline(true);
 
     try {
-      await declineLeaveApi(declineTarget._id, reason);
+      const declinedId = declineTarget._id;
+      await declineLeaveApi(declinedId, reason);
       message.success("Leave declined");
       setDeclineTarget(null);
+      await markNotificationsForEntity("leave", declinedId);
       refetch();
     } catch (error) {
       message.error(error.response?.data?.message || "Failed to decline leave");
@@ -340,6 +347,7 @@ function LeaveSection({ view = "all" }) {
     try {
       await markUnapprovedAbsenceApi(leave._id);
       message.success("Marked as an unapproved absence — 2x deduction applied");
+      await markNotificationsForEntity("leave", leave._id);
       refetch();
     } catch (error) {
       message.error(error.response?.data?.message || "Failed to mark unapproved absence");

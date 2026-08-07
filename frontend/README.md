@@ -978,6 +978,58 @@ timestamps, two of them near-identical-looking colored bars (`ConnectivityGapBar
 duplication even though the underlying data doesn't overlap. Nothing about the underlying data
 needed fixing before building this on top of it.
 
+#### The bar and its summary labels describe the same window (§7.45, 2026-08-06)
+
+`computeTimelineSegments` and `computeAttendanceDurations` both derive from
+`resolveShiftMs`, which is now the single source of truth for "how much of this shift belongs to
+this row". They used to decide independently and diverged in two ways:
+
+- **A shift crossing midnight** drew a bar ending at midnight beside a label reading
+  `Shift: 49h 23m`. **A row now reports THAT DAY's portion**, because the row *is* a day — its
+  date column, its 24-hour bar and its stats all describe one calendar day. The full span stays
+  recoverable from `workingHours`, computed once at checkout from the untouched timestamps, so
+  payroll's basis is unaffected. The Shift tooltip says so when clamped.
+- **An open shift** returned nulls, rendering three `-` labels beside a green band. It now reports
+  elapsed-so-far, and the bar stops at `min(now, end of day)` rather than running to midnight —
+  drawing green to midnight would claim tracked time that has not happened. The label reads
+  `5h 30m so far`.
+
+`MIN_SEGMENT_MS` (1 minute) suppresses sub-perceptible bands. Two real records have
+`breakIn`/`breakOut` seconds apart, producing a 0.004%-wide sliver that cannot be seen or hovered;
+the same floor applies to connectivity gaps.
+
+`dayBoundsMs` falls back to the check-in's own day when `record.date` is missing. The model
+requires `date`, but `computeAttendanceDurations` only started needing a day boundary here —
+before that it measured raw timestamps — and returning `NaN` for a record with perfectly good
+timestamps would be a silent regression.
+
+Tests assert the bar and the summary **against one fixture at one instant** rather than separately.
+Testing them apart is exactly how they diverged: each was individually defensible.
+
+#### Acting on an item dismisses its notification (§7.44, 2026-08-06)
+
+Approving, declining or marking-unapproved-absence a leave request marks **that request's**
+notification read, resolved through `relatedEntity` (`markForEntity.js`). Never a bulk clear by
+type — that was the §7.43 bug. Acting on request X leaves Y's badge alone.
+
+Opening a lead from a notification already marked it read: `NotificationBell`'s click handler calls
+`markAsRead` before navigating. That path was unchanged.
+
+The helper reads `GET /notifications` and PATCHes the matches rather than calling a dedicated
+endpoint. A `PATCH /notifications/read-by-entity` would be one round trip instead of two and is the
+cleaner shape; this stays frontend-only because that endpoint does not exist and adding one would
+mean a backend deploy for a UI dismissal rule. Worth revisiting past a handful of call sites. It
+never throws — dismissal is a side effect of the real action, and surfacing an error there would
+report a failure the user did not cause.
+
+It fires `NOTIFICATIONS_CHANGED_EVENT`, so the bell and both sidebar badges update in the same tick
+instead of the sidebar lagging up to its own 60s poll.
+
+**No dismiss affordance was added to the badge itself.** The badge sits inside a nav `Link`; a click
+target there would re-create precisely the ambiguity §7.43 removed — clicking at or near a nav item
+dismissing things. A badge is a count indicator, not a control. The bell dropdown is the one surface
+whose purpose is notifications, and it already has both per-item dismissal and "Mark all as read".
+
 #### Notifications are dismissed by the user, never by navigating (§7.43, 2026-08-06)
 
 `clearLeadsBadge`/`clearLeaveBadge` are gone. They were wired as `onNavigate` on the Leads and

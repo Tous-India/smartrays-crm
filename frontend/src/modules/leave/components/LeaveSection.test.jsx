@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { message } from "antd";
 import LeaveSection from "./LeaveSection";
 import useSessionStore from "../../../store/sessionStore";
+import * as notificationApi from "../../notification/api/notificationApi";
 import * as leaveApi from "../api/leaveApi";
 import * as userApi from "../../user/api/userApi";
 import * as teamsHook from "../../team/hooks/useTeams";
@@ -26,6 +27,11 @@ vi.mock("../api/leaveApi", () => ({
   markUnapprovedAbsence: vi.fn(),
   deleteLeave: vi.fn(),
   getLeaveBalance: vi.fn(),
+}));
+
+vi.mock("../../notification/api/notificationApi", () => ({
+  listNotifications: vi.fn(),
+  markNotificationRead: vi.fn(),
 }));
 
 vi.mock("../../../hooks/useUserDirectory", () => ({
@@ -725,5 +731,67 @@ describe("LeaveSection — surfaces a fetch error distinctly from an empty list 
     await waitFor(() => expect(leaveApi.listLeave).toHaveBeenCalled());
     expect(screen.queryByText("Could not load leave requests")).not.toBeInTheDocument();
     expect(screen.getByRole("table")).toBeInTheDocument();
+  });
+});
+
+/**
+ * §7.44 (2026-08-06) — deciding on a request IS engaging with it, so that
+ * request's own notification is dismissed. Navigation still dismisses
+ * nothing (§7.43); only the record acted on is affected.
+ */
+describe("LeaveSection — a decision dismisses that request's notification", () => {
+  // Same shape as the module's own fixture — pending requests render as
+  // CARDS for anyone who can act (§B5), and the card needs its type label on
+  // screen before the actions are queryable.
+  const PENDING = { ...PENDING_LEAVE, _id: "leave-pending" };
+
+  beforeEach(() => {
+    useSessionStore.setState({
+      user: { _id: "admin-1", role: "admin", permissions: {} },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    leaveApi.listLeave.mockResolvedValue({ data: { data: [PENDING] } });
+    leaveApi.getLeaveBalance.mockResolvedValue({ data: { data: {} } });
+    notificationApi.markNotificationRead.mockResolvedValue({ data: {} });
+    notificationApi.listNotifications.mockResolvedValue({
+      data: {
+        data: [
+          { _id: "n-this", isRead: false, relatedEntity: { module: "leave", id: "leave-pending" } },
+          { _id: "n-other", isRead: false, relatedEntity: { module: "leave", id: "leave-other" } },
+        ],
+      },
+    });
+  });
+
+  it.each([
+    ["Approve", "Confirm Approval", () => leaveApi.approveLeave],
+    ["Mark Unapproved Absence", "Mark Absence (2x)", () => leaveApi.markUnapprovedAbsence],
+  ])("%s dismisses ONLY that request's notification", async (label, okText, apiFor) => {
+    apiFor().mockResolvedValue({ data: { data: {} } });
+
+    render(<LeaveSection />);
+    await screen.findByText("Paid");
+
+    // Both actions sit behind a Popconfirm — the destructive one states the
+    // 2x deduction before the admin commits.
+    await userEvent.click(screen.getByRole("button", { name: label }));
+    await userEvent.click(await screen.findByRole("button", { name: okText }));
+
+    await waitFor(() => expect(notificationApi.markNotificationRead).toHaveBeenCalledWith("n-this"));
+    // Acting on one request must never clear another's badge.
+    expect(notificationApi.markNotificationRead).not.toHaveBeenCalledWith("n-other");
+  });
+
+  it("dismisses nothing when the decision itself fails", async () => {
+    leaveApi.approveLeave.mockRejectedValue({ response: { data: { message: "nope" } } });
+
+    render(<LeaveSection />);
+    await screen.findByText("Paid");
+    await userEvent.click(screen.getByRole("button", { name: "Approve" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Confirm Approval" }));
+
+    await waitFor(() => expect(leaveApi.approveLeave).toHaveBeenCalled());
+    expect(notificationApi.markNotificationRead).not.toHaveBeenCalled();
   });
 });

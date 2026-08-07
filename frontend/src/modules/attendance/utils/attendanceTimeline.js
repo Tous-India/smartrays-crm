@@ -1,4 +1,4 @@
-import { clampToDay, createDayAxis, resolveShiftMs } from "./attendanceDayAxis.js";
+import { MIN_SEGMENT_MS, clampToDay, createDayAxis, resolveShiftMs } from "./attendanceDayAxis.js";
 
 /**
  * §7.4e (2026-08-04) — replaces the separate "Connectivity Gap"/"Shift
@@ -42,8 +42,8 @@ import { clampToDay, createDayAxis, resolveShiftMs } from "./attendanceDayAxis.j
  * happens, the connectivity issue is the more actionable thing to surface,
  * so RED wins.
  */
-export function computeTimelineSegments(record) {
-  const shift = resolveShiftMs(record);
+export function computeTimelineSegments(record, now = Date.now()) {
+  const shift = resolveShiftMs(record, now);
 
   if (!shift) {
     return [];
@@ -71,7 +71,7 @@ export function computeTimelineSegments(record) {
     const clampedStart = clampToDay(breakInMs, shiftStartMs, shiftEndMs);
     const clampedEnd = clampToDay(breakOutMs, shiftStartMs, shiftEndMs);
 
-    if (clampedEnd > clampedStart) {
+    if (clampedEnd - clampedStart >= MIN_SEGMENT_MS) {
       segments.push({
         color: "amber",
         startMs: clampedStart,
@@ -85,7 +85,7 @@ export function computeTimelineSegments(record) {
     const gapStartMs = clampToDay(new Date(gap.start).getTime(), shiftStartMs, shiftEndMs);
     const gapEndMs = clampToDay(new Date(gap.end).getTime(), shiftStartMs, shiftEndMs);
 
-    if (gapEndMs > gapStartMs) {
+    if (gapEndMs - gapStartMs >= MIN_SEGMENT_MS) {
       segments.push({
         color: "red",
         startMs: gapStartMs,
@@ -108,30 +108,48 @@ function sumGapMs(gaps, shiftStartMs, shiftEndMs) {
 }
 
 /**
- * Total Shift Time (check-in to check-out), Total Connected/Normal Time
- * (shift minus gaps minus break), Total Connectivity Issue Time (summed
- * gap durations) — all in raw milliseconds; `formatDuration` below renders
- * them. Returns all three as `null` when there's no check-in/check-out to
- * measure a duration against (an absent day, or a still-open shift).
+ * Shift / Connected / Not-Tracked for THIS DAY, in milliseconds — the same
+ * window `computeTimelineSegments` draws (§7.45). Pass the same `now` to both
+ * to guarantee they describe the same instant.
+ *
+ * All three are `null` only when there is no check-in at all. A still-open
+ * shift now reports elapsed-so-far rather than blank: it previously returned
+ * nulls (rendering "-") while the bar drew a green band, which is the
+ * contradiction this shared window removes. `isOpen`/`isClamped` ride along
+ * so the view can say the number is running or day-scoped.
  */
-export function computeAttendanceDurations(record) {
-  const checkInMs = record.checkIn?.time ? new Date(record.checkIn.time).getTime() : null;
-  const checkOutMs = record.checkOut?.time ? new Date(record.checkOut.time).getTime() : null;
+export function computeAttendanceDurations(record, now = Date.now()) {
+  const shift = resolveShiftMs(record, now);
 
-  if (checkInMs == null || checkOutMs == null) {
-    return { shiftMs: null, connectedMs: null, issueMs: null };
+  if (!shift) {
+    return { shiftMs: null, connectedMs: null, issueMs: null, isOpen: false, isClamped: false };
   }
 
-  const shiftMs = Math.max(0, checkOutMs - checkInMs);
-  const issueMs = sumGapMs(record.connectivityGaps, checkInMs, checkOutMs);
+  // The SAME window the bar draws (§7.45). Previously this measured the raw
+  // checkIn -> checkOut span while the bar clamped to the day, so a shift
+  // crossing midnight showed a bar ending at midnight beside a "49h 23m"
+  // label; and an open shift returned nulls here (rendering "-") while the
+  // bar drew a green band. Both disagreements are gone because there is now
+  // one window, not two opinions about it.
+  const { shiftStartMs, shiftEndMs, isOpen, isClamped } = shift;
+
+  const shiftMs = Math.max(0, shiftEndMs - shiftStartMs);
+  const issueMs = sumGapMs(record.connectivityGaps, shiftStartMs, shiftEndMs);
 
   const breakInMs = record.breakIn?.time ? new Date(record.breakIn.time).getTime() : null;
   const breakOutMs = record.breakOut?.time ? new Date(record.breakOut.time).getTime() : null;
-  const breakMs = breakInMs != null && breakOutMs != null ? Math.max(0, breakOutMs - breakInMs) : 0;
+  const breakMs =
+    breakInMs != null && breakOutMs != null
+      ? Math.max(
+          0,
+          clampToDay(breakOutMs, shiftStartMs, shiftEndMs) -
+            clampToDay(breakInMs, shiftStartMs, shiftEndMs)
+        )
+      : 0;
 
   const connectedMs = Math.max(0, shiftMs - issueMs - breakMs);
 
-  return { shiftMs, connectedMs, issueMs };
+  return { shiftMs, connectedMs, issueMs, isOpen, isClamped };
 }
 
 /** `8h 15m` — `0m` for a zero duration, `-` for `null`/negative/NaN. */
