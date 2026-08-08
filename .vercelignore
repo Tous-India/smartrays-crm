@@ -27,7 +27,15 @@ coverage
 .env
 .env.*
 
-# The frontend build has no use for the backend, and backend/.env carries real
-# secrets (MONGODB_URI, JWT_SECRET, the VAPID *private* key). It deploys as its
-# own separate Vercel project.
-backend
+# DO NOT add `backend` here. It was excluded on 2026-08-07 to keep
+# backend/.env out of the frontend build, and that was wrong: BOTH projects in
+# this repo (smartrays-crm → frontend, smartrays-crm-backend → backend, see
+# .vercel/repo.json) upload from the repo root and therefore share THIS file.
+# Excluding `backend` would strip the backend project's own source out of its
+# own deployment.
+#
+# The secret it was meant to protect — backend/.env, holding MONGODB_URI,
+# JWT_SECRET and the VAPID *private* key — is already covered: the `.env` and
+# `.env.*` patterns above have no slash, so they match at every depth,
+# including backend/.env and backend/.env.local. The wholesale directory
+# exclusion bought nothing except a broken backend deploy.
