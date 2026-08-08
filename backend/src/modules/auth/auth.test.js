@@ -269,15 +269,20 @@ describe("POST /auth/login", () => {
     expect(JSON.stringify(response.body)).not.toMatch(/eyJhbGciOi/);
   });
 
-  it("does NOT set a session cookie for an admin who has not enrolled in mandatory 2FA", async () => {
+  it("DOES set a session cookie for an admin with 2FA off — the mandate is gone", async () => {
+    // Inverted 2026-08-08. This used to assert the opposite: an admin without
+    // 2FA got no cookie, only a pre-auth token, because enrolment was
+    // mandatory for the role. 2FA is opt-in for everyone now, so an admin who
+    // hasn't enabled it signs in like any other user. An enrolled user is
+    // still held at the second factor — see twoFactor.test.js.
     const response = await request(app)
       .post("/api/v1/auth/login")
       .send({ email: ADMIN_EMAIL, password: ADMIN_PASSWORD });
 
     expect(response.status).toBe(200);
-    expect(response.headers["set-cookie"]).toBeUndefined();
-    expect(response.body.data.requiresEnrolment).toBe(true);
-    expect(response.body.data.preAuthToken).toBeDefined();
+    expect(response.headers["set-cookie"]).toBeDefined();
+    expect(response.body.data.preAuthToken).toBeUndefined();
+    expect(response.body.data.requiresEnrolment).toBeUndefined();
   });
 
   it("fails with the wrong password", async () => {

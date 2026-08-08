@@ -4627,6 +4627,34 @@ Three server-side rules define this feature, none of them enforced in the UI:
 
 ---
 
+## §7.38b — Two-factor becomes opt-in, with a self-service off switch (2026-08-08)
+
+2FA was **mandatory for `admin` and `manager`**, enforced on every authenticated request. It is
+now **opt-in for every role**, and a user can turn their own on or off.
+
+**Removed, not disabled:** the per-request gate in `authenticate.middleware.js` (and its
+exempt-path list), `constants/twoFactor.constants.js`, the `mustEnrol`/`requiresEnrolment` branch
+in login, the `authenticateEither` middleware, the blocking enrolment screen in `LoginPage`, and
+the frontend `twoFactor.utils.js` mirror. Enrolment is now purely post-authentication, so
+`/2fa/enrol/*` take a full session. **Nothing was auto-disabled** — anyone already enrolled keeps
+their 2FA and is still held at the second factor.
+
+**`POST /2fa/disable` is where the security lives.** It requires the current password **AND** a
+live second factor (TOTP or recovery code) together. A session is necessary but deliberately not
+sufficient: the threat 2FA defeats is an attacker holding a session they shouldn't, so a bare
+session must never be able to remove it. Decisions worth keeping:
+
+1. **Password verified before the second factor**, so a wrong password cannot burn a recovery code
+   or drive the lockout counter.
+2. **Self-scoped** — the id comes from the session and any `targetUserId` in the body is ignored.
+   The audited admin reset stays the only cross-user path, unchanged.
+3. **Clears the secret and every recovery code, and revokes all trusted devices.** A device
+   trusted against a second factor must not outlive it.
+4. **Enable and disable are both audited** with actor and timestamp, matching the admin reset.
+   Logging only one of them would record half the story.
+5. **Crossing into the UI honestly:** the Settings switch calls nothing on its own — it opens a
+   confirmation asking for both credentials and stating that trusted devices will be signed out.
+
 ## §7.40 — Remember this device (2026-08-05)
 
 An opt-in checkbox on the 2FA step lets a browser skip the **second factor** for 30 days. The

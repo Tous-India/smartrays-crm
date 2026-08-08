@@ -4,7 +4,6 @@ import { Form, Input, Button, Alert, Typography } from "antd";
 import useSessionStore from "../store/sessionStore";
 import { ROUTE_PATHS } from "../constants/routePaths.constants";
 import AuthLayout from "../components/AuthLayout";
-import TwoFactorEnrolment from "../modules/auth/components/TwoFactorEnrolment";
 import TwoFactorChallenge from "../modules/auth/components/TwoFactorChallenge";
 import { FROSTED_INPUT_STYLE } from "../constants/authStyles.constants";
 
@@ -47,26 +46,22 @@ function LoginPage() {
     navigate(ROUTE_PATHS.ROOT, { replace: true });
   }
 
-  // A second factor is outstanding: either enter a code, or — for an
-  // admin/manager who has never enrolled — complete mandatory enrolment
-  // first. Neither screen can be skipped; there is no session yet.
+  // A second factor is outstanding. There is no session yet, and this screen
+  // cannot be skipped.
+  //
+  // The blocking ENROLMENT variant that used to sit alongside this — shown to
+  // an admin/manager who had never enrolled — was removed 2026-08-08 with the
+  // mandate. Nobody is forced into enrolment at login any more; 2FA is turned
+  // on from Settings → Account by choice.
   if (challenge) {
     return (
       <AuthLayout background="photo">
         <div className="rounded-lg bg-white p-6">
-          {challenge.requiresEnrolment ? (
-            <TwoFactorEnrolment
-              preAuthToken={challenge.preAuthToken}
-              onEnrolled={handleVerified}
-              title="Two-factor authentication is required"
-            />
-          ) : (
-            <TwoFactorChallenge
-              preAuthToken={challenge.preAuthToken}
-              onVerified={handleVerified}
-              onRestart={() => setChallenge(null)}
-            />
-          )}
+          <TwoFactorChallenge
+            preAuthToken={challenge.preAuthToken}
+            onVerified={handleVerified}
+            onRestart={() => setChallenge(null)}
+          />
         </div>
       </AuthLayout>
     );

@@ -3,7 +3,6 @@ import ApiError from "../utils/ApiError.js";
 import asyncWrapper from "../utils/asyncWrapper.js";
 import { env } from "../config/env.js";
 import User from "../modules/user/user.model.js";
-import { isTwoFactorMandatory } from "../constants/twoFactor.constants.js";
 
 /**
  * Verifies the JWT stored in the httpOnly auth cookie and attaches the
@@ -44,31 +43,13 @@ const authenticate = asyncWrapper(async (req, res, next) => {
     throw new ApiError(403, "This account has been deactivated.");
   }
 
-  // §7.38 enforcement — "mandatory" has to be enforced on EVERY request, not
-  // just at login, or an admin/manager who already held a session before 2FA
-  // shipped would keep using the app indefinitely without ever enrolling.
-  //
-  // The 2FA and session endpoints are exempt, or enrolling would be
-  // impossible: the user needs to reach `/2fa/enrol/*` to escape this gate,
-  // and `/auth/me` + `/auth/logout` so the frontend can render the blocking
-  // screen and let them sign out.
-  if (isTwoFactorMandatory(user.role) && !user.twoFactorEnabled && !isEnrolmentExemptPath(req.path)) {
-    throw new ApiError(
-      403,
-      "Two-factor authentication is required for your role. Please complete enrolment.",
-      [{ code: "TWO_FACTOR_ENROLMENT_REQUIRED" }]
-    );
-  }
-
+  // The per-request mandatory-2FA gate that used to live here was removed
+  // 2026-08-08: 2FA is opt-in for every role now, so there is no enrolment to
+  // enforce and nothing to exempt from it. Authentication is back to being
+  // exactly one question — is this a valid session for a live, active user.
   req.user = user;
   next();
 });
-
-const ENROLMENT_EXEMPT_PATHS = ["/2fa/enrol/start", "/2fa/enrol/confirm", "/me", "/logout"];
-
-function isEnrolmentExemptPath(path) {
-  return ENROLMENT_EXEMPT_PATHS.some((exempt) => path.endsWith(exempt));
-}
 
 export default authenticate;
 

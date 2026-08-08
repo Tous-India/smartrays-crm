@@ -1,5 +1,4 @@
 import { Router } from "express";
-import { env } from "../../config/env.js";
 import {
   register,
   login,
@@ -13,6 +12,7 @@ import {
   confirmTwoFactorEnrolment,
   regenerateTwoFactorRecoveryCodes,
   adminResetTwoFactor,
+  disableTwoFactor,
   changePassword,
   getTrustedDevices,
   revokeOneTrustedDevice,
@@ -26,6 +26,7 @@ import {
   validateResetPasswordInput,
   validateTwoFactorTokenInput,
   validateAdminResetInput,
+  validateDisableTwoFactorInput,
   validateChangePasswordInput,
 } from "./auth.validation.js";
 import authenticate, { authenticatePreAuth } from "../../middlewares/authenticate.middleware.js";
@@ -33,20 +34,11 @@ import { requireAdmin } from "../../middlewares/authorize.middleware.js";
 
 const authRouter = Router();
 
-/**
- * Accepts EITHER a full session or a pre-auth token, for the enrolment
- * endpoints only. Tries the session first (the common case: a user enrolling
- * voluntarily from Settings) and falls back to the pre-auth token used by the
- * mandatory-enrolment gate. Deliberately not a general-purpose middleware —
- * every other route takes exactly one of the two.
- */
-function authenticateEither(req, res, next) {
-  if (req.cookies?.[env.cookieName]) {
-    return authenticate(req, res, next);
-  }
-
-  return authenticatePreAuth(req, res, next);
-}
+// `authenticateEither` (session OR pre-auth token, for the enrolment routes)
+// was removed 2026-08-08 with the mandatory-enrolment gate. Its only reason to
+// exist was letting an admin/manager enrol while holding nothing but a
+// pre-auth token; enrolment is now purely post-authentication, so those routes
+// take a full session like every other self-service action.
 
 // Internal tool — no public self-registration for staff roles. Only a
 // logged-in admin can create admin/manager/sales_associate/employee
@@ -78,11 +70,17 @@ authRouter.post("/reset-password", validateResetPasswordInput, resetPasswordWith
 // cookie — the two middlewares accept strictly disjoint token scopes.
 authRouter.post("/2fa/verify", authenticatePreAuth, validateTwoFactorTokenInput, verifyTwoFactor);
 
-// Enrolment is reachable BOTH ways: by a logged-in user enrolling
-// voluntarily, and by an admin/manager stopped at the mandatory-enrolment
-// gate who holds only a pre-auth token.
-authRouter.post("/2fa/enrol/start", authenticateEither, startTwoFactorEnrolment);
-authRouter.post("/2fa/enrol/confirm", authenticateEither, validateTwoFactorTokenInput, confirmTwoFactorEnrolment);
+// Enrolment — full session only. 2FA is opt-in for every role, so enrolling is
+// something a signed-in user chooses to do, never a hurdle they are held at.
+authRouter.post("/2fa/enrol/start", authenticate, startTwoFactorEnrolment);
+authRouter.post("/2fa/enrol/confirm", authenticate, validateTwoFactorTokenInput, confirmTwoFactorEnrolment);
+
+// Turning your OWN 2FA off. `authenticate` is necessary but deliberately NOT
+// sufficient — the controller/service also demand the current password and a
+// live second factor, because the attacker this protects against is precisely
+// someone holding a session they shouldn't. Self-scoped: no target id is read
+// from the body.
+authRouter.post("/2fa/disable", authenticate, validateDisableTwoFactorInput, disableTwoFactor);
 
 authRouter.post("/2fa/recovery-codes", authenticate, regenerateTwoFactorRecoveryCodes);
 

@@ -1,5 +1,4 @@
 import request from "supertest";
-import { MANDATORY_2FA_ROLES } from "../../src/constants/twoFactor.constants.js";
 
 /**
  * Creates a user directly in the database, bypassing the register endpoint's
@@ -53,14 +52,18 @@ export async function loginAsAgent(app, email, password) {
 
   let response = await agent.post("/api/v1/auth/login").send({ email, password }).expect(200);
 
-  // Login returns 200 for the 2FA gate too, but WITHOUT a session cookie, so
-  // a naive `.expect(200)` hands back an unauthenticated agent and every
-  // later request 401s. When a fixture hits the gate, actually COMPLETE the
-  // second factor rather than trying to switch it off — flipping
-  // `twoFactorEnabled` alone just moves the gate from "enrol" to "verify".
-  // Provisioning a known secret and submitting a real TOTP keeps every other
-  // suite exercising the genuine login path.
-  if (response.body?.data?.requiresEnrolment || response.body?.data?.requiresTwoFactor) {
+  // Login returns 200 for the 2FA challenge too, but WITHOUT a session cookie,
+  // so a naive `.expect(200)` hands back an unauthenticated agent and every
+  // later request 401s. When a fixture hits it, actually COMPLETE the second
+  // factor rather than trying to switch it off. Provisioning a known secret
+  // and submitting a real TOTP keeps every other suite exercising the genuine
+  // login path.
+  //
+  // `requiresEnrolment` was also checked here until 2026-08-08, for the
+  // admin/manager mandatory-enrolment gate. That gate is gone — a user with
+  // 2FA off now logs straight in — so `requiresTwoFactor` is the only case
+  // left that withholds a session.
+  if (response.body?.data?.requiresTwoFactor) {
     const { generateSecret, generateSync } = await import("otplib");
     const { encryptCredential } = await import("../../src/services/credentialEncryption.service.js");
 

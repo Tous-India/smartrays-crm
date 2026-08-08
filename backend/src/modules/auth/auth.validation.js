@@ -118,6 +118,29 @@ export function validateTwoFactorTokenInput(req, res, next) {
   next();
 }
 
+/**
+ * Validates POST /auth/2fa/disable (2026-08-08) — a user switching off their
+ * OWN 2FA. Both fields are required, and the 400s here are the first line of
+ * "a session alone is never enough": a request carrying only a valid cookie
+ * never reaches the service at all.
+ *
+ * No `targetUserId`: the endpoint is self-scoped and the controller takes the
+ * id from the session, so there is nothing here for a caller to aim elsewhere.
+ */
+export function validateDisableTwoFactorInput(req, res, next) {
+  const { password, token } = req.body || {};
+
+  if (!password) {
+    throw new ApiError(400, "Your current password is required to turn off two-factor authentication");
+  }
+
+  if (!token) {
+    throw new ApiError(400, "A code from your authenticator app, or a recovery code, is required");
+  }
+
+  next();
+}
+
 export function validateAdminResetInput(req, res, next) {
   const { password, token, targetUserId } = req.body || {};
 

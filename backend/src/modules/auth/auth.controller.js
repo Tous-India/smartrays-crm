@@ -5,6 +5,7 @@ import {
   confirmTotpEnrolment,
   regenerateRecoveryCodes,
   clearTwoFactor,
+  disableOwnTwoFactor,
 } from "./twoFactor.service.js";
 import ApiResponse from "../../utils/ApiResponse.js";
 import { env } from "../../config/env.js";
@@ -77,15 +78,12 @@ export const login = asyncWrapper(async (req, res) => {
         200,
         {
           requiresTwoFactor: result.requiresTwoFactor,
-          requiresEnrolment: result.requiresEnrolment,
           preAuthToken: result.preAuthToken,
           // Enough to render the next screen; never the secrets.
           email: result.user.email,
           name: result.user.name,
         },
-        result.requiresEnrolment
-          ? "Two-factor authentication is required for your role. Please enrol to continue."
-          : "Enter your two-factor code to finish signing in"
+        "Enter your two-factor code to finish signing in"
       )
     );
   }
@@ -201,28 +199,52 @@ export const verifyTwoFactor = asyncWrapper(async (req, res) => {
 });
 
 export const startTwoFactorEnrolment = asyncWrapper(async (req, res) => {
-  // Reachable either by a logged-in user enrolling voluntarily, or by an
-  // admin/manager caught by the mandatory-enrolment gate who has only a
-  // pre-auth token so far.
-  const user = req.user || req.preAuthUser;
-  const enrolment = await beginTotpEnrolment(user._id);
+  // Session-only since 2026-08-08. It used to also accept a pre-auth token,
+  // for an admin/manager held at the mandatory-enrolment gate; with the gate
+  // gone, enrolment is purely a post-authentication action and there is no
+  // longer any legitimate way to reach it half-authenticated.
+  const enrolment = await beginTotpEnrolment(req.user._id);
 
   res.status(200).json(new ApiResponse(200, enrolment, "Scan this in your authenticator app"));
 });
 
 export const confirmTwoFactorEnrolment = asyncWrapper(async (req, res) => {
-  const user = req.user || req.preAuthUser;
-  const result = await confirmTotpEnrolment(user._id, req.body.token);
+  const result = await confirmTotpEnrolment(req.user._id, req.body.token);
 
-  // Enrolling THROUGH the mandatory gate completes the sign-in: the user has
-  // now proven both factors, so withholding the session would strand them.
-  if (!req.user && req.preAuthUser) {
-    issueSession(res, user._id);
-  }
+  // Audited to the same standard as the admin reset below: turning the second
+  // factor ON or OFF are both changes to how an account authenticates, and a
+  // record of only one of them tells half a story.
+  console.warn(
+    `[2FA ENABLED] actor=${req.user._id} (${req.user.email}) at=${new Date().toISOString()}`
+  );
 
   res
     .status(200)
     .json(new ApiResponse(200, result, "Two-factor authentication enabled. Save your recovery codes."));
+});
+
+/**
+ * A user turning OFF their own 2FA (2026-08-08).
+ *
+ * The id comes from `req.user` — the authenticated session — and NEVER from
+ * the body. Any `targetUserId`/`userId` a caller sends is ignored outright, so
+ * there is no path here for one user to disable another's. The only cross-user
+ * path remains `adminResetTwoFactor` below, which is unchanged.
+ */
+export const disableTwoFactor = asyncWrapper(async (req, res) => {
+  const { password, token } = req.body;
+
+  await disableOwnTwoFactor(req.user._id, password, token);
+
+  console.warn(
+    `[2FA DISABLED] actor=${req.user._id} (${req.user.email}) at=${new Date().toISOString()}`
+  );
+
+  res
+    .status(200)
+    .json(
+      new ApiResponse(200, null, "Two-factor authentication is off. Every trusted device has been signed out.")
+    );
 });
 
 export const regenerateTwoFactorRecoveryCodes = asyncWrapper(async (req, res) => {

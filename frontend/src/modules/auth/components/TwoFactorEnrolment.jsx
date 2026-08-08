@@ -9,11 +9,10 @@ const { Title, Text, Paragraph } = Typography;
  * TOTP enrolment (§7.38, 2026-08-05) — QR plus the manual key, a verify step
  * before 2FA is actually switched on, and the one-time recovery codes.
  *
- * Reused by BOTH entry points: the blocking gate an admin/manager hits at
- * login (holding only a pre-auth token) and voluntary enrolment from
- * Settings (holding a session). `preAuthToken` decides which credential the
- * API calls carry; everything else is identical, so there is one enrolment
- * implementation rather than two that could drift.
+ * Session-only since 2026-08-08. It used to serve two entry points — the
+ * blocking gate an admin/manager hit at login (pre-auth token) and voluntary
+ * enrolment from Settings (session). The mandate is gone, so only the
+ * voluntary path remains and the `preAuthToken` prop went with it.
  *
  * The QR is rendered client-side from the `otpauth://` URI — the secret is
  * never sent to a third-party chart service, which is exactly the sort of
@@ -24,7 +23,7 @@ const { Title, Text, Paragraph } = Typography;
  * way back in if the authenticator is lost, and they cannot be retrieved
  * afterwards.
  */
-function TwoFactorEnrolment({ preAuthToken, onEnrolled, title = "Set up two-factor authentication" }) {
+function TwoFactorEnrolment({ onEnrolled, title = "Set up two-factor authentication" }) {
   const [enrolment, setEnrolment] = useState(null);
   const [qrDataUrl, setQrDataUrl] = useState(null);
   const [recoveryCodes, setRecoveryCodes] = useState(null);
@@ -35,7 +34,7 @@ function TwoFactorEnrolment({ preAuthToken, onEnrolled, title = "Set up two-fact
   useEffect(() => {
     let cancelled = false;
 
-    startEnrolment(preAuthToken)
+    startEnrolment()
       .then(async (response) => {
         if (cancelled) return;
 
@@ -51,14 +50,14 @@ function TwoFactorEnrolment({ preAuthToken, onEnrolled, title = "Set up two-fact
     return () => {
       cancelled = true;
     };
-  }, [preAuthToken]);
+  }, []);
 
   async function handleConfirm(values) {
     setError(null);
     setIsSubmitting(true);
 
     try {
-      const response = await confirmEnrolment(values.token, preAuthToken);
+      const response = await confirmEnrolment(values.token);
       setRecoveryCodes(response.data.data.recoveryCodes);
     } catch (confirmError) {
       setError(confirmError.response?.data?.message || "That code isn't valid. Please try again.");

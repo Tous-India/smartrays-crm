@@ -2420,13 +2420,15 @@ authenticated, because doing so would render a signed-in shell to someone who ha
 password. `LoginPage` holds the pre-auth token in component state for the few seconds between the
 two steps — never persisted, since it is deliberately not a cookie.
 
-Two challenge screens, both blocking:
-- **`TwoFactorChallenge`** — one field accepting a TOTP *or* a recovery code (the backend decides
-  which). Asking someone locked out of their phone to first find the right input is friction at
-  the worst possible moment. On a 429 the form is replaced by "Start again", because further
-  codes — even correct ones — are refused until the login restarts.
-- **`TwoFactorEnrolment`** — the mandatory gate for admin/manager, and voluntary enrolment from
-  Settings. One component serves both; `preAuthToken` decides which credential the calls carry.
+**`TwoFactorChallenge`** is the one blocking login screen — a single field accepting a TOTP *or* a
+recovery code (the backend decides which). Asking someone locked out of their phone to first find
+the right input is friction at the worst possible moment. On a 429 the form is replaced by "Start
+again", because further codes — even correct ones — are refused until the login restarts.
+
+**`TwoFactorEnrolment`** used to serve a second, blocking login screen as well: the mandatory
+enrolment gate for admin/manager, which took a `preAuthToken`. That gate was removed 2026-08-08
+(see "Two-factor is opt-in, with a self-service off switch" below), so the component is now
+reached only from Settings and the prop went with it.
 
 The QR is generated **client-side** from the `otpauth://` URI, never via a third-party chart
 service — that is exactly how a 2FA secret quietly leaks. The manual key is always shown too,
@@ -2546,6 +2548,29 @@ the administrative tab set.
 **Admin/manager controls:** a contact-visibility switch per row on the Team page (the team's own
 head may use it, not just admin — the backend enforces head-or-admin), and a "let them edit their
 own name and phone" switch on the user detail page (that person's manager, or admin).
+
+### Two-factor is opt-in, with a self-service off switch (2026-08-08)
+
+2FA was mandatory for admin and manager, enforced by a **blocking enrolment screen at login** they
+could not get past. It is now opt-in for every role, and every user can turn their own on or off
+from Settings → Account.
+
+**Gone:** the blocking enrolment branch in `LoginPage`, `utils/twoFactor.utils.js` (the
+`isTwoFactorMandatory` mirror of the backend rule), the "Required for your role" notice and its
+red tag, and the `preAuthToken` prop on `TwoFactorEnrolment`. None of it was left behind disabled.
+
+**The card is now one `Switch` showing current state.** Turning it ON opens the unchanged
+enrolment flow — QR, verify-before-enabling, one-time recovery codes behind the "I've saved these"
+confirmation.
+
+**Turning it OFF opens a confirmation that asks for the current password AND a code**
+(authenticator or recovery), because the backend requires both. Flipping the switch alone calls no
+API at all — a test asserts exactly that, since a control that removed a security protection on a
+single click would be the bug. The modal states plainly that **every trusted device will be signed
+out**, which is what the backend does, rather than letting people discover it later.
+
+A failure is surfaced in the modal and the modal stays open, so the switch never reports a state
+the server didn't agree to.
 
 ### Tickets deferred from the UI (2026-08-07)
 

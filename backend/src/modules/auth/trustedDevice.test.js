@@ -60,11 +60,10 @@ async function signIn(credentials, { remember = false, token } = {}) {
 /**
  * Enrols a user in 2FA and returns their recovery codes.
  *
- * Handles BOTH credentials the enrolment routes accept, mirroring
- * `authenticateEither` in auth.routes.js: an employee (2FA optional) gets a
- * real session from their first login and enrols "voluntarily from
- * Settings", while an admin (2FA mandatory) is stopped at the enrolment gate
- * and holds only a pre-auth token.
+ * Every user enrols the same way now (2026-08-08): from a real session, the
+ * way an employee always did. The admin/manager mandate that used to hold
+ * those roles at an enrolment gate with only a pre-auth token is gone, along
+ * with the `authenticateEither` middleware that existed to serve it.
  */
 async function enrolViaApi(credentials) {
   const first = await login(credentials);

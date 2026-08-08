@@ -6,7 +6,6 @@ import { env } from "../../config/env.js";
 import { sendPasswordResetEmail } from "../../services/email.service.js";
 import User from "../user/user.model.js";
 import { verifySecondFactor } from "./twoFactor.service.js";
-import { isTwoFactorMandatory } from "../../constants/twoFactor.constants.js";
 import { isDeviceTrusted, revokeAllTrustedDevices } from "./trustedDevice.service.js";
 
 const SALT_ROUNDS = 10;
@@ -38,28 +37,28 @@ export async function loginUser({ email, password, trustedDeviceToken }) {
     throw new ApiError(401, "Invalid email or password");
   }
 
-  // §7.38 (2026-08-05) — the security-critical branch. A user with 2FA
-  // enabled, or one who is REQUIRED to have it and hasn't enrolled yet, does
-  // NOT get a session token here. They get a pre-auth token instead, which
-  // authorises the 2FA endpoints and nothing else. The real session cookie is
-  // only ever issued after the second factor verifies (or after a mandatory
-  // enrolment completes), so a stolen password alone reaches nothing.
-  const mustEnrol = isTwoFactorMandatory(user.role) && !user.twoFactorEnabled;
+  // §7.38 (2026-08-05) — the security-critical branch. A user with 2FA enabled
+  // does NOT get a session token here. They get a pre-auth token instead,
+  // which authorises the 2FA endpoints and nothing else. The real session
+  // cookie is only ever issued after the second factor verifies, so a stolen
+  // password alone reaches nothing.
+  //
+  // The `mustEnrol` arm — admin/manager forced into enrolment before they
+  // could get a session — was removed 2026-08-08 when 2FA became opt-in for
+  // every role. Someone with 2FA off now simply signs in, exactly as every
+  // non-mandatory role always did.
 
   // §7.40 — a trusted device skips the SECOND factor only, and only AFTER
   // the password above has already been verified. A stolen device cookie on
-  // its own therefore reaches nothing. Enrolment is never skippable this way:
-  // someone who must enrol has no second factor to remember in the first
-  // place, so `mustEnrol` deliberately isn't consulted here.
+  // its own therefore reaches nothing.
   if (user.twoFactorEnabled && (await isDeviceTrusted(user._id, trustedDeviceToken))) {
     return { user, token: generateAuthToken(user._id), usedTrustedDevice: true };
   }
 
-  if (user.twoFactorEnabled || mustEnrol) {
+  if (user.twoFactorEnabled) {
     return {
       user,
-      requiresTwoFactor: user.twoFactorEnabled,
-      requiresEnrolment: mustEnrol,
+      requiresTwoFactor: true,
       preAuthToken: generatePreAuthToken(user._id),
     };
   }

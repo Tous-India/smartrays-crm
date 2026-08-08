@@ -34,20 +34,27 @@ export function revokeAllTrustedDevices() {
 }
 
 /**
- * Enrolment works with EITHER credential: a logged-in user enrolling from
- * Settings sends their session cookie, while someone stopped at the mandatory
- * gate has only a pre-auth token. Passing no token falls back to the cookie.
+ * Enrolment is session-only as of 2026-08-08. It used to accept a pre-auth
+ * token too, for an admin/manager held at the mandatory-enrolment gate; 2FA is
+ * opt-in for every role now, so enrolling is always something an already
+ * signed-in user chooses to do.
  */
-export function startEnrolment(preAuthToken) {
-  return apiClient.post("/auth/2fa/enrol/start", {}, preAuthToken ? preAuth(preAuthToken) : undefined);
+export function startEnrolment() {
+  return apiClient.post("/auth/2fa/enrol/start", {});
 }
 
-export function confirmEnrolment(token, preAuthToken) {
-  return apiClient.post(
-    "/auth/2fa/enrol/confirm",
-    { token },
-    preAuthToken ? preAuth(preAuthToken) : undefined
-  );
+export function confirmEnrolment(token) {
+  return apiClient.post("/auth/2fa/enrol/confirm", { token });
+}
+
+/**
+ * Turning your OWN 2FA off. BOTH the current password and a live second factor
+ * (TOTP or recovery code) are required — the session cookie alone is
+ * deliberately not enough, since a stolen session is exactly what 2FA exists
+ * to defeat. The backend also revokes every trusted device.
+ */
+export function disableTwoFactor({ password, token }) {
+  return apiClient.post("/auth/2fa/disable", { password, token });
 }
 
 export function regenerateRecoveryCodes() {

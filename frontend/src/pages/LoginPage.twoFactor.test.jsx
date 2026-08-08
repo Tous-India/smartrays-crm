@@ -102,50 +102,26 @@ describe("LoginPage — two-factor challenge", () => {
     expect(screen.queryByLabelText(/verification or recovery code/i)).not.toBeInTheDocument();
   });
 
-  it("shows the BLOCKING enrolment screen for a mandatory role that hasn't enrolled", async () => {
+  it("shows NO enrolment screen for an admin without 2FA — the mandate is gone", async () => {
+    // Inverted 2026-08-08. This used to assert a BLOCKING enrolment screen for
+    // admin/manager. 2FA is opt-in for every role now, so an admin without it
+    // signs straight in and turns it on from Settings if they want it.
     authApi.loginRequest.mockResolvedValue({
-      data: { data: { requiresEnrolment: true, preAuthToken: "pre-auth-123" } },
-    });
-    twoFactorApi.startEnrolment.mockResolvedValue({
-      data: { data: { secret: "SECRET123", otpauthUrl: "otpauth://totp/x" } },
+      data: { data: { _id: "a1", name: "Admin", role: "admin" } },
     });
 
     renderLogin();
     await submitCredentials();
 
-    expect(await screen.findByTestId("enrolment-step")).toBeInTheDocument();
-    expect(await screen.findByTestId("manual-key")).toHaveTextContent("SECRET123");
-    // Still no session — enrolment cannot be skipped.
-    expect(useSessionStore.getState().isAuthenticated).toBe(false);
+    await waitFor(() => expect(useSessionStore.getState().isAuthenticated).toBe(true));
+    expect(screen.queryByTestId("enrolment-step")).not.toBeInTheDocument();
+    expect(twoFactorApi.startEnrolment).not.toHaveBeenCalled();
   });
 
-  it("requires the 'I've saved these' confirmation before leaving the recovery codes", async () => {
-    authApi.loginRequest.mockResolvedValue({
-      data: { data: { requiresEnrolment: true, preAuthToken: "pre-auth-123" } },
-    });
-    twoFactorApi.startEnrolment.mockResolvedValue({
-      data: { data: { secret: "SECRET123", otpauthUrl: "otpauth://totp/x" } },
-    });
-    twoFactorApi.confirmEnrolment.mockResolvedValue({
-      data: { data: { recoveryCodes: ["AAAA1111", "BBBB2222"] } },
-    });
-    authApi.fetchCurrentUser.mockResolvedValue({ data: { data: { _id: "u1", role: "admin" } } });
-
-    renderLogin();
-    await submitCredentials();
-
-    await userEvent.type(await screen.findByLabelText(/6-digit code/i), "123456");
-    await userEvent.click(screen.getByRole("button", { name: /verify and enable/i }));
-
-    await screen.findByTestId("recovery-codes-step");
-    expect(screen.getByText("AAAA1111")).toBeInTheDocument();
-
-    const continueButton = screen.getByRole("button", { name: /continue/i });
-    expect(continueButton).toBeDisabled();
-
-    await userEvent.click(screen.getByRole("checkbox"));
-    expect(continueButton).toBeEnabled();
-  });
+  // The "I've saved these" recovery-code confirmation used to be asserted here,
+  // reached through the blocking login enrolment screen. Enrolment now only
+  // happens from Settings → Account, so that assertion moved with it — see
+  // AccountSecurityPage.twoFactor.test.jsx.
 
   it("signs in normally, with no 2FA step, when no second factor is required", async () => {
     authApi.loginRequest.mockResolvedValue({

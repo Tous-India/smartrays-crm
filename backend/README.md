@@ -671,12 +671,37 @@ cookie, so the browser cannot send it anywhere automatically.
 and consumed by *removing the hash*, so replay is impossible by construction rather than by a
 flag. Every 2FA field is `select: false`.
 
-**Enforcement.** 2FA is mandatory for `admin` and `manager` (`constants/twoFactor.constants.js`,
-deliberately a dependency-free module — importing the rule from the service dragged
-`config/env.js` earlier into the module graph and silently broke unrelated suites that set
-`process.env` in `beforeAll`). The gate runs on **every** authenticated request, not just login,
-or an admin holding a pre-existing session would never be forced to enrol. `/2fa/enrol/*`,
-`/me` and `/logout` are exempt, or enrolment would be impossible.
+**Enrolment is OPT-IN for every role (2026-08-08).** It used to be mandatory for `admin` and
+`manager`, enforced on every authenticated request by a gate in `authenticate.middleware.js` that
+403'd with `TWO_FACTOR_ENROLMENT_REQUIRED` until they enrolled. That gate, its exempt-path list,
+the `constants/twoFactor.constants.js` module that defined the rule, the `mustEnrol`/
+`requiresEnrolment` branch in login, and the `authenticateEither` middleware that let a pre-auth
+token reach `/2fa/enrol/*` are **all removed** — not left behind disabled. Enrolment is now purely
+a post-authentication action, so those routes take a full session like every other self-service
+endpoint. **Nothing was auto-disabled:** users already enrolled keep their 2FA and are still held
+at the second factor at login.
+
+**`POST /2fa/disable` — turning your OWN 2FA off.** This is the part that carries the weight.
+
+It requires the current password **AND** a live second factor (TOTP or recovery code) in the same
+request. `authenticate` is necessary but deliberately **not sufficient**: the threat 2FA exists to
+defeat is an attacker holding a session they shouldn't, so letting a bare session switch it off
+would mean the protection could be removed by precisely the thing it protects against. A request
+carrying nothing but a valid cookie is rejected at the validator, before it reaches the service.
+
+Details worth keeping:
+
+- **The password is checked first**, so a wrong password cannot burn a recovery code —
+  `verifySecondFactor` consumes one on success and increments the lockout counter on failure, and
+  neither should be reachable without the first factor.
+- **Self-scoped.** The id comes from `req.user`; any `targetUserId`/`userId` in the body is
+  ignored. There is no path here for one user to disable another's — the audited **admin reset**
+  below remains the only cross-user route, unchanged.
+- **On success it clears the secret and every recovery code, and revokes all trusted devices**
+  (via the existing `clearTwoFactor`). A device trusted against a second factor must not outlive
+  it.
+- **Both enable and disable are audited** with actor and timestamp, to the same standard as the
+  admin reset. Recording only one of them would tell half the story.
 
 **Admin reset** demands the acting admin re-authenticate with password AND their own 2FA code in
 the same request — a compromised session must not be able to strip another admin's second factor.
@@ -689,8 +714,11 @@ Every reset is logged with actor and target.
 the TOTP check is wrapped in a try/catch — without it the request 500s and the recovery-code
 branch is never reached, i.e. recovery codes could never be redeemed.
 
-20 tests in `twoFactor.test.js` cover exactly the properties that matter, including asserting on
-the real `Set-Cookie` header.
+`twoFactor.test.js` covers exactly the properties that matter, including asserting on the real
+`Set-Cookie` header — that a correct password alone produces no session, that a pre-auth token
+reaches nothing else, and (2026-08-08) that a valid session alone cannot disable 2FA, that
+disabling revokes every trusted device and clears the secret and codes, that one user cannot
+disable another's, and that re-enabling issues a fresh secret and a fresh set of codes.
 
 ### Leave: every decision now notifies the employee (§7.43, 2026-08-06)
 

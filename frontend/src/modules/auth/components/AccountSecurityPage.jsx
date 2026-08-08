@@ -1,5 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Button, Card, Empty, Form, Input, List, Modal, Popconfirm, Tag, Typography, App } from "antd";
+import {
+  Alert,
+  Button,
+  Card,
+  Empty,
+  Form,
+  Input,
+  List,
+  Modal,
+  Popconfirm,
+  Switch,
+  Tag,
+  Typography,
+  App,
+} from "antd";
 import { DesktopOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
 import useSessionStore from "../../../store/sessionStore";
 import TwoFactorEnrolment from "./TwoFactorEnrolment";
@@ -10,8 +24,8 @@ import {
   fetchTrustedDevices,
   revokeTrustedDevice,
   revokeAllTrustedDevices,
+  disableTwoFactor,
 } from "../twoFactorApi";
-import { isTwoFactorMandatory } from "../../../utils/twoFactor.utils";
 
 const { Paragraph, Text } = Typography;
 
@@ -41,7 +55,10 @@ function AccountSecurityPage() {
   const [devices, setDevices] = useState([]);
   const [isLoadingDevices, setIsLoadingDevices] = useState(false);
 
-  const mandatory = isTwoFactorMandatory(user?.role);
+  const [isDisabling, setIsDisabling] = useState(false);
+  const [disableError, setDisableError] = useState(null);
+  const [isSubmittingDisable, setIsSubmittingDisable] = useState(false);
+  const [disableForm] = Form.useForm();
 
   const loadDevices = useCallback(async () => {
     setIsLoadingDevices(true);
@@ -80,6 +97,28 @@ function AccountSecurityPage() {
     }
   }
 
+  async function handleDisable(values) {
+    setDisableError(null);
+    setIsSubmittingDisable(true);
+
+    try {
+      await disableTwoFactor(values);
+      // Refetch the user so the switch reflects server state rather than an
+      // assumption about what the request did.
+      await refreshUser();
+      message.success("Two-factor authentication is off. Trusted devices were signed out.");
+      setIsDisabling(false);
+      disableForm.resetFields();
+      loadDevices();
+    } catch (error) {
+      setDisableError(
+        error.response?.data?.message || "Could not turn off two-factor authentication."
+      );
+    } finally {
+      setIsSubmittingDisable(false);
+    }
+  }
+
   async function handleRegenerate() {
     try {
       const response = await regenerateRecoveryCodes();
@@ -92,18 +131,23 @@ function AccountSecurityPage() {
   return (
     <div className="flex flex-col gap-4">
       <Card title="Two-factor authentication" className="app-elevated-card">
-        <div className="mb-3 flex items-center gap-2">
-          <SafetyCertificateOutlined />
-          {user?.twoFactorEnabled ? (
-            <Tag color="green">Enabled</Tag>
-          ) : (
-            <Tag color={mandatory ? "red" : "default"}>Not enabled</Tag>
-          )}
-          {mandatory && (
-            <Text type="secondary" className="text-xs">
-              Required for your role
-            </Text>
-          )}
+        {/*
+          One control, showing the current state, for every role (2026-08-08).
+          2FA used to be mandatory for admin/manager — enforced by a blocking
+          enrolment screen at login — and is now opt-in for everyone.
+        */}
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <SafetyCertificateOutlined />
+            {user?.twoFactorEnabled ? <Tag color="green">On</Tag> : <Tag>Off</Tag>}
+          </div>
+          <Switch
+            checked={Boolean(user?.twoFactorEnabled)}
+            data-testid="two-factor-switch"
+            checkedChildren="On"
+            unCheckedChildren="Off"
+            onChange={(next) => (next ? setIsEnrolling(true) : setIsDisabling(true))}
+          />
         </div>
 
         {user?.twoFactorEnabled ? (
@@ -117,14 +161,9 @@ function AccountSecurityPage() {
             </Paragraph>
           </>
         ) : (
-          <>
-            <Paragraph type="secondary">
-              Add a second step to sign-in so a stolen password isn&apos;t enough on its own.
-            </Paragraph>
-            <Button type="primary" onClick={() => setIsEnrolling(true)}>
-              Set up two-factor authentication
-            </Button>
-          </>
+          <Paragraph type="secondary">
+            Add a second step to sign-in so a stolen password isn&apos;t enough on its own.
+          </Paragraph>
         )}
       </Card>
 
@@ -264,6 +303,60 @@ function AccountSecurityPage() {
             message.success("Two-factor authentication enabled");
           }}
         />
+      </Modal>
+
+      {/*
+        Turning 2FA OFF asks for the password AND a code, because the backend
+        requires both — a session on its own is deliberately not enough, since
+        a stolen session is the exact thing 2FA exists to defeat. The warning
+        is not decoration: trusted devices really are revoked, and someone who
+        re-enables later will have to verify every browser again.
+      */}
+      <Modal
+        title="Turn off two-factor authentication"
+        open={isDisabling}
+        onCancel={() => {
+          setIsDisabling(false);
+          setDisableError(null);
+          disableForm.resetFields();
+        }}
+        footer={null}
+        destroyOnHidden
+        data-testid="disable-two-factor-modal"
+      >
+        <Alert
+          type="warning"
+          showIcon
+          className="!mb-3"
+          message="This also signs out every trusted device"
+          description="Any browser you told to skip the code will have to verify again if you turn this back on."
+        />
+
+        {disableError && (
+          <Alert type="error" showIcon className="!mb-3" message={disableError} data-testid="disable-error" />
+        )}
+
+        <Form form={disableForm} layout="vertical" onFinish={handleDisable}>
+          <Form.Item
+            label="Current password"
+            name="password"
+            rules={[{ required: true, message: "Your current password is required" }]}
+          >
+            <Input.Password autoComplete="current-password" data-testid="disable-password" />
+          </Form.Item>
+
+          <Form.Item
+            label="Authenticator code or recovery code"
+            name="token"
+            rules={[{ required: true, message: "A code is required" }]}
+          >
+            <Input autoComplete="one-time-code" data-testid="disable-token" />
+          </Form.Item>
+
+          <Button danger type="primary" htmlType="submit" loading={isSubmittingDisable} block>
+            Turn off two-factor authentication
+          </Button>
+        </Form>
       </Modal>
 
       <Modal

@@ -2841,3 +2841,52 @@ midnight while `createManualAttendance` stores LOCAL midnight via `startOfDay`, 
 nothing either way; rewritten to match on the exact `checkIn.time` sent, after which it failed
 correctly. Backend suite **28 files / 843 tests, all passing** (was 831 — exactly +12, no new
 files). The `leave.test.js` date-sensitive failure noted in earlier entries is not failing today.
+
+---
+
+### Two-factor becomes opt-in, with a self-service off switch (§7.38b, 2026-08-08)
+
+2FA was mandatory for admin and manager, enforced on **every authenticated request** by a gate
+that 403'd with `TWO_FACTOR_ENROLMENT_REQUIRED` and a blocking enrolment screen at login. It is
+now opt-in for every role, and any user can turn their own on or off from Settings → Account.
+**Nothing was auto-disabled** — anyone already enrolled keeps their 2FA and is still held at the
+second factor.
+
+**The mandate was removed, not switched off.** Gone entirely: the middleware gate and its
+exempt-path list, `constants/twoFactor.constants.js`, the `mustEnrol`/`requiresEnrolment` branch
+in login, the `authenticateEither` middleware (whose only purpose was letting a pre-auth token
+reach `/2fa/enrol/*`), the blocking enrolment branch in `LoginPage`, and the frontend
+`twoFactor.utils.js` mirror of the rule. Enrolment is now purely post-authentication, so those
+routes take a full session. Two live leftovers were also cleaned once found — a
+`requiresEnrolment` branch still in the test login helper and a stale `authenticateEither`
+reference in a test comment.
+
+**`POST /2fa/disable` is the load-bearing part.** It requires the current password **AND** a live
+second factor (TOTP or recovery code) in the same request. `authenticate` is necessary but
+deliberately not sufficient: the threat 2FA exists to defeat is an attacker holding a session they
+shouldn't have, so letting a bare session switch it off would mean the protection could be removed
+by exactly the thing it protects against.
+
+- **Password checked first**, so a wrong password cannot burn a recovery code — `verifySecondFactor`
+  consumes one on success and drives the lockout counter on failure.
+- **Self-scoped**: the id comes from `req.user`, and any `targetUserId` in the body is ignored.
+  The audited admin reset remains the only cross-user path, unchanged.
+- **Clears the secret and every recovery code, and revokes all trusted devices.**
+- **Enable and disable are both audited** with actor and timestamp, matching the admin reset.
+
+**Settings → Account** now shows one switch reflecting current state. Flipping it OFF calls no API
+— it opens a confirmation asking for both credentials and stating plainly that every trusted
+device will be signed out. A server refusal is surfaced in the modal, which stays open, so the
+switch never reports a state the server didn't agree to.
+
+**Tests.** Backend **28 files / 858 tests, all passing** (was 843 — net +15: 17 new, minus two
+mandate tests that had to be inverted or removed). **All 17 new backend tests fail against the
+pre-change code**, verified by restoring every source file to HEAD while keeping the new tests.
+Twelve *existing* tests also failed in that run, but only because the shared `enrol()` helper was
+rewritten for the new session-only contract — they are not evidence of the feature and all pass
+after the change. Frontend **85 files / 752 tests** (was 84/742 — +11 new, −1 moved out of
+`LoginPage.twoFactor.test.jsx`), the 4 failures being the known pre-existing flakes; **all 11 new
+Settings tests fail against pre-change code.** The 5 `LoginPage` 2FA tests pass either way, and
+deliberately so: the mandate was enforced by the backend's login response, not by `LoginPage`,
+which only renders what it is told — they are guards, not discriminators, and saying otherwise
+would overstate them. Both builds clean.

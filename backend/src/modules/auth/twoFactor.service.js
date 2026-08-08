@@ -8,7 +8,6 @@ import { generateSecret, generateURI, verifySync } from "otplib";
 import ApiError from "../../utils/ApiError.js";
 import { encryptCredential, decryptCredential } from "../../services/credentialEncryption.service.js";
 import User from "../user/user.model.js";
-import { MANDATORY_2FA_ROLES, isTwoFactorMandatory } from "../../constants/twoFactor.constants.js";
 import { revokeAllTrustedDevices } from "./trustedDevice.service.js";
 
 const SALT_ROUNDS = 10;
@@ -20,10 +19,10 @@ const RECOVERY_CODE_COUNT = 10;
 // invalidated, so a locked-out attacker cannot simply keep hammering verify.
 const MAX_FAILED_ATTEMPTS = 5;
 
-// Re-exported from the dependency-free constants module so this service and
-// `authenticate.middleware.js` share one definition without the middleware
-// inheriting this file's crypto/env imports — see that module's own comment.
-export { MANDATORY_2FA_ROLES, isTwoFactorMandatory };
+// `MANDATORY_2FA_ROLES`/`isTwoFactorMandatory` were re-exported here until
+// 2026-08-08. The whole rule is gone — 2FA is opt-in for every role — so the
+// dependency-free constants module they lived in was deleted rather than left
+// behind as an unused definition of a policy that no longer exists.
 
 /**
  * The fields the 2FA flows need, none of which an ordinary `find()` returns.
@@ -202,6 +201,51 @@ export async function clearTwoFactor(userId) {
   // resetting someone else's: either way the second factor those devices
   // were trusted against is gone.
   await revokeAllTrustedDevices(user._id);
+}
+
+/**
+ * A user switching OFF their own 2FA (2026-08-08).
+ *
+ * Requires BOTH the current password AND a live second factor — a TOTP code or
+ * a recovery code — in the same request. This is the load-bearing part of
+ * making 2FA optional: a session alone must never be sufficient, because the
+ * threat 2FA exists to defeat is precisely an attacker holding a session they
+ * should not have. Letting a bare session turn it off would mean the
+ * protection could be removed by exactly the thing it protects against.
+ *
+ * Order matters. The password is checked FIRST, so a wrong password cannot
+ * burn a recovery code: `verifySecondFactor` consumes one on success and
+ * increments the failure counter (eventually 429) on failure, and neither
+ * should be reachable by someone who hasn't proven the first factor.
+ *
+ * `userId` is always the authenticated caller's own id — see the controller.
+ * There is deliberately no target parameter; the only cross-user path remains
+ * the audited admin reset.
+ */
+export async function disableOwnTwoFactor(userId, password, token) {
+  const user = await findUserWithTwoFactor(userId);
+
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  if (!user.twoFactorEnabled) {
+    throw new ApiError(400, "Two-factor authentication is not enabled for this account");
+  }
+
+  const isPasswordValid = await bcrypt.compare(password || "", user.passwordHash);
+
+  if (!isPasswordValid) {
+    throw new ApiError(401, "Your password is incorrect");
+  }
+
+  // Throws on an invalid code, so reaching the line below means both factors
+  // were genuinely produced.
+  await verifySecondFactor(user._id, token);
+
+  // Clears the secret and every recovery code, and revokes all trusted
+  // devices — a device trusted against a second factor must not outlive it.
+  await clearTwoFactor(user._id);
 }
 
 function verifyTotpForUser(user, token) {
