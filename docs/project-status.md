@@ -2942,3 +2942,41 @@ old code redirected on everything). The 4 failing frontend files are the known p
 code: shows `"That code isn't valid."`, distinct and also non-navigating; cleared cookies: still
 redirects to `/login`. The wrong-code case consumes one failed attempt of five, so that script
 signs in again afterwards to reset the counter — `verifySecondFactor` zeroes it on success.
+
+---
+
+### Data operation: 2FA cleared for all enrolled users (2026-08-09)
+
+Deliberate operation on production records. **The feature is untouched** — enrol flow, disable
+endpoint, Settings toggle and every test stay exactly as they are. This turned 2FA off for the
+users who had it; it does not undo the feature, and anyone can re-enable from Settings → Account.
+
+Matched on `twoFactorEnabled: true` **only** — never a name, email or role. The listing pass found
+**2** accounts where one was expected, so the operation stopped and was re-confirmed before any
+write. It also checked for users holding a stored TOTP secret *without* the flag (an abandoned
+enrolment would leave a usable secret behind the match): there were 0, so the match was complete.
+
+Run through `clearTwoFactor` per user rather than raw updates, so exactly the same fields cleared as
+a real self-service disable and this can never drift from that path. A guard re-verified the matched
+set against the two confirmed ids and would have aborted on any difference.
+
+```
+[2FA DISABLED] actor=data-operation target=6a59eea201a7c86af8551063 (smartrays.crm@gmail.com) at=2026-08-08T20:09:20.278Z
+[2FA DISABLED] actor=data-operation target=6a7195787ce48914129090d4 (manager@gmail.com)        at=2026-08-08T20:09:20.429Z
+```
+
+`actor=data-operation` rather than a user id, because no user performed it — attributing it to an
+account would misrepresent who acted.
+
+| Account | twoFactorEnabled | secret / IV | recovery codes | trusted devices | failed attempts |
+|---|---|---|---|---|---|
+| Vinay (admin) | true → **false** | set → **null** | 10 → **0** | 5 → **0** | 0 → 0 |
+| testing manager | true → **false** | set → **null** | 10 → **0** | 0 → 0 | 0 → 0 |
+
+**After:** `twoFactorEnabled:true` → **0 users**; stored TOTP secrets → **0**; trusted devices
+across all users → **0**. Verified end to end against production: the admin now logs in with a
+password alone — `200`, session cookie set, no `preAuthToken`, `"Logged in successfully"`.
+
+Vinay's 5 trusted devices are gone, which is inherent to clearing 2FA: a device trusted against a
+second factor must not outlive it. Those browsers will ask for a password again — and only a
+password, since there is no second factor now.
