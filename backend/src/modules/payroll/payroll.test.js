@@ -28,7 +28,11 @@ async function seedAttendance(employeeId, days, workingHours = 8) {
       employeeId,
       date: juneDate(day),
       checkIn: { time: juneDate(day) },
-      checkOut: { time: juneDate(day) },
+      // checkOut derived from workingHours rather than reusing the check-in
+      // instant: the model rejects a check-out at or before its check-in
+      // (2026-08-08), and a fixture whose timestamps contradicted its own
+      // workingHours was never a shape a real record could take anyway.
+      checkOut: { time: new Date(juneDate(day).getTime() + workingHours * 60 * 60 * 1000) },
       status: "present",
       workingHours,
     });

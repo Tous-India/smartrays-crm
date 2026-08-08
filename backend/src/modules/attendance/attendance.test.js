@@ -1139,3 +1139,213 @@ describe("POST /attendance/mark-status — gap-filling for days with no record",
     expect(response.body.data.workingHours).toBeNull();
   });
 });
+
+/**
+ * Timestamp ordering (2026-08-08).
+ *
+ * Nothing rejected a checkOut at or before its checkIn: not the validation
+ * layer (which only checked `Date.parse` wasn't NaN), not the service, not the
+ * model. Self-service check-out can't invert — it uses `now` — but both ADMIN
+ * paths accept arbitrary times.
+ *
+ * That mattered because `computeWorkingHours` clamps with `Math.max(0, ...)`,
+ * so an inverted pair became `workingHours: 0` — indistinguishable from a
+ * legitimately zero shift, and therefore silent every single time. The clamp
+ * is deliberately left alone (a negative workingHours would be worse); the fix
+ * is rejecting the input.
+ */
+describe("attendance timestamp ordering — checkOut must be after checkIn", () => {
+  // 6 Aug 16:47 IST -> 7 Aug 10:11 IST: a real overnight shift, written with
+  // the +05:30 offset so the intent is legible rather than pre-converted.
+  const OVERNIGHT_IN = "2026-08-06T16:47:00.000+05:30";
+  const OVERNIGHT_OUT = "2026-08-07T10:11:00.000+05:30";
+  const OVERNIGHT_HOURS = 17.4; // 17h 24m
+
+  async function openAndCloseShift() {
+    const checkInRes = await sales1Agent
+      .post("/api/v1/attendance/check-in")
+      .send({ coords: buildCoords(), photo: TEST_PHOTO });
+    await sales1Agent.post("/api/v1/attendance/check-out").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    return checkInRes.body.data._id;
+  }
+
+  describe("PATCH /attendance/:id", () => {
+    it("rejects a checkOut EARLIER than the checkIn in the same patch", async () => {
+      const recordId = await openAndCloseShift();
+
+      const response = await adminAgent.patch(`/api/v1/attendance/${recordId}`).send({
+        checkIn: { time: "2026-06-01T17:00:00.000Z" },
+        checkOut: { time: "2026-06-01T09:00:00.000Z" },
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toMatch(/check-out/i);
+    });
+
+    it("rejects a checkOut EQUAL to the checkIn — a zero-length shift is not a correction", async () => {
+      const recordId = await openAndCloseShift();
+      const sameMoment = "2026-06-01T09:00:00.000Z";
+
+      const response = await adminAgent.patch(`/api/v1/attendance/${recordId}`).send({
+        checkIn: { time: sameMoment },
+        checkOut: { time: sameMoment },
+      });
+
+      expect(response.status).toBe(400);
+    });
+
+    it("rejects a checkOut earlier than the record's EXISTING checkIn when only checkOut is patched", async () => {
+      // The case a payload-only check misses entirely: this patch carries one
+      // timestamp, so the comparison has to be against the merged record.
+      const recordId = await openAndCloseShift();
+      const record = await Attendance.findById(recordId);
+      const beforeCheckIn = new Date(record.checkIn.time.getTime() - 60 * 60 * 1000).toISOString();
+
+      const response = await adminAgent
+        .patch(`/api/v1/attendance/${recordId}`)
+        .send({ checkOut: { time: beforeCheckIn } });
+
+      expect(response.status).toBe(400);
+
+      // And it must not have been half-applied.
+      const unchanged = await Attendance.findById(recordId);
+      expect(unchanged.checkOut.time.toISOString()).toBe(record.checkOut.time.toISOString());
+    });
+
+    it("ACCEPTS a valid overnight pair and computes the full span", async () => {
+      const recordId = await openAndCloseShift();
+
+      const response = await adminAgent.patch(`/api/v1/attendance/${recordId}`).send({
+        checkIn: { time: OVERNIGHT_IN },
+        checkOut: { time: OVERNIGHT_OUT },
+      });
+
+      // Crossing midnight is legitimate — the guard is about ordering, not
+      // about staying inside one calendar day.
+      expect(response.status).toBe(200);
+      expect(response.body.data.workingHours).toBe(OVERNIGHT_HOURS);
+    });
+
+    it("still allows clearing checkOut, which leaves nothing to compare", async () => {
+      const recordId = await openAndCloseShift();
+
+      const response = await adminAgent
+        .patch(`/api/v1/attendance/${recordId}`)
+        .send({ checkOut: { time: null } });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.workingHours).toBeNull();
+    });
+  });
+
+  describe("POST /attendance/manual", () => {
+    it("rejects a checkOut EARLIER than the checkIn", async () => {
+      const response = await adminAgent.post("/api/v1/attendance/manual").send({
+        employeeId: String(sales1._id),
+        date: "2026-06-20",
+        status: "present",
+        checkIn: { time: "2026-06-20T17:00:00.000Z" },
+        checkOut: { time: "2026-06-20T09:00:00.000Z" },
+      });
+
+      expect(response.status).toBe(400);
+      expect(response.body.message).toMatch(/check-out/i);
+    });
+
+    it("rejects a checkOut EQUAL to the checkIn", async () => {
+      const sameMoment = "2026-06-21T09:00:00.000Z";
+
+      const response = await adminAgent.post("/api/v1/attendance/manual").send({
+        employeeId: String(sales1._id),
+        date: "2026-06-21",
+        status: "present",
+        checkIn: { time: sameMoment },
+        checkOut: { time: sameMoment },
+      });
+
+      expect(response.status).toBe(400);
+    });
+
+    it("writes NOTHING when it rejects", async () => {
+      await adminAgent.post("/api/v1/attendance/manual").send({
+        employeeId: String(sales1._id),
+        date: "2026-06-22",
+        status: "present",
+        checkIn: { time: "2026-06-22T17:00:00.000Z" },
+        checkOut: { time: "2026-06-22T09:00:00.000Z" },
+      });
+
+      // Matched on the exact checkIn timestamp that was sent, NOT on `date`:
+      // createManualAttendance stores LOCAL midnight via startOfDay, so a
+      // query for UTC midnight finds nothing and the assertion passes whether
+      // or not the record was written.
+      const created = await Attendance.findOne({ "checkIn.time": new Date("2026-06-22T17:00:00.000Z") });
+      expect(created).toBeNull();
+    });
+
+    it("ACCEPTS a valid overnight pair and computes the full span", async () => {
+      const response = await adminAgent.post("/api/v1/attendance/manual").send({
+        employeeId: String(sales1._id),
+        date: "2026-08-06",
+        status: "present",
+        checkIn: { time: OVERNIGHT_IN },
+        checkOut: { time: OVERNIGHT_OUT },
+      });
+
+      expect(response.status).toBe(201);
+      expect(response.body.data.workingHours).toBe(OVERNIGHT_HOURS);
+    });
+  });
+
+  describe("model-level backstop", () => {
+    it("refuses to save an inverted pair written directly to the model", async () => {
+      // The service checks are the ones that produce a good error message;
+      // this is what stops a FUTURE write path from quietly reintroducing the
+      // bug without going through either admin service.
+      const record = new Attendance({
+        employeeId: sales1._id,
+        date: new Date("2026-06-25T00:00:00.000Z"),
+        status: "present",
+        checkIn: { time: new Date("2026-06-25T17:00:00.000Z") },
+        checkOut: { time: new Date("2026-06-25T09:00:00.000Z") },
+      });
+
+      await expect(record.save()).rejects.toThrow(/check-out/i);
+    });
+
+    it("refuses an equal pair too", async () => {
+      const sameMoment = new Date("2026-06-26T09:00:00.000Z");
+      const record = new Attendance({
+        employeeId: sales1._id,
+        date: new Date("2026-06-26T00:00:00.000Z"),
+        status: "present",
+        checkIn: { time: sameMoment },
+        checkOut: { time: sameMoment },
+      });
+
+      await expect(record.save()).rejects.toThrow();
+    });
+
+    it("saves a valid overnight pair, and a record with only one side set", async () => {
+      const overnight = new Attendance({
+        employeeId: sales1._id,
+        date: new Date("2026-06-27T00:00:00.000Z"),
+        status: "present",
+        checkIn: { time: new Date(OVERNIGHT_IN) },
+        checkOut: { time: new Date(OVERNIGHT_OUT) },
+      });
+      await expect(overnight.save()).resolves.toBeTruthy();
+
+      // An open shift has no checkOut to compare against and must stay saveable
+      // — every real check-in creates exactly this shape.
+      const openShift = new Attendance({
+        employeeId: sales1._id,
+        date: new Date("2026-06-28T00:00:00.000Z"),
+        status: "present",
+        checkIn: { time: new Date("2026-06-28T09:00:00.000Z") },
+      });
+      await expect(openShift.save()).resolves.toBeTruthy();
+    });
+  });
+});

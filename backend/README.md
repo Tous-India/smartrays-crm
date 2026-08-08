@@ -1148,6 +1148,44 @@ has no edit-tier action, and inventing one wasn't asked for. Both gate on plain 
 the exact same precedent `POST /payroll/run` already established for a genuinely admin-only,
 no-permission-tier action.
 
+**Timestamp ordering — `checkOut` must be strictly after `checkIn` (2026-08-08).** Both endpoints
+above accept arbitrary times, and until this nothing anywhere compared them: not
+`attendance.validation.js` (which only checked `Date.parse` wasn't `NaN`), not the service, not
+the model. Self-service check-out can't invert — it stamps `now` — so this only ever reached the
+data through an admin correction.
+
+It stayed invisible because `computeWorkingHours` clamps with `Math.max(0, ...)`: an inverted pair
+produced `workingHours: 0`, **indistinguishable from a legitimately zero shift**. The clamp is
+deliberately unchanged — a negative `workingHours` would be worse than a clamped one — so the
+guard is on the input instead. Both endpoints now return **400** (`"check-out time must be after
+the check-in time."`) for an inverted *or* equal pair; equal counts because a zero-length shift is
+never a correction anyone means to make, and it is exactly what an off-by-one or a copy-pasted
+timestamp yields.
+
+Two details worth knowing:
+
+- **`PATCH` compares the MERGED record, not the request body.** A patch carrying only
+  `checkOut.time` is checked against the check-in already stored — the case a payload-only guard
+  misses completely. It throws before `save()`, so a rejected correction writes nothing.
+- **This is not a same-day rule.** An overnight shift (in 16:47, out 10:11 the next morning) is
+  legitimate and passes; only ordering is asserted. Clearing `checkOut.time` still works, since
+  there is then nothing to compare.
+
+`attendance.model.js` carries a `pre("save")` backstop with the same rule, so a *future* write
+path cannot reintroduce this without going through either service — which is precisely how it
+went unnoticed the first time. It throws a plain `Error` with `statusCode = 400` rather than an
+`ApiError`, keeping models dependency-free as they are everywhere else in this codebase;
+`errorHandler.middleware.js` reads `statusCode` off any thrown value, so it still surfaces as a
+400 and not a 500. It fires only when both times are present, so an open shift — the normal shape
+of every record between check-in and check-out — stays saveable.
+
+Adding the backstop caught **six existing test fixtures** (in `payroll.test.js`,
+`attendanceRetention.test.js`, `attendancePhotoCleanupCron.test.js`) that seeded
+`checkIn.time === checkOut.time` as a shorthand. None of them assert on the timestamps, and no
+real record can have that shape, so the fixtures were corrected rather than the rule relaxed —
+payroll's now derives its check-out from the `workingHours` it was already claiming, which its
+equal-timestamp version had been quietly contradicting.
+
 ### `POST /attendance/mark-status` — gap-filling only (2026-08-05)
 
 | Method | Path | Access | Notes |

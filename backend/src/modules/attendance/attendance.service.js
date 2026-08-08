@@ -401,6 +401,35 @@ export async function resolveDirectReportIds(requestingUser) {
 const ADJUSTABLE_FIELDS = ["status"];
 
 /**
+ * Rejects a check-out at or before its check-in (2026-08-08).
+ *
+ * Self-service check-out can't produce this — it stamps `now` — but both admin
+ * paths accept arbitrary times and nothing anywhere compared them. It stayed
+ * invisible because `computeWorkingHours` clamps with `Math.max(0, ...)`, so
+ * an inverted pair landed as `workingHours: 0`, indistinguishable from a
+ * genuinely zero shift. The clamp is deliberately unchanged — a negative
+ * `workingHours` would be worse than a clamped one — so the guard has to be on
+ * the input.
+ *
+ * Equal times are rejected too: a zero-length shift is not a correction anyone
+ * means to make, and it is exactly what an off-by-one or a copy-pasted
+ * timestamp produces.
+ *
+ * Crossing midnight is NOT what this checks. An overnight shift (check in
+ * 16:47, out 10:11 the next morning) is legitimate and must pass — the only
+ * question asked here is ordering.
+ */
+function assertCheckOutAfterCheckIn(checkInTime, checkOutTime) {
+  if (!checkInTime || !checkOutTime) {
+    return;
+  }
+
+  if (new Date(checkOutTime).getTime() <= new Date(checkInTime).getTime()) {
+    throw new ApiError(400, "check-out time must be after the check-in time.");
+  }
+}
+
+/**
  * Admin-only correction of an existing record — `status`, `checkIn.time`,
  * `checkOut.time`. Route-level `requireAdmin` (attendance.routes.js) is the
  * real access gate; there's no `attendance.*` permission tier for this
@@ -441,6 +470,12 @@ export async function adjustAttendance(attendanceId, payload, requestingUser) {
   if (payload.checkOut?.time !== undefined) {
     record.checkOut.time = payload.checkOut.time ? new Date(payload.checkOut.time) : null;
   }
+
+  // Compared against the MERGED record, not the payload: a patch carrying only
+  // `checkOut.time` still has to be checked against the check-in already on
+  // the record, which is the case a payload-only guard misses entirely.
+  // Thrown before `save()`, so a rejected correction writes nothing at all.
+  assertCheckOutAfterCheckIn(record.checkIn.time, record.checkOut.time);
 
   record.workingHours =
     record.checkIn.time && record.checkOut.time
@@ -490,6 +525,8 @@ export async function createManualAttendance(payload, requestingUser) {
 
   const checkInTime = checkIn?.time ? new Date(checkIn.time) : null;
   const checkOutTime = checkOut?.time ? new Date(checkOut.time) : null;
+
+  assertCheckOutAfterCheckIn(checkInTime, checkOutTime);
 
   const record = new Attendance({
     employeeId,

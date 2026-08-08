@@ -1538,6 +1538,18 @@ automation) was left fully intact.
 See §7.4b for **Live Location Tracking**, a related but separate `location` module (added
 2026-07-13) that ties into an employee's open Attendance record.
 
+✅ **Timestamp ordering enforced 2026-08-08.** `checkOut.time` must be strictly after
+`checkIn.time` on both admin write paths (`PATCH /attendance/:id`, `POST /attendance/manual`),
+plus a `pre("save")` backstop on the model so no future write path can reintroduce it. Nothing at
+any level had compared the two, and `computeWorkingHours`'s `Math.max(0, ...)` clamp turned every
+inverted pair into `workingHours: 0` — indistinguishable from a legitimately zero shift, so it
+failed silently by construction. The clamp is deliberately unchanged (a negative `workingHours`
+would be worse); the input is rejected instead. Equal timestamps are rejected too. Crossing
+midnight is explicitly still allowed — an overnight shift is legitimate, and only ordering is
+asserted. `PATCH` compares the merged record rather than the request body, so a patch carrying
+only `checkOut.time` is still checked against the stored check-in. See `backend/README.md` →
+"Timestamp ordering".
+
 ✅ **Fully built and verified 2026-07-13** (31 tests, `npm test`, see `backend/README.md` →
 Testing). Started as a minimal check-in/check-out slice (13 tests, same day, built for
 `location`'s open-shift check, §7.4b) and extended to the complete scope below in the same task

@@ -2791,3 +2791,53 @@ the known pre-existing flakes (`CustomersListPage`, `PaymentsListPage`, `UserMan
 `LeadDetailPage`). `npm run build` clean. Lint went 69 → 67 problems: two `no-undef` errors on
 `process.cwd()` in this task's and the previous task's file-scanning tests were fixed by
 resolving from `import.meta.dirname` instead, which is also cwd-independent.
+
+---
+
+### Attendance timestamp ordering (2026-08-08)
+
+Found while investigating record `6a746d3ad55dc38118130f1c`, which looked like a check-out before
+its check-in. **It wasn't** — it is a genuine 17.4-hour overnight shift (in 6 Aug 16:47 IST, out
+7 Aug 10:11 IST); the earlier "inverted" reading came from a listing script printing time-of-day
+only and discarding the date. Its `workingHours: 0` has a different cause entirely: a single
+`connectivityGap` spanning the whole shift, start and end matching check-in and check-out to the
+millisecond, so the entire duration is subtracted as unverified.
+
+But the investigation surfaced a real hole. **Nothing anywhere rejected a check-out at or before
+its check-in** — not `attendance.validation.js` (only `Date.parse` !== NaN), not the service, not
+the model. Self-service check-out can't invert (it stamps `now`), but `adjustAttendance` and
+`createManualAttendance` both accept arbitrary times. And because `computeWorkingHours` clamps
+with `Math.max(0, ...)`, an inverted pair landed as `workingHours: 0` — **indistinguishable from
+a legitimately zero shift, so it would have been silent every single time it happened.**
+
+Fixed by rejecting the input, not tolerating it. The clamp is untouched: a negative
+`workingHours` would be worse than a clamped one.
+
+- Both admin paths return **400** for an inverted or equal pair. Equal counts — a zero-length
+  shift is not a correction anyone means to make, and it is what an off-by-one produces.
+- **`PATCH` compares the merged record, not the payload.** A patch carrying only `checkOut.time`
+  is checked against the stored check-in — the case a payload-only guard misses entirely. It
+  throws before `save()`, so a rejected correction writes nothing.
+- **Not a same-day rule.** An overnight shift passes; only ordering is asserted. Clearing
+  `checkOut.time` still works.
+- A `pre("save")` backstop on the model stops a future write path reintroducing it — which is
+  exactly how it went unnoticed. It throws a plain `Error` with `statusCode = 400` instead of an
+  `ApiError`, keeping models dependency-free as they are everywhere else here.
+
+**The backstop immediately caught six existing test fixtures** seeding
+`checkIn.time === checkOut.time` as shorthand (`payroll.test.js`, `attendanceRetention.test.js`,
+`attendancePhotoCleanupCron.test.js`). None assert on timestamps and no real record can have that
+shape, so the fixtures were corrected rather than the rule relaxed — payroll's now derives its
+check-out from the `workingHours` it was already claiming, which the equal-timestamp version had
+been quietly contradicting. Verified first that **zero existing production records** would be
+rejected by the new rule.
+
+**Tests:** 12 new. **8 of the 12 fail against the pre-change code** — every rejection case on both
+admin paths plus both backstop cases. The other 4 are acceptance guards that must pass before and
+after (valid overnight on each path, clearing `checkOut`, and saving an open shift), which is
+their purpose: they prove the rule doesn't over-reject. One of them, "writes NOTHING when it
+rejects", initially passed against the buggy code for the wrong reason — it queried `date` at UTC
+midnight while `createManualAttendance` stores LOCAL midnight via `startOfDay`, so it found
+nothing either way; rewritten to match on the exact `checkIn.time` sent, after which it failed
+correctly. Backend suite **28 files / 843 tests, all passing** (was 831 — exactly +12, no new
+files). The `leave.test.js` date-sensitive failure noted in earlier entries is not failing today.

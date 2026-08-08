@@ -33,13 +33,24 @@ function daysAgo(days) {
   return date;
 }
 
+/**
+ * End of the seeded shift. The model rejects a check-out at or before its
+ * check-in (2026-08-08), and these fixtures previously reused the same instant
+ * for both — a shape no real record can have, since check-in and check-out are
+ * two separate `now` stamps. Nothing in this file asserts on the timestamps;
+ * they only ever needed to be a plausible shift.
+ */
+function shiftEnd(date) {
+  return new Date(date.getTime() + 8 * 60 * 60 * 1000);
+}
+
 async function seedRecord(date, overrides = {}) {
   return Attendance.create({
     employeeId: employee._id,
     date,
     status: "present",
     checkIn: { time: date, photoUrl: "https://fake/in.jpg", photoPublicId: "public-in" },
-    checkOut: { time: date, photoUrl: "https://fake/out.jpg", photoPublicId: "public-out" },
+    checkOut: { time: shiftEnd(date), photoUrl: "https://fake/out.jpg", photoPublicId: "public-out" },
     ...overrides,
   });
 }
@@ -127,7 +138,7 @@ describe("Attendance retention — what gets deleted", () => {
     const old = daysAgo(60);
     await seedRecord(old, {
       checkIn: { time: old, photoUrl: null, photoPublicId: null },
-      checkOut: { time: old, photoUrl: null, photoPublicId: null },
+      checkOut: { time: shiftEnd(old), photoUrl: null, photoPublicId: null },
     });
     await seedPayrollFor(old);
 
@@ -200,8 +211,8 @@ describe("Attendance retention — Cloudinary failure must not orphan assets", (
 
   it("one record's failure does not stop the rest of the batch", async () => {
     const old = daysAgo(60);
-    await seedRecord(old, { checkIn: { time: old, photoPublicId: "bad" }, checkOut: { time: old } });
-    await seedRecord(old, { checkIn: { time: old, photoPublicId: "good" }, checkOut: { time: old } });
+    await seedRecord(old, { checkIn: { time: old, photoPublicId: "bad" }, checkOut: { time: shiftEnd(old) } });
+    await seedRecord(old, { checkIn: { time: old, photoPublicId: "good" }, checkOut: { time: shiftEnd(old) } });
     await seedPayrollFor(old);
 
     deleteCloudinaryAsset.mockImplementation(async (publicId) => {

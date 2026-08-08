@@ -157,6 +157,41 @@ const attendanceSchema = new mongoose.Schema(
   }
 );
 
+/**
+ * Backstop: no record may be saved with a check-out at or before its check-in
+ * (2026-08-08).
+ *
+ * `attendance.service.js` already rejects this on both admin paths, and those
+ * checks are the ones that produce a good error message at the right moment.
+ * This exists so a FUTURE write path cannot quietly reintroduce the bug
+ * without going through either of them — which is exactly how it went
+ * unnoticed the first time: nothing at any level compared the two values, and
+ * `computeWorkingHours`'s `Math.max(0, ...)` clamp turned every inverted pair
+ * into a silent `workingHours: 0`.
+ *
+ * A plain `Error` carrying `statusCode`, rather than an `ApiError`, because
+ * models in this codebase import nothing — `errorHandler.middleware.js` reads
+ * `error.statusCode` off any thrown value, so this still surfaces as a 400
+ * rather than a 500.
+ *
+ * Only fires when BOTH times are present: an open shift (check-in, no
+ * check-out) is the normal shape of every record between check-in and
+ * check-out, and clearing `checkOut.time` is a supported admin correction.
+ */
+attendanceSchema.pre("save", function assertCheckOutAfterCheckIn(next) {
+  const checkInTime = this.checkIn?.time;
+  const checkOutTime = this.checkOut?.time;
+
+  if (checkInTime && checkOutTime && checkOutTime.getTime() <= checkInTime.getTime()) {
+    const error = new Error("check-out time must be after the check-in time.");
+    error.statusCode = 400;
+
+    return next(error);
+  }
+
+  return next();
+});
+
 const Attendance = mongoose.model("Attendance", attendanceSchema);
 
 export default Attendance;

@@ -66,7 +66,14 @@ describe("runAttendancePhotoCleanupJob", () => {
       employeeId: employee._id,
       date: daysAgo(50),
       checkIn: { time: daysAgo(50), photoUrl: "https://fake.cloudinary.test/old-in.jpg", photoPublicId: "old-in-id" },
-      checkOut: { time: daysAgo(50), photoUrl: "https://fake.cloudinary.test/old-out.jpg", photoPublicId: "old-out-id" },
+      // +8h rather than reusing the check-in instant: the model rejects a
+      // check-out at or before its check-in (2026-08-08). This test asserts on
+      // photos, never on the times.
+      checkOut: {
+        time: new Date(daysAgo(50).getTime() + 8 * 60 * 60 * 1000),
+        photoUrl: "https://fake.cloudinary.test/old-out.jpg",
+        photoPublicId: "old-out-id",
+      },
     });
 
     const result = await runAttendancePhotoCleanupJob(new Date());
