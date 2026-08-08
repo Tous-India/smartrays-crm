@@ -26,15 +26,43 @@ export function registerUnauthorizedHandler(handler) {
   onUnauthorized = handler;
 }
 
+/**
+ * The backend's marker for "the credential identifying you is gone" — see
+ * `backend/src/middlewares/authenticate.middleware.js`, which is the only
+ * place that sets it.
+ */
+const SESSION_EXPIRED = "SESSION_EXPIRED";
+
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
+    /*
+     * A 401 means two different things, and until 2026-08-08 this could not
+     * tell them apart:
+     *
+     *   - your session is dead        -> sign out and redirect
+     *   - the secret you typed is wrong -> show the message, stay put
+     *
+     * It used to redirect on EVERY 401 except a hard-coded `/auth/login`
+     * exemption. So a mistyped password on 2FA-disable, change-password or
+     * admin re-authentication signed the user out — and the modal unmounted
+     * before the server's message could render, which is why it read as "the
+     * feature doesn't work" with no error at all.
+     *
+     * Now the server says which kind it is, and this redirects ONLY on the
+     * marked kind. The direction is the point: an endpoint that checks a
+     * credential is safe by default and needs no entry here, whereas the old
+     * exemption list quietly mis-handled every endpoint nobody remembered to
+     * add. Note this deliberately keys off the RESPONSE, never the URL — a
+     * session that dies while the disable modal is open still signs the user
+     * out, because the server marks that too.
+     */
     const isUnauthorized = error.response?.status === 401;
-    const isLoginRequest = error.config?.url?.includes("/auth/login");
+    const isSessionExpired = (error.response?.data?.errors || []).some(
+      (entry) => entry?.code === SESSION_EXPIRED
+    );
 
-    // A failed login attempt is an expected 401, not a session expiring —
-    // redirecting away from /login on a wrong password would be wrong.
-    if (isUnauthorized && !isLoginRequest) {
+    if (isUnauthorized && isSessionExpired) {
       onUnauthorized?.();
 
       if (window.location.pathname !== "/login") {
@@ -42,6 +70,8 @@ apiClient.interceptors.response.use(
       }
     }
 
+    // Everything else — including every credential rejection — reaches the
+    // caller, which already knows how to render `error.response.data.message`.
     return Promise.reject(error);
   }
 );

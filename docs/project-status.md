@@ -2890,3 +2890,55 @@ Settings tests fail against pre-change code.** The 5 `LoginPage` 2FA tests pass 
 deliberately so: the mandate was enforced by the backend's login response, not by `LoginPage`,
 which only renders what it is told — they are guards, not discriminators, and saying otherwise
 would overstate them. Both builds clean.
+
+---
+
+### The 401 interceptor conflated "wrong password" with "session expired" (2026-08-08)
+
+Reported as "the 2FA switch doesn't work for admin". The switch was fine. So was the endpoint, the
+deployed bundle, and every component. **The bug was `frontend/src/services/apiClient.js`.**
+
+It redirected to `/login` on every 401 except a hard-coded `/auth/login` exemption. Several
+endpoints return 401 for a *wrong credential on a healthy session*, so a mistyped password signed
+the user out — and the modal unmounted before the server's message could render. Confirmed live in
+a browser against the production admin:
+
+```
+dialog open: True
+AFTER A FAILED DISABLE (wrong password):
+  url now            : https://smartrays-crm.vercel.app/login
+  dialog still open  : False
+  error shown to user: False
+```
+
+The server had said `"Your password is incorrect"`. Nobody ever saw it.
+
+**All 17 backend 401s were classified.** Eight are session-expiry (four session, four pre-auth
+token lifecycle) and all originate in `authenticate.middleware.js`. Seven are credential
+rejections (login ×2, change-password, admin-reset re-auth, enrolment confirm, verify, 2FA
+disable). Two are machine-to-machine tokens — the attendance cleanup cron and the lead webhook —
+which the browser never calls.
+
+**The fix inverts the approach rather than adding another exemption**, which is how this stayed
+hidden: every endpoint nobody remembered to list was mis-handled. The backend marks session expiry
+with `errors: [{ code: "SESSION_EXPIRED" }]` through a single `sessionExpired()` helper, and the
+interceptor redirects only on that. A new credential-checking endpoint is now safe by default; a
+new session check has to opt in beside the other seven. It keys off the **response**, never the
+URL, so a session that dies while a modal is open still signs the user out. The `/auth/login`
+special case was deleted with nothing replacing it — a failed login simply isn't marked.
+
+**No component changed.** Every caller already rendered `error.response?.data?.message`; those
+handlers just never ran.
+
+**Tests.** Backend **29 files / 870 tests** (was 28/858 — +12, one new file). Frontend **86 files /
+763 tests** (was 85/752 — +11, one new file). Failure-first: **5 of the 12** backend tests fail
+against the pre-fix code (the "marked" half — the other 7 pass trivially because nothing was marked
+yet, and exist to catch the marker leaking onto a credential rejection), and **6 of the 11**
+frontend tests fail (every credential-rejection case; the "marked" ones already passed since the
+old code redirected on everything). The 4 failing frontend files are the known pre-existing flakes.
+
+**Verified in a real browser against a local build before deploying** — wrong password: stays on
+`/settings/account`, modal open, shows `"Your password is incorrect"`; correct password + wrong
+code: shows `"That code isn't valid."`, distinct and also non-navigating; cleared cookies: still
+redirects to `/login`. The wrong-code case consumes one failed attempt of five, so that script
+signs in again afterwards to reset the counter — `verifySecondFactor` zeroes it on success.

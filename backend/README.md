@@ -83,7 +83,7 @@ module genuinely doesn't need — e.g. `auth` has no model of its own, it uses t
 | `src/utils/ApiResponse.js` | Success response shape: `{ statusCode, success, message, data }`. Controllers do `res.status(x).json(new ApiResponse(x, data, message))`. |
 | `src/utils/asyncWrapper.js` | Wrap every **async** controller/middleware with this so rejected promises reach the error handler. Synchronous `throw` inside a plain (non-async) middleware does not need it — Express catches those natively. |
 | `src/middlewares/errorHandler.middleware.js` | Registered last in `app.js`. Converts any thrown error into `{ success: false, message, errors }`. Adds `stack` outside production. |
-| `src/middlewares/authenticate.middleware.js` | Reads the JWT from the auth cookie, loads the user, sets `req.user`. Required before `authorize`/`requireAdmin` or reading `req.user`. |
+| `src/middlewares/authenticate.middleware.js` | Reads the JWT from the auth cookie, loads the user, sets `req.user`. Required before `authorize`/`requireAdmin` or reading `req.user`. **Also the only place that emits `SESSION_EXPIRED`** — see "Two kinds of 401" below. |
 | `src/middlewares/authorize.middleware.js` | `authorize(module, action)` — generic permission gate for single-tier modules, backed by `can()`. `authorizeAny(module, actions[])` — passes if the user holds *any* of the given actions, for modules with more than one viewing tier (currently just `location`: `view`/`view_team`/`view_all`). `requireAdmin` — plain role check for admin-only actions that aren't part of the module/action permission matrix (e.g. creating accounts). |
 | `src/helpers/permission.helper.js` | `can(user, module, action)` — admins always pass; everyone else needs `user.permissions[module][action] === true`. Role-based defaults used to live here (`getDefaultPermissionsForRole`) but were removed once the real `permission` module (below) replaced them with an admin-editable, database-backed template system — `can()` itself has always stayed role-unaware and still does. |
 | `src/constants/permissionRegistry.constants.js` | `PERMISSION_REGISTRY` — hardcoded structural list of every module + its valid actions. Not admin-editable; only grows when a developer builds a new module. See the Permissions section below. |
@@ -642,6 +642,45 @@ own head or an admin may toggle it — a manager of a different team has no busi
 disclosure decision.
 
 23 tests in `selfService.test.js`.
+
+### Two kinds of 401, and why the client can now tell them apart (2026-08-08)
+
+A 401 from this API means one of two completely different things:
+
+- **Session expiry** — the credential identifying you is missing, malformed, expired, or belongs to
+  a user who no longer exists. The client should sign you out and send you to `/login`.
+- **Credential rejection** — your session is perfectly healthy; the secret you just *typed* was
+  wrong. The client should show the message and let you try again.
+
+The frontend could not distinguish them. Its axios interceptor redirected to `/login` on **every**
+401 except a hard-coded `/auth/login` exemption, so a mistyped password on 2FA-disable,
+change-password or admin re-authentication **signed the user out** — and the modal unmounted before
+the server's message could render. It read as "the feature doesn't work", with no error at all.
+
+**Session-expiry 401s now carry `errors: [{ code: "SESSION_EXPIRED" }]`** and the client redirects
+only on that. Everything else propagates to the caller. The direction is deliberate: the redirect
+is a positive assertion by the server rather than a growing exemption list on the client, and an
+exemption list is exactly how this hid. A new credential-checking endpoint is safe by default; a
+new session check has to opt in, next to the other seven.
+
+All **8** session-expiry 401s are thrown from `authenticate.middleware.js`, through one
+`sessionExpired()` helper, which is what makes a single marker sufficient:
+
+| Marked `SESSION_EXPIRED` (client redirects) | Not marked (client shows the message) |
+|---|---|
+| no auth cookie · malformed/expired JWT · a pre-auth token used as a session · session user deleted | login: wrong email/password |
+| pre-auth token missing · expired · wrong scope · its user deleted | change-password: wrong current password |
+| | admin-reset re-auth: wrong password |
+| | 2FA disable: wrong password, and wrong code |
+| | enrolment confirm / verify: wrong code |
+
+Two other 401s exist and are neither kind — `attendance.routes.js`'s cleanup-token check and
+`lead.routes.js`'s webhook-token check. Both are machine-to-machine and never reached by the
+browser app, so the interceptor never sees them.
+
+`unauthorized.test.js` pins the contract in **both** directions, because either half failing is a
+real bug: a marker that goes missing breaks sign-out, and a marker leaking onto a credential
+rejection resurrects this one.
 
 ### Two-factor authentication (§7.38, 2026-08-05)
 

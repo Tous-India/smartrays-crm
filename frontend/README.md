@@ -2549,6 +2549,38 @@ the administrative tab set.
 head may use it, not just admin — the backend enforces head-or-admin), and a "let them edit their
 own name and phone" switch on the user detail page (that person's manager, or admin).
 
+### The 401 interceptor: "wrong password" is not "session expired" (2026-08-08)
+
+`services/apiClient.js` redirected to `/login` on **every** 401 except a hard-coded `/auth/login`
+exemption. Several endpoints return 401 for a *wrong credential on a perfectly valid session*, so a
+mistyped password **signed the user out** — and because the component unmounted, the server's
+message never rendered. Confirmed live: 2FA-disable with a wrong password bounced the admin to
+`/login` with no error shown at all, which is exactly why it was reported as "the switch doesn't
+work".
+
+The fix is inverted from the obvious one. **Adding another URL exemption is how this stayed
+hidden** — every endpoint nobody remembered to list was mis-handled. Instead the backend now marks
+genuine session expiry with `errors: [{ code: "SESSION_EXPIRED" }]`, and the interceptor redirects
+**only** on that:
+
+```js
+const isSessionExpired = (error.response?.data?.errors || [])
+  .some((entry) => entry?.code === "SESSION_EXPIRED");
+```
+
+Consequences worth knowing:
+
+- **It keys off the RESPONSE, never the URL.** A session that dies *while* the disable modal is
+  open still signs the user out, because the server marks that case too.
+- **The `/auth/login` special case is gone**, and nothing replaced it — a failed login simply isn't
+  marked, so it falls out of the rule for free.
+- **A new endpoint that checks a credential needs no entry anywhere.** That is the whole point.
+- **Genuine expiry is untouched.** A dead session still redirects; `apiClient.test.js` asserts that
+  in both directions, since silently failing in place would be worse than the original bug.
+
+No component changed. Every caller already rendered `error.response?.data?.message` — those handlers
+simply never ran.
+
 ### Two-factor is opt-in, with a self-service off switch (2026-08-08)
 
 2FA was mandatory for admin and manager, enforced by a **blocking enrolment screen at login** they
