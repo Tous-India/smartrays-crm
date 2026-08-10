@@ -3089,3 +3089,24 @@ the click alone**, submit is disabled while empty, and a real submit returned
 `PATCH /attendance/…/roster-status 200` with the reason then visible in the row. That last step
 wrote a genuine correction to the production record it acted on, which is inherent to proving the
 path end to end.
+
+---
+
+### Roster rows lock once marked (2026-08-10)
+
+The Half Day / Full Day buttons stayed live after a mark, so a row could be re-marked by clicking the
+other option — a second claim about the day with no deliberate act behind it, and no reason attached
+to the change beyond whatever the prompt collected.
+
+The buttons now stay **visible but disabled**: visible because the current state should still read at
+a glance from the control that set it, disabled because the row is no longer something to click.
+Correcting goes through an explicit **Edit**, which unlocks that one row and routes the change
+through the same reason prompt the backend requires. Unmarked rows are unaffected; a row with a real
+check-in stays non-interactive as before.
+
+Browser-verified: all 4 radios on the two marked rows disabled, clicking a disabled button opened no
+prompt and fired **zero API calls**, and Edit unlocked exactly one row (4 → 2 disabled).
+
+Frontend 89 files / 800 tests (was 89/795, +5). One earlier test clicked a marked row directly and
+was updated to go through Edit rather than deleted — that is the new behaviour, not a broken
+assertion.

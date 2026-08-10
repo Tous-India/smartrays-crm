@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { Alert, Card, Input, Modal, Radio, Table, Tag, Tooltip, Typography } from "antd";
+import { Alert, Button, Card, Input, Modal, Radio, Table, Tag, Tooltip, Typography } from "antd";
 import { toLocalDateKey } from "../../../utils/date.utils";
 
 const { Text } = Typography;
@@ -62,6 +62,11 @@ function TodayRosterSection({ employees, recordsByEmployeeId, isSaving, onSetSta
   const [reason, setReason] = useState("");
   const [error, setError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Which already-marked row has been explicitly unlocked for a correction.
+  // Marked rows are otherwise disabled: the buttons stay VISIBLE so the current
+  // state still reads at a glance, but they no longer respond, so a row cannot
+  // be re-marked by clicking again.
+  const [editingId, setEditingId] = useState(null);
 
   function closePrompt() {
     setPending(null);
@@ -81,6 +86,7 @@ function TodayRosterSection({ employees, recordsByEmployeeId, isSaving, onSetSta
 
     try {
       await onSetState(pending.row, pending.status, reason.trim());
+      setEditingId(null);
       closePrompt();
     } catch (submitError) {
       // Surface what the server actually said — failing silently here would
@@ -172,21 +178,47 @@ function TodayRosterSection({ employees, recordsByEmployeeId, isSaving, onSetSta
         // nothing selected until a choice is actually made, which is the honest
         // rendering of "not marked yet", and they are genuinely mutually
         // exclusive rather than merely looking it.
+        // Already marked -> the buttons stay on screen but are inert, so the
+        // state is still legible without being re-clickable. Correcting is a
+        // deliberate act via Edit, which then goes through the same reason
+        // prompt — the backend requires a fresh reason on every change.
+        const isMarked = Boolean(record);
+        const isUnlocked = editingId === row.employeeId;
+        const locked = isMarked && !isUnlocked;
+
         return (
-          <span data-testid={`roster-state-${row.employeeId}`}>
-            <Radio.Group
-              size="small"
-              optionType="button"
-              buttonStyle="solid"
-              value={record ? record.status : undefined}
-              options={ROSTER_STATES}
-              disabled={isSaving}
-              onChange={(event) => {
-                setReason("");
-                setError(null);
-                setPending({ row, status: event.target.value });
-              }}
-            />
+          <span className="flex items-center gap-2" data-testid={`roster-state-${row.employeeId}`}>
+            <Tooltip title={locked ? "Already marked — use Edit to change it." : ""}>
+              <Radio.Group
+                size="small"
+                optionType="button"
+                buttonStyle="solid"
+                value={record ? record.status : undefined}
+                options={ROSTER_STATES}
+                disabled={isSaving || locked}
+                onChange={(event) => {
+                  setReason("");
+                  setError(null);
+                  setPending({ row, status: event.target.value });
+                }}
+              />
+            </Tooltip>
+
+            {isMarked &&
+              (isUnlocked ? (
+                <Button size="small" type="link" onClick={() => setEditingId(null)}>
+                  Cancel
+                </Button>
+              ) : (
+                <Button
+                  size="small"
+                  type="link"
+                  data-testid={`roster-edit-${row.employeeId}`}
+                  onClick={() => setEditingId(row.employeeId)}
+                >
+                  Edit
+                </Button>
+              ))}
           </span>
         );
       },

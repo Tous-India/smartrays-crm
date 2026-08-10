@@ -235,6 +235,8 @@ describe("a manual mark collects a reason first", () => {
       ],
     });
 
+    // Marked rows lock (2026-08-10), so the correction starts with Edit.
+    await userEvent.click(screen.getByTestId("roster-edit-e1"));
     await userEvent.click(screen.getAllByRole("radio", { name: "Full Day" })[0], { pointerEventsCheck: 0 });
 
     expect(await screen.findByTestId("roster-reason-input")).toHaveValue("");
@@ -281,5 +283,75 @@ describe("the reason is visible once marked", () => {
     // Two real records are in this state; inventing a reason for them is
     // exactly what the field exists to prevent.
     expect(screen.getAllByText("—").length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Marked rows lock (2026-08-10).
+ *
+ * The buttons stayed live after a mark, so a row could be silently re-marked by
+ * clicking the other option. They now stay VISIBLE — the current state should
+ * still read at a glance — but inert, with an explicit Edit to unlock.
+ */
+describe("an already-marked row does not respond to clicks", () => {
+  const MARKED = [
+    { _id: "a1", employeeId: "e1", status: "half_day", checkIn: { time: null }, adjustmentReason: "test99" },
+  ];
+
+  it("keeps the buttons on screen but DISABLED", async () => {
+    renderRoster({ records: MARKED });
+
+    const radios = screen.getAllByRole("radio", { name: /Half Day|Full Day/ });
+    const forMarkedRow = radios.slice(0, 2);
+
+    expect(forMarkedRow.length).toBe(2);
+    forMarkedRow.forEach((radio) => expect(radio).toBeDisabled());
+  });
+
+  it("does NOT open the reason prompt when a disabled button is clicked", async () => {
+    const onSetState = vi.fn();
+    renderRoster({ records: MARKED, onSetState });
+
+    await userEvent.click(screen.getAllByRole("radio", { name: "Full Day" })[0], { pointerEventsCheck: 0 });
+
+    expect(screen.queryByTestId("roster-reason-input")).not.toBeInTheDocument();
+    expect(onSetState).not.toHaveBeenCalled();
+  });
+
+  it("unlocks only via the explicit Edit action", async () => {
+    renderRoster({ records: MARKED });
+
+    expect(screen.getAllByRole("radio", { name: "Full Day" })[0]).toBeDisabled();
+
+    await userEvent.click(screen.getByTestId("roster-edit-e1"));
+
+    expect(screen.getAllByRole("radio", { name: "Full Day" })[0]).toBeEnabled();
+  });
+
+  it("a correction after Edit still goes through the reason prompt", async () => {
+    const onSetState = vi.fn().mockResolvedValue(undefined);
+    renderRoster({ records: MARKED, onSetState });
+
+    await userEvent.click(screen.getByTestId("roster-edit-e1"));
+    await userEvent.click(screen.getAllByRole("radio", { name: "Full Day" })[0], { pointerEventsCheck: 0 });
+    await userEvent.type(await screen.findByTestId("roster-reason-input"), "Worked the full day after all");
+    await userEvent.click(screen.getByTestId("roster-reason-submit"));
+
+    await waitFor(() =>
+      expect(onSetState).toHaveBeenCalledWith(
+        expect.objectContaining({ employeeId: "e1" }),
+        "present",
+        "Worked the full day after all"
+      )
+    );
+  });
+
+  it("leaves an UNMARKED row fully interactive", async () => {
+    renderRoster({ records: MARKED });
+
+    // e2 has no record, so nothing to lock.
+    expect(screen.queryByTestId("roster-edit-e2")).not.toBeInTheDocument();
+    const e2Radios = screen.getAllByRole("radio", { name: "Full Day" });
+    expect(e2Radios[e2Radios.length - 1]).toBeEnabled();
   });
 });

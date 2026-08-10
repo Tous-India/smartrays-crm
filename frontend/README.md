@@ -2595,6 +2595,20 @@ overflowing horizontally.
 If you add a control here, check the total against ~1024px rather than trusting it to look fine —
 that is exactly the assumption that failed twice.
 
+### A marked roster row locks (2026-08-10)
+
+The Half Day / Full Day buttons stayed live after a mark, so a row could be silently re-marked by
+clicking the other option — a second claim about the day with no deliberate act behind it.
+
+**The buttons stay VISIBLE but become disabled.** Visible because the current state should still read
+at a glance from the same control that set it; disabled because the row is no longer something to
+click. Hovering explains why.
+
+**Correcting is an explicit act**: an Edit link unlocks that one row, and the change then goes
+through the same reason prompt, because the backend requires a fresh reason on every change. Cancel
+re-locks it. Unmarked rows are untouched, and a row with a real check-in stays non-interactive as it
+already was.
+
 ### A reason on every manual mark (§7.4h, 2026-08-09)
 
 The backend has required a reason on both manual paths since `11028a2`, rejecting empty and
