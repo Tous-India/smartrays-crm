@@ -19,7 +19,7 @@ const STALE_AFTER_MINUTES = 10;
  * employee on one map: their check-in point, the trail of pings since, and
  * their latest position.
  *
- * Renders through the shared `LeafletMapView` (CARTO Positron tiles) rather
+ * Renders through the shared `LeafletMapView` (CARTO Voyager tiles) rather
  * than a second map component, so there is exactly one `TileLayer` in the
  * app and no way for a tile source to drift. `LeafletMapView` gained an
  * additive `paths` prop for this — `HistoryMapView` plots ONE employee's
@@ -50,7 +50,9 @@ function LiveTrackingMap() {
         allMarkers.push({
           lat: entry.checkInCoords.lat,
           lng: entry.checkInCoords.lng,
-          color: "blue",
+          // A hollow ring: a fixed historical point, not where anyone is now.
+          shape: "start",
+          color: "default",
           label: `${name} — checked in here`,
         });
       }
@@ -63,7 +65,12 @@ function LiveTrackingMap() {
           allMarkers.push({
             lat: ping.coords.lat,
             lng: ping.coords.lng,
-            color: "orange",
+            // Diamond, in the geofence family (sky/violet) — deliberately NOT
+            // the timeline's green/amber/red, which mean something else
+            // entirely on the attendance bar. `orange` sat far too close to
+            // the timeline's amber.
+            shape: "violation",
+            color: "violet",
             label: `${name} — outside the geofence at ${dayjs(ping.capturedAt).format("h:mm A")}`,
           });
         });
@@ -71,7 +78,12 @@ function LiveTrackingMap() {
       allMarkers.push({
         lat: entry.coords.lat,
         lng: entry.coords.lng,
-        color: stale ? "red" : "green",
+        // Haloed disc = where they are NOW. Was red/green, which is the
+        // TIMELINE's family (connected / gap / break) and meant a live marker
+        // and a timeline band could be read as the same signal. Grey for stale
+        // says "old" without borrowing any other vocabulary.
+        shape: "current",
+        color: stale ? "grey" : "blue",
         label: `${name} — ${stale ? "STALE, " : ""}last updated ${relativeTime(entry.capturedAt)}`,
       });
 

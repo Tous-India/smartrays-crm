@@ -65,7 +65,7 @@ describe("LiveTrackingMap — staleness", () => {
     render(<LiveTrackingMap />);
 
     await screen.findByTestId("map");
-    expect(markersFrom().at(-1).color).toBe("green");
+    expect(markersFrom().at(-1)).toMatchObject({ shape: "current", color: "blue" });
     expect(screen.queryByTestId("stale-emp-1")).not.toBeInTheDocument();
     expect(screen.getByText(/last updated 2m ago/)).toBeInTheDocument();
   });
@@ -76,7 +76,8 @@ describe("LiveTrackingMap — staleness", () => {
     render(<LiveTrackingMap />);
 
     await screen.findByTestId("map");
-    expect(markersFrom().at(-1).color).toBe("red");
+    // Grey, not red: red belongs to the TIMELINE family (§7.4g/§B6).
+    expect(markersFrom().at(-1)).toMatchObject({ shape: "current", color: "grey" });
     expect(screen.getByTestId("stale-emp-1")).toHaveTextContent(/Stale/);
     expect(markersFrom().at(-1).label).toMatch(/STALE/);
   });
@@ -92,7 +93,7 @@ describe("LiveTrackingMap — trail, start marker and geofence points", () => {
     render(<LiveTrackingMap />);
 
     await screen.findByTestId("map");
-    const start = markersFrom().find((marker) => marker.color === "blue");
+    const start = markersFrom().find((marker) => marker.shape === "start");
     expect(start).toMatchObject({ lat: 28.5, lng: 77.1 });
     expect(start.label).toMatch(/checked in here/);
   });
@@ -139,7 +140,8 @@ describe("LiveTrackingMap — trail, start marker and geofence points", () => {
     render(<LiveTrackingMap />);
 
     await screen.findByTestId("map");
-    const violationMarkers = markersFrom().filter((marker) => marker.color === "orange");
+    // Diamond in the geofence family, never the timeline's amber.
+    const violationMarkers = markersFrom().filter((marker) => marker.shape === "violation");
     expect(violationMarkers).toHaveLength(1);
     expect(violationMarkers[0]).toMatchObject({ lat: 28.9, lng: 77.9 });
     expect(await screen.findByText("1 outside geofence")).toBeInTheDocument();
@@ -173,7 +175,7 @@ describe("LiveTrackingMap — who appears", () => {
 
     await screen.findByTestId("map");
     // No blue start marker, but the current position is still plotted.
-    expect(markersFrom().some((marker) => marker.color === "blue")).toBe(false);
-    expect(markersFrom().some((marker) => marker.color === "green")).toBe(true);
+    expect(markersFrom().some((marker) => marker.shape === "start")).toBe(false);
+    expect(markersFrom().some((marker) => marker.shape === "current")).toBe(true);
   });
 });

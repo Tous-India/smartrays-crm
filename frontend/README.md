@@ -2549,6 +2549,34 @@ the administrative tab set.
 head may use it, not just admin — the backend enforces head-or-admin), and a "let them edit their
 own name and phone" switch on the user detail page (that person's manager, or admin).
 
+### Map: CARTO Voyager tiles, fit-to-bounds, Google Maps hand-off (2026-08-09)
+
+**Tiles moved from CARTO Positron (`light_all`) to CARTO Voyager
+(`rastertiles/voyager`).** Same provider, no key, no account, no request limits — a URL change.
+Positron's greyscale kept the pins prominent but read as a wireframe: no road colour, faint labels,
+parks indistinguishable from blocks. Still exactly **one** `TileLayer`, and still **zero** requests
+to OSM's own tile servers — CARTO serves the raster, OSM supplies the data and is credited for it.
+
+**Fit-to-bounds** already existed; what was missing was `maxZoom: 16` on the fit. A single marker
+produces a degenerate bounds, which Leaflet resolves by zooming to the layer's `maxZoom` (20) —
+a rooftop with no context. 16 is street level.
+
+**"View in Google Maps"** on every marker popup (`https://www.google.com/maps?q=LAT,LNG`, new tab).
+No key, no embed, no billing — it hands the coordinates over when someone wants to inspect the real
+place. The hover `title` stays for a quick read; the popup is for acting on it.
+
+**Marker shapes, not just colours.** Three distinct silhouettes so the Live Map reads at a glance:
+a hollow **ring** for where the shift began, a haloed **disc** for where the person is now, a
+**diamond** for a geofence breach. Colour alone fails for anyone who can't separate the hues, and
+fails again on a colourful basemap.
+
+Two colour corrections came out of this. The current-position marker was **red/green — the
+timeline's own family** (connected / gap / break), so a live marker and a timeline band read as the
+same signal; it is now blue, with **grey** for stale. Geofence violations were **orange**, which sat
+far too close to the timeline's amber; they are now **violet**, back inside the sky/violet geofence
+family. The "last updated Xm ago" staleness label is unchanged — a stale position still says so in
+words, not only in colour.
+
 ### Today's roster on the Attendance tab (§7.4g, 2026-08-09)
 
 `TodayRosterSection` — one row per active non-admin employee (Name, Designation, state), for marking

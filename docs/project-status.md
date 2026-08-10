@@ -3027,3 +3027,30 @@ rather than implied. The genuinely discriminating one is `present` being markabl
 existing test that asserted the opposite; that test was rewritten to pin the new contract (`present`
 markable, `on_leave` still refused) rather than deleted. The 4 failing frontend files are the known
 pre-existing flakes.
+
+---
+
+### Map appearance and usability (2026-08-09)
+
+**CARTO Positron → CARTO Voyager.** Same provider, keyless, no request limits; a URL change. Still
+one `TileLayer`, still zero OSM tile requests.
+
+**Fit-to-bounds already existed** — the gap was the single-marker case. A degenerate bounds zooms to
+the layer's `maxZoom` (20), landing on a rooftop; the fit now caps at 16.
+
+**"View in Google Maps"** on every marker popup, opening `?q=LAT,LNG` in a new tab.
+
+**Marker shapes added** — ring (shift start), haloed disc (current position), diamond (geofence
+breach) — so the Live Map reads by silhouette rather than hue.
+
+**Two colour collisions found and fixed while here**, both of which the brief's "don't reuse the
+timeline family" constraint exposed rather than predicted: the current-position marker was
+**red/green**, which IS the timeline family, so a live marker and a timeline band carried the same
+signal — now blue, grey when stale. Geofence violations were **orange**, adjacent to the timeline's
+amber — now violet, inside the sky/violet geofence family.
+
+**Tests:** frontend **89 files / 787 tests**, count unchanged — six existing map tests were updated
+rather than added, moving their assertions from colour to `shape`, which is now the primary signal.
+The `react-leaflet` mocks needed a `Popup` export. **Not verified in a real browser**: tile loading,
+`fitBounds` and layout at 1280/390 cannot be meaningfully checked in jsdom, and that verification
+was not run.

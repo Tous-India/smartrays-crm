@@ -25,6 +25,7 @@ vi.mock("react-leaflet", () => ({
     polylineCalls.push(props);
     return <div data-testid="rl-polyline" />;
   },
+  Popup: ({ children }) => children,
   useMap: () => ({ fitBounds: vi.fn() }),
 }));
 
