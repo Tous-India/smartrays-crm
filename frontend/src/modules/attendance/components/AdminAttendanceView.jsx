@@ -307,13 +307,27 @@ function AdminAttendanceView() {
           stats and history table without repeating them. */}
       <LeaveSection pendingOnly />
 
-      {/* Filters and actions on ONE row. */}
+      {/*
+        Filters and actions on ONE row (widths tightened 2026-08-09).
+        The layout was already correct — one flex row, filters left, export
+        pushed right by `ms-auto` — but the controls were sized well past their
+        content: 150+220+200+160 = 730px of selects plus a ~260px export block
+        came to roughly 1030px against ~1024px of usable width at 1280 (1280
+        minus the 220px fixed sidebar and padding). It fitted on paper and
+        wrapped in practice, and adding the Custom preset's RangePicker made it
+        worse. Narrowed to 124+170+150+140 = 584px, sized to each control's
+        longest option rather than left at AntD's generous default.
+
+        `flex-wrap` is deliberate and stays: below ~1024px wrapping is the
+        correct behaviour, and it is what keeps this from ever overflowing
+        horizontally.
+      */}
       <div className="flex flex-wrap items-center gap-3">
         <Select
           aria-label="Date range"
           value={datePreset}
           options={DATE_RANGE_OPTIONS}
-          style={{ width: 150 }}
+          style={{ width: 124 }}
           onChange={(value) => {
             setDatePreset(value);
             if (value !== DATE_RANGE_PRESETS.custom) {
@@ -329,7 +343,7 @@ function AdminAttendanceView() {
           aria-label="Employee"
           value={selectedEmployeeId}
           options={employeeOptions}
-          style={{ width: 220 }}
+          style={{ width: 170 }}
           showSearch
           optionFilterProp="label"
           onChange={setSelectedEmployeeId}
@@ -338,7 +352,7 @@ function AdminAttendanceView() {
           aria-label="Team"
           value={selectedTeamId}
           options={teamOptions}
-          style={{ width: 200 }}
+          style={{ width: 150 }}
           showSearch
           optionFilterProp="label"
           onChange={setSelectedTeamId}
@@ -347,7 +361,7 @@ function AdminAttendanceView() {
           aria-label="Status"
           value={selectedStatus}
           options={ATTENDANCE_LIFECYCLE_FILTER_OPTIONS}
-          style={{ width: 160 }}
+          style={{ width: 140 }}
           onChange={setSelectedStatus}
         />
         <div className="ms-auto">

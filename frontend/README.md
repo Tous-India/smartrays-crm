@@ -2577,6 +2577,24 @@ far too close to the timeline's amber; they are now **violet**, back inside the 
 family. The "last updated Xm ago" staleness label is unchanged — a stale position still says so in
 words, not only in colour.
 
+### Filter rows: size controls to their content, not AntD's default (2026-08-09)
+
+The Attendance and Leave Requests filter rows were already ONE flex row with the export block pushed
+right by `ms-auto` — that layout was built and correct. What shipped wrong was the **widths**: the
+selects sat at AntD's generous defaults, well past their longest option.
+
+Attendance came to 150+220+200+160 = **730px** of selects plus a ~260px export block ≈ 1030px,
+against roughly **1024px** of usable width at 1280 (1280 minus the 220px fixed sidebar and padding).
+It fitted on paper and wrapped in practice — and the Custom date preset's `RangePicker` made it
+worse. Leave Requests had the same shape at 700px.
+
+Now 124/170/150/140 on both (584px), sized to each control's longest option. **`flex-wrap` stays**:
+below ~1024px wrapping is the correct behaviour, and it is what keeps these rows from ever
+overflowing horizontally.
+
+If you add a control here, check the total against ~1024px rather than trusting it to look fine —
+that is exactly the assumption that failed twice.
+
 ### A reason on every manual mark (§7.4h, 2026-08-09)
 
 The backend has required a reason on both manual paths since `11028a2`, rejecting empty and

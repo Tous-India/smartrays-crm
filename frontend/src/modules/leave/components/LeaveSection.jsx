@@ -624,13 +624,17 @@ function LeaveSection({ view = "all", pendingOnly = false, hidePendingCards = fa
       </div>
       )}
 
+      {/* Same one-row treatment as the Attendance tab (2026-08-09): the layout
+          was already right, the controls were just sized past their content
+          (200+200+160+140 = 700px) so the export block wrapped onto a second
+          row. `flex-wrap` stays, so narrow widths wrap rather than overflow. */}
       {isAdmin && (
         <div className="flex flex-wrap items-center gap-3">
           <Select
             aria-label="Employee"
             value={adminFilters.employeeId}
             options={filterEmployeeOptions}
-            style={{ width: 200 }}
+            style={{ width: 170 }}
             showSearch
             optionFilterProp="label"
             onChange={(value) => setAdminFilters((previous) => ({ ...previous, employeeId: value }))}
@@ -639,7 +643,7 @@ function LeaveSection({ view = "all", pendingOnly = false, hidePendingCards = fa
             aria-label="Team"
             value={adminFilters.teamId}
             options={teamOptions}
-            style={{ width: 200 }}
+            style={{ width: 150 }}
             showSearch
             optionFilterProp="label"
             onChange={(value) => setAdminFilters((previous) => ({ ...previous, teamId: value }))}
@@ -648,14 +652,14 @@ function LeaveSection({ view = "all", pendingOnly = false, hidePendingCards = fa
             aria-label="Status"
             value={adminFilters.status}
             options={statusFilterOptions}
-            style={{ width: 160 }}
+            style={{ width: 140 }}
             onChange={(value) => setAdminFilters((previous) => ({ ...previous, status: value }))}
           />
           <Select
             aria-label="Date range"
             value={adminFilters.datePreset}
             options={DATE_RANGE_OPTIONS}
-            style={{ width: 140 }}
+            style={{ width: 124 }}
             onChange={(value) =>
               setAdminFilters((previous) => ({
                 ...previous,
