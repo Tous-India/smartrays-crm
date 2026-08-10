@@ -91,8 +91,13 @@ function LeaveSection({ view = "all", pendingOnly = false, hidePendingCards = fa
   const { message } = App.useApp();
   const user = useSessionStore((state) => state.user);
   const { users } = useUserDirectory();
-  const { teams } = useTeams();
   const isAdmin = user?.role === "admin";
+  // `GET /teams` requires teams.manage or teams.view_team, so an employee
+  // viewing their own leave at /leave got a 403 on every mount (fixed
+  // 2026-08-09). Teams are only used here for the ADMIN Team filter and the
+  // team label, so nobody else needs to ask in the first place.
+  const canSeeTeams = can(user, "teams", "manage") || can(user, "teams", "view_team");
+  const { teams } = useTeams(undefined, { enabled: canSeeTeams });
   const canApprove = usePermission("leave", "approve");
   const canDecline = usePermission("leave", "decline");
   const canMarkAbsence = usePermission("leave", "mark_unapproved_absence");

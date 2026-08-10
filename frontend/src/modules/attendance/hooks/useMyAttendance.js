@@ -38,7 +38,20 @@ export function useMyAttendance(month) {
   // `utils/attendanceEvents.js` for why this isn't a shared store.
   useEffect(() => subscribeToAttendanceChanges(refetch), [refetch]);
 
-  const openRecord = records.find((record) => !record.checkOut?.time) || null;
+  // An open shift needs a real CHECK-IN, not merely the absence of a
+  // check-out (fixed 2026-08-09).
+  //
+  // This used to be `!record.checkOut?.time` alone. That held while every
+  // record an employee had came from their own device, but §7.4g introduced
+  // records with checkIn.time AND checkOut.time both null — manual roster
+  // marks and leave-approval records. Those matched, so the header announced
+  // "Checked In / Tracking active" and computed an elapsed time from a null
+  // check-in, rendering NaN:NaN:NaN.
+  //
+  // The false "tracking active" was the worse half: a manual mark has no
+  // check-in moment, nothing is being tracked, and the check-out and break
+  // controls keyed off the same flag.
+  const openRecord = records.find((record) => record.checkIn?.time && !record.checkOut?.time) || null;
 
   return { records, openRecord, isLoading, error, refetch };
 }
