@@ -2577,6 +2577,28 @@ far too close to the timeline's amber; they are now **violet**, back inside the 
 family. The "last updated Xm ago" staleness label is unchanged — a stale position still says so in
 words, not only in colour.
 
+### A reason on every manual mark (§7.4h, 2026-08-09)
+
+The backend has required a reason on both manual paths since `11028a2`, rejecting empty and
+whitespace-only **in the service**. The roster wasn't collecting one, so every Half Day / Full Day
+click failed with "A reason is required when changing a manual mark" — the roster was unusable.
+
+**Clicking a state now opens a prompt and writes nothing until it is submitted.** A test asserts the
+click alone fires no API call, and the browser check confirms it: zero requests until submit. The
+submit button is disabled while the field is empty or whitespace, mirroring the server's own rule
+rather than approximating it.
+
+**A correction starts with an empty field.** Half Day → Full Day is a new claim about the day, not a
+restatement of the old one, so it never pre-fills the previous reason.
+
+**The reason shows in the row**, truncated with the full text on hover. The two marks that predate
+the field render **"—"** — nothing is backfilled, because inventing a reason is exactly what the
+field exists to prevent.
+
+**A failed submit surfaces the server's message inline and keeps the prompt open.** `handleRosterState`
+deliberately RETHROWS rather than showing a toast: the prompt is where the user is looking, and a
+toast would appear behind the modal.
+
 ### Today's roster on the Attendance tab (§7.4g, 2026-08-09)
 
 `TodayRosterSection` — one row per active non-admin employee (Name, Designation, state), for marking

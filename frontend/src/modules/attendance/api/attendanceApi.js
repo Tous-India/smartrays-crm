@@ -75,6 +75,6 @@ export function markAttendanceStatus(payload) {
  * path; `mark-status` itself 409s once a record exists, so corrections cannot
  * go through it.
  */
-export function correctRosterStatus(id, status) {
-  return apiClient.patch(`/attendance/${id}/roster-status`, { status });
+export function correctRosterStatus(id, status, reason) {
+  return apiClient.patch(`/attendance/${id}/roster-status`, { status, reason });
 }

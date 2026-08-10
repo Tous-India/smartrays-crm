@@ -3054,3 +3054,38 @@ rather than added, moving their assertions from colour to `shape`, which is now 
 The `react-leaflet` mocks needed a `Popup` export. **Not verified in a real browser**: tile loading,
 `fitBounds` and layout at 1280/390 cannot be meaningfully checked in jsdom, and that verification
 was not run.
+
+---
+
+### Manual-mark reason: backend (11028a2) and the roster prompt (§7.4h, 2026-08-09)
+
+**Backend (committed earlier as `11028a2`, docs owed until now).** A manual mark is the only
+attendance path with no device evidence behind it — no photo, no coordinates, no heartbeat — so the
+reason is the entire record of what happened. Required on `POST /attendance/mark-status` and
+`PATCH /attendance/:id/roster-status`, enforced in the **service** as well as the validator so no
+future caller can reach either path without one; empty and whitespace-only both rejected.
+
+New `Attendance.adjustmentReason` (latest claim, for display) and `adjustmentHistory[]` (every claim:
+`status`, `reason`, `at`, `by`). **A correction captures its own reason and both are kept** —
+changing Half Day to Full Day asserts something different about the day, and that someone first said
+half and then said full IS the audit trail. Leave-approval records get their reason automatically
+rather than prompting: unlike a roster mark they DO have evidence behind them, so the reason names
+the approved request.
+
+**UI half (this commit).** The roster now collects the reason instead of discovering the rejection.
+Clicking a state opens a prompt and writes nothing until submit; submit is disabled while the field
+is empty or whitespace. A correction starts blank. The reason displays in the row, and the two
+pre-existing marks show **"—"** rather than being backfilled. A failed submit surfaces the server's
+message inline and keeps the prompt open — `handleRosterState` rethrows deliberately, because a
+toast would sit behind the modal.
+
+**Tests.** Backend 30 files / 890 tests. Frontend **89 files / 795 tests** (was 89/787, +8). Three
+existing roster tests asserted the old direct-write behaviour and were rewritten to go through the
+prompt rather than deleted; one more needed `getAllByText` because the new Reason column renders its
+own dash. The 4 failing frontend files are the known pre-existing flakes.
+
+**Verified in a real browser** (not skipped this time): the prompt opens with **zero API calls from
+the click alone**, submit is disabled while empty, and a real submit returned
+`PATCH /attendance/…/roster-status 200` with the reason then visible in the row. That last step
+wrote a genuine correction to the production record it acted on, which is inherent to proving the
+path end to end.

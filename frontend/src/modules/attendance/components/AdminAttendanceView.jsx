@@ -254,7 +254,7 @@ function AdminAttendanceView() {
     [todayRecords]
   );
 
-  async function handleRosterState(row, status) {
+  async function handleRosterState(row, status, reason) {
     setIsSavingRoster(true);
 
     try {
@@ -263,19 +263,23 @@ function AdminAttendanceView() {
       // check-in never reaches here — the row renders as text — and the
       // backend refuses it regardless.
       if (row.record && isManualRecord(row.record)) {
-        await correctRosterStatus(row.record._id, status);
+        await correctRosterStatus(row.record._id, status, reason);
       } else {
         await markAttendanceStatus({
           employeeId: row.employeeId,
           date: dayjs().format("YYYY-MM-DD"),
           status,
+          reason,
         });
       }
 
       message.success(`${row.name} marked`);
       setRefreshToken((previous) => previous + 1);
     } catch (error) {
-      message.error(error.response?.data?.message || "Could not mark this employee — please try again.");
+      // RETHROWN, not swallowed: the roster's reason prompt is still open and
+      // shows the server's message inline, where the user is actually looking.
+      // A toast alone would vanish behind the modal.
+      throw error;
     } finally {
       setIsSavingRoster(false);
     }

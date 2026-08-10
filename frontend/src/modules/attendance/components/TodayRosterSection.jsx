@@ -1,6 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { Card, Radio, Table, Tag, Tooltip, Typography } from "antd";
+import { Alert, Card, Input, Modal, Radio, Table, Tag, Tooltip, Typography } from "antd";
 import { toLocalDateKey } from "../../../utils/date.utils";
 
 const { Text } = Typography;
@@ -38,6 +38,8 @@ export const ROSTER_STATES = [
   { value: "present", label: "Full Day" },
 ];
 
+const LABEL_FOR = { present: "Full Day", half_day: "Half Day" };
+
 const STATUS_LABELS = {
   present: "Full Day",
   half_day: "Half Day",
@@ -52,6 +54,42 @@ export function isManualRecord(record) {
 
 function TodayRosterSection({ employees, recordsByEmployeeId, isSaving, onSetState }) {
   const today = dayjs();
+
+  // §7.4h — the backend REQUIRES a reason on every manual mark and rejects
+  // empty/whitespace in the service, so the UI collects it up front rather
+  // than letting the user discover the rejection after clicking.
+  const [pending, setPending] = useState(null);
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  function closePrompt() {
+    setPending(null);
+    setReason("");
+    setError(null);
+  }
+
+  async function submitMark() {
+    if (!reason.trim()) {
+      // Mirrors the server's own rule rather than approximating it.
+      setError("A reason is required.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      await onSetState(pending.row, pending.status, reason.trim());
+      closePrompt();
+    } catch (submitError) {
+      // Surface what the server actually said — failing silently here would
+      // leave the roster looking unresponsive, which is how this was reported.
+      setError(submitError?.response?.data?.message || "Could not save that mark. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
 
   const rows = useMemo(
     () =>
@@ -76,6 +114,24 @@ function TodayRosterSection({ employees, recordsByEmployeeId, isSaving, onSetSta
       dataIndex: "designation",
       key: "designation",
       render: (value) => <Text type={value === "—" ? "secondary" : undefined}>{value}</Text>,
+    },
+    {
+      title: "Reason",
+      key: "reason",
+      render: (_, row) => {
+        // The two marks that predate §7.4h genuinely have no reason. A dash is
+        // the honest rendering — nothing is backfilled, because inventing a
+        // reason is exactly what this field exists to prevent.
+        const value = row.record?.adjustmentReason;
+
+        return value ? (
+          <Tooltip title={value}>
+            <Text className="text-xs">{value.length > 40 ? `${value.slice(0, 40)}…` : value}</Text>
+          </Tooltip>
+        ) : (
+          <Text type="secondary">—</Text>
+        );
+      },
     },
     {
       title: "Today",
@@ -125,7 +181,11 @@ function TodayRosterSection({ employees, recordsByEmployeeId, isSaving, onSetSta
               value={record ? record.status : undefined}
               options={ROSTER_STATES}
               disabled={isSaving}
-              onChange={(event) => onSetState(row, event.target.value)}
+              onChange={(event) => {
+                setReason("");
+                setError(null);
+                setPending({ row, status: event.target.value });
+              }}
             />
           </span>
         );
@@ -156,6 +216,38 @@ function TodayRosterSection({ employees, recordsByEmployeeId, isSaving, onSetSta
         scroll={{ y: 260 }}
         locale={{ emptyText: "No active employees" }}
       />
+
+      {/*
+        A correction captures its OWN reason — the field starts empty every
+        time, including when changing Half Day to Full Day, because that is a
+        new claim about the day rather than a restatement of the old one.
+      */}
+      <Modal
+        open={Boolean(pending)}
+        title={pending ? `Why is ${pending.row.name} marked ${LABEL_FOR[pending.status]}?` : ""}
+        okText="Save mark"
+        onOk={submitMark}
+        confirmLoading={isSubmitting}
+        onCancel={closePrompt}
+        okButtonProps={{ disabled: !reason.trim(), "data-testid": "roster-reason-submit" }}
+        destroyOnHidden
+      >
+        <p className="mb-2 text-xs text-gray-500">
+          This mark carries no photo, location or heartbeat — the reason is the only record of what
+          happened.
+        </p>
+
+        {error && <Alert type="error" showIcon className="!mb-3" message={error} data-testid="roster-reason-error" />}
+
+        <Input.TextArea
+          rows={3}
+          value={reason}
+          autoFocus
+          data-testid="roster-reason-input"
+          placeholder="e.g. No internet at the site all morning"
+          onChange={(event) => setReason(event.target.value)}
+        />
+      </Modal>
     </Card>
   );
 }
