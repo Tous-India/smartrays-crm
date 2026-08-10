@@ -171,6 +171,22 @@ export function validateCreateManualAttendanceInput(req, res, next) {
  * on a day with no record, it never asserts a presence that would need
  * times to back it up.
  */
+/**
+ * `PATCH /attendance/:id/roster-status` (§7.4g) — status ONLY, restricted to
+ * the same markable subset. The roster has no business editing timestamps, so
+ * nothing else is accepted; `on_leave` is excluded here for the same reason it
+ * is excluded from marking (the Leave module owns it).
+ */
+export function validateRosterStatusInput(req, res, next) {
+  const { status } = req.body || {};
+
+  if (!status || !MARKABLE_STATUSES.includes(status)) {
+    throw new ApiError(400, `status must be one of: ${MARKABLE_STATUSES.join(", ")}`);
+  }
+
+  next();
+}
+
 export function validateMarkAttendanceStatusInput(req, res, next) {
   const { employeeId, date, status } = req.body;
 

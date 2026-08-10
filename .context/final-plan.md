@@ -941,6 +941,11 @@ part of Phase 2, superseding this row's original speculative shape:**
 
 ### 6.1 `User` & Permissions
 
+**`designation`** (string, optional, added §7.4g 2026-08-09) — job title, shown beside the name on
+the today's roster. Admin-only via `PRIVILEGED_FIELDS`, not self-editable: an HR attribute appearing
+on a payroll-adjacent screen should not be self-assigned. Optional, since every existing user
+predates it.
+
 **`User`**
 | Field | Type | Notes |
 |---|---|---|
@@ -1534,6 +1539,20 @@ the user's request; the Project module itself (team add/remove, project CRUD, co
 automation) was left fully intact.
 
 ### 7.4 Attendance
+
+✅ **§7.4g — Today's roster (2026-08-09).** Manual marking on the Attendance tab for people who
+cannot check in (no internet, dead phone, app not loading). One row per active employee; always
+today, ignoring the page's date filter. Half Day → `half_day`, Full Day → `present`, On Leave →
+`on_leave` **display-only**. Decisions: `MARKABLE_STATUSES` widened for `present` ONLY — the
+objection to it was that nothing distinguished a hand-mark from a device capture, and
+`isManuallyAdjusted`/`adjustedBy` are that distinction, permanently. `on_leave` stays excluded and is
+written solely by leave approval, which now creates the attendance record (one-way; a day that
+already has a record is left untouched and surfaced as a conflict rather than overwritten or
+blocking the approval). Corrections route through a new admin-only
+`PATCH /attendance/:id/roster-status`, whose service guard refuses any record with a non-null
+`checkIn.time` — the guard is in the service so it survives a UI change. Pending leave cards moved
+here from the Leave Requests tab and render in exactly one place. See `backend/README.md` and
+`frontend/README.md`.
 
 See §7.4b for **Live Location Tracking**, a related but separate `location` module (added
 2026-07-13) that ties into an employee's open Attendance record.

@@ -450,11 +450,28 @@ function assertCheckOutAfterCheckIn(checkInTime, checkOutTime) {
  * still is) a real self-service check-in must be visibly flagged, not just
  * edits to the time fields specifically.
  */
-export async function adjustAttendance(attendanceId, payload, requestingUser) {
+export async function adjustAttendance(attendanceId, payload, requestingUser, options = {}) {
   const record = await Attendance.findById(attendanceId);
 
   if (!record) {
     throw new ApiError(404, "Attendance record not found");
+  }
+
+  // §7.4g (2026-08-09) — the today's-roster correction path passes
+  // `manualRecordsOnly`, and it may only ever touch records that were
+  // themselves marked by hand.
+  //
+  // The guard lives HERE, not in the roster UI, so it still holds if a future
+  // UI change forgets: a device-captured record carries a photo, coordinates
+  // and heartbeat data that cannot be reconstructed, and overwriting it from a
+  // roster dropdown would destroy evidence payroll and geofence checks read.
+  // `checkIn.time === null` is exactly what separates the two — every manual
+  // mark leaves it null, every real check-in sets it.
+  if (options.manualRecordsOnly && record.checkIn?.time) {
+    throw new ApiError(
+      409,
+      "This day has a real check-in and cannot be changed from the roster — its photo and location data would be lost."
+    );
   }
 
   ADJUSTABLE_FIELDS.forEach((field) => {

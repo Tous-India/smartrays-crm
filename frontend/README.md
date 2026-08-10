@@ -2549,6 +2549,33 @@ the administrative tab set.
 head may use it, not just admin — the backend enforces head-or-admin), and a "let them edit their
 own name and phone" switch on the user detail page (that person's manager, or admin).
 
+### Today's roster on the Attendance tab (§7.4g, 2026-08-09)
+
+`TodayRosterSection` — one row per active non-admin employee (Name, Designation, state), for marking
+people who could not check in. **Always today**, deliberately ignoring the page's date-range filter,
+because it is an action list for right now rather than a view of history; the heading says so, and it
+fetches today independently so changing the filter can never empty it.
+
+**Three states, mapped onto the existing enum:** Half Day → `half_day`, Full Day → `present`, On
+Leave → `on_leave`. **On Leave is display-only** — written solely by leave approval, never selectable
+here.
+
+**A real check-in renders as plain text, not a disabled control.** A disabled control still says
+"yours to change, just not now"; that record is never the admin's to change. The reason is on hover,
+and the backend refuses it regardless — the UI is the courtesy, not the guarantee.
+
+**Radio buttons, not a `Segmented`.** Segmented paints its first option as selected when `value` is
+undefined, so an unmarked employee looked like an already-recorded Half Day, and clicking it was a
+no-op because the control considered it current. Radios leave nothing selected until a real choice is
+made, which is the honest rendering of "not marked yet".
+
+Corrections to a previous manual mark go through `PATCH /attendance/:id/roster-status`, since
+`mark-status` 409s once a record exists.
+
+**Pending leave cards moved here**, below the stat cards. They render in exactly ONE place:
+`<LeaveSection pendingOnly />` on Attendance shows only the cards, and the Leave Requests tab passes
+`hidePendingCards` so it keeps its status filter, stats and history table without repeating them.
+
 ### The 401 interceptor: "wrong password" is not "session expired" (2026-08-08)
 
 `services/apiClient.js` redirected to `/login` on **every** 401 except a hard-coded `/auth/login`

@@ -22,6 +22,16 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    // Job title, shown beside the name on the today's-roster table (§7.4g,
+    // 2026-08-09). Admin-only (`PRIVILEGED_FIELDS` in `user.service.js`), not
+    // self-editable: it is an HR attribute that appears on a payroll-adjacent
+    // screen, so people should not be able to retitle themselves. Optional —
+    // every existing user predates it and renders with a plain dash.
+    designation: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     passwordHash: {
       type: String,
       required: true,

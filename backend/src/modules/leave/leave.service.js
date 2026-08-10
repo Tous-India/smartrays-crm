@@ -3,6 +3,7 @@ import { can } from "../../helpers/permission.helper.js";
 import { createNotification } from "../notification/notification.service.js";
 import Leave from "./leave.model.js";
 import User from "../user/user.model.js";
+import Attendance from "../attendance/attendance.model.js";
 
 // One paid leave day per calendar month (§11.7) — exported so `getLeaveBalance`
 // below and the frontend can both reference the same number rather than a
@@ -220,9 +221,81 @@ export async function approveLeave(leaveId, requestingUser) {
   leave.approvedBy = requestingUser._id;
   await leave.save();
 
+  const attendanceConflicts = await writeApprovedLeaveAttendance(leave, requestingUser);
+
   await notifyLeaveDecision(leave, requestingUser);
 
-  return leave;
+  return { leave, attendanceConflicts };
+}
+
+/**
+ * Approving leave writes the attendance record for those days (§7.4g,
+ * 2026-08-09). Full-day leave becomes `on_leave`, half-day becomes `half_day`.
+ *
+ * This is the ONLY writer of `on_leave`: `MARKABLE_STATUSES` deliberately
+ * excludes it so nobody can hand-set a leave state with no leave record behind
+ * it. The today's roster displays what this writes and can never set it.
+ *
+ * ONE-WAY. Leave approval drives attendance; nothing here ever writes back to
+ * a leave record.
+ *
+ * CONFLICT: a day that already has a record is left completely untouched and
+ * reported back to the caller instead. Three reasons for choosing that over
+ * overwriting or over refusing the approval outright:
+ *
+ *   1. It must never clobber a real check-in — that record carries a photo,
+ *      coordinates and heartbeat data that cannot be reconstructed.
+ *   2. Approval is a LEAVE decision. Blocking it because an attendance record
+ *      exists would conflate two things and strand the employee's request over
+ *      a conflict they cannot resolve themselves.
+ *   3. "Create where nothing exists, never touch what does" is the rule
+ *      `markAttendanceStatus` already established for gap-filling. Applying
+ *      the same rule here keeps one predictable behaviour rather than two.
+ *
+ * The admin is told which days clashed so they can resolve them deliberately
+ * from the roster, which is the only place that decision belongs.
+ */
+async function writeApprovedLeaveAttendance(leave, requestingUser) {
+  const status = leave.isHalfDay ? "half_day" : "on_leave";
+  const conflicts = [];
+
+  const cursor = new Date(leave.startDate);
+  cursor.setHours(0, 0, 0, 0);
+  const last = new Date(leave.endDate);
+  last.setHours(0, 0, 0, 0);
+
+  while (cursor <= last) {
+    const day = new Date(cursor);
+
+    // eslint-disable-next-line no-await-in-loop
+    const existing = await Attendance.findOne({ employeeId: leave.employeeId, date: day });
+
+    if (existing) {
+      conflicts.push({
+        date: day.toISOString(),
+        existingStatus: existing.status,
+        // The distinction the admin needs in order to decide: a manual mark is
+        // theirs to correct, a real check-in is evidence they should not touch.
+        hasRealCheckIn: Boolean(existing.checkIn?.time),
+      });
+    } else {
+      // eslint-disable-next-line no-await-in-loop
+      await Attendance.create({
+        employeeId: leave.employeeId,
+        date: day,
+        status,
+        checkIn: { time: null },
+        checkOut: { time: null },
+        workingHours: null,
+        isManuallyAdjusted: true,
+        adjustedBy: requestingUser._id,
+      });
+    }
+
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return conflicts;
 }
 
 /**

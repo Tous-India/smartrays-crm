@@ -87,7 +87,7 @@ const EMPTY_ADMIN_FILTERS = {
  * `HistoryMapView.jsx` already established for the same "surface the
  * error, don't paper over it" reasoning.
  */
-function LeaveSection({ view = "all" }) {
+function LeaveSection({ view = "all", pendingOnly = false, hidePendingCards = false }) {
   const { message } = App.useApp();
   const user = useSessionStore((state) => state.user);
   const { users } = useUserDirectory();
@@ -541,9 +541,48 @@ function LeaveSection({ view = "all" }) {
   // Someone who can't act on leave (an employee viewing their own) gets the
   // plain table for everything — approval cards would be decoration, and
   // hiding their pending requests from the table would lose them entirely.
-  const showApprovalCards = canActOnLeave && pendingRequests.length > 0;
+  // §7.4g (2026-08-09) — pending cards moved to the Attendance tab. They must
+  // exist in ONE place, so the two instances are complementary rather than
+  // duplicated: `pendingOnly` (Attendance) renders the cards and nothing else,
+  // `hidePendingCards` (Leave Requests) renders everything except the cards.
+  const showApprovalCards = canActOnLeave && pendingRequests.length > 0 && !hidePendingCards;
   const tableRows = canActOnLeave ? decidedRequests : displayedLeaveRequests;
   const showTable = tableRows.length > 0 || !showApprovalCards;
+
+  if (pendingOnly) {
+    // Only the approval cards — no stats, no filters, no history table. The
+    // Attendance tab has its own stat cards directly above these, and a second
+    // set here would be noise.
+    if (!canActOnLeave || pendingRequests.length === 0) {
+      return null;
+    }
+
+    return (
+      <div data-testid="pending-leave-approvals">
+        <LeaveApprovalCards
+          requests={pendingRequests}
+          employeeNameById={employeeNameById}
+          teamNameByEmployeeId={teamNameByEmployeeId}
+          canApprove={canApprove}
+          canDecline={canDecline}
+          canMarkAbsence={canMarkAbsence}
+          canDelete={canDelete}
+          canActOnRow={canActOnRow}
+          onApprove={handleApprove}
+          onDecline={setDeclineTarget}
+          onMarkAbsence={handleMarkAbsence}
+          onDelete={handleDelete}
+        />
+        {declineTarget && (
+          <LeaveDeclineModal
+            leave={declineTarget}
+            onCancel={() => setDeclineTarget(null)}
+            onConfirm={handleDecline}
+          />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4">

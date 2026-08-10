@@ -75,6 +75,27 @@ export const adjust = asyncWrapper(async (req, res) => {
   res.status(200).json(new ApiResponse(200, record, "Attendance record updated successfully"));
 });
 
+/**
+ * The today's-roster correction path (§7.4g, 2026-08-09) — changing a previous
+ * MANUAL mark, e.g. Half Day to Full Day.
+ *
+ * A separate endpoint from `PATCH /:id` above, rather than a flag on it,
+ * precisely so `manualRecordsOnly` cannot be omitted by a caller: this route
+ * always passes it, and the service refuses any record carrying a real
+ * check-in. Only `status` is accepted — the roster has no business editing
+ * timestamps.
+ */
+export const correctRosterStatus = asyncWrapper(async (req, res) => {
+  const record = await adjustAttendance(
+    req.params.id,
+    { status: req.body.status },
+    req.user,
+    { manualRecordsOnly: true }
+  );
+
+  res.status(200).json(new ApiResponse(200, record, "Attendance updated"));
+});
+
 export const createManual = asyncWrapper(async (req, res) => {
   const record = await createManualAttendance(req.body, req.user);
 

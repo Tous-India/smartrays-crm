@@ -67,3 +67,14 @@ export function createManualAttendance(payload) {
 export function markAttendanceStatus(payload) {
   return apiClient.post("/attendance/mark-status", payload);
 }
+
+/**
+ * Today's-roster correction (§7.4g) — changing a previous MANUAL mark, e.g.
+ * Half Day to Full Day. A separate endpoint from `adjustAttendance` above
+ * because the service refuses any record carrying a real check-in on this
+ * path; `mark-status` itself 409s once a record exists, so corrections cannot
+ * go through it.
+ */
+export function correctRosterStatus(id, status) {
+  return apiClient.patch(`/attendance/${id}/roster-status`, { status });
+}

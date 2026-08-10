@@ -50,7 +50,11 @@ function AttendancePage() {
         // (Pending / Approved / Declined / Unapproved Absence / All) deciding
         // what's shown: pending renders as approval cards, anything decided
         // as the table. Two tabs made you guess which one a request was in.
-        { key: "leave-requests", label: "Leave Requests", children: <LeaveSection /> },
+        // §7.4g (2026-08-09) — pending approval CARDS moved to the Attendance
+        // tab, where the roster they affect lives. This tab keeps its status
+        // filter, stat cards and history table; `hidePendingCards` stops the
+        // cards appearing in both places.
+        { key: "leave-requests", label: "Leave Requests", children: <LeaveSection hidePendingCards /> },
         ...(canViewLiveMap ? [{ key: "live-map", label: "Live Map", children: <LiveTrackingMap /> }] : []),
       ];
     }

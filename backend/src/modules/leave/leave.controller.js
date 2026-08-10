@@ -24,9 +24,22 @@ export const list = asyncWrapper(async (req, res) => {
 });
 
 export const approve = asyncWrapper(async (req, res) => {
-  const leave = await approveLeave(req.params.id, req.user);
+  // §7.4g — approval also writes the attendance record for those days, and
+  // reports any day it deliberately left alone because a record already
+  // existed. The leave itself is still the response `data`, with the leave's
+  // own fields spread at the top level so existing callers are unaffected;
+  // `attendanceConflicts` rides alongside for the admin to act on.
+  const { leave, attendanceConflicts } = await approveLeave(req.params.id, req.user);
 
-  res.status(200).json(new ApiResponse(200, leave, "Leave request approved"));
+  res.status(200).json(
+    new ApiResponse(
+      200,
+      { ...leave.toObject(), attendanceConflicts },
+      attendanceConflicts.length > 0
+        ? "Leave approved. Some days already had an attendance record and were left unchanged."
+        : "Leave request approved"
+    )
+  );
 });
 
 export const decline = asyncWrapper(async (req, res) => {

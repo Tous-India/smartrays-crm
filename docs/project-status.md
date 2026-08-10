@@ -2980,3 +2980,50 @@ password alone — `200`, session cookie set, no `preAuthToken`, `"Logged in suc
 Vinay's 5 trusted devices are gone, which is inherent to clearing 2FA: a device trusted against a
 second factor must not outlive it. Those browsers will ask for a password again — and only a
 password, since there is no second factor now.
+
+---
+
+### Today's roster on the Attendance tab (§7.4g, 2026-08-09)
+
+Manual marking for people who genuinely cannot check in — no internet, dead phone, app not loading —
+plus the pending leave cards moved to where the roster they affect lives.
+
+**Audited before building, and one finding changed the shape of the work.** `designation` did not
+exist on `User`. And `MARKABLE_STATUSES` was `["absent", "half_day"]`: `present` and `on_leave` were
+both **deliberately** excluded with the reasoning written into the code, so two of the three
+requested states were exactly what the endpoint refused. That was reported rather than routed
+around.
+
+**Resolved:** widen for `present` only. The objection to it was that nothing distinguished a mark
+made on someone's word from a device-captured one — and `isManuallyAdjusted`/`adjustedBy` are that
+distinction, set on every record this path creates, permanently. The old comment was rewritten
+rather than left contradicting the code. **`on_leave` stays excluded**: leave approval writes it, so
+hand-setting it would assert a leave state with no leave record behind it. The roster displays it
+and can never set it.
+
+**Conflict case, decided:** when approving leave for a day that already has a record, the record is
+left completely untouched and reported back as `attendanceConflicts` (with `hasRealCheckIn` per
+day). It never overwrites — a real check-in carries photo, coordinates and heartbeat data that
+cannot be reconstructed — and never blocks the approval, because approval is a *leave* decision and
+stranding it over an attendance clash the employee cannot resolve would be worse. Same "create where
+nothing exists, never touch what does" rule `markAttendanceStatus` already established.
+
+**The read-only guard is in the SERVICE, not the UI.** `PATCH /attendance/:id/roster-status` refuses
+any record whose `checkIn.time` is non-null, so it holds if a future UI change forgets. It is
+admin-only, unlike `mark-status`: that takes an `employeeId` and scopes per-record, whereas this
+takes a raw attendance id and `adjustAttendance` has no ownership check — a manager tier would have
+let one correct any record by guessing an id.
+
+**A real UI bug caught by a failing test rather than shipped:** the state control was an AntD
+`Segmented`, which paints its first option as selected when `value` is undefined. An unmarked
+employee therefore *looked* like an already-recorded Half Day, and clicking that option did nothing
+because the control considered it current. Replaced with radio buttons, which leave nothing selected
+until a real choice is made.
+
+**Tests.** Backend **30 files / 885 tests** (was 29/870, +15). Frontend **87 files / 776 tests** (was
+86/763, +13). The roster endpoints, `designation` and the leave→attendance write are **new with no
+prior version**, so those tests could not be shown failing against earlier code — stated plainly
+rather than implied. The genuinely discriminating one is `present` being markable, which reversed an
+existing test that asserted the opposite; that test was rewritten to pin the new contract (`present`
+markable, `on_leave` still refused) rather than deleted. The 4 failing frontend files are the known
+pre-existing flakes.

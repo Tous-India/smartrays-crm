@@ -14,6 +14,7 @@ import {
   teamAttendance,
   report,
   adjust,
+  correctRosterStatus,
   createManual,
   markStatus,
   cleanup,
@@ -28,6 +29,7 @@ import {
   validateAdjustAttendanceInput,
   validateCreateManualAttendanceInput,
   validateMarkAttendanceStatusInput,
+  validateRosterStatusInput,
 } from "./attendance.validation.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -91,6 +93,25 @@ attendanceRouter.post("/manual", authenticate, requireAdmin, validateCreateManua
 // their team's attendance in the first place — the actual "is this employee
 // mine?" scoping is per-record, so it lives in the service, matching the
 // same split `leave.service.js#ensureCanActOnLeave` uses.
+// §7.4g — correcting a previous MANUAL mark from the today's roster.
+//
+// ADMIN-ONLY, matching `PATCH /:id` above rather than /mark-status below.
+// /mark-status can afford a manager tier because it takes an employeeId and
+// scopes per-record in the service; this one takes a raw attendance id, and
+// `adjustAttendance` has no per-record ownership check — opening it to
+// managers would let one correct any record in the system by guessing an id.
+// Managers can still MARK their own reports via /mark-status.
+//
+// On top of that gate the service refuses any record carrying a real
+// check-in, so this path can only ever touch previous manual marks.
+attendanceRouter.patch(
+  "/:id/roster-status",
+  authenticate,
+  requireAdmin,
+  validateRosterStatusInput,
+  correctRosterStatus
+);
+
 attendanceRouter.post(
   "/mark-status",
   authenticate,

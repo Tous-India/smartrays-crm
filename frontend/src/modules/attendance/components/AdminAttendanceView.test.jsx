@@ -5,6 +5,22 @@ import AdminAttendanceView from "./AdminAttendanceView";
 import * as attendanceApi from "../api/attendanceApi";
 import * as userApi from "../../user/api/userApi";
 
+// §7.4g — the pending-leave cards now render inside this view. They fetch
+// leave on mount, which is not what this file is testing; LeaveSection has its
+// own suite. Stubbed so these tests stay about the attendance view.
+// The roster lists every active employee by name, which collides with the
+// same names in the records table below and makes getByText ambiguous. These
+// tests are about the records table and its filters; the roster has its own
+// suite (TodayRosterSection.test.jsx).
+vi.mock("./TodayRosterSection", () => ({
+  default: () => <div data-testid="today-roster" />,
+  isManualRecord: (record) => Boolean(record) && !record?.checkIn?.time,
+}));
+
+vi.mock("../../leave/components/LeaveSection", () => ({
+  default: () => <div data-testid="pending-leave-approvals" />,
+}));
+
 vi.mock("../api/attendanceApi", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, getTeamAttendance: vi.fn() };

@@ -7,12 +7,25 @@ import mongoose from "mongoose";
 // Cloudinary, src/services/cloudinary.service.js) instead of sitting unused.
 const ATTENDANCE_STATUSES = ["present", "absent", "half_day", "on_leave"];
 
-// The subset `POST /attendance/mark-status` (2026-08-05) is allowed to set —
-// gap-filling only, on days with no record at all. "present"/"on_leave" are
-// excluded deliberately: "present" is the one claim this system requires
-// real check-in evidence for, and "on_leave" is owned by the Leave module's
-// own approval flow, not set by hand here.
-const MARKABLE_STATUSES = ["absent", "half_day"];
+// The subset `POST /attendance/mark-status` is allowed to set — gap-filling
+// only, on days with no record at all.
+//
+// `present` was added 2026-08-09 for the today's-roster feature (§7.4g). It
+// had been excluded on the grounds that "present" is the one claim this system
+// requires real check-in evidence for. The real objection was narrower than
+// that: nothing distinguished a mark made on someone's word from one captured
+// from a device. `isManuallyAdjusted` + `adjustedBy` ARE that distinction, they
+// are set on every record this endpoint creates, and they are permanent — so a
+// manually-marked "present" can always be told apart from a photo-and-GPS
+// check-in, including in a payroll dispute months later. That is what makes it
+// safe to allow, and the roster exists precisely for people who cannot check in
+// (no internet, dead phone, app not loading).
+//
+// `on_leave` stays excluded, and the original reasoning stands unchanged: it is
+// owned by the Leave module's approval flow, which writes the record itself on
+// approval (`leave.service.js`). Hand-setting it here would create a leave
+// state with no leave record behind it.
+const MARKABLE_STATUSES = ["absent", "half_day", "present"];
 
 const attendanceSchema = new mongoose.Schema(
   {

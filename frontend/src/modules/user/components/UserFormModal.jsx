@@ -120,6 +120,12 @@ function UserFormModal({ open, mode, initialUser, onCancel, onSubmit, isSubmitti
             <Select allowClear placeholder="No manager" options={managerOptions} showSearch optionFilterProp="label" />
           </Form.Item>
 
+          {/* §7.4g — shown beside the name on the today's roster. Admin-only
+              (PRIVILEGED_FIELDS), so it appears here and not on EditProfile. */}
+          <Form.Item label="Designation" name="designation">
+            <Input placeholder="e.g. Field Technician" />
+          </Form.Item>
+
           <Form.Item label="Base Salary" name="baseSalary">
             <InputNumber min={0} style={{ width: "100%" }} />
           </Form.Item>

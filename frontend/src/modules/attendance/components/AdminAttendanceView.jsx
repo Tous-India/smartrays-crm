@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import dayjs from "dayjs";
 import { DatePicker, Select, App } from "antd";
 import AttendanceRecordsSection from "./AttendanceRecordsSection";
+import TodayRosterSection, { isManualRecord } from "./TodayRosterSection";
+import LeaveSection from "../../leave/components/LeaveSection";
 import AttendanceSummaryStats from "./AttendanceSummaryStats";
 import ReportDownloadButton from "../../../components/ReportDownloadButton";
-import { getTeamAttendance, markAttendanceStatus } from "../api/attendanceApi";
+import { getTeamAttendance, markAttendanceStatus, correctRosterStatus } from "../api/attendanceApi";
 import { listUsers } from "../../user/api/userApi";
 import useTeams from "../../team/hooks/useTeams";
 import useUserDirectory from "../../../hooks/useUserDirectory";
@@ -211,6 +213,74 @@ function AdminAttendanceView() {
     [records, selectedEmployeeId, from, to]
   );
 
+  // §7.4g — the roster is ALWAYS today, deliberately ignoring the date-range
+  // filter above: it is an action list for right now, not a view of history.
+  // It therefore fetches this month independently of `records` rather than
+  // filtering them, so changing the filter can never empty the roster.
+  const [todayRecords, setTodayRecords] = useState([]);
+  const [isSavingRoster, setIsSavingRoster] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getTeamAttendance(dayjs().format("YYYY-MM"))
+      .then((response) => {
+        if (!cancelled) {
+          const key = toLocalDateKey(dayjs());
+          setTodayRecords(response.data.data.filter((record) => toLocalDateKey(dayjs(record.date)) === key));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTodayRecords([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshToken]);
+
+  const rosterEmployees = useMemo(
+    () =>
+      fullDirectory
+        .filter((directoryUser) => directoryUser.isActive !== false && directoryUser.role !== "admin")
+        .sort((a, b) => String(a.name).localeCompare(String(b.name))),
+    [fullDirectory]
+  );
+
+  const todayRecordsByEmployeeId = useMemo(
+    () => new Map(todayRecords.map((record) => [String(record.employeeId), record])),
+    [todayRecords]
+  );
+
+  async function handleRosterState(row, status) {
+    setIsSavingRoster(true);
+
+    try {
+      // mark-status 409s once a record exists, so an existing MANUAL mark is
+      // corrected through the roster-status path instead. A record with a real
+      // check-in never reaches here — the row renders as text — and the
+      // backend refuses it regardless.
+      if (row.record && isManualRecord(row.record)) {
+        await correctRosterStatus(row.record._id, status);
+      } else {
+        await markAttendanceStatus({
+          employeeId: row.employeeId,
+          date: dayjs().format("YYYY-MM-DD"),
+          status,
+        });
+      }
+
+      message.success(`${row.name} marked`);
+      setRefreshToken((previous) => previous + 1);
+    } catch (error) {
+      message.error(error.response?.data?.message || "Could not mark this employee — please try again.");
+    } finally {
+      setIsSavingRoster(false);
+    }
+  }
+
   async function handleMarkStatus(row, status) {
     try {
       await markAttendanceStatus({ employeeId: row.employeeId, date: dayjs(row.date).format("YYYY-MM-DD"), status });
@@ -225,6 +295,13 @@ function AdminAttendanceView() {
     <div className="flex flex-col gap-4">
       {/* §B1 — stat cards ABOVE the filters. */}
       <AttendanceSummaryStats records={filteredRecords} month={rangeStart} />
+
+      {/* §7.4g — pending leave requests MOVED here from the Leave Requests
+          tab, directly below the stat cards. They render in exactly one
+          place: `pendingOnly` shows only the cards here, and the Leave
+          Requests tab passes `hidePendingCards` so it keeps its filter,
+          stats and history table without repeating them. */}
+      <LeaveSection pendingOnly />
 
       {/* Filters and actions on ONE row. */}
       <div className="flex flex-wrap items-center gap-3">
@@ -273,6 +350,16 @@ function AdminAttendanceView() {
           <ReportDownloadButton module="attendance" filters={{ from, to }} filenamePrefix="org-attendance" />
         </div>
       </div>
+
+      {/* §7.4g — the roster sits between the filters and the records table:
+          above the thing it acts on, below the controls, without becoming a
+          second card grid that competes with the stats. */}
+      <TodayRosterSection
+        employees={rosterEmployees}
+        recordsByEmployeeId={todayRecordsByEmployeeId}
+        isSaving={isSavingRoster}
+        onSetState={handleRosterState}
+      />
 
       <AttendanceRecordsSection
         records={filteredRecords}

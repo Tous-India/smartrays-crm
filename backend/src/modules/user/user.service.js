@@ -233,7 +233,11 @@ export async function listUsersForDropdown() {
 // portal user relinking themselves to a different company would be a
 // security hole, not a convenience — it's normally set once, automatically,
 // at self-signup (createCustomerSelfSignupUser), never edited by the user.
-export const PRIVILEGED_FIELDS = ["role", "managerId", "isActive", "baseSalary", "customerId"];
+// `designation` is here rather than in SELF_EDITABLE_FIELDS (§7.4g,
+// 2026-08-09): a job title is an HR attribute that shows up on the
+// payroll-adjacent today's roster, so people should not be able to retitle
+// themselves.
+export const PRIVILEGED_FIELDS = ["role", "managerId", "isActive", "baseSalary", "customerId", "designation"];
 const SELF_EDITABLE_FIELDS = ["name", "email", "phone"];
 
 /**

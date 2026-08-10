@@ -1094,8 +1094,14 @@ describe("POST /attendance/mark-status — gap-filling for days with no record",
     expect(response.status).toBe(403);
   });
 
-  it("rejects any status other than absent/half_day — present and on_leave are not markable by hand", async () => {
-    for (const status of ["present", "on_leave", "nonsense"]) {
+  it("rejects on_leave and anything unrecognised — but present IS markable as of §7.4g", async () => {
+    // `present` moved into MARKABLE_STATUSES 2026-08-09 for the today's
+    // roster: the objection to it was that nothing distinguished a mark made
+    // on someone's word from a device-captured one, and isManuallyAdjusted +
+    // adjustedBy are that distinction, permanently. `on_leave` stays out —
+    // the Leave module writes it on approval, and hand-setting it would create
+    // a leave state with no leave record behind it. See roster.test.js.
+    for (const status of ["on_leave", "nonsense"]) {
       const response = await adminAgent.post("/api/v1/attendance/mark-status").send({
         employeeId: String(sales1._id),
         date: "2026-06-22",
@@ -1106,6 +1112,15 @@ describe("POST /attendance/mark-status — gap-filling for days with no record",
     }
 
     expect(await Attendance.countDocuments({ employeeId: sales1._id })).toBe(0);
+
+    const present = await adminAgent.post("/api/v1/attendance/mark-status").send({
+      employeeId: String(sales1._id),
+      date: "2026-06-22",
+      status: "present",
+    });
+
+    expect(present.status).toBe(201);
+    expect(present.body.data.isManuallyAdjusted).toBe(true);
   });
 
   it("rejects a missing employeeId, date, or status", async () => {

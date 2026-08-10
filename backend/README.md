@@ -643,6 +643,42 @@ disclosure decision.
 
 23 tests in `selfService.test.js`.
 
+### Today's roster: manual marking, designation, leave-driven attendance (§7.4g, 2026-08-09)
+
+**`MARKABLE_STATUSES` is now `["absent", "half_day", "present"]`.** `present` was excluded on the
+grounds that it is the one claim requiring real check-in evidence. The real objection was narrower:
+nothing distinguished a mark made on someone's word from a device-captured one. `isManuallyAdjusted`
++ `adjustedBy` ARE that distinction, they are set on every record `mark-status` creates, and they are
+permanent — so a manually-marked `present` can always be told apart from a photo-and-GPS check-in,
+including in a payroll dispute months later. The roster exists for people who genuinely cannot check
+in (no internet, dead phone, app not loading), and refusing to record that they worked does not make
+the data more honest, only emptier.
+
+**`on_leave` stays excluded, deliberately.** It is written solely by `leave.service.js` on approval.
+Hand-setting it would assert a leave state with no leave record behind it. The roster displays it and
+can never set it.
+
+**`PATCH /attendance/:id/roster-status`** — corrections to a previous MANUAL mark (Half Day → Full
+Day), since `mark-status` 409s once a record exists. Status only. **Admin-only**, unlike
+`mark-status`: that endpoint takes an `employeeId` and scopes per-record in the service, whereas this
+one takes a raw attendance id and `adjustAttendance` has no ownership check — opening it to managers
+would let one correct any record by guessing an id. The service refuses any record whose
+`checkIn.time` is non-null (409), so this path can only ever touch manual marks. **That guard is in
+the service, not the UI**, so it holds if a future UI change forgets.
+
+**Leave approval now writes attendance.** Full-day approval creates `on_leave`, half-day creates
+`half_day`, both flagged `isManuallyAdjusted`/`adjustedBy`. One-way: nothing writes back to a leave
+record. **Conflict:** a day that already has a record is left completely untouched and reported to
+the caller as `attendanceConflicts` (with `hasRealCheckIn` per day). It never overwrites — a real
+check-in carries data that cannot be reconstructed — and it never blocks the approval, because
+approval is a leave decision and stranding it over an attendance clash the employee cannot resolve
+would be worse. This is the same "create where nothing exists, never touch what does" rule
+`markAttendanceStatus` already established.
+
+**New `User.designation`** (optional string) — job title, shown on the roster. In `PRIVILEGED_FIELDS`,
+so admin-only: it is an HR attribute appearing on a payroll-adjacent screen, and people should not be
+able to retitle themselves. A self-update attempt is rejected 403.
+
 ### Two kinds of 401, and why the client can now tell them apart (2026-08-08)
 
 A 401 from this API means one of two completely different things:
