@@ -289,6 +289,18 @@ async function writeApprovedLeaveAttendance(leave, requestingUser) {
         workingHours: null,
         isManuallyAdjusted: true,
         adjustedBy: requestingUser._id,
+        // §7.4h — set automatically rather than prompted for. Unlike a roster
+        // mark, this record HAS evidence behind it: an approved leave request,
+        // named here so the attendance row explains itself without a lookup.
+        adjustmentReason: `Approved ${leave.isHalfDay ? "half-day" : "full-day"} leave: ${leave.reason}`,
+        adjustmentHistory: [
+          {
+            status,
+            reason: `Approved leave request ${leave._id}`,
+            at: new Date(),
+            by: requestingUser._id,
+          },
+        ],
       });
     }
 

@@ -178,17 +178,29 @@ export function validateCreateManualAttendanceInput(req, res, next) {
  * is excluded from marking (the Leave module owns it).
  */
 export function validateRosterStatusInput(req, res, next) {
-  const { status } = req.body || {};
+  const { status, reason } = req.body || {};
 
   if (!status || !MARKABLE_STATUSES.includes(status)) {
     throw new ApiError(400, `status must be one of: ${MARKABLE_STATUSES.join(", ")}`);
+  }
+
+  // §7.4h — the service enforces this too; this is the first line, not the
+  // only one.
+  if (!String(reason || "").trim()) {
+    throw new ApiError(400, "A reason is required when changing a manual mark");
   }
 
   next();
 }
 
 export function validateMarkAttendanceStatusInput(req, res, next) {
-  const { employeeId, date, status } = req.body;
+  const { employeeId, date, status, reason } = req.body;
+
+  // §7.4h — a manual mark has no device evidence, so the reason is the record.
+  // Enforced in the service too; this is the first line, not the only one.
+  if (!String(reason || "").trim()) {
+    throw new ApiError(400, "A reason is required when marking attendance by hand");
+  }
 
   if (!employeeId) {
     throw new ApiError(400, "employeeId is required");

@@ -502,6 +502,27 @@ export async function adjustAttendance(attendanceId, payload, requestingUser, op
   record.isManuallyAdjusted = true;
   record.adjustedBy = requestingUser._id;
 
+  // §7.4h — a correction is a NEW claim, not a re-use of the previous one:
+  // changing Half Day to Full Day asserts something different about the day,
+  // so it captures its own reason. Both are kept — the fact that someone first
+  // said half and then said full IS the audit trail — with `adjustmentReason`
+  // mirroring the latest so display code needs no lookup.
+  const correctionReason = String(payload.reason || "").trim();
+
+  if (options.manualRecordsOnly) {
+    if (!correctionReason) {
+      throw new ApiError(400, "A reason is required when changing a manual mark");
+    }
+
+    record.adjustmentReason = correctionReason;
+    record.adjustmentHistory.push({
+      status: record.status,
+      reason: correctionReason,
+      at: new Date(),
+      by: requestingUser._id,
+    });
+  }
+
   await record.save();
 
   return record;
@@ -582,7 +603,16 @@ export async function createManualAttendance(payload, requestingUser) {
  * claimed, so there is nothing to evidence.
  */
 export async function markAttendanceStatus(payload, requestingUser) {
-  const { employeeId, date, status } = payload;
+  const { employeeId, date, status, reason } = payload;
+
+  // §7.4h — enforced HERE, not only in the validator, so no future caller can
+  // reach this path without one. A manual mark carries no photo, coordinates
+  // or heartbeat; the reason is the only record of what actually happened.
+  const trimmedReason = String(reason || "").trim();
+
+  if (!trimmedReason) {
+    throw new ApiError(400, "A reason is required when marking attendance by hand");
+  }
 
   const employee = await User.findById(employeeId);
 
@@ -615,6 +645,8 @@ export async function markAttendanceStatus(payload, requestingUser) {
     workingHours: null,
     isManuallyAdjusted: true,
     adjustedBy: requestingUser._id,
+    adjustmentReason: trimmedReason,
+    adjustmentHistory: [{ status, reason: trimmedReason, at: new Date(), by: requestingUser._id }],
   });
 
   return record;

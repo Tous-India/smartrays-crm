@@ -854,7 +854,7 @@ describe("PATCH /attendance/:id — admin manual correction", () => {
 
     const response = await adminAgent
       .patch(`/api/v1/attendance/${checkInRes.body.data._id}`)
-      .send({ status: "on_leave" });
+      .send({ status: "on_leave", reason: "Could not check in" });
 
     expect(response.status).toBe(200);
     expect(response.body.data.isManuallyAdjusted).toBe(true);
@@ -868,12 +868,12 @@ describe("PATCH /attendance/:id — admin manual correction", () => {
 
     const managerResponse = await managerAgent
       .patch(`/api/v1/attendance/${checkInRes.body.data._id}`)
-      .send({ status: "absent" });
+      .send({ status: "absent", reason: "Could not check in" });
     expect(managerResponse.status).toBe(403);
 
     const selfResponse = await sales1Agent
       .patch(`/api/v1/attendance/${checkInRes.body.data._id}`)
-      .send({ status: "absent" });
+      .send({ status: "absent", reason: "Could not check in" });
     expect(selfResponse.status).toBe(403);
   });
 
@@ -892,7 +892,7 @@ describe("PATCH /attendance/:id — admin manual correction", () => {
   it("returns 404 for a non-existent record", async () => {
     const response = await adminAgent
       .patch("/api/v1/attendance/507f1f77bcf86cd799439011")
-      .send({ status: "absent" });
+      .send({ status: "absent", reason: "Could not check in" });
 
     expect(response.status).toBe(404);
   });
@@ -904,7 +904,8 @@ describe("POST /attendance/manual — admin manual creation", () => {
       employeeId: String(sales1._id),
       date: "2026-06-05",
       status: "absent",
-    });
+        reason: "Could not check in",
+      });
 
     expect(response.status).toBe(201);
     expect(response.body.data.employeeId).toBe(String(sales1._id));
@@ -921,7 +922,9 @@ describe("POST /attendance/manual — admin manual creation", () => {
       employeeId: String(sales1._id),
       date: "2026-06-06",
       status: "present",
-      checkIn: { time: "2026-06-06T09:00:00.000Z" },
+      checkIn: { time: "2026-06-06T09:00:00.000Z",
+        reason: "Could not check in",
+      },
       checkOut: { time: "2026-06-06T13:30:00.000Z" },
     });
 
@@ -944,13 +947,15 @@ describe("POST /attendance/manual — admin manual creation", () => {
       employeeId: String(sales1._id),
       date: "2026-06-08",
       status: "present",
-    });
+        reason: "Could not check in",
+      });
 
     const response = await adminAgent.post("/api/v1/attendance/manual").send({
       employeeId: String(sales1._id),
       date: "2026-06-08",
       status: "absent",
-    });
+        reason: "Could not check in",
+      });
 
     expect(response.status).toBe(409);
   });
@@ -1001,7 +1006,8 @@ describe("POST /attendance/mark-status — gap-filling for days with no record",
       employeeId: String(sales1._id),
       date: "2026-06-15",
       status: "absent",
-    });
+        reason: "Could not check in",
+      });
 
     expect(response.status).toBe(201);
     expect(response.body.data.status).toBe("absent");
@@ -1017,7 +1023,8 @@ describe("POST /attendance/mark-status — gap-filling for days with no record",
       employeeId: String(sales1._id),
       date: "2026-06-16",
       status: "half_day",
-    });
+        reason: "Could not check in",
+      });
 
     expect(response.status).toBe(201);
     expect(response.body.data.status).toBe("half_day");
@@ -1027,8 +1034,7 @@ describe("POST /attendance/mark-status — gap-filling for days with no record",
     const response = await adminAgent.post("/api/v1/attendance/mark-status").send({
       employeeId: String(sales3._id),
       date: "2026-06-17",
-      status: "absent",
-    });
+      status: "absent", reason: "Could not check in" });
 
     expect(response.status).toBe(201);
   });
@@ -1050,7 +1056,8 @@ describe("POST /attendance/mark-status — gap-filling for days with no record",
       employeeId: String(sales1._id),
       date: "2026-06-18",
       status: "absent",
-    });
+        reason: "Could not check in",
+      });
 
     expect(response.status).toBe(409);
 
@@ -1066,8 +1073,7 @@ describe("POST /attendance/mark-status — gap-filling for days with no record",
     const response = await managerAgent.post("/api/v1/attendance/mark-status").send({
       employeeId: String(sales2._id),
       date: "2026-06-19",
-      status: "half_day",
-    });
+      status: "half_day", reason: "Could not check in" });
 
     expect(response.status).toBe(201);
     expect(response.body.data.adjustedBy).toBe(String(manager1Id));
@@ -1077,8 +1083,7 @@ describe("POST /attendance/mark-status — gap-filling for days with no record",
     const response = await managerAgent.post("/api/v1/attendance/mark-status").send({
       employeeId: String(sales3._id),
       date: "2026-06-20",
-      status: "absent",
-    });
+      status: "absent", reason: "Could not check in" });
 
     expect(response.status).toBe(403);
     expect(await Attendance.countDocuments({ employeeId: sales3._id })).toBe(0);
@@ -1088,8 +1093,7 @@ describe("POST /attendance/mark-status — gap-filling for days with no record",
     const response = await sales1Agent.post("/api/v1/attendance/mark-status").send({
       employeeId: String(sales2._id),
       date: "2026-06-21",
-      status: "absent",
-    });
+      status: "absent", reason: "Could not check in" });
 
     expect(response.status).toBe(403);
   });
@@ -1106,6 +1110,7 @@ describe("POST /attendance/mark-status — gap-filling for days with no record",
         employeeId: String(sales1._id),
         date: "2026-06-22",
         status,
+        reason: "Could not check in",
       });
 
       expect(response.status).toBe(400);
@@ -1117,15 +1122,16 @@ describe("POST /attendance/mark-status — gap-filling for days with no record",
       employeeId: String(sales1._id),
       date: "2026-06-22",
       status: "present",
-    });
+        reason: "Could not check in",
+      });
 
     expect(present.status).toBe(201);
     expect(present.body.data.isManuallyAdjusted).toBe(true);
   });
 
   it("rejects a missing employeeId, date, or status", async () => {
-    expect((await adminAgent.post("/api/v1/attendance/mark-status").send({ date: "2026-06-23", status: "absent" })).status).toBe(400);
-    expect((await adminAgent.post("/api/v1/attendance/mark-status").send({ employeeId: String(sales1._id), status: "absent" })).status).toBe(400);
+    expect((await adminAgent.post("/api/v1/attendance/mark-status").send({ date: "2026-06-23", status: "absent", reason: "Could not check in" })).status).toBe(400);
+    expect((await adminAgent.post("/api/v1/attendance/mark-status").send({ employeeId: String(sales1._id), status: "absent", reason: "Could not check in" })).status).toBe(400);
     expect((await adminAgent.post("/api/v1/attendance/mark-status").send({ employeeId: String(sales1._id), date: "2026-06-23" })).status).toBe(400);
   });
 
@@ -1133,8 +1139,7 @@ describe("POST /attendance/mark-status — gap-filling for days with no record",
     const response = await adminAgent.post("/api/v1/attendance/mark-status").send({
       employeeId: "000000000000000000000001",
       date: "2026-06-24",
-      status: "absent",
-    });
+      status: "absent", reason: "Could not check in" });
 
     expect(response.status).toBe(404);
   });
@@ -1144,6 +1149,7 @@ describe("POST /attendance/mark-status — gap-filling for days with no record",
       employeeId: String(sales1._id),
       date: "2026-06-25",
       status: "half_day",
+      reason: "Could not check in",
       checkIn: { time: "2026-06-25T09:00:00.000Z" },
       checkOut: { time: "2026-06-25T13:00:00.000Z" },
     });
@@ -1260,7 +1266,9 @@ describe("attendance timestamp ordering — checkOut must be after checkIn", () 
         employeeId: String(sales1._id),
         date: "2026-06-20",
         status: "present",
-        checkIn: { time: "2026-06-20T17:00:00.000Z" },
+        checkIn: { time: "2026-06-20T17:00:00.000Z",
+        reason: "Could not check in",
+      },
         checkOut: { time: "2026-06-20T09:00:00.000Z" },
       });
 
@@ -1275,7 +1283,9 @@ describe("attendance timestamp ordering — checkOut must be after checkIn", () 
         employeeId: String(sales1._id),
         date: "2026-06-21",
         status: "present",
-        checkIn: { time: sameMoment },
+        checkIn: { time: sameMoment,
+        reason: "Could not check in",
+      },
         checkOut: { time: sameMoment },
       });
 
@@ -1287,7 +1297,9 @@ describe("attendance timestamp ordering — checkOut must be after checkIn", () 
         employeeId: String(sales1._id),
         date: "2026-06-22",
         status: "present",
-        checkIn: { time: "2026-06-22T17:00:00.000Z" },
+        checkIn: { time: "2026-06-22T17:00:00.000Z",
+        reason: "Could not check in",
+      },
         checkOut: { time: "2026-06-22T09:00:00.000Z" },
       });
 
@@ -1304,7 +1316,9 @@ describe("attendance timestamp ordering — checkOut must be after checkIn", () 
         employeeId: String(sales1._id),
         date: "2026-08-06",
         status: "present",
-        checkIn: { time: OVERNIGHT_IN },
+        checkIn: { time: OVERNIGHT_IN,
+        reason: "Could not check in",
+      },
         checkOut: { time: OVERNIGHT_OUT },
       });
 

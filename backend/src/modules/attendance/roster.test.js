@@ -71,6 +71,7 @@ describe("marking present — the widened MARKABLE_STATUSES", () => {
       employeeId: String(employee._id),
       date: todayKey(),
       status: "present",
+    reason: "Phone battery died on site",
     });
 
     expect(response.status).toBe(201);
@@ -78,20 +79,24 @@ describe("marking present — the widened MARKABLE_STATUSES", () => {
   });
 
   it("still ACCEPTS half_day and absent", async () => {
-    const half = await markStatus({ employeeId: String(employee._id), date: "2026-06-10", status: "half_day" });
+    const half = await markStatus({ employeeId: String(employee._id), date: "2026-06-10", status: "half_day", reason: "No internet at site" });
     expect(half.status).toBe(201);
 
-    const absent = await markStatus({ employeeId: String(employee._id), date: "2026-06-11", status: "absent" });
+    const absent = await markStatus({ employeeId: String(employee._id), date: "2026-06-11", status: "absent", reason: "No internet at site" });
     expect(absent.status).toBe(201);
   });
 
   it("still REFUSES on_leave — the Leave module owns it", async () => {
     // Deliberately NOT widened: hand-setting this would create a leave state
     // with no leave record behind it.
+    // A reason IS supplied, so the rejection can only be about the status —
+    // otherwise this would pass for the wrong reason once §7.4h made the
+    // reason required.
     const response = await markStatus({
       employeeId: String(employee._id),
       date: todayKey(),
       status: "on_leave",
+      reason: "Manager said they were on leave",
     });
 
     expect(response.status).toBe(400);
@@ -106,6 +111,7 @@ describe("a manual mark carries attribution and NO device evidence", () => {
       employeeId: String(employee._id),
       date: todayKey(),
       status: "present",
+    reason: "Phone battery died on site",
     });
 
     expect(response.body.data.isManuallyAdjusted).toBe(true);
@@ -113,7 +119,7 @@ describe("a manual mark carries attribution and NO device evidence", () => {
   });
 
   it("writes NO photo and NO coordinates — the admin's camera and GPS locate the ADMIN", async () => {
-    await markStatus({ employeeId: String(employee._id), date: todayKey(), status: "present" });
+    await markStatus({ employeeId: String(employee._id), date: todayKey(), status: "present", reason: "No internet at site" });
 
     const record = await Attendance.findOne({ employeeId: employee._id }).select(
       "+checkIn.photoPublicId +checkOut.photoPublicId"
@@ -145,7 +151,7 @@ describe("a real check-in can never be overwritten from the roster", () => {
 
     const response = await adminAgent
       .patch(`/api/v1/attendance/${record._id}/roster-status`)
-      .send({ status: "absent" });
+      .send({ status: "absent", reason: "No internet at site" });
 
     expect(response.status).toBe(409);
     expect(response.body.message).toMatch(/real check-in/i);
@@ -164,7 +170,7 @@ describe("a real check-in can never be overwritten from the roster", () => {
       // eslint-disable-next-line no-await-in-loop
       const response = await adminAgent
         .patch(`/api/v1/attendance/${record._id}/roster-status`)
-        .send({ status });
+        .send({ status, reason: "Correcting an earlier mistake" });
 
       expect(response.status).toBe(409);
     }
@@ -178,11 +184,12 @@ describe("a real check-in can never be overwritten from the roster", () => {
       employeeId: String(employee._id),
       date: todayKey(),
       status: "half_day",
+    reason: "Phone battery died on site",
     });
 
     const response = await adminAgent
       .patch(`/api/v1/attendance/${created.body.data._id}/roster-status`)
-      .send({ status: "present" });
+      .send({ status: "present", reason: "No internet at site" });
 
     expect(response.status).toBe(200);
     expect(response.body.data.status).toBe("present");
@@ -194,11 +201,12 @@ describe("a real check-in can never be overwritten from the roster", () => {
       employeeId: String(employee._id),
       date: todayKey(),
       status: "half_day",
+    reason: "Phone battery died on site",
     });
 
     const response = await adminAgent
       .patch(`/api/v1/attendance/${created.body.data._id}/roster-status`)
-      .send({ status: "on_leave" });
+      .send({ status: "on_leave", reason: "Correcting" });
 
     expect(response.status).toBe(400);
   });
@@ -268,7 +276,7 @@ describe("approving leave writes the attendance record", () => {
   });
 
   it("reports a conflict for a previous MANUAL mark too, without overwriting it", async () => {
-    await markStatus({ employeeId: String(employee._id), date: todayKey(), status: "absent" });
+    await markStatus({ employeeId: String(employee._id), date: todayKey(), status: "absent", reason: "No internet at site" });
 
     const leaveId = await applyLeave();
     const response = await adminAgent.patch(`/api/v1/leave/${leaveId}/approve`).send({});
@@ -302,5 +310,98 @@ describe("designation is admin-only", () => {
 
     const unchanged = await User.findById(employee._id);
     expect(unchanged.designation).toBe("");
+  });
+});
+
+/**
+ * A reason on every manual mark (§7.4h, 2026-08-09).
+ *
+ * NEW field, no prior version — but the REJECTIONS below do discriminate: the
+ * same requests succeeded (201/200) before this, so every "no reason" case
+ * here fails against the pre-change code.
+ */
+describe("a manual mark requires a reason", () => {
+  it("REJECTS a mark with no reason at all", async () => {
+    const response = await markStatus({
+      employeeId: String(employee._id),
+      date: todayKey(),
+      status: "present",
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/reason is required/i);
+    expect(await Attendance.countDocuments({ employeeId: employee._id })).toBe(0);
+  });
+
+  it("REJECTS a whitespace-only reason — server-side, not just in the UI", async () => {
+    const response = await markStatus({
+      employeeId: String(employee._id),
+      date: todayKey(),
+      status: "present",
+      reason: "   ",
+    });
+
+    expect(response.status).toBe(400);
+    expect(await Attendance.countDocuments({ employeeId: employee._id })).toBe(0);
+  });
+
+  it("STORES and RETURNS the reason", async () => {
+    const response = await markStatus({
+      employeeId: String(employee._id),
+      date: todayKey(),
+      status: "present",
+      reason: "No internet at the site all morning",
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.adjustmentReason).toBe("No internet at the site all morning");
+
+    const stored = await Attendance.findById(response.body.data._id);
+    expect(stored.adjustmentReason).toBe("No internet at the site all morning");
+    expect(stored.adjustmentHistory).toHaveLength(1);
+    expect(stored.adjustmentHistory[0].status).toBe("present");
+  });
+
+  it("REJECTS a correction with no reason of its own", async () => {
+    const created = await markStatus({
+      employeeId: String(employee._id),
+      date: todayKey(),
+      status: "half_day",
+      reason: "Left early, phone dead",
+    });
+
+    const response = await adminAgent
+      .patch(`/api/v1/attendance/${created.body.data._id}/roster-status`)
+      .send({ status: "present" });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/reason is required/i);
+
+    const unchanged = await Attendance.findById(created.body.data._id);
+    expect(unchanged.status).toBe("half_day");
+  });
+
+  it("a correction captures its OWN reason and KEEPS the previous claim", async () => {
+    // Changing Half Day to Full Day asserts something different about the day.
+    // Both claims are kept: that someone first said half and then said full IS
+    // the audit trail.
+    const created = await markStatus({
+      employeeId: String(employee._id),
+      date: todayKey(),
+      status: "half_day",
+      reason: "Left early, phone dead",
+    });
+
+    await adminAgent
+      .patch(`/api/v1/attendance/${created.body.data._id}/roster-status`)
+      .send({ status: "present", reason: "Timesheet shows they worked the full day" })
+      .expect(200);
+
+    const stored = await Attendance.findById(created.body.data._id);
+    expect(stored.status).toBe("present");
+    expect(stored.adjustmentReason).toBe("Timesheet shows they worked the full day");
+    expect(stored.adjustmentHistory).toHaveLength(2);
+    expect(stored.adjustmentHistory[0].reason).toBe("Left early, phone dead");
+    expect(stored.adjustmentHistory[1].reason).toBe("Timesheet shows they worked the full day");
   });
 });

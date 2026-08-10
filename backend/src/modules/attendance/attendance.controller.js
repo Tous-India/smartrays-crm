@@ -88,7 +88,7 @@ export const adjust = asyncWrapper(async (req, res) => {
 export const correctRosterStatus = asyncWrapper(async (req, res) => {
   const record = await adjustAttendance(
     req.params.id,
-    { status: req.body.status },
+    { status: req.body.status, reason: req.body.reason },
     req.user,
     { manualRecordsOnly: true }
   );

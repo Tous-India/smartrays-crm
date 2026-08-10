@@ -164,6 +164,35 @@ const attendanceSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
+    // Why this record was marked by hand (§7.4h, 2026-08-09). REQUIRED on every
+    // manual-mark path and enforced server-side, not just in the UI.
+    //
+    // This is the only attendance path with no device evidence behind it — no
+    // photo, no coordinates, no heartbeat — so the reason is the entire record
+    // of what actually happened. Without it a manual mark says "someone
+    // decided this" and nothing more, which is not enough to settle a payroll
+    // dispute months later.
+    adjustmentReason: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    // Every claim ever made about this day, not just the latest. Changing Half
+    // Day to Full Day is a NEW claim rather than a correction of the old one,
+    // and both are worth keeping: the fact that someone first said half and
+    // then said full IS the audit trail. `adjustmentReason` above mirrors the
+    // most recent entry so display code needs no lookup.
+    adjustmentHistory: {
+      type: [
+        {
+          status: { type: String, required: true },
+          reason: { type: String, required: true },
+          at: { type: Date, required: true },
+          by: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+        },
+      ],
+      default: [],
+    },
   },
   {
     timestamps: true,
