@@ -3110,3 +3110,30 @@ prompt and fired **zero API calls**, and Edit unlocked exactly one row (4 → 2 
 Frontend 89 files / 800 tests (was 89/795, +5). One earlier test clicked a marked row directly and
 was updated to go through Edit rather than deleted — that is the new behaviour, not a broken
 assertion.
+
+---
+
+### Roster state buttons get pastel tints (2026-08-10)
+
+A locked row's buttons went flat grey, so the two options were indistinguishable at exactly the
+moment they stopped being clickable — the selection was legible only while still editable.
+
+Each option now tints its checked state and **keeps that tint when disabled**; disabled drops the
+border emphasis, not the colour. Rose for Half Day, teal for Full Day, because every adjacent family
+is already spoken for: green/amber/red are the timeline's bands, sky/violet are geofence, blue/grey
+are the live map's current-position and stale markers. Text is the -800 shade on -100, roughly 8:1
+and 9:1 — past WCAG AA.
+
+Verified in a browser against real computed styles rather than by eye:
+
+```
+Half Day  checked=True  disabled=True  bg=rgb(255,228,230)  fg=rgb(159,18,57)
+Full Day  checked=False disabled=True  bg=rgb(250,250,250)  fg=rgb(156,163,175)
+Half Day  checked=False disabled=True  bg=rgb(250,250,250)  fg=rgb(156,163,175)
+Full Day  checked=True  disabled=True  bg=rgb(204,251,241)  fg=rgb(17,94,89)
+```
+
+Frontend 89 files / 801 tests (was 89/800). jsdom loads no stylesheet, so the colours themselves
+cannot be asserted there; the added test pins the `.roster-state-control` hook the CSS keys off, so
+removing the class cannot silently kill the tint. `LeaveSection.test.jsx` appears in full-suite
+failures but passes 36/36 in isolation — the documented parallelism flake, not a regression.

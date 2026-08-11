@@ -192,7 +192,11 @@ function TodayRosterSection({ employees, recordsByEmployeeId, isSaving, onSetSta
               <Radio.Group
                 size="small"
                 optionType="button"
-                buttonStyle="solid"
+                // Not `buttonStyle="solid"`: AntD's solid fill is its own blue,
+                // which said nothing about WHICH state was chosen and went flat
+                // grey once disabled. The checked state is tinted per option in
+                // `index.css` instead — see `.roster-state-control`.
+                className="roster-state-control"
                 value={record ? record.status : undefined}
                 options={ROSTER_STATES}
                 disabled={isSaving || locked}

@@ -2595,6 +2595,27 @@ overflowing horizontally.
 If you add a control here, check the total against ~1024px rather than trusting it to look fine —
 that is exactly the assumption that failed twice.
 
+### Roster state buttons: pastel tints that survive being disabled (2026-08-10)
+
+Once a row locks, AntD renders its radio-button group flat grey — so the two options became
+indistinguishable at exactly the moment you could no longer click them. The selection was only
+legible while it was still editable, which is backwards.
+
+Each option now carries its own pastel tint on the checked state, applied **whether or not the
+control is disabled**. Disabled differs by dropping the border emphasis, not the colour. An
+unchecked disabled option recedes so it doesn't compete with the chosen one.
+
+**Palette: rose (Half Day), teal (Full Day).** Every adjacent family was already spoken for and
+re-blurring them would undo earlier work — green/amber/red are the timeline's bands
+(connected / break / gap), sky and violet are geofence, blue and grey are the live map's
+current-position and stale markers. Text is the -800 shade on a -100 background: roughly 8:1 and
+9:1, comfortably past WCAG AA.
+
+`buttonStyle="solid"` was dropped: AntD's solid fill is its own blue, which said nothing about
+*which* state was chosen. The rules live in `index.css` under `.roster-state-control`, keyed on
+first/last child — two fixed options defined in one place (`ROSTER_STATES`), so nth-child is honest
+here rather than fragile.
+
 ### A marked roster row locks (2026-08-10)
 
 The Half Day / Full Day buttons stayed live after a mark, so a row could be silently re-marked by

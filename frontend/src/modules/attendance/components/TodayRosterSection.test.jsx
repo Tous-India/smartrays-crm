@@ -355,3 +355,16 @@ describe("an already-marked row does not respond to clicks", () => {
     expect(e2Radios[e2Radios.length - 1]).toBeEnabled();
   });
 });
+
+describe("the state buttons carry their tint hook", () => {
+  it("applies the roster-state-control class the CSS keys off", () => {
+    // The pastel tint lives in index.css (rose = Half Day, teal = Full Day) and
+    // is what keeps a DISABLED row's selection legible — AntD renders a
+    // disabled radio group flat grey otherwise. jsdom loads no stylesheet, so
+    // the colours themselves are verified in a browser; this pins the hook, so
+    // removing the class can't silently kill the tint.
+    renderRoster();
+
+    expect(document.querySelector(".roster-state-control")).toBeInTheDocument();
+  });
+});
