@@ -190,7 +190,12 @@ function UserFormModal({ open, mode, initialUser, onCancel, onSubmit, isSubmitti
       // viewport and pushes the PAGE into horizontal scroll. Capping to the
       // viewport is what keeps this form usable on a phone; the sections
       // inside already collapse to one column below `sm`.
-      style={{ maxWidth: "calc(100vw - 24px)" }}
+      // `top: 40` rather than AntD's default 100. This is PLACEMENT, not
+      // density — the form is not 60px shorter, it simply stops leaving 100px
+      // of dead space above a modal that is already taller than a 1024
+      // viewport. It is what takes 1024 from a 13px residual scroll to none;
+      // the density work above is what took it from 56px to 13px.
+      style={{ maxWidth: "calc(100vw - 24px)", top: 40 }}
       // `Row gutter` applies -8px horizontal margins, and inside the padded
       // modal body Chrome counts that as 8px of scrollable overflow — measured
       // as scrollWidth 480 against clientWidth 472 at every width, in both

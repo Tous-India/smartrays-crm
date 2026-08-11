@@ -2661,25 +2661,65 @@ small controls: of ~100 `size="small"` usages, all are tables, buttons, tags, ba
 the only small `Select` is a standalone table filter. Shrinking these inputs would make this the one
 form with different control sizing, to save less height than the margin rule already does.
 
+**Second density pass (2026-08-11) — measured the budget first, because the cheap levers were
+spent.** A full breakdown of the 617px body, at 1280 in edit mode:
+
+| bucket | cost |
+|---|---|
+| control rows | 214px |
+| **label rows** | **182px** (6 rows) |
+| **dividers** | **141px** (3 × 47px) |
+| header + footer | 76px |
+| item margins | 72px |
+| body padding | 8px |
+
+**Per unit the divider was the worst thing on the form:** 47px for a one-line heading against 74px
+for an entire field row — a section title costing two-thirds of a row of real inputs. AntD builds
+it from a 25px text line plus 22px of margin. Tightened to 10/6 margins and a 13px/1.3 heading:
+**141px → 99px**.
+
+**Inline labels were measured and rejected, not guessed at.** They are the larger bucket (182px) and
+the obvious next move, but at 3-per-row the columns are 249px and the labels do not fit beside their
+controls:
+
+| label | text width | control would get |
+|---|---|---|
+| Emergency Contact Phone | 163px | **62px** |
+| Emergency Contact Name | 161px | **64px** |
+| Date of Birth | 78px | 147px |
+| Name | 37px | 188px |
+
+A 62px input is not a usable field, so the row saving would have been paid for in the two fields
+least able to afford it.
+
+**Shared-class decision:** the divider rule lives on the SHARED `.app-compact-form`, not a new
+class, because it provably cannot reach the other user — the Lead modal renders **zero** dividers
+anywhere inside it, counted in the browser. Re-verified after the change anyway: computed
+`Form.Item` margin still 12px, still scroll-free.
+
+**`top: 40` instead of AntD's default 100** is placement, not density, and is called out as such in
+the code. The form is not 60px shorter; it simply stops leaving 100px of dead space above a modal
+already taller than a 1024 viewport. Density took 1024 from +56px to +13px; this took it to zero.
+
 **Result, `.ant-modal-wrap` scrollHeight vs clientHeight:**
 
-| | original | after repack | after density |
-|---|---|---|---|
-| create @1280 | 1030 / 900 (+130) | 951 / 900 (+51) | **900 / 900 (none)** |
-| edit @1280 | 1272 / 900 (+372) | 951 / 900 (+51) | **900 / 900 (none)** |
-| create @1024 | 1030 / 801 (+229) | 951 / 801 (+150) | **857 / 801 (+56)** |
-| edit @1024 | 1272 / 801 (+471) | 951 / 801 (+150) | **857 / 801 (+56)** |
+| | original | after repack | after pass 1 | **after pass 2** |
+|---|---|---|---|---|
+| create @1280 | 1030 / 900 (+130) | 951 / 900 (+51) | 900 / 900 (none) | **900 / 900 (none)** |
+| edit @1280 | 1272 / 900 (+372) | 951 / 900 (+51) | 900 / 900 (none) | **900 / 900 (none)** |
+| create @1024 | 1030 / 801 (+229) | 951 / 801 (+150) | 857 / 801 (+56) | **801 / 801 (none)** |
+| edit @1024 | 1272 / 801 (+471) | 951 / 801 (+150) | 857 / 801 (+56) | **801 / 801 (none)** |
 
-1280 is fully clear in both modes. **1024 still overflows by 56px** — stated rather than rounded to
-"done". Labels were audited in the browser, not by eye: 12 form items, 12 labels, none orphaned and
-none converted to a placeholder.
+**Residual overflow is now 0px at 1280, 1024 and 390, in both modes.** Labels audited in the
+browser: 12 form items, 12 associated labels, none orphaned, none converted to a placeholder. Submit
+verified with the write intercepted at the CDP layer, so nothing reached the database.
 
-**Part two still will not fit, and this pass strengthens that.** Aadhaar, PAN and three bank fields
-add ~2 rows (~200px). The body is 617px after tightening; adding ~200px puts 1280 back into overflow
-by ~150px and 1024 to ~256px. Every cheap lever is now spent — rows repacked, margins halved,
-dividers tightened, padding removed — so the next 200px has nowhere to come from. **Do the tabs
-(Account / Personal / Employment / Documents & Bank) when part two lands, rather than tightening
-twice.**
+**Part two still needs tabs — and the margin is now thinner, not thicker.** The body is 574px and
+1024 clears with **0px to spare**. Aadhaar, PAN and three bank fields add ~2 rows (~150-200px), so
+1024 goes straight back to ~200px of overflow and 1280 to ~100px. What is left to give is small:
+inline labels are ruled out by measurement, control height is the only untouched lever and would
+make this the one form in the app with different control sizing. **Do the tabs (Account / Personal /
+Employment / Documents & Bank) when part two lands.**
 
 **AntD `DatePicker` needs a dayjs value, not the ISO string the API returns.** Without converting on
 load, the pickers render empty for a user who HAS a date — which reads as "not set" and would clear

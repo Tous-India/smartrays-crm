@@ -37,14 +37,37 @@
 }
 
 /*
- * Section dividers inside a compact form. AntD's horizontal `Divider` carries
- * `margin: 24px 0`, which on a three-section form costs ~50px of pure spacing —
- * more than a whole field row. Tightened, with more space above than below so a
- * heading still groups with the fields it introduces rather than floating
- * between the two.
+ * Section dividers inside a compact form.
+ *
+ * MEASURED (2026-08-11), because the cheap levers were spent and the next
+ * change had to target the largest real cost rather than a guess. A full
+ * vertical budget of the User modal's 617px body came out as:
+ *
+ *   label rows    182px (6 rows)      item margins   72px
+ *   control rows  214px               header+footer  76px
+ *   DIVIDERS      141px (3 x 47px)    body padding    8px
+ *
+ * Per unit the divider was the worst thing on the form: 47px for a one-line
+ * heading, against 74px for an entire field row — a section title costing
+ * two-thirds of a row of actual inputs. AntD builds that from a 25px text line
+ * plus 22px of margin.
+ *
+ * Label rows are the larger BUCKET, but inline labels were measured and
+ * rejected: at 3-per-row the columns are 249px, and "Emergency Contact Phone"
+ * renders 163px wide, leaving 62px for its input.
  */
 .app-compact-form .ant-divider-horizontal {
-  margin: 14px 0 8px;
+  margin: 10px 0 6px;
+}
+
+/*
+ * The heading text itself, which is where the other half of a divider's height
+ * lives. Smaller and tighter-leading so it reads as a section label rather than
+ * a paragraph — the weight is what carries it, not the size.
+ */
+.app-compact-form .ant-divider-horizontal.ant-divider-with-text {
+  font-size: 13px;
+  line-height: 1.3;
 }
 
 /*
