@@ -679,6 +679,36 @@ would be worse. This is the same "create where nothing exists, never touch what 
 so admin-only: it is an HR attribute appearing on a payroll-adjacent screen, and people should not be
 able to retitle themselves. A self-update attempt is rejected 403.
 
+### Cloudinary delivery is UNAUTHENTICATED — a live exposure, not a hypothetical
+
+Every asset this app uploads — attendance check-in/check-out photos today, and any identity
+document added later — is stored with Cloudinary's default **public** delivery type. A public
+Cloudinary URL needs no session, no header and no signature: **anyone holding the URL can open the
+image without logging in.**
+
+The consequence is precise and worth stating without softening it: an app-level permission gate
+controls **who is shown the link**, not **who can open the file**. `attendance.view_photos` decides
+whether a manager sees a photo in the UI; it has no bearing on whether that same URL, once it
+leaves the app, still resolves. And URLs do leave — server logs, browser history, the Cloudinary
+media dashboard, a copied link in a chat, a report export.
+
+**This is live today.** Check-in photos are the whole system's evidence that someone was physically
+present, and they sit behind guessable-once-known URLs. It is not a future risk attached to a
+feature nobody has built yet.
+
+**This was a deliberate trade-off, not an oversight.** Reusing the existing public upload flow kept
+`cloudinary.service.js` as one path for every asset type and avoided signed-URL generation on every
+read, which would touch report generation, the photo modal, the cleanup cron and the retention job.
+That was the right call for attendance photos taken minutes ago and deleted after 45 days. It stops
+being the right call the moment an Aadhaar or PAN image is stored, because those never expire and
+identify a person permanently.
+
+**Recorded resolution:** move sensitive assets to Cloudinary `type: authenticated` and generate
+**signed delivery URLs** with a short expiry at read time, leaving ordinary attendance photos on the
+public path if that trade-off is still wanted for them. That is a per-asset-type decision, so the
+upload service needs a delivery-type parameter rather than a global switch. **Any identity-document
+field should ship with this in place from the start rather than inheriting the public default.**
+
 ### Two kinds of 401, and why the client can now tell them apart (2026-08-08)
 
 A 401 from this API means one of two completely different things:

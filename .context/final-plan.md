@@ -4372,6 +4372,15 @@ a checkmark still block on client input and remain flagged as open — do not si
    submits two paid requests for the same employee in the same month (both succeed, 201) and then
    approves both in sequence (first succeeds, second is rejected with a message naming the
    quota). See §7.5 for the full build.
+   **Re-confirmed 2026-08-11, no change:** raised again while scoping the monthly
+   leave-and-attendance report (§7.47), which was initially specced with an accumulated
+   balance — old balance carried forward, +1 credit a month, capped at 12 days. That is a
+   DIFFERENT model from the one resolved here and was withdrawn: the cadence stays one paid
+   day per calendar month with no carry-forward and no balance. `leave.service.js`'s
+   `PAID_LEAVE_MONTHLY_LIMIT = 1` already implements this correctly and needed no change —
+   this entry confirms existing behaviour rather than altering it. Recorded because the
+   accumulated-balance reading surfaced independently months later, so it is worth having the
+   rejection written down rather than re-litigated a third time.
 8. **Credentials vault encryption** — ✅ **Resolved 2026-07-13:** env-based AES-256-GCM, a
    single symmetric key in `CREDENTIALS_ENCRYPTION_KEY`, per-record random IV
    (`Credential.passwordIv`), no automated rotation in v1 — a KMS was deemed unnecessary
