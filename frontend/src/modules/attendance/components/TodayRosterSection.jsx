@@ -249,7 +249,16 @@ function TodayRosterSection({ employees, recordsByEmployeeId, isSaving, onSetSta
         columns={columns}
         dataSource={rows}
         pagination={false}
-        scroll={{ y: 260 }}
+        // No `scroll={{ y }}` (removed 2026-08-10). That prop is what created
+        // the fixed-height body wrapper and its own overflow-y, so the roster
+        // scrolled INSIDE a 260px window while the page scrolled separately —
+        // two scrollbars, and the list of people you are trying to work
+        // through hidden in the smaller one. The table now grows with its
+        // content and the page is the only thing that scrolls.
+        //
+        // Deliberately no `scroll={{ x }}` either: three narrow columns and a
+        // control never need horizontal scroll, and adding one here would
+        // reintroduce an inner scroll container in the other axis.
         locale={{ emptyText: "No active employees" }}
       />
 

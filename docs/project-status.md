@@ -3137,3 +3137,30 @@ Frontend 89 files / 801 tests (was 89/800). jsdom loads no stylesheet, so the co
 cannot be asserted there; the added test pins the `.roster-state-control` hook the CSS keys off, so
 removing the class cannot silently kill the tint. `LeaveSection.test.jsx` appears in full-suite
 failures but passes 36/36 in isolation — the documented parallelism flake, not a regression.
+
+---
+
+### Roster inner scrollbar removed (2026-08-10)
+
+`scroll={{ y: 260 }}` gave the roster Table a fixed-height body wrapper with its own
+`overflow-y: scroll` — two scrollbars on the page, with the roster hidden inside the smaller one.
+Removing the prop is the fix; overriding the overflow in CSS while the prop still set a `max-height`
+would have kept the bound and merely hidden the scrollbar. With it gone AntD emits no
+`.ant-table-body` at all, so there is no residual styling to clear.
+
+**The records table below it never had a vertical bound.** Its only scroll prop is
+`x: "max-content"` on `AttendanceTimeline` — horizontal, and kept. Item 3 of the request assumed an
+inner vertical container there; there isn't one.
+
+Verified in a browser against real computed styles, with a deliberately short viewport to force the
+same condition 30+ rows would (rather than seeding 30 users into the production database):
+
+```
+after : ant-table-body elements = none; inner vertical scrollers = NONE;
+        page scrolls = True; horizontal page overflow = False
+before: ant-table-body { max-height: 260px, overflow-y: scroll }  -> FAIL
+```
+
+The before/after run also caught a stale `vite preview` serving an old bundle, which had made the
+pre-fix check look identical to the post-fix one — worth knowing when doing before/after browser
+checks: kill the listener rather than starting a second server on the same port.

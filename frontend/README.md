@@ -2595,6 +2595,24 @@ overflowing horizontally.
 If you add a control here, check the total against ~1024px rather than trusting it to look fine —
 that is exactly the assumption that failed twice.
 
+### The roster grows; the page scrolls (2026-08-10)
+
+`scroll={{ y: 260 }}` on the roster Table created a fixed-height body wrapper with its own
+`overflow-y: scroll`, so the roster scrolled inside a 260px window while the page scrolled
+separately — two scrollbars, with the list of people you are trying to work through hidden in the
+smaller one.
+
+**Removing the prop is the fix.** Overriding the overflow in CSS while the prop still sets a
+`max-height` would leave the bound in place and just hide the scrollbar. With the prop gone AntD
+emits no `.ant-table-body` wrapper at all, so there is nothing residual to clear.
+
+The **records table below it never had a vertical bound** — its only scroll prop is
+`x: "max-content"` on `AttendanceTimeline`, which is horizontal and stays. Nothing was needed there.
+
+Verified in a browser against computed styles: zero elements with `overflow-y: auto|scroll` that
+overflow, the page itself scrolling, and no horizontal page overflow. Against the pre-fix build the
+same check reports `.ant-table-body { max-height: 260px; overflow-y: scroll }`.
+
 ### Roster state buttons: pastel tints that survive being disabled (2026-08-10)
 
 Once a row locks, AntD renders its radio-button group flat grey — so the two options became
