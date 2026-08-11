@@ -1886,6 +1886,7 @@ service exists and is the single source for anything new.
 |---|---|
 | `daysInMonth(year, month)` | 1-based month, matching the API rather than JS's 0-based `Date`. |
 | `perDayRate(baseSalary, year, month)` | Base salary ÷ **calendar** days. |
+| `leaveYearStart(year, month)` / `leaveYearLabel(...)` | THE leave-year boundary — the one place it is defined. |
 | `computeEmployeeMonth({user, attendance, leaves, year, month})` | One employee's row. Pure — no DB access, which is what makes it directly unit-testable. |
 | `buildMonthlyReport({year, month})` | Fetches and delegates; two queries total, not N+1. |
 
@@ -1922,6 +1923,38 @@ service exists and is the single source for anything new.
 7. **Every active employee gets a row**, including those with no attendance that month — a
    missing row reads as "no data" when the truth is "nobody recorded anything".
 
+**Annual balance columns (§7.49, 2026-08-11).** Three derived figures per row — `oldBalance`,
+`monthCredit`, `balance` — plus a `leaveYear` label. Nothing is stored and no schema changed:
+all three come from year-to-date approved paid leave, so there is no balance field that can drift
+away from the leave records themselves.
+
+**This changes NO approval rule.** `PAID_LEAVE_MONTHLY_LIMIT = 1` in `leave.service.js` is still
+the only thing deciding whether a request can be approved, and §11.7 still holds — one paid day
+per calendar month, no carry-forward, no pot anyone can spend in bulk. Twelve is simply what
+one-a-month adds up to over a year, so "Balance" answers *how much of the annual allowance is
+left*, not *how many days may I take now*.
+
+- `oldBalance` = 12 − approved paid leave taken **before** this month, same leave year
+- `monthCredit` = 1, always — the entitlement accrues whether or not it is spent
+- `balance` = 12 − approved paid leave taken year-to-date, including this month
+
+**The year boundary is defined once**, as `LEAVE_YEAR_START_MONTH` + `leaveYearStart()`. It is
+January today; moving the business to a financial year (April–March) is a one-line change to that
+constant. `leaveYearStart` is written generally rather than special-cased to January precisely so
+that stays true — with a start month of 4, March 2026 belongs to the year that began in April
+2025. `leaveYearLabel` rides along on every row so the UI never re-derives a boundary of its own.
+
+`buildMonthlyReport` now fetches **Leave for the whole leave year to date** (Attendance stays
+month-scoped) — still one query per collection, widened in date range rather than in round trips.
+Every month-scoped figure clips its own dates, so widening the input changed no existing number:
+verified by diffing the live endpoint's response before and after, where all pre-existing fields
+came back byte-identical and only the four new ones appeared.
+
+One latent bug fell out of the widening: `isHalfDay ? 0.5 : count` returned 0.5 for a half-day
+leave lying entirely OUTSIDE the requested range. Invisible while only a single month was ever
+queried; wrong the moment a year-to-date window existed. `paidDaysBetween` now returns 0.5 only
+when the leave actually falls inside the window.
+
 **Gated on `payroll.run`, NOT `payroll.view` — this was a live bug the access test caught,
 returning 200 with the whole company's salaries in the body.** `payroll.view` is the obvious
 choice and is wrong: per §5's matrix it means *own payslip only*, and it sits in the **default
@@ -1931,10 +1964,11 @@ see-everyone tier — already used by `GET /payroll?scope=all`, and documented a
 `permissionRegistry.constants.js` because §5 never gave payroll a `view_all`. No new key was
 invented.
 
-Tests: `src/services/salaryCalculation.test.js` (18) covers the worked case
+Tests: `src/services/salaryCalculation.test.js` (28) covers the worked case
 (30000 / 31 days / 3 absent → 1 paid, 2 unpaid, ₹1,935 deduction, ₹28,065 net), the paid cap,
 half days, both per-date reconciliation cases above, the null-salary cases and
-February/30/31-day divisors.
+February/30/31-day divisors, plus the balance columns: prior-month usage, the January
+reset, half days at 0.5, and a guard that deduction and net payable did not move.
 `payroll.test.js` gained 6, including the gate above and a check that the refused response
 carries no salary figure at all.
 

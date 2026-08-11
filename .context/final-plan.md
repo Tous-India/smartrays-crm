@@ -4808,6 +4808,43 @@ This month / Last month / Custom month, month granularity only.
     overflowed the PAGE at 390 (scrollWidth 557 vs 391, while the other tabs sat at 391/391), and
     a horizontal scroll belongs to the table that is too wide, not the page around it.
 
+## §7.49 — Annual paid-leave balance on the Report tab (2026-08-11)
+
+Three derived columns on §7.47's report — **Old Balance**, **This Month Credit**, **Balance** —
+answering "how much of the annual paid-leave allowance is left".
+
+1. **No approval rule changed, and no schema changed.** `PAID_LEAVE_MONTHLY_LIMIT = 1` stays
+   exactly as it is; §11.7 still holds — one paid day per calendar month, no carry-forward, no
+   accumulated pot anyone can spend in bulk. Twelve is simply what one-a-month adds up to over a
+   year. By month 8 an employee could have used at most 8; if they used 5, 7 remain. This is a
+   *reporting* view of existing leave records, not a new entitlement model — which is why it does
+   not reopen §11.7's 2026-08-11 rejection of an accumulated balance.
+2. **All three are derived from year-to-date approved paid leave.** Nothing is stored, so no
+   balance field can drift away from the leave records it summarises. `oldBalance` = 12 minus what
+   was taken before this month; `monthCredit` = 1 always, because the entitlement accrues whether
+   or not it is spent; `balance` = 12 minus year-to-date including this month.
+3. **The year boundary lives in ONE place**, `LEAVE_YEAR_START_MONTH` + `leaveYearStart()` in the
+   shared service. Calendar year today; a financial year (April–March) is a one-line change to
+   that constant. `leaveYearStart` is written generally rather than special-cased to January so
+   that claim is actually true, and `leaveYearLabel` ships on every row so the UI never re-derives
+   a boundary of its own. The tab's subheading names the year alongside the per-day-rate note.
+4. **Leave is now fetched for the whole leave year to date**; Attendance stays month-scoped. Still
+   one query per collection. Every month-scoped figure clips its own dates, so widening the input
+   moved no existing number — verified by diffing the live endpoint before and after, where all
+   pre-existing fields returned byte-identical and only the four new ones appeared.
+5. **A latent bug fell out of the widening:** `isHalfDay ? 0.5 : count` returned 0.5 for a
+   half-day leave lying entirely outside the requested range. Invisible while only one month was
+   ever queried; wrong the moment a year-to-date window existed.
+6. **The ×2 marker is gated on a non-zero deduction**, through one predicate shared by the cell
+   and the footnote. It had fired on an all-zero row for two reasons: `doubleDeductionDays` comes
+   from Leave while Absent/Unpaid come from Attendance and `markUnapprovedAbsence` writes no
+   attendance record, so the marker pointed at columns that all read zero; and a row with no
+   salary rendered "—×2", a doubling of an unknown figure. The marker explains why a deduction
+   exceeds its day count, so with no deduction there is nothing to explain.
+7. **Eleven columns fit at 1280 — measured**: 979px into a 980px holder, no page overflow, no
+   internal scroll. One pixel of slack, so the table will begin scrolling inside itself on longer
+   content; nothing was narrowed or dropped and the specified column titles were kept verbatim.
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a

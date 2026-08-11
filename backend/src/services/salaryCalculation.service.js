@@ -46,6 +46,55 @@ function monthBounds(year, month) {
 }
 
 /**
+ * The annual paid-leave entitlement (§7.49, 2026-08-11).
+ *
+ * This does NOT change any approval rule. `PAID_LEAVE_MONTHLY_LIMIT = 1` in
+ * `leave.service.js` is still the only thing that decides whether a request can
+ * be approved, and §11.7 still holds: one paid day per calendar month, no
+ * carry-forward, no accumulated balance anyone can spend in bulk. Twelve is
+ * simply what one-a-month adds up to over a year, so "Balance" answers "how
+ * much of the annual allowance is left", not "how many days may I take now".
+ */
+export const ANNUAL_PAID_LEAVE_DAYS = 12;
+
+/**
+ * THE leave-year boundary — the single place it is defined.
+ *
+ * Calendar year today: January–December. Switching the business to a financial
+ * year (April–March) is a one-line change to this constant; nothing else in
+ * this file, the endpoint, or the UI encodes a year boundary, which is the
+ * whole reason it lives here as a named constant rather than as a `new
+ * Date(year, 0, 1)` scattered through the balance maths.
+ */
+export const LEAVE_YEAR_START_MONTH = 1;
+
+/**
+ * The first day of the leave year that the given 1-based month falls inside.
+ *
+ * Written generally rather than special-cased to January so the financial-year
+ * switch above really is one line: with a start month of 4, March 2026 belongs
+ * to the year that began in April 2025.
+ */
+export function leaveYearStart(year, month) {
+  const startYear = month >= LEAVE_YEAR_START_MONTH ? year : year - 1;
+  const start = new Date(startYear, LEAVE_YEAR_START_MONTH - 1, 1);
+  start.setHours(0, 0, 0, 0);
+
+  return start;
+}
+
+/** Human-readable label for the leave year, for the UI's subheading. */
+export function leaveYearLabel(year, month) {
+  const start = leaveYearStart(year, month);
+
+  if (LEAVE_YEAR_START_MONTH === 1) {
+    return String(start.getFullYear());
+  }
+
+  return `${start.getFullYear()}-${String((start.getFullYear() + 1) % 100).padStart(2, "0")}`;
+}
+
+/**
  * Half days count 0.5 EVERYWHERE — present, absent, paid, unpaid and therefore
  * deduction. A `half_day` record is half a day present and half a day absent,
  * so it contributes to both columns rather than being rounded into one.
@@ -117,14 +166,33 @@ export function computeEmployeeMonth({ user, attendance, leaves, year, month }) 
   // Approved PAID leave, capped at the one day a month §11.7 allows. The cap is
   // applied here as well as at approval time: a report that trusted the data to
   // already obey the rule would silently misreport if a second day ever got in.
+  const { start: monthStart, end: monthEnd } = monthBounds(year, month);
+
   const approvedPaidDays = leaves
-    .filter((leave) => leave.status === "approved" && leave.type === "paid")
-    .reduce(
-      (total, leave) => total + (leave.isHalfDay ? HALF : leaveDateKeys(leave, year, month).length),
-      0
-    );
+    .filter(isApprovedPaidLeave)
+    .reduce((total, leave) => total + paidDaysBetween(leave, monthStart, monthEnd), 0);
 
   const paidLeave = Math.min(1, approvedPaidDays);
+
+  // §7.49 — the annual balance. Derived entirely from year-to-date approved
+  // paid leave; nothing is stored, so there is no balance field to drift out of
+  // sync with the leave records themselves.
+  //
+  // `leaves` may span the whole leave year (that is what `buildMonthlyReport`
+  // now fetches). Everything above is month-scoped by its own date clipping, so
+  // widening the input changed no existing figure.
+  const yearStart = leaveYearStart(year, month);
+
+  const paidLeaveBeforeThisMonth = leaves
+    .filter(isApprovedPaidLeave)
+    .reduce((total, leave) => total + paidDaysBetween(leave, yearStart, monthStart), 0);
+
+  const oldBalance = ANNUAL_PAID_LEAVE_DAYS - paidLeaveBeforeThisMonth;
+  // Always 1: the entitlement accrues at one day per month whether or not it is
+  // used. It is a column rather than a constant in the UI so the arithmetic on
+  // the row reads as arithmetic.
+  const monthCredit = 1;
+  const balance = ANNUAL_PAID_LEAVE_DAYS - (paidLeaveBeforeThisMonth + paidLeave);
 
   // Everything beyond the paid allowance is unpaid.
   const unpaidLeave = Math.max(0, absentDays - paidLeave);
@@ -153,6 +221,10 @@ export function computeEmployeeMonth({ user, attendance, leaves, year, month }) 
     name: user.name,
     baseSalary: hasSalary ? user.baseSalary : null,
     calendarDays,
+    leaveYear: leaveYearLabel(year, month),
+    oldBalance,
+    monthCredit,
+    balance,
     presentDays,
     absentDays,
     paidLeave,
@@ -164,30 +236,59 @@ export function computeEmployeeMonth({ user, attendance, leaves, year, month }) 
 }
 
 /**
- * The individual dates a leave covers INSIDE the requested month.
+ * The individual dates a leave covers inside `[from, to)`.
  *
  * Returns keys rather than a count so a date can be reconciled against an
  * Attendance record for the same day — a count alone cannot tell you whether
  * the two lists are describing the same day or two different ones.
  */
-function leaveDateKeys(leave, year, month) {
-  const { start, end } = monthBounds(year, month);
-  const from = new Date(Math.max(new Date(leave.startDate).getTime(), start.getTime()));
-  const to = new Date(Math.min(new Date(leave.endDate).getTime(), end.getTime() - 1));
+function dateKeysBetween(leave, from, to) {
+  const start = new Date(Math.max(new Date(leave.startDate).getTime(), from.getTime()));
+  const end = new Date(Math.min(new Date(leave.endDate).getTime(), to.getTime() - 1));
 
-  if (to < from) {
+  if (end < start) {
     return [];
   }
 
   const keys = [];
-  const cursor = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
 
-  while (cursor <= to) {
+  while (cursor <= end) {
     keys.push(dateKey(cursor));
     cursor.setDate(cursor.getDate() + 1);
   }
 
   return keys;
+}
+
+/** The dates a leave covers inside the requested month. */
+function leaveDateKeys(leave, year, month) {
+  const { start, end } = monthBounds(year, month);
+
+  return dateKeysBetween(leave, start, end);
+}
+
+/**
+ * How many paid days a leave contributes within `[from, to)`.
+ *
+ * A half-day leave is 0.5 only if it actually falls inside the window — the
+ * earlier `isHalfDay ? 0.5 : count` shorthand returned 0.5 for a half day
+ * entirely OUTSIDE the range, which the month-scoped call never exposed but
+ * the year-to-date call immediately would.
+ */
+function paidDaysBetween(leave, from, to) {
+  const keys = dateKeysBetween(leave, from, to);
+
+  if (leave.isHalfDay) {
+    return keys.length > 0 ? HALF : 0;
+  }
+
+  return keys.length;
+}
+
+/** Approved paid leave only — pending and rejected requests are not spent. */
+function isApprovedPaidLeave(leave) {
+  return leave.status === "approved" && leave.type === "paid";
 }
 
 /**
@@ -204,9 +305,19 @@ export async function buildMonthlyReport({ year, month }) {
 
   const employeeIds = employees.map((employee) => employee._id);
 
+  // Attendance stays month-scoped; LEAVE is fetched for the whole leave year to
+  // date (§7.49), because the balance columns need what was spent in the months
+  // BEFORE this one. Still one query per collection, not one per employee —
+  // the widening is in the date range, not in the number of round trips.
+  const yearStart = leaveYearStart(year, month);
+
   const [attendance, leaves] = await Promise.all([
     Attendance.find({ employeeId: { $in: employeeIds }, date: { $gte: start, $lt: end } }),
-    Leave.find({ employeeId: { $in: employeeIds }, startDate: { $lt: end }, endDate: { $gte: start } }),
+    Leave.find({
+      employeeId: { $in: employeeIds },
+      startDate: { $lt: end },
+      endDate: { $gte: yearStart },
+    }),
   ]);
 
   const attendanceByEmployee = new Map();

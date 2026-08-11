@@ -42,6 +42,30 @@ function days(value) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
+/**
+ * Whether a row shows the ×2 marker at all.
+ *
+ * The marker explains why a DEDUCTION is bigger than its day count implies, so
+ * it is keyed on there being a non-zero deduction to explain — not merely on
+ * the underlying leave record existing. It fired on a zero row for two separate
+ * reasons, and both mattered:
+ *
+ *  1. `doubleDeductionDays` comes from the LEAVE collection while Absent and
+ *     Unpaid Leave come from ATTENDANCE, and `markUnapprovedAbsence` writes no
+ *     attendance record at all. The leave row said "unapproved absence" while
+ *     every visible column on the same line said zero, so the marker pointed at
+ *     nothing. (The calculator now reconciles the two per date, so the absence
+ *     shows up in its own columns too.)
+ *  2. An employee with no base salary has a null deduction rendered as "—", and
+ *     the marker sat beside it — "—×2" claims a doubling of an unknown figure.
+ *
+ * One predicate, used by both the cell and the footnote, so the two can never
+ * disagree about whether a ×2 is on screen.
+ */
+export function showsDoubleMarker(row) {
+  return row.deduction > 0 && row.doubleDeductionDays > 0;
+}
+
 export function resolveMonth(filter, customMonth) {
   if (filter === "previous") {
     return dayjs().subtract(1, "month");
@@ -103,12 +127,8 @@ function MonthlyReportSection() {
     };
   }, [year, monthNumber]);
 
-  // Keyed on what is actually VISIBLE, not on the underlying data: a row with
-  // no salary renders "—" and suppresses its marker, so counting it here left
-  // a footnote explaining a ×2 that appeared nowhere on screen.
-  const hasDoubleDeduction = rows.some(
-    (row) => row.deduction != null && row.doubleDeductionDays > 0
-  );
+  const hasDoubleDeduction = rows.some(showsDoubleMarker);
+  const leaveYear = rows[0]?.leaveYear;
 
   const columns = [
     {
@@ -134,6 +154,29 @@ function MonthlyReportSection() {
         ) : (
           money(value)
         ),
+    },
+    // §7.49 — the annual paid-leave balance, in three parts so the arithmetic
+    // on the row reads as arithmetic: what was left coming in, what this month
+    // adds, and what is left going out. All three are DERIVED from year-to-date
+    // approved paid leave; nothing is stored, so there is no balance field that
+    // can drift away from the leave records themselves.
+    //
+    // This is not a spendable pot. §11.7's approval rule is untouched — still
+    // at most one paid day per calendar month, no carry-forward. Twelve is
+    // simply what one-a-month adds up to over a year.
+    {
+      title: "Old Balance",
+      dataIndex: "oldBalance",
+      key: "oldBalance",
+      align: "right",
+      render: days,
+    },
+    {
+      title: "This Month Credit",
+      dataIndex: "monthCredit",
+      key: "monthCredit",
+      align: "right",
+      render: days,
     },
     {
       title: "Present",
@@ -172,14 +215,12 @@ function MonthlyReportSection() {
       // silently disagrees with the row beside it reads as a bug. The marker
       // says which rows are doubled and why, rather than leaving the reader to
       // work out the arithmetic.
-      //
-      // The marker is suppressed when there is no deduction to explain: an
-      // employee with no base salary renders "—", and "—×2" claimed a doubling
-      // of an unknown figure. Seen in the browser on real data.
+      // See `showsDoubleMarker` for why the marker is gated on the deduction
+      // rather than on the leave record alone.
       render: (value, row) => (
         <span className="whitespace-nowrap">
           {money(value)}
-          {value != null && row.doubleDeductionDays > 0 && (
+          {showsDoubleMarker(row) && (
             <Tooltip
               title={`Includes ${days(row.doubleDeductionDays)} unapproved absence day(s), deducted at 2× (§7.5)`}
             >
@@ -199,17 +240,33 @@ function MonthlyReportSection() {
       align: "right",
       render: (value) => <span className="font-semibold">{money(value)}</span>,
     },
+    {
+      // Last, deliberately: it closes the row the way Old Balance opens it.
+      title: "Balance",
+      dataIndex: "balance",
+      key: "balance",
+      align: "right",
+      render: days,
+    },
   ];
 
   return (
     <div className="flex flex-col gap-4">
       <Card size="small">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <div className="min-w-0">
+          {/* `flex-1 min-w-0` lets the (now longer) subheading wrap INSIDE this
+              block rather than widening it until the filter control is pushed
+              onto a row of its own. min-w-0 is what actually permits a flex
+              child to shrink below its content width. */}
+          <div className="min-w-0 flex-1">
             <div className="font-semibold">Monthly Report</div>
             <Text type="secondary" className="text-xs">
               {month.format("MMMM YYYY")} · per-day rate is the base salary ÷ {month.daysInMonth()}{" "}
               calendar days
+              {/* Which year the balance is measured against — the backend
+                  reports it rather than the UI re-deriving a boundary that is
+                  defined once in the shared service. */}
+              {leaveYear && ` · balance is out of 12 for the ${leaveYear} leave year (Jan–Dec)`}
             </Text>
           </div>
 

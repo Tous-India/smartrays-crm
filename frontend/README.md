@@ -2798,6 +2798,26 @@ by the backend's shared `salaryCalculation.service.js` — the same service Payr
 Adding "just one" division in this file is what would eventually make the report and a payslip
 disagree, so the component's entire job is rendering.
 
+**Eleven columns, in a fixed order** (§7.49, 2026-08-11): Employee · Base Salary · Old Balance ·
+This Month Credit · Present · Absent · Paid Leave · Unpaid Leave · Deduction · Net Payable ·
+Balance. The balance opens and closes the row, with the month's activity in between.
+
+**They fit at 1280 — measured, not assumed:** 979px of columns into a 980px holder, no page
+overflow and no internal scroll. That is one pixel of slack, so a longer name or a larger salary
+will start the table scrolling inside itself; `scroll={{ x }}` already handles that gracefully and
+the page still never scrolls sideways. Nothing was narrowed or dropped, and the header stayed the
+specified "This Month Credit" rather than being abbreviated to fit.
+
+**The balance columns render even when the salary does not.** They are leave, not money — an
+unrecorded `baseSalary` says nothing about how much leave someone has left, so those cells show
+figures beside a "—" deduction rather than going blank with it.
+
+**The subheading names the leave year** alongside the per-day-rate note: "balance is out of 12 for
+the 2026 leave year (Jan–Dec)". The label comes from the backend (`leaveYear` on every row) rather
+than the UI re-deriving a boundary that is defined once in the shared service. It made the
+subheading long enough to push the filter control onto its own row, fixed with `flex-1 min-w-0` on
+the heading block so the text wraps inside its own column instead of widening it.
+
 **Separate from the Attendance tab's "Download Report" button, deliberately.** That exports raw
 attendance records for a date range; this summarises a month into salary figures. One control
 with two unrelated meanings would be worse than two controls.
@@ -2812,10 +2832,23 @@ Deduction column disagree with the Absent column beside it — ₹1,935 against 
 The row carries a `×2` marker with a tooltip naming the count, and the table grows a footnote
 only when at least one row is doubled. A silent doubling reads as a bug rather than a policy.
 
-**Both the marker and the footnote are keyed on a deduction EXISTING, not on the data.** A row
-with no base salary renders `—`, and the first version put the marker beside it — `—×2`, claiming
-a doubling of an unknown figure — while the footnote appeared to explain a marker that was
-nowhere on screen. Seen in the browser on real data, where every employee has an unset salary.
+**Both the marker and the footnote are keyed on a NON-ZERO DEDUCTION, via one shared
+`showsDoubleMarker` predicate** so the cell and the footnote can never disagree about whether a
+×2 is on screen. The marker exists to explain why a deduction exceeds its day count, so with no
+deduction there is nothing for it to explain.
+
+It fired on an all-zero row for two separate reasons, and both mattered:
+
+1. `doubleDeductionDays` comes from the **Leave** collection while Absent and Unpaid Leave come
+   from **Attendance**, and `markUnapprovedAbsence` writes no attendance record at all. The leave
+   row said "unapproved absence" while every visible column on the same line read zero, so the
+   marker pointed at nothing. The calculator now reconciles the two per date, so the absence shows
+   up in its own columns too.
+2. An employee with no base salary has a null deduction rendered as `—`, and the marker sat beside
+   it: `—×2` claims a doubling of an unknown figure.
+
+Both are fixed, and the condition is now `deduction > 0` rather than merely "not null", so a zero
+deduction cannot carry a marker either.
 
 **"Base Salary" and "Net Payable" stay distinct headers.** One is the stored monthly figure, the
 other is what this month works out to. A single "Salary" column would blur which one you are
@@ -2846,10 +2879,11 @@ branch and additionally checks `can(user, "payroll", "run")`; the guarantee is t
 403. `payroll.view` would have been the wrong key — it means "own payslip only" and every
 employee holds it by default.
 
-Tests: `MonthlyReportSection.test.jsx` (11) — the worked case, distinct headers, the em dash
-instead of ₹0, half days at 0.5, the ×2 marker present, absent, and suppressed on a row with no
-deduction, the three filters, and an error surfaced rather than an empty table that would read as
-"nobody worked".
+Tests: `MonthlyReportSection.test.jsx` (18) — the worked case, the exact eleven-column order,
+distinct headers, the em dash instead of ₹0, half days at 0.5 in both the day and balance columns,
+the leave-year subheading, the ×2 marker present, absent, suppressed on a null deduction and
+suppressed on a zero one, the reported zero row reproduced verbatim, the three filters, and an
+error surfaced rather than an empty table that would read as "nobody worked".
 `AttendancePage.test.jsx` gained 2 for the tab itself.
 
 ### The 401 interceptor: "wrong password" is not "session expired" (2026-08-08)

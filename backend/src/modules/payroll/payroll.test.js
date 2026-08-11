@@ -532,6 +532,11 @@ describe("GET /payroll/monthly-report — access and shape", () => {
       "name",
       "baseSalary",
       "calendarDays",
+      // §7.49 — the annual balance columns.
+      "leaveYear",
+      "oldBalance",
+      "monthCredit",
+      "balance",
       "presentDays",
       "absentDays",
       "paidLeave",

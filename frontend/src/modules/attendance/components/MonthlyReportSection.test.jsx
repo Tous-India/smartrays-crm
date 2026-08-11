@@ -25,6 +25,10 @@ function row(overrides = {}) {
     name: "Asha Verma",
     baseSalary: 30000,
     calendarDays: 31,
+    leaveYear: "2026",
+    oldBalance: 10,
+    monthCredit: 1,
+    balance: 9,
     presentDays: 28,
     absentDays: 3,
     paidLeave: 1,
@@ -97,6 +101,75 @@ describe("the report table", () => {
   });
 });
 
+describe("the annual balance columns (§7.49)", () => {
+  it("renders Old Balance, This Month Credit and Balance in the specified order", async () => {
+    render(<MonthlyReportSection />);
+
+    const headers = (await screen.findAllByRole("columnheader")).map((h) => h.textContent.trim());
+
+    expect(headers).toEqual([
+      "Employee",
+      "Base Salary",
+      "Old Balance",
+      "This Month Credit",
+      "Present",
+      "Absent",
+      "Paid Leave",
+      "Unpaid Leave",
+      "Deduction",
+      "Net Payable",
+      "Balance",
+    ]);
+  });
+
+  it("shows the balance figures the backend computed, without re-deriving them", async () => {
+    respondWith([row({ oldBalance: 9, monthCredit: 1, balance: 8 })]);
+
+    render(<MonthlyReportSection />);
+
+    const cells = (await screen.findByRole("row", { name: /Asha Verma/ })).querySelectorAll("td");
+    const text = [...cells].map((c) => c.textContent.trim());
+
+    // Positions 2, 3 and 10 in the column order above.
+    expect(text[2]).toBe("9");
+    expect(text[3]).toBe("1");
+    expect(text[10]).toBe("8");
+  });
+
+  it("shows halves as 0.5 in the balance columns too", async () => {
+    respondWith([row({ oldBalance: 11.5, monthCredit: 1, balance: 11, paidLeave: 0.5 })]);
+
+    render(<MonthlyReportSection />);
+
+    const cells = (await screen.findByRole("row", { name: /Asha Verma/ })).querySelectorAll("td");
+
+    expect(cells[2].textContent.trim()).toBe("11.5");
+  });
+
+  it("names the leave year the balance is measured against", async () => {
+    render(<MonthlyReportSection />);
+
+    expect(
+      await screen.findByText(/balance is out of 12 for the 2026 leave year \(Jan–Dec\)/)
+    ).toBeInTheDocument();
+  });
+
+  it("still shows a balance for an employee with no base salary", async () => {
+    // The balance is leave, not money — an unrecorded salary says nothing about
+    // how much leave someone has left.
+    respondWith([
+      row({ baseSalary: null, deduction: null, netPayable: null, oldBalance: 12, balance: 12 }),
+    ]);
+
+    render(<MonthlyReportSection />);
+
+    const cells = (await screen.findByRole("row", { name: /Asha Verma/ })).querySelectorAll("td");
+
+    expect(cells[2].textContent.trim()).toBe("12");
+    expect(cells[10].textContent.trim()).toBe("12");
+  });
+});
+
 describe("a doubled deduction says so", () => {
   it("marks the row and explains why the figure exceeds the day count", async () => {
     respondWith([row({ unpaidLeave: 1, doubleDeductionDays: 1, deduction: 1935 })]);
@@ -108,6 +181,42 @@ describe("a doubled deduction says so", () => {
     // bug rather than a policy.
     expect(await screen.findByText("×2")).toBeInTheDocument();
     expect(screen.getByText(/deducted at twice the per-day rate/i)).toBeInTheDocument();
+  });
+
+  it("does NOT render on the zero row from the screenshot — 0 absent, 0 unpaid, no salary", async () => {
+    // Testing User 2, exactly as reported: an unapproved-absence LEAVE row with
+    // no matching Attendance record, so every visible column read zero, and no
+    // base salary, so the deduction rendered "—". The marker pointed at nothing.
+    respondWith([
+      row({
+        name: "Testing User 2",
+        baseSalary: null,
+        presentDays: 4,
+        absentDays: 0,
+        paidLeave: 0,
+        unpaidLeave: 0,
+        doubleDeductionDays: 1,
+        deduction: null,
+        netPayable: null,
+      }),
+    ]);
+
+    render(<MonthlyReportSection />);
+
+    const cells = await screen.findByRole("row", { name: /Testing User 2/ });
+
+    expect(within(cells).queryByText("×2")).not.toBeInTheDocument();
+    expect(screen.queryByText(/deducted at twice the per-day rate/i)).not.toBeInTheDocument();
+  });
+
+  it("does NOT render when the deduction is zero, however many doubled days are claimed", async () => {
+    respondWith([row({ unpaidLeave: 0, doubleDeductionDays: 1, deduction: 0, netPayable: 30000 })]);
+
+    render(<MonthlyReportSection />);
+
+    const cells = await screen.findByRole("row", { name: /Asha Verma/ });
+
+    expect(within(cells).queryByText("×2")).not.toBeInTheDocument();
   });
 
   it("suppresses the marker when there is no deduction figure to explain", async () => {

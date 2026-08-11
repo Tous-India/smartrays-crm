@@ -3344,3 +3344,59 @@ moved 10 → 6 between two runs of the same code, which is what makes them flake
 the listener on port 5000 assuming it was the smartrays API. This project runs on **5050**; port
 5000 was another local project's server ("The Transaction Point API"). Nothing was deleted and no
 data was touched, but that dev server needs restarting by hand.
+
+### Annual paid-leave balance columns (§7.49, 2026-08-11)
+
+Three derived columns on the Report tab — Old Balance, This Month Credit, Balance — in the order
+Employee · Base Salary · Old Balance · This Month Credit · Present · Absent · Paid Leave ·
+Unpaid Leave · Deduction · Net Payable · Balance.
+
+**No approval rule and no schema changed.** `PAID_LEAVE_MONTHLY_LIMIT = 1` is untouched and
+§11.7 still holds. All three figures are derived from year-to-date approved paid leave, so there
+is no stored balance that can drift away from the leave records it summarises. "Balance" answers
+how much of the annual allowance is left, not how many days may be taken now.
+
+**The year boundary is one constant.** `LEAVE_YEAR_START_MONTH` + `leaveYearStart()` in the shared
+service; calendar year today, and a financial year is a one-line change. `leaveYearStart` is
+written generally rather than special-cased to January so that is actually true. The label rides
+on every row, so the UI never re-derives a boundary of its own — it appears in the tab's
+subheading beside the per-day-rate note.
+
+**Existing figures proven unchanged against live data, not just against tests.** Leave is now
+fetched for the whole leave year (Attendance stays month-scoped), so the widening was worth
+checking properly: the live endpoint was called before and after the change and the responses
+diffed. Every pre-existing field — present, absent, paid, unpaid, doubled days, deduction, net
+payable — came back byte-identical; only `leaveYear`, `oldBalance`, `monthCredit` and `balance`
+appeared. Worth doing, because an unrelated figure did move between two browser runs earlier the
+same afternoon (an employee's Absent went 0.5 → 2.5) and the diff is what showed that was the
+production database changing under us, not the code.
+
+**A latent bug fell out of the widening:** `isHalfDay ? 0.5 : count` returned 0.5 for a half-day
+leave lying entirely outside the requested range — invisible while only one month was ever
+queried, wrong the moment a year-to-date window existed.
+
+**The ×2 marker had two independent causes, not one.** `doubleDeductionDays` comes from the Leave
+collection while Absent and Unpaid Leave come from Attendance, and `markUnapprovedAbsence` writes
+no attendance record — so the leave row said "unapproved absence" while every visible column read
+zero and the marker pointed at nothing. Separately, a row with no base salary rendered "—×2",
+claiming a doubling of an unknown figure. The first was fixed in 0aba084 by reconciling attendance
+and leave per date; the marker is now gated on `deduction > 0` through a single `showsDoubleMarker`
+predicate shared by the cell and the footnote, so a zero deduction cannot carry a marker either
+and the two can never disagree about whether a ×2 is on screen.
+
+**Eleven columns fit at 1280 — measured, so nothing was narrowed or dropped.** 979px of columns
+into a 980px holder: no page overflow, no internal scroll, and the specified "This Month Credit"
+header kept verbatim rather than abbreviated to fit. That is one pixel of slack, so longer names
+or larger salaries will start the table scrolling inside itself — `scroll={{ x }}` handles that and
+the page still never scrolls sideways. Also verified clean at 1024 and 390. The longer subheading
+initially pushed the filter control onto its own row; `flex-1 min-w-0` on the heading block wraps
+the text inside its own column instead.
+
+Every new test was demonstrated failing first: 9 of 10 new backend tests fail against the
+committed service (the tenth is the deduction/net-payable regression guard, which must pass both
+before and after), and 6 of 7 new frontend tests fail against the committed component. The seventh
+— the reported zero row reproduced verbatim — already passed, because that exact shape was fixed
+in 0aba084; the newly discriminating case is a zero deduction rather than a null one.
+
+Backend **31 files / 931 tests** (was 31/921, +10 balance tests). Frontend **90 / 821** (was 90/814). The four failing
+frontend files are the known flakes.

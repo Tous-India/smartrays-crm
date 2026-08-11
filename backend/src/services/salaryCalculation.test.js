@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { computeEmployeeMonth, daysInMonth, perDayRate } from "./salaryCalculation.service.js";
+import {
+  ANNUAL_PAID_LEAVE_DAYS,
+  computeEmployeeMonth,
+  daysInMonth,
+  leaveYearStart,
+  perDayRate,
+} from "./salaryCalculation.service.js";
 
 /**
  * The shared salary calculator (§7.47, 2026-08-11).
@@ -258,6 +264,167 @@ describe("an unset baseSalary is NOT zero", () => {
     expect(result.netPayable).toBeNull();
     // Attendance is still counted — only the money is unknown.
     expect(result.absentDays).toBe(2);
+  });
+});
+
+describe("the annual balance columns (§7.49)", () => {
+  const august = { year: 2026, month: 8 };
+
+  /** An approved paid leave on a single date. */
+  const paidOn = (month, day, overrides = {}) =>
+    leave({
+      startDate: new Date(2026, month - 1, day),
+      endDate: new Date(2026, month - 1, day),
+      ...overrides,
+    });
+
+  it("shows a full 12 for someone who has taken no paid leave this year", () => {
+    const result = computeEmployeeMonth({
+      user: user(),
+      attendance: [],
+      leaves: [],
+      ...august,
+    });
+
+    expect(result.oldBalance).toBe(12);
+    expect(result.monthCredit).toBe(1);
+    expect(result.balance).toBe(12);
+  });
+
+  it("subtracts prior months from Old Balance and this month from Balance", () => {
+    // Three paid days used earlier in 2026 (Feb, April, June — one a month, as
+    // the approval rule enforces), and a fourth this month.
+    const result = computeEmployeeMonth({
+      user: user(),
+      attendance: [record("on_leave", 10)],
+      leaves: [paidOn(2, 3), paidOn(4, 9), paidOn(6, 21), paidOn(8, 10)],
+      ...august,
+    });
+
+    expect(result.oldBalance).toBe(9);
+    expect(result.paidLeave).toBe(1);
+    expect(result.balance).toBe(8);
+  });
+
+  it("leaves Balance equal to Old Balance when this month's day goes unused", () => {
+    const result = computeEmployeeMonth({
+      user: user(),
+      attendance: [],
+      leaves: [paidOn(2, 3), paidOn(4, 9)],
+      ...august,
+    });
+
+    // The credit accrues whether or not it is spent, so the column still reads
+    // 1 — but an unused day does not move the balance.
+    expect(result.oldBalance).toBe(10);
+    expect(result.monthCredit).toBe(1);
+    expect(result.balance).toBe(10);
+  });
+
+  it("counts a half-day paid leave as 0.5 against the balance", () => {
+    const result = computeEmployeeMonth({
+      user: user(),
+      attendance: [record("half_day", 10)],
+      leaves: [paidOn(3, 4, { isHalfDay: true }), paidOn(8, 10, { isHalfDay: true })],
+      ...august,
+    });
+
+    expect(result.oldBalance).toBe(11.5);
+    expect(result.paidLeave).toBe(0.5);
+    expect(result.balance).toBe(11);
+  });
+
+  it("does not count a half-day leave that falls outside the window at all", () => {
+    // `isHalfDay ? 0.5 : count` returned 0.5 for a leave entirely outside the
+    // range — invisible while only one month was ever queried, wrong the moment
+    // a year-to-date window existed.
+    const result = computeEmployeeMonth({
+      user: user(),
+      attendance: [],
+      leaves: [
+        {
+          ...paidOn(1, 5, { isHalfDay: true }),
+          startDate: new Date(2025, 10, 5),
+          endDate: new Date(2025, 10, 5),
+        },
+      ],
+      ...august,
+    });
+
+    expect(result.oldBalance).toBe(12);
+    expect(result.balance).toBe(12);
+  });
+
+  it("does not count pending or rejected paid requests against the balance", () => {
+    const result = computeEmployeeMonth({
+      user: user(),
+      attendance: [],
+      leaves: [paidOn(3, 4, { status: "pending" }), paidOn(5, 6, { status: "rejected" })],
+      ...august,
+    });
+
+    expect(result.oldBalance).toBe(12);
+    expect(result.balance).toBe(12);
+  });
+
+  it("does not count UNPAID or unapproved-absence leave against the paid balance", () => {
+    const result = computeEmployeeMonth({
+      user: user(),
+      attendance: [],
+      leaves: [
+        paidOn(3, 4, { type: "unpaid" }),
+        paidOn(5, 6, { type: "unapproved_absence", isDoubleDeduction: true }),
+      ],
+      ...august,
+    });
+
+    expect(result.balance).toBe(12);
+  });
+
+  it("RESETS in January — last year's usage does not follow the employee in", () => {
+    const result = computeEmployeeMonth({
+      user: user(),
+      attendance: [],
+      leaves: [
+        // Five days spent across 2025, all before the boundary.
+        ...[3, 5, 7, 9, 11].map((month) => ({
+          ...leave(),
+          startDate: new Date(2025, month - 1, 4),
+          endDate: new Date(2025, month - 1, 4),
+        })),
+      ],
+      year: 2026,
+      month: 1,
+    });
+
+    expect(result.oldBalance).toBe(12);
+    expect(result.balance).toBe(12);
+  });
+
+  it("puts the year boundary in ONE place, so a financial year is one change", () => {
+    // The boundary is a named constant + `leaveYearStart`, not a `new Date(y, 0,
+    // 1)` repeated through the balance maths.
+    expect(ANNUAL_PAID_LEAVE_DAYS).toBe(12);
+    expect(leaveYearStart(2026, 8).getFullYear()).toBe(2026);
+    expect(leaveYearStart(2026, 8).getMonth()).toBe(0);
+    expect(leaveYearStart(2026, 1).getMonth()).toBe(0);
+    // Reported on every row, so the UI never has to re-derive it.
+    const result = computeEmployeeMonth({ user: user(), attendance: [], leaves: [], ...august });
+    expect(result.leaveYear).toBe("2026");
+  });
+
+  it("leaves deduction and net payable untouched", () => {
+    // The balance columns are derived reporting only — they must not move a
+    // single rupee of the figures the previous task locked in.
+    const result = computeEmployeeMonth({
+      user: user(),
+      attendance: [record("absent", 1), record("absent", 2), record("absent", 3)],
+      leaves: [paidOn(8, 10)],
+      ...august,
+    });
+
+    expect(result.deduction).toBe(1935);
+    expect(result.netPayable).toBe(28065);
   });
 });
 
