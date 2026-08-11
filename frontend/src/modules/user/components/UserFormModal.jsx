@@ -195,7 +195,11 @@ function UserFormModal({ open, mode, initialUser, onCancel, onSubmit, isSubmitti
             <Input />
           </Form.Item>
 
-          <Form.Item label="Salary" name="baseSalary">
+          {/* "Base Salary", matching the edit mode above and the model field
+              itself. It was "Salary" here and "Base Salary" there — one field
+              reading as two concepts, and the Report tab adds a derived
+              "Salary" column that this must not be confused with. */}
+          <Form.Item label="Base Salary" name="baseSalary">
             <InputNumber min={0} style={{ width: "100%" }} />
           </Form.Item>
         </Form>

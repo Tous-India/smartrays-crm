@@ -492,7 +492,7 @@ describe("UserManagementPage", () => {
   });
 
   describe("New User form (reworked 2026-07-30)", () => {
-    it("shows the compact 4-row layout with Name/Email/Phone/Password/Role/Department/Salary", async () => {
+    it("shows the compact 4-row layout with Name/Email/Phone/Password/Role/Department/Base Salary", async () => {
       renderPage();
       await screen.findAllByText("Manager One");
 
@@ -505,7 +505,9 @@ describe("UserManagementPage", () => {
       expect(within(dialog).getByLabelText("Password")).toBeInTheDocument();
       expect(within(dialog).getByLabelText("Role")).toBeInTheDocument();
       expect(within(dialog).getByLabelText("Department")).toBeInTheDocument();
-      expect(within(dialog).getByLabelText("Salary")).toBeInTheDocument();
+      // Renamed to "Base Salary" 2026-08-11 so create and edit agree — it was
+      // "Salary" here and "Base Salary" in edit mode, one field reading as two.
+      expect(within(dialog).getByLabelText("Base Salary")).toBeInTheDocument();
       // No standalone "Manager" field in create mode — Department implies it.
       expect(within(dialog).queryByLabelText("Manager")).not.toBeInTheDocument();
     });
