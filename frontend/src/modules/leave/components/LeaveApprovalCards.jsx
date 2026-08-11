@@ -53,7 +53,7 @@ function LeaveApprovalCards({
             // elsewhere; a bespoke shadow here would drift from them. Its own
             // vertical margin is overridden — the stack's `gap-3` owns spacing
             // between strips, so a second source would double it.
-            className="app-elevated-card !my-0 flex w-full flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-white px-4 py-3"
+            className="app-elevated-card leave-strip-pending !my-0 flex w-full flex-wrap items-center gap-x-4 gap-y-2 rounded-lg px-4 py-3"
             data-testid={`leave-approval-card-${leave._id}`}
           >
             {/* Fixed-ish fields take only what they need; `reason` below gets

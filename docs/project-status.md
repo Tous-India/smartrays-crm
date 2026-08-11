@@ -3196,3 +3196,29 @@ noise. Status tints were deliberately NOT added — that is a separate item.
 
 Frontend 89 files / 801 tests, unchanged: this is layout only, and the existing leave suite (46
 tests across 4 files) already covers the actions and passes against the new markup.
+
+---
+
+### Pending leave strips get a pastel orange tint (2026-08-10)
+
+`orange-100` (#ffedd5) fill on pending strips, shadow and layout from 708a03f untouched.
+
+**Orange is now a taken family.** The register, so the next tint starts here: green/amber/red =
+timeline bands, sky/violet = geofence, blue/grey = live map markers, rose/teal = roster state
+buttons, orange = pending leave strip.
+
+**Collision check, reported rather than assumed.** The timeline's break band is `bg-amber-400`
+`rgb(251,191,36)`, a saturated mid-tone drawn as a thin bar in a 24-hour track; this is
+`rgb(255,237,213)`, a pale wash across a full-width strip. Not confusable as used — but the pale
+amber shades would be, and were avoided.
+
+**The side-by-side screenshot could not be produced**: no record on screen currently renders timeline
+bands, because today's records are all manual marks with no check-in, so the Timeline column draws an
+empty track. `bg-amber` elements on the page: 0. The comparison above is therefore numeric, not
+visual, and that limitation is stated rather than papered over.
+
+Verified against computed styles: background `rgb(255,237,213)`, shadow preserved, and layout
+unchanged from 708a03f — 7 fields, 2px offsetTop spread (one line), strip width 980 = container 980,
+actions 16px from the right edge, no table semantics. Text contrast **18.33:1** (AA needs 4.5).
+
+Frontend 89 files / 801 tests, unchanged — CSS fill only.

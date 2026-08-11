@@ -679,3 +679,29 @@ input:-webkit-autofill:focus {
   background: #fafafa;
   color: #9ca3af;
 }
+
+/*
+ * Pending leave strips (2026-08-10) — pastel ORANGE fill, so a queue awaiting a
+ * decision reads as such without opening anything. Shadow and layout come from
+ * `app-elevated-card`; this changes the fill only.
+ *
+ * PALETTE: orange-100 is now TAKEN. Every neighbouring family was already
+ * spoken for — green/amber/red are the timeline bands (connected / break /
+ * gap), sky and violet are geofence, blue and grey are the live map's
+ * current-position and stale markers, rose and teal are the roster's Half Day /
+ * Full Day buttons.
+ *
+ * On the amber question specifically: the timeline's "break" band is
+ * `bg-amber-400` (#fbbf24) — a saturated mid-tone drawn as a thin bar inside a
+ * 24-hour track. This is #ffedd5, a pale wash across a full-width strip.
+ * Different lightness, different saturation, different shape, different region
+ * of the page. Confusable at the same weight; not confusable as used. The pale
+ * AMBER shades would collide and are deliberately avoided.
+ *
+ * Text is AntD's default near-black rather than orange-800: it already clears
+ * AA against this background by a wide margin, and overriding it would fight
+ * the Tag and Text colours the strip already uses.
+ */
+.leave-strip-pending {
+  background: #ffedd5; /* orange-100 */
+}

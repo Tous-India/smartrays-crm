@@ -2595,6 +2595,35 @@ overflowing horizontally.
 If you add a control here, check the total against ~1024px rather than trusting it to look fine —
 that is exactly the assumption that failed twice.
 
+### Pending leave strips are pastel orange — and orange is now taken (2026-08-10)
+
+Pending strips fill `orange-100` (#ffedd5) instead of white, so a queue awaiting a decision reads as
+such without opening anything. The `app-elevated-card` shadow and the 708a03f layout are untouched —
+this changes the fill only.
+
+**Running palette register.** Every family is now spoken for, and the next tint should start here
+rather than rediscovering it:
+
+| Family | Meaning |
+|---|---|
+| green / amber / red | timeline bands — connected / break / gap |
+| sky / violet | geofence |
+| blue / grey | live map current-position / stale marker |
+| rose / teal | roster state buttons — Half Day / Full Day |
+| **orange** | **pending leave strip (new)** |
+
+On the amber question: the timeline's break band is `bg-amber-400` `rgb(251,191,36)` — a saturated
+mid-tone drawn as a thin bar inside a 24-hour track. This is `rgb(255,237,213)`, a pale wash across a
+full-width strip. Different lightness, saturation, shape and region. Confusable at the same weight;
+not confusable as used. The pale *amber* shades WOULD collide and are deliberately avoided.
+
+Text is AntD's default near-black rather than an -800 shade: measured at **18.33:1** against the
+tint, so it already clears AA by a wide margin, and overriding it would fight the Tag and Text
+colours the strip already sets.
+
+Pending only — status tints (approved / declined / unapproved absence) are a separate item, and the
+strips render only pending requests today.
+
 ### Leave request form: two fields per row (2026-08-10)
 
 `LeaveRequestModal` stacked every field full width. It now pairs them using the same pattern as the
