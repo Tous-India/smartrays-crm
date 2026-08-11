@@ -4754,6 +4754,60 @@ visible without opening each customer.
    expiring-soon, renew reusing the single existing `POST /amc/:id/renew` path and the existing
    `amc.edit` gate.
 
+## §7.47 — Monthly leave-and-attendance report (2026-08-11)
+
+A fourth Attendance tab, **Report**: one row per employee per calendar month — name, base
+salary, present/absent days, paid leave, unpaid leave, deduction, net payable. Filters are
+This month / Last month / Custom month, month granularity only.
+
+1. **ONE shared calculator, not two.** `backend/src/services/salaryCalculation.service.js` owns
+   every figure; the report endpoint only fetches and renders. Payroll (§7.7) computes the same
+   numbers and its run has never fired in production — when that is fixed it must consume this
+   service rather than keep its own copy. Two independent salary calculations do not fail as a
+   red test; they fail months later as a disputed payslip with two numbers and no way to say
+   which is right.
+2. **Per-day rate is base salary ÷ CALENDAR days**, not working days. ₹30,000 over 31 days is
+   ₹967.74/day; over ~22 working days it would be ₹1,363.64 — roughly 30% more deducted for the
+   same single absence. Calendar days is what "according to the number of days in a month" asked
+   for, and the reading that does not quietly inflate every deduction.
+3. **Half days count 0.5 throughout** — a `half_day` record is half present AND half absent, so
+   it lands in both columns and carries 0.5 into the deduction rather than being rounded into
+   one side.
+4. **Absence is reconciled per DATE across Attendance and Leave**, not summed from two lists.
+   Two real miscalculations came out of this, both found in a browser against live data:
+   `markUnapprovedAbsence` writes no Attendance record, so an unapproved absence was charged 1 day
+   instead of 2; and approving a full-day leave writes `on_leave` rather than `absent`, so
+   subtracting the paid allowance from an `absent`-only count charged 1 day for 2 absences
+   whenever the allowance was actually used. Attendance wins on a date present in both.
+5. **A doubled deduction says so.** An unapproved absence deducts twice (§7.5), which makes the
+   money column disagree with the day count beside it. The row carries a `×2` marker and the
+   table a footnote; the count of doubled days is returned by the calculator for exactly this
+   reason. A silent doubling reads as a bug rather than a policy.
+6. **An unset base salary is not zero.** `baseSalary`/`deduction`/`netPayable` come back `null`
+   and render as an em dash. "Net Payable ₹0" reads as "this person earned nothing"; what it
+   actually means is "nobody recorded what they are paid", and those are different statements.
+   Attendance counts still render — only the money is unknown.
+7. **Gated on `payroll.run`, not `payroll.view`** — and this was a live bug, caught by the access
+   test returning 200 with the whole company's salaries in the body. `payroll.view` sounds like
+   the right key but means "own payslip only" per §5's matrix, and it is in the DEFAULT employee
+   role template (`permission.service.js`). Gating a whole-company salary report on it would have
+   published every salary to every employee. `run` is this module's existing see-everyone tier,
+   already used by `GET /payroll?scope=all` and documented as such in the permission registry —
+   an existing key, not a new one.
+8. **§11.7 unchanged.** No opening balance, no monthly credit, no 12-day cap, no closing balance:
+   one paid day per calendar month, no carry-forward. An accumulated-balance version was specced
+   and withdrawn — see §11.7's 2026-08-11 re-confirmation.
+9. **Every employee gets a row**, including those with no attendance that month. A missing row
+   reads as "no data"; a zero row says "nobody recorded anything", which is the true statement.
+10. **Separate from "Download Report".** That button exports raw attendance records for a date
+   range; this summarises a month into salary figures. One control with two unrelated meanings
+   would have been worse than two controls.
+11. **No `scroll={{ y }}`** (a991e21's lesson) — that prop is what creates the inner
+    `.ant-table-body` scroll container, and an inner scrollbar on a report read top to bottom
+    means two scrollbars fighting. `scroll={{ x }}` IS set — the opposite case: eight columns
+    overflowed the PAGE at 390 (scrollWidth 557 vs 391, while the other tabs sat at 391/391), and
+    a horizontal scroll belongs to the table that is too wide, not the page around it.
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a

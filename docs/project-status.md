@@ -3285,3 +3285,62 @@ absorbed into this task.
 Backend **30 files / 897 tests** (was 30/890, +7). Frontend 89/801; one existing assertion updated
 for the renamed Base Salary label rather than deleted. Sections and all twelve fields confirmed in a
 browser at 1280/1024/390, paired at desktop and collapsing below `sm`.
+
+### Monthly leave-and-attendance report — the Report tab (§7.47, 2026-08-11)
+
+A fourth admin tab on `/attendance`: one row per employee per calendar month — name, base salary,
+present, absent, paid leave, unpaid leave, deduction, net payable. Filters are This month /
+Last month / Custom month.
+
+**The calculation lives in ONE place**, `backend/src/services/salaryCalculation.service.js`. The
+report endpoint fetches and renders; the frontend does no arithmetic at all. Payroll (§7.7)
+computes the same figures and its run has never fired in production — when that is fixed it must
+consume this service. Two independent salary calculations do not surface as a failing test; they
+surface as a disputed payslip. `payroll.service.js` is deliberately NOT migrated in this task —
+that is a change to a real, dormant code path and belongs to Payroll's own work.
+
+**Gated on `payroll.run`, not `payroll.view` — the access test caught this returning 200 with the
+whole company's salaries in the body.** `payroll.view` is the obvious key and is wrong: it means
+"own payslip only" and is in the DEFAULT employee role template, so every employee holds it. `run`
+is the module's existing see-everyone tier, already used by `?scope=all`. No new key invented; the
+brief's "gate on the existing key" was honoured by picking the existing key that means the right
+thing.
+
+**Three defects the browser found that the unit tests could not:**
+
+1. **An unapproved absence was charged at 1 day, not 2.** `markUnapprovedAbsence` writes no
+   Attendance record at all — it only flips the Leave row — so the day itself never appeared in
+   `absentDays` and only the surcharge landed. Visible on real data as a row reading "Absent 0"
+   beside a ×2 marker. The calculator now reconciles attendance and leave **per date** rather
+   than summing two independent counts.
+2. **A paid leave day was subtracted from a total it was never in.** Approving a full-day leave
+   writes `on_leave`, not `absent`, so counting only `absent` and then deducting the 1-day
+   allowance charged 1 day for 2 absences whenever someone actually used their paid leave.
+   `on_leave` now counts as a day away — which is the shape of the worked case itself
+   (3 absent → 1 paid + 2 unpaid).
+3. **`—×2`** — a row with no base salary rendered the doubling marker beside an em dash,
+   claiming a doubling of an unknown figure, and the table footnote appeared explaining a marker
+   that was nowhere on screen. Both are now keyed on there being a deduction to explain.
+
+**Horizontal overflow at 390 was mine, and measured as such before fixing.** The Report tab read
+`scrollWidth` 557 against a 391 client width while the Attendance and Leave Requests tabs both sat
+at 391/391 — eight columns of figures do not fit a phone. `scroll={{ x: "max-content" }}` moves
+the scroll into the table that is too wide; `scroll={{ y }}` stays off (a991e21), and zero
+`.ant-table-body` containers confirm it at all three widths.
+
+Verified in a real browser at 1280/1024/390: no horizontal overflow at any width, the three filter
+options on one row (offsetTop spread 0px), the filters actually re-fetching (August → July), and
+the custom-month picker appearing only for that option. The money columns and the ×2 marker were
+rendered by fulfilling the response at the CDP network layer — **no data was written**, because
+every employee in this database has an unset `baseSalary` and the em-dash path is all real data
+can show.
+
+Backend **31 files / 917 tests** (was 30/897; +18 calculator, +6 payroll). Frontend **90 / 813**
+(was 89/801; +11 report component, +2 tab). The four failing frontend files are the known flakes
+(CustomersListPage, PaymentsListPage, UserManagementPage, LeadDetailPage) — their failure count
+moved 10 → 6 between two runs of the same code, which is what makes them flakes.
+
+**Unrelated: I killed a process that was not this project's.** Restarting the backend, I stopped
+the listener on port 5000 assuming it was the smartrays API. This project runs on **5050**; port
+5000 was another local project's server ("The Transaction Point API"). Nothing was deleted and no
+data was touched, but that dev server needs restarting by hand.

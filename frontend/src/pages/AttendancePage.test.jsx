@@ -95,6 +95,40 @@ describe("AttendancePage — role-based tabs", () => {
     expect(screen.queryByRole("tab", { name: "My Attendance" })).not.toBeInTheDocument();
   });
 
+  it("gives an admin the §7.47 Report tab, after Leave Requests", () => {
+    setUser({ _id: "admin-1", role: "admin", permissions: {} });
+
+    render(<AttendancePage />);
+
+    expect(screen.getByRole("tab", { name: "Report" })).toBeInTheDocument();
+  });
+
+  it("hides Report from a non-admin, including one holding payroll.view", () => {
+    // `payroll.view` is "own payslip only" and is in the DEFAULT employee
+    // template, while this tab shows EVERY employee's base salary — holding
+    // it must not open the tab.
+    //
+    // Two things stop it, and only one of them is load-bearing here: Report
+    // lives in the isAdmin branch, so no non-admin reaches it whatever their
+    // grants, which is what this assertion actually exercises. The
+    // `can(user, "payroll", "run")` check beside it is redundant for an admin
+    // (admins bypass can() entirely) and exists so the tab stays gated if it
+    // ever moves out of that branch. The real guarantee is neither: it is the
+    // route's own 403, covered in backend/payroll.test.js.
+    setUser({
+      _id: "mgr-3",
+      role: "manager",
+      permissions: {
+        attendance: { view_team: true },
+        payroll: { view: true },
+      },
+    });
+
+    render(<AttendancePage />);
+
+    expect(screen.queryByRole("tab", { name: "Report" })).not.toBeInTheDocument();
+  });
+
   it("a manager without attendance.view_team falls back to the employee tab set", () => {
     setUser({ _id: "mgr-2", role: "manager", permissions: { leave: { view: true } } });
 

@@ -1863,6 +1863,81 @@ produces the exact same `Payroll` records a manual bulk `POST /payroll/run` woul
 a second call for the same reference date, and skips — not errors on — an employee with no
 `baseSalary` set).
 
+### Monthly leave-and-attendance report — ONE shared calculator (§7.47, 2026-08-11)
+
+`GET /payroll/monthly-report?year=&month=` → one row per active non-customer employee for that
+calendar month: name, base salary, present/absent days, paid leave, unpaid leave, deduction, net
+payable. Backs the Attendance page's **Report** tab.
+
+**The endpoint computes nothing.** Every figure comes from
+`src/services/salaryCalculation.service.js`, a new module deliberately placed in `services/`
+rather than inside `payroll/`:
+
+> Payroll (§7.7) computes the same figures, and its run **has never fired in production**. When
+> that is fixed it must consume this service rather than keep its own copy. Two independent
+> salary calculations do not fail as a red test — they fail months later as a disputed payslip
+> with two numbers and no way to say which is right.
+
+`payroll.service.js#computePayrollFields` is NOT yet migrated onto it — that is a change to a
+dormant-but-real code path and belongs in Payroll's own task, not smuggled into a report. The
+service exists and is the single source for anything new.
+
+| Export | Purpose |
+|---|---|
+| `daysInMonth(year, month)` | 1-based month, matching the API rather than JS's 0-based `Date`. |
+| `perDayRate(baseSalary, year, month)` | Base salary ÷ **calendar** days. |
+| `computeEmployeeMonth({user, attendance, leaves, year, month})` | One employee's row. Pure — no DB access, which is what makes it directly unit-testable. |
+| `buildMonthlyReport({year, month})` | Fetches and delegates; two queries total, not N+1. |
+
+**The rules, and why each is written this way:**
+
+1. **Per-day rate is base salary ÷ CALENDAR days**, not working days. ₹30,000 over 31 days is
+   ₹967.74/day; over ~22 working days it would be ₹1,363.64 — roughly 30% more deducted for the
+   same single absence.
+2. **Half days count 0.5 everywhere.** A `half_day` record is half a day present AND half a day
+   absent, so it contributes to both columns and carries 0.5 into the deduction.
+3. **Absence is resolved PER DATE, reconciling Attendance against Leave** — not by summing two
+   independent counts. Two defects came out of this, both found in the browser against real
+   data, neither reachable by the unit tests as originally written:
+   - `markUnapprovedAbsence` writes **no** Attendance record (it only flips the Leave row), so an
+     unapproved absence never appeared in `absentDays`. Only the surcharge landed: **1 day
+     charged where the policy says 2.** Seen as a row reading "Absent 0" beside a ×2 marker.
+   - Approving a full-day leave writes **`on_leave`**, not `absent` (`writeApprovedLeaveAttendance`).
+     Counting only `absent` and then subtracting the 1-day paid allowance took it off a total it
+     had never been part of — **1 day charged for 2 absences** whenever someone actually used
+     their paid leave. `on_leave` now counts as a day away, which is the shape of the worked case
+     itself: 3 absent → 1 paid + 2 unpaid.
+   A date present in both lists is counted once, with the Attendance record winning: it is the
+   recorded truth, and a Leave row only fills in a day nothing was recorded for.
+4. **Unapproved absence deducts twice** (§7.5) — the day itself (now always counted, per above)
+   plus a surcharge day. `doubleDeductionDays` returns the surcharge count alone so the UI can say
+   exactly how many days were doubled. A deduction that silently disagrees with its own day count
+   reads as a bug rather than a policy.
+5. **An unset `baseSalary` returns `null`, never 0.** `baseSalary`/`deduction`/`netPayable` all
+   come back `null` so the UI renders an em dash. "Net Payable ₹0" reads as a real figure; it
+   actually means nobody recorded what that person is paid. Attendance counts still populate.
+6. **The 1-day paid cap is re-applied here** (§11.7), even though `approveLeave` already enforces
+   it. A report that trusted the stored data to obey the rule would silently misreport if a
+   second approved day ever got in.
+7. **Every active employee gets a row**, including those with no attendance that month — a
+   missing row reads as "no data" when the truth is "nobody recorded anything".
+
+**Gated on `payroll.run`, NOT `payroll.view` — this was a live bug the access test caught,
+returning 200 with the whole company's salaries in the body.** `payroll.view` is the obvious
+choice and is wrong: per §5's matrix it means *own payslip only*, and it sits in the **default
+`employee` role template** (`permission.service.js`). Gating a whole-company salary report on it
+would have published every salary to every employee. `run` is this module's existing
+see-everyone tier — already used by `GET /payroll?scope=all`, and documented as exactly that in
+`permissionRegistry.constants.js` because §5 never gave payroll a `view_all`. No new key was
+invented.
+
+Tests: `src/services/salaryCalculation.test.js` (18) covers the worked case
+(30000 / 31 days / 3 absent → 1 paid, 2 unpaid, ₹1,935 deduction, ₹28,065 net), the paid cap,
+half days, both per-date reconciliation cases above, the null-salary cases and
+February/30/31-day divisors.
+`payroll.test.js` gained 6, including the gate above and a check that the refused response
+carries no salary figure at all.
+
 ### Support & Ticketing (`/api/v1/tickets`) — Phase 5
 
 See `.context/final-plan.md` §6.6/§7.8. Two-part task: (A) Customer Portal self-signup — see

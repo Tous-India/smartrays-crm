@@ -2786,6 +2786,72 @@ Corrections to a previous manual mark go through `PATCH /attendance/:id/roster-s
 `<LeaveSection pendingOnly />` on Attendance shows only the cards, and the Leave Requests tab passes
 `hidePendingCards` so it keeps its status filter, stats and history table without repeating them.
 
+### The Report tab — a month of attendance as money (§7.47, 2026-08-11)
+
+A fourth admin tab on `/attendance`, after Attendance / Leave Requests / Live Map:
+`MonthlyReportSection` renders one row per employee for a calendar month — name, base salary,
+present, absent, paid leave, unpaid leave, deduction, net payable. Filters are **This month**
+(default) / **Last month** / **Custom month**, month granularity only.
+
+**It computes nothing.** Every figure arrives from `GET /payroll/monthly-report`, which is backed
+by the backend's shared `salaryCalculation.service.js` — the same service Payroll must consume.
+Adding "just one" division in this file is what would eventually make the report and a payslip
+disagree, so the component's entire job is rendering.
+
+**Separate from the Attendance tab's "Download Report" button, deliberately.** That exports raw
+attendance records for a date range; this summarises a month into salary figures. One control
+with two unrelated meanings would be worse than two controls.
+
+**₹0 is not what "no salary recorded" looks like.** When `baseSalary` is unset the backend sends
+`null` for salary, deduction and net payable, and the cell renders an em dash with a tooltip
+saying why. A computed ₹0 would read as "this person earned nothing" — a real and different
+claim. The attendance columns still show their true counts; only the money is unknown.
+
+**A doubled deduction says so.** An unapproved absence deducts at 2× (§7.5), which makes the
+Deduction column disagree with the Absent column beside it — ₹1,935 against a single absent day.
+The row carries a `×2` marker with a tooltip naming the count, and the table grows a footnote
+only when at least one row is doubled. A silent doubling reads as a bug rather than a policy.
+
+**Both the marker and the footnote are keyed on a deduction EXISTING, not on the data.** A row
+with no base salary renders `—`, and the first version put the marker beside it — `—×2`, claiming
+a doubling of an unknown figure — while the footnote appeared to explain a marker that was
+nowhere on screen. Seen in the browser on real data, where every employee has an unset salary.
+
+**"Base Salary" and "Net Payable" stay distinct headers.** One is the stored monthly figure, the
+other is what this month works out to. A single "Salary" column would blur which one you are
+looking at.
+
+**Half days render as `0.5`**, not rounded — `days()` trims `1.0` to `"1"` but keeps `1.5`, so a
+half day stays visible in every column it touches.
+
+**No `scroll={{ y }}`** — a991e21's lesson. That prop is what creates the inner `.ant-table-body`
+scroll container; on a report you read top to bottom it produces two scrollbars fighting.
+
+**`scroll={{ x: "max-content" }}` IS set**, which is the opposite case and was a real defect
+first: eight columns of figures do not fit 390px, and without it the whole PAGE scrolled sideways
+— measured at `scrollWidth` 557 against a 391 client width, while the Attendance and Leave
+Requests tabs both sat at 391/391, so the overflow was this tab's and not pre-existing. A
+horizontal scroll belongs to the table that is too wide, not to the page around it. Zero
+`.ant-table-body` containers at all three widths confirms the vertical case stayed off.
+
+**`Segmented` always gets an explicit `value`**, because it preselects its first option when
+`value` is `undefined` — which would show "This month" highlighted while a different month was
+actually loaded.
+
+**A stale response can't overwrite a newer one.** The fetch effect sets an `isStale` flag on
+cleanup, so a slow reply for a month the user has already navigated away from is discarded.
+
+**Tab visibility mirrors the route's gate but is not the gate.** The tab lives in the `isAdmin`
+branch and additionally checks `can(user, "payroll", "run")`; the guarantee is the endpoint's own
+403. `payroll.view` would have been the wrong key — it means "own payslip only" and every
+employee holds it by default.
+
+Tests: `MonthlyReportSection.test.jsx` (11) — the worked case, distinct headers, the em dash
+instead of ₹0, half days at 0.5, the ×2 marker present, absent, and suppressed on a row with no
+deduction, the three filters, and an error surfaced rather than an empty table that would read as
+"nobody worked".
+`AttendancePage.test.jsx` gained 2 for the tab itself.
+
 ### The 401 interceptor: "wrong password" is not "session expired" (2026-08-08)
 
 `services/apiClient.js` redirected to `/login` on **every** 401 except a hard-coded `/auth/login`

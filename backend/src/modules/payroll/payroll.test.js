@@ -475,3 +475,80 @@ describe("GET /payroll/:id/payslip", () => {
     expect(response.status).toBe(400);
   });
 });
+
+/**
+ * §7.47 — the monthly leave-and-attendance report endpoint.
+ *
+ * NEW endpoint with no prior version. The gate assertions are the ones that
+ * matter: this returns EVERY employee's base salary in one response.
+ *
+ * The employee case genuinely failed first, with a 200 and the whole company's
+ * salaries in the body — the route was gated on `payroll.view`, which sounds
+ * right but means "own payslip only" and sits in the default employee
+ * template. It is now gated on `payroll.run`, this module's existing
+ * see-everyone tier.
+ */
+describe("GET /payroll/monthly-report — access and shape", () => {
+  it("REFUSES an employee, who HOLDS payroll.view — that grant is own-payslip-only", async () => {
+    const response = await employee1Agent.get("/api/v1/payroll/monthly-report?year=2026&month=8");
+
+    expect(response.status).toBe(403);
+  });
+
+  it("REFUSES a manager and a sales associate, who hold no payroll grant at all", async () => {
+    const managerResponse = await managerAgent.get(
+      "/api/v1/payroll/monthly-report?year=2026&month=8"
+    );
+    const salesResponse = await sales1Agent.get("/api/v1/payroll/monthly-report?year=2026&month=8");
+
+    expect(managerResponse.status).toBe(403);
+    expect(salesResponse.status).toBe(403);
+  });
+
+  it("leaks no salary figure in the refused response", async () => {
+    await adminAgent.patch(`/api/v1/users/${sales1._id}`).send({ baseSalary: 30000 });
+
+    const response = await employee1Agent.get("/api/v1/payroll/monthly-report?year=2026&month=8");
+
+    expect(JSON.stringify(response.body)).not.toContain("30000");
+  });
+
+  it("allows an admin and returns one row per active employee", async () => {
+    const response = await adminAgent.get("/api/v1/payroll/monthly-report?year=2026&month=8");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.year).toBe(2026);
+    expect(response.body.data.month).toBe(8);
+    expect(Array.isArray(response.body.data.rows)).toBe(true);
+    expect(response.body.data.rows.length).toBeGreaterThan(0);
+  });
+
+  it("returns the calculator's own shape, not a second computation", async () => {
+    const response = await adminAgent.get("/api/v1/payroll/monthly-report?year=2026&month=8");
+    const row = response.body.data.rows[0];
+
+    for (const key of [
+      "employeeId",
+      "name",
+      "baseSalary",
+      "calendarDays",
+      "presentDays",
+      "absentDays",
+      "paidLeave",
+      "unpaidLeave",
+      "doubleDeductionDays",
+      "deduction",
+      "netPayable",
+    ]) {
+      expect(row).toHaveProperty(key);
+    }
+
+    expect(row.calendarDays).toBe(31);
+  });
+
+  it("rejects a month outside 1-12", async () => {
+    const response = await adminAgent.get("/api/v1/payroll/monthly-report?year=2026&month=13");
+
+    expect(response.status).toBe(400);
+  });
+});

@@ -13,3 +13,15 @@ import apiClient from "../../../services/apiClient";
 export function listPayroll({ scope, month }) {
   return apiClient.get("/payroll", { params: { scope, month } });
 }
+
+/**
+ * §7.47 — the monthly leave-and-attendance report behind the Attendance page's
+ * Report tab. `month` is 1-based, matching the API rather than dayjs.
+ *
+ * Gated on `payroll.run`, NOT `payroll.view`: `view` means "own payslip only"
+ * and every employee holds it by default, while this returns every employee's
+ * salary in one response.
+ */
+export function getMonthlyReport({ year, month }) {
+  return apiClient.get("/payroll/monthly-report", { params: { year, month } });
+}
