@@ -2641,13 +2641,45 @@ the cap failing: the Users PAGE has `scrollWidth` 670 against a 391 viewport (th
 overflow), and the modal centres on the page, not the viewport. Fixing that belongs to the page's
 table, not this form.
 
-**Part two will not fit either — saying so now.** Aadhaar, PAN and three bank fields add five narrow
-fields, roughly two more rows (~200px). Twelve fields already overflow by 51px at 1280 and 150px at
-1024; seventeen will overflow by roughly 250px and 350px. **A taller or wider modal cannot solve
-this** — 780px is already most of a 1024 viewport, and the remaining height is the browser's, not
-ours. The form needs tabs or a stepper (Account / Personal / Employment / Documents & Bank), or the
-vertical scroll has to be accepted as normal for a form this long. Recommendation: accept the scroll
-now, and move to tabs when part two lands rather than widening further.
+**Density pass (2026-08-11) — `app-compact-form`, and 1280 is now scroll-free.** After repacking,
+the remaining height was spacing and chrome, not rows. Three changes, all shared rather than
+bespoke:
+
+- **`Form.Item` margin-bottom 24px → 12px.** The largest repeated cost across twelve fields.
+- **Section dividers 24px → 14px above / 8px below.** AntD's horizontal `Divider` carries
+  `margin: 24px 0`, which across three sections costs more than a whole field row. More space above
+  than below, so a heading groups with the fields it introduces.
+- **Modal body `paddingTop: 8, paddingBottom: 0`**, the same pairing `LeadFormModal` uses. Horizontal
+  padding untouched — the form should not run into the modal's edges.
+
+**`compact-lead-form` was generalized to `app-compact-form`** rather than copied: the identical rule
+was already proven on the Lead form, and `.app-data-table` set the precedent for promoting a
+Leads-specific class when a second module needs it. Both modals now use the one class.
+
+**No `size="small"`, deliberately — and this was checked before deciding.** No form in this app uses
+small controls: of ~100 `size="small"` usages, all are tables, buttons, tags, badges and Steps, and
+the only small `Select` is a standalone table filter. Shrinking these inputs would make this the one
+form with different control sizing, to save less height than the margin rule already does.
+
+**Result, `.ant-modal-wrap` scrollHeight vs clientHeight:**
+
+| | original | after repack | after density |
+|---|---|---|---|
+| create @1280 | 1030 / 900 (+130) | 951 / 900 (+51) | **900 / 900 (none)** |
+| edit @1280 | 1272 / 900 (+372) | 951 / 900 (+51) | **900 / 900 (none)** |
+| create @1024 | 1030 / 801 (+229) | 951 / 801 (+150) | **857 / 801 (+56)** |
+| edit @1024 | 1272 / 801 (+471) | 951 / 801 (+150) | **857 / 801 (+56)** |
+
+1280 is fully clear in both modes. **1024 still overflows by 56px** — stated rather than rounded to
+"done". Labels were audited in the browser, not by eye: 12 form items, 12 labels, none orphaned and
+none converted to a placeholder.
+
+**Part two still will not fit, and this pass strengthens that.** Aadhaar, PAN and three bank fields
+add ~2 rows (~200px). The body is 617px after tightening; adding ~200px puts 1280 back into overflow
+by ~150px and 1024 to ~256px. Every cheap lever is now spent — rows repacked, margins halved,
+dividers tightened, padding removed — so the next 200px has nowhere to come from. **Do the tabs
+(Account / Personal / Employment / Documents & Bank) when part two lands, rather than tightening
+twice.**
 
 **AntD `DatePicker` needs a dayjs value, not the ISO string the API returns.** Without converting on
 load, the pickers render empty for a user who HAS a date — which reads as "not set" and would clear

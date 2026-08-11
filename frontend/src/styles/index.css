@@ -15,17 +15,36 @@
 }
 
 /*
- * LeadFormModal's compact layout (`compact-lead-form`) — halves AntD's
- * default 24px `Form.Item` margin-bottom to 12px. Combined with the 3-per-
- * row regrouping of short fields and the Modal body's own reduced top/
- * bottom padding (both in `LeadFormModal.jsx` itself), this is what
- * eliminated the modal's internal scroll at normal desktop heights —
- * tightening only the row count or only the spacing wasn't enough on its
- * own, verified via a real screenshot at ~800px viewport height before
- * calling it done.
+ * Compact form density (`app-compact-form`) — halves AntD's default 24px
+ * `Form.Item` margin-bottom to 12px. Combined with 3-per-row regrouping of
+ * short fields and a Modal body with reduced top/bottom padding, this is what
+ * eliminates a form modal's internal scroll at normal desktop heights;
+ * tightening only the row count or only the spacing was not enough on its own,
+ * in either place it has been used.
+ *
+ * Was `compact-lead-form`, generalized 2026-08-11 when UserFormModal needed the
+ * identical rule — the same precedent `.app-data-table` set when Payments
+ * needed the Leads row density. One class, not a second copy under a new name.
+ *
+ * DELIBERATELY NOT `size="small"`. No form in this app uses small controls: the
+ * ~100 `size="small"` usages are tables, buttons, tags, badges and Steps, and
+ * the only small `Select` is a standalone table filter. Shrinking the inputs
+ * here would make this the one form with different control sizing, to save less
+ * height than the margin rule does.
  */
-.compact-lead-form .ant-form-item {
+.app-compact-form .ant-form-item {
   margin-bottom: 12px;
+}
+
+/*
+ * Section dividers inside a compact form. AntD's horizontal `Divider` carries
+ * `margin: 24px 0`, which on a three-section form costs ~50px of pure spacing —
+ * more than a whole field row. Tightened, with more space above than below so a
+ * heading still groups with the fields it introduces rather than floating
+ * between the two.
+ */
+.app-compact-form .ant-divider-horizontal {
+  margin: 14px 0 8px;
 }
 
 /*
@@ -704,4 +723,10 @@ input:-webkit-autofill:focus {
  */
 .leave-strip-pending {
   background: #ffedd5; /* orange-100 */
+}
+
+:where(.css-dev-only-do-not-override-80gjo0).ant-btn-variant-solid:disabled{
+background-color: white;
+opacity: 1;
+color:black;
 }

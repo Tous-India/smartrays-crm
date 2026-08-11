@@ -196,10 +196,15 @@ function UserFormModal({ open, mode, initialUser, onCancel, onSubmit, isSubmitti
       // as scrollWidth 480 against clientWidth 472 at every width, in both
       // modes. It is a margin artifact, not content: nothing is actually cut
       // off, and clipping it is what removes the stray horizontal scrollbar.
-      styles={{ body: { overflowX: "hidden" } }}
+      //
+      // The reduced top/bottom padding is the same pairing LeadFormModal uses:
+      // `app-compact-form` tightens the rhythm BETWEEN fields, this removes the
+      // dead space above the first and below the last. Horizontal padding is
+      // untouched — the form should not run into the modal's edges.
+      styles={{ body: { overflowX: "hidden", paddingTop: 8, paddingBottom: 0 } }}
     >
       {mode === "edit" ? (
-        <Form form={form} layout="vertical">
+        <Form form={form} layout="vertical" className="app-compact-form">
           <Divider orientation="left" orientationMargin={0}>
             Account
           </Divider>
@@ -247,7 +252,7 @@ function UserFormModal({ open, mode, initialUser, onCancel, onSubmit, isSubmitti
           <HrProfileSections />
         </Form>
       ) : (
-        <Form form={form} layout="vertical">
+        <Form form={form} layout="vertical" className="app-compact-form">
           <Divider orientation="left" orientationMargin={0}>
             Account
           </Divider>

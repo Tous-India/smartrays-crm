@@ -148,13 +148,13 @@ function LeadFormModal({ open, mode, initialLead, onCancel, onSubmit, isSubmitti
         items={[{ title: "Contact Info" }, { title: "Site Details" }]}
       />
 
-      <Form form={form} layout="vertical" className="compact-lead-form">
+      <Form form={form} layout="vertical" className="app-compact-form">
         {/*
           Compact multi-column grid — `Row`/`Col` with `xs={24}` collapses
           every group back to one-per-row on narrow widths (mobile/tablet),
           rather than forcing a cramped 3-column layout there. Grouping is by
           field length/expected-input-length, not a mechanical "3 per row
-          regardless of fit". `compact-lead-form` halves AntD's default 24px
+          regardless of fit". `app-compact-form` halves AntD's default 24px
           `Form.Item` margin-bottom, keeping each step scroll-free.
 
           Both steps stay mounted (`display: none` on the inactive one,
