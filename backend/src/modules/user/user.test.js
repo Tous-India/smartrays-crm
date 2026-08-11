@@ -3,6 +3,7 @@ import request from "supertest";
 import { startTestDatabase, stopTestDatabase, clearAllCollections } from "../../../tests/helpers/testDb.js";
 import { getTestApp } from "../../../tests/helpers/testApp.js";
 import { createUserDirectly, loginAsAgent } from "../../../tests/helpers/authHelpers.js";
+import User from "./user.model.js";
 
 let app;
 let adminAgent, managerAgent, sales1Agent, sales2Agent, sales3Agent;
@@ -252,6 +253,53 @@ describe("PATCH /users/:id — self-service vs. admin-only fields", () => {
     expect(response.status).toBe(200);
     expect(response.body.data.name).toBe("Sales One Updated");
     expect(response.body.data.phone).toBe("9999999999");
+  });
+
+  /**
+   * §7.48 (2026-08-11) — the HR profile fields. NEW fields with no prior
+   * version, but these DO discriminate: before this task the server had no
+   * such fields, so `updateUser` ignored them silently and returned 200. A
+   * silent no-op is the dangerous shape here — it looks accepted.
+   */
+  it.each([
+    ["dateOfBirth", "1990-01-01"],
+    ["joiningDate", "2020-06-01"],
+    ["address", "12 Somewhere Street"],
+    ["emergencyContactName", "Next Of Kin"],
+    ["emergencyContactPhone", "9998887777"],
+  ])("blocks a user from setting their own %s", async (field, value) => {
+    const response = await sales1Agent.patch(`/api/v1/users/${sales1._id}`).send({ [field]: value });
+
+    expect(response.status).toBe(403);
+
+    const unchanged = await User.findById(sales1._id);
+    expect(unchanged[field] ?? "").not.toBe(value);
+  });
+
+  it("lets an ADMIN set every HR field, and persists them", async () => {
+    const response = await adminAgent.patch(`/api/v1/users/${sales1._id}`).send({
+      dateOfBirth: "1990-01-01",
+      joiningDate: "2020-06-01",
+      address: "12 Somewhere Street",
+      emergencyContactName: "Next Of Kin",
+      emergencyContactPhone: "9998887777",
+    });
+
+    expect(response.status).toBe(200);
+
+    const stored = await User.findById(sales1._id);
+    expect(stored.address).toBe("12 Somewhere Street");
+    expect(stored.emergencyContactName).toBe("Next Of Kin");
+    expect(stored.emergencyContactPhone).toBe("9998887777");
+    expect(stored.dateOfBirth.toISOString().slice(0, 10)).toBe("1990-01-01");
+    expect(stored.joiningDate.toISOString().slice(0, 10)).toBe("2020-06-01");
+  });
+
+  it("saves a user who has NONE of these fields — every existing account predates them", async () => {
+    const response = await adminAgent.patch(`/api/v1/users/${sales2._id}`).send({ phone: "1112223333" });
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.phone).toBe("1112223333");
   });
 
   it("blocks a user from updating their own role", async () => {

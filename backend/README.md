@@ -679,6 +679,22 @@ would be worse. This is the same "create where nothing exists, never touch what 
 so admin-only: it is an HR attribute appearing on a payroll-adjacent screen, and people should not be
 able to retitle themselves. A self-update attempt is rejected 403.
 
+### HR profile fields (§7.48, 2026-08-11)
+
+`dateOfBirth`, `joiningDate`, `address`, `emergencyContactName`, `emergencyContactPhone` on `User`,
+all optional — every existing account predates them and must keep loading and saving without one.
+
+All five are in **`PRIVILEGED_FIELDS`**, so `PATCH /users/:id` rejects them (403) from a
+self-update, for the same reason as `baseSalary`: a joining date and an emergency contact are HR
+records about a person, not preferences that person sets.
+
+Being *absent* from that list was the dangerous shape, not being rejected by it — before this,
+sending `joiningDate` to a self-update returned **200** and silently ignored it, which reads as
+accepted. The tests assert 403 AND that the value did not change.
+
+**Part two, deliberately not here:** Aadhaar/PAN images and bank details. Those need authenticated
+Cloudinary delivery and AES-256-GCM respectively — see the Cloudinary limitation above.
+
 ### Cloudinary delivery is UNAUTHENTICATED — a live exposure, not a hypothetical
 
 Every asset this app uploads — attendance check-in/check-out photos today, and any identity

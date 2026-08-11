@@ -941,6 +941,11 @@ part of Phase 2, superseding this row's original speculative shape:**
 
 ### 6.1 `User` & Permissions
 
+**HR profile fields** (§7.48, 2026-08-11) — `dateOfBirth`, `joiningDate`, `address`,
+`emergencyContactName`, `emergencyContactPhone`. All optional, all in `PRIVILEGED_FIELDS`
+(admin-only, never self-editable). Identity documents and bank details are part two: they need
+authenticated Cloudinary delivery and AES-256-GCM respectively.
+
 **`designation`** (string, optional, added §7.4g 2026-08-09) — job title, shown beside the name on
 the today's roster. Admin-only via `PRIVILEGED_FIELDS`, not self-editable: an HR attribute appearing
 on a payroll-adjacent screen should not be self-assigned. Optional, since every existing user

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
-import { Modal, Form, Input, Select, InputNumber, Row, Col } from "antd";
+import dayjs from "dayjs";
+import { Modal, Form, Input, Select, InputNumber, DatePicker, Row, Col, Divider } from "antd";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import useTeams from "../../team/hooks/useTeams";
 import { USER_ROLES, USER_ROLE_LABELS, ROLE_PICKER_LABELS } from "../constants/user.constants";
@@ -42,6 +43,72 @@ const CREATE_ROLE_OPTIONS = [
  * Department was actually wanted, this resolves it differently — flag if
  * so. Edit mode's layout/fields are unchanged from before this rework.
  */
+
+/**
+ * Personal + Employment, defined ONCE and rendered by both create and edit
+ * (§7.48, 2026-08-11).
+ *
+ * The two modes branch on `mode === "edit"` with separate field lists, and
+ * that duplication is exactly how the salary label drifted — "Salary" in one,
+ * "Base Salary" in the other, for the same field (fixed in 9ee7bea). Rather
+ * than unify the whole form, which would fight the genuine differences (create
+ * has password and a Department picker; edit has Role and Manager), only the
+ * NEW sections are shared. That removes the drift risk where it would
+ * otherwise be reintroduced, without pretending the Account section is the
+ * same in both modes when it isn't.
+ *
+ * Two per row via `Col xs={24} sm={12}`, matching the Add Contact form.
+ * Address takes a full row: an address wrapped into half a modal reads badly
+ * and is the one free-text field here.
+ */
+function HrProfileSections() {
+  return (
+    <>
+      <Divider orientation="left" orientationMargin={0}>
+        Personal
+      </Divider>
+      <Row gutter={16}>
+        <Col xs={24} sm={12}>
+          <Form.Item label="Date of Birth" name="dateOfBirth">
+            <DatePicker className="w-full" />
+          </Form.Item>
+        </Col>
+        <Col xs={24} sm={12}>
+          <Form.Item label="Emergency Contact Name" name="emergencyContactName">
+            <Input />
+          </Form.Item>
+        </Col>
+        <Col xs={24} sm={12}>
+          <Form.Item label="Emergency Contact Phone" name="emergencyContactPhone">
+            <Input />
+          </Form.Item>
+        </Col>
+        <Col span={24}>
+          <Form.Item label="Address" name="address">
+            <Input.TextArea rows={2} />
+          </Form.Item>
+        </Col>
+      </Row>
+
+      <Divider orientation="left" orientationMargin={0}>
+        Employment
+      </Divider>
+      <Row gutter={16}>
+        <Col xs={24} sm={12}>
+          <Form.Item label="Joining Date" name="joiningDate">
+            <DatePicker className="w-full" />
+          </Form.Item>
+        </Col>
+        <Col xs={24} sm={12}>
+          <Form.Item label="Base Salary" name="baseSalary">
+            <InputNumber min={0} style={{ width: "100%" }} />
+          </Form.Item>
+        </Col>
+      </Row>
+    </>
+  );
+}
+
 function UserFormModal({ open, mode, initialUser, onCancel, onSubmit, isSubmitting }) {
   const [form] = Form.useForm();
   const { users } = useUserDirectory();
@@ -62,7 +129,19 @@ function UserFormModal({ open, mode, initialUser, onCancel, onSubmit, isSubmitti
 
   useEffect(() => {
     if (open) {
-      form.setFieldsValue(mode === "edit" && initialUser ? { ...initialUser } : {});
+      // AntD DatePicker needs a dayjs value, not the ISO string the API
+      // returns — without this the pickers render empty when editing a user
+      // who HAS a date, which reads as "not set" and would silently clear it
+      // on save.
+      form.setFieldsValue(
+        mode === "edit" && initialUser
+          ? {
+              ...initialUser,
+              dateOfBirth: initialUser.dateOfBirth ? dayjs(initialUser.dateOfBirth) : null,
+              joiningDate: initialUser.joiningDate ? dayjs(initialUser.joiningDate) : null,
+            }
+          : {}
+      );
     }
   }, [open, mode, initialUser, form]);
 
@@ -93,9 +172,17 @@ function UserFormModal({ open, mode, initialUser, onCancel, onSubmit, isSubmitti
       onCancel={handleCancel}
       confirmLoading={isSubmitting}
       destroyOnHidden
+      // AntD's Modal defaults to a fixed 520px, which is wider than a 390px
+      // viewport and pushes the PAGE into horizontal scroll. Capping to the
+      // viewport is what keeps this form usable on a phone; the sections
+      // inside already collapse to one column below `sm`.
+      style={{ maxWidth: "calc(100vw - 24px)" }}
     >
       {mode === "edit" ? (
         <Form form={form} layout="vertical">
+          <Divider orientation="left" orientationMargin={0}>
+            Account
+          </Divider>
           <Form.Item label="Name" name="name" rules={[{ required: true, message: "Name is required" }]}>
             <Input />
           </Form.Item>
@@ -126,12 +213,13 @@ function UserFormModal({ open, mode, initialUser, onCancel, onSubmit, isSubmitti
             <Input placeholder="e.g. Field Technician" />
           </Form.Item>
 
-          <Form.Item label="Base Salary" name="baseSalary">
-            <InputNumber min={0} style={{ width: "100%" }} />
-          </Form.Item>
+          <HrProfileSections />
         </Form>
       ) : (
         <Form form={form} layout="vertical">
+          <Divider orientation="left" orientationMargin={0}>
+            Account
+          </Divider>
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item label="Name" name="name" rules={[{ required: true, message: "Name is required" }]}>
@@ -195,13 +283,10 @@ function UserFormModal({ open, mode, initialUser, onCancel, onSubmit, isSubmitti
             <Input />
           </Form.Item>
 
-          {/* "Base Salary", matching the edit mode above and the model field
-              itself. It was "Salary" here and "Base Salary" there — one field
-              reading as two concepts, and the Report tab adds a derived
-              "Salary" column that this must not be confused with. */}
-          <Form.Item label="Base Salary" name="baseSalary">
-            <InputNumber min={0} style={{ width: "100%" }} />
-          </Form.Item>
+          {/* Base Salary now lives in the shared Employment section, so the
+              two modes cannot drift apart again — it was "Salary" here and
+              "Base Salary" in edit for the same field (9ee7bea). */}
+          <HrProfileSections />
         </Form>
       )}
     </Modal>

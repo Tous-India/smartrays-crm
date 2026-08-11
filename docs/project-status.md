@@ -3253,3 +3253,35 @@ unchanged from 708a03f — 7 fields, 2px offsetTop spread (one line), strip widt
 actions 16px from the right edge, no table semantics. Text contrast **18.33:1** (AA needs 4.5).
 
 Frontend 89 files / 801 tests, unchanged — CSS fill only.
+
+---
+
+### HR profile fields — schema and form (§7.48 part one, 2026-08-11)
+
+Five optional `User` fields — `dateOfBirth`, `joiningDate`, `address`, `emergencyContactName`,
+`emergencyContactPhone` — all in `PRIVILEGED_FIELDS`, so a self-update is rejected 403.
+
+**The pre-change behaviour was worse than a rejection: it was a silent 200.** Fields absent from both
+allowlists were simply ignored by `updateUser`, so sending `joiningDate` to `PATCH /users/:id` on your
+own record returned success and changed nothing. The tests assert 403 **and** that the stored value
+did not change — all six fail against the pre-change code, verified by reverting the model and
+service to HEAD while keeping the tests.
+
+**Form: one definition for the shared sections, not the whole form.** `UserFormModal` branches on
+`mode === "edit"` with two field lists, which is how the salary label drifted. `HrProfileSections` is
+now defined once and rendered by both, with Base Salary moved into it so they cannot diverge again.
+Account stays per-mode because the modes genuinely differ (create: password + Department; edit: Role
++ Manager) — unifying it would trade a real difference for a fake one.
+
+Two bugs caught while building: `DatePicker` needs a dayjs value, not the API's ISO string, or the
+pickers render empty for a user who has a date — reading as "not set" and clearing it on save. And
+AntD's Modal defaults to a fixed 520px, wider than a 390px viewport; capped to the viewport.
+
+**A pre-existing overflow found and NOT fixed:** Settings → Users has horizontal overflow at 390 —
+`scrollWidth` 671 against a 390 client width. Measured with the modal open and closed: **671 both
+times**, so it is the page's own table, not this form. Out of scope, recorded rather than silently
+absorbed into this task.
+
+Backend **30 files / 897 tests** (was 30/890, +7). Frontend 89/801; one existing assertion updated
+for the renamed Base Salary label rather than deleted. Sections and all twelve fields confirmed in a
+browser at 1280/1024/390, paired at desktop and collapsing below `sm`.

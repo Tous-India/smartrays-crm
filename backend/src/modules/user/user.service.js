@@ -237,7 +237,23 @@ export async function listUsersForDropdown() {
 // 2026-08-09): a job title is an HR attribute that shows up on the
 // payroll-adjacent today's roster, so people should not be able to retitle
 // themselves.
-export const PRIVILEGED_FIELDS = ["role", "managerId", "isActive", "baseSalary", "customerId", "designation"];
+export const PRIVILEGED_FIELDS = [
+  "role",
+  "managerId",
+  "isActive",
+  "baseSalary",
+  "customerId",
+  "designation",
+  // §7.48 — HR profile fields. Admin-only for the same reason as baseSalary:
+  // a joining date and an emergency contact are HR records about a person, not
+  // preferences that person sets. Being in this list is what makes
+  // `PATCH /users/me` reject them (403) rather than silently accepting.
+  "dateOfBirth",
+  "joiningDate",
+  "address",
+  "emergencyContactName",
+  "emergencyContactPhone",
+];
 const SELF_EDITABLE_FIELDS = ["name", "email", "phone"];
 
 /**

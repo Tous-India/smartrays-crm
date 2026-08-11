@@ -2595,6 +2595,26 @@ overflowing horizontally.
 If you add a control here, check the total against ~1024px rather than trusting it to look fine —
 that is exactly the assumption that failed twice.
 
+### User form gains HR sections, shared across both modes (§7.48, 2026-08-11)
+
+`UserFormModal` branches on `mode === "edit"` with two separate field lists, and that duplication is
+exactly how the salary label drifted — "Salary" in create, "Base Salary" in edit, for one field
+(fixed in 9ee7bea).
+
+**What I chose:** share only the NEW sections, not the whole form. `HrProfileSections` is defined
+once and rendered by both modes, and Base Salary moved into it so the two cannot diverge again. The
+Account section stays per-mode, because the modes genuinely differ there — create has a password and
+a Department picker, edit has Role and Manager. Unifying that would mean conditionals inside a shared
+block, trading a real difference for a fake one.
+
+Sections: **Account** / **Personal** / **Employment**, with Documents and Bank to follow in part two.
+Two per row via `Col xs={24} sm={12}`, matching the Add Contact pattern; Address takes a full row as
+the one free-text field.
+
+**AntD `DatePicker` needs a dayjs value, not the ISO string the API returns.** Without converting on
+load, the pickers render empty for a user who HAS a date — which reads as "not set" and would clear
+it on save.
+
 ### Pending leave strips are pastel orange — and orange is now taken (2026-08-10)
 
 Pending strips fill `orange-100` (#ffedd5) instead of white, so a queue awaiting a decision reads as

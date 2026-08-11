@@ -32,6 +32,37 @@ const userSchema = new mongoose.Schema(
       trim: true,
       default: "",
     },
+    // HR profile fields (§7.48, 2026-08-11). All admin-only via
+    // PRIVILEGED_FIELDS — an employee must not set their own joining date or
+    // salary-adjacent record. All optional: every existing user predates them
+    // and must keep loading and saving without one.
+    //
+    // Identity documents and bank details are deliberately NOT here — they
+    // need authenticated Cloudinary delivery and AES-256-GCM respectively, and
+    // are part two.
+    dateOfBirth: {
+      type: Date,
+      default: null,
+    },
+    joiningDate: {
+      type: Date,
+      default: null,
+    },
+    address: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    emergencyContactName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    emergencyContactPhone: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     passwordHash: {
       type: String,
       required: true,
