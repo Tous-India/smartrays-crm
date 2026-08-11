@@ -57,10 +57,19 @@ const CREATE_ROLE_OPTIONS = [
  * otherwise be reintroduced, without pretending the Account section is the
  * same in both modes when it isn't.
  *
- * Two per row via `Col xs={24} sm={12}`, matching the Add Contact form.
- * Address takes a full row: an address wrapped into half a modal reads badly
- * and is the one free-text field here.
+ * THREE per row on a wide modal, two at `sm`, one below (2026-08-11). The
+ * spans are responsive rather than a fixed column count so the form degrades
+ * by itself instead of needing a second layout: `NARROW` is a third of the row
+ * at `lg`, half at `sm`, full below. Address takes a whole row — an address
+ * wrapped into a third of a modal reads badly, and it is the one free-text
+ * field here.
  */
+
+/** A short field: 3 per row at lg, 2 at sm, 1 below. */
+const NARROW = { xs: 24, sm: 12, lg: 8 };
+/** Email — kept wider than a third, per the field's own content. */
+const WIDE = { xs: 24, sm: 24, lg: 16 };
+
 function HrProfileSections() {
   return (
     <>
@@ -68,17 +77,17 @@ function HrProfileSections() {
         Personal
       </Divider>
       <Row gutter={16}>
-        <Col xs={24} sm={12}>
+        <Col {...NARROW}>
           <Form.Item label="Date of Birth" name="dateOfBirth">
             <DatePicker className="w-full" />
           </Form.Item>
         </Col>
-        <Col xs={24} sm={12}>
+        <Col {...NARROW}>
           <Form.Item label="Emergency Contact Name" name="emergencyContactName">
             <Input />
           </Form.Item>
         </Col>
-        <Col xs={24} sm={12}>
+        <Col {...NARROW}>
           <Form.Item label="Emergency Contact Phone" name="emergencyContactPhone">
             <Input />
           </Form.Item>
@@ -94,12 +103,12 @@ function HrProfileSections() {
         Employment
       </Divider>
       <Row gutter={16}>
-        <Col xs={24} sm={12}>
+        <Col {...NARROW}>
           <Form.Item label="Joining Date" name="joiningDate">
             <DatePicker className="w-full" />
           </Form.Item>
         </Col>
-        <Col xs={24} sm={12}>
+        <Col {...NARROW}>
           <Form.Item label="Base Salary" name="baseSalary">
             <InputNumber min={0} style={{ width: "100%" }} />
           </Form.Item>
@@ -172,61 +181,37 @@ function UserFormModal({ open, mode, initialUser, onCancel, onSubmit, isSubmitti
       onCancel={handleCancel}
       confirmLoading={isSubmitting}
       destroyOnHidden
-      // AntD's Modal defaults to a fixed 520px, which is wider than a 390px
+      // 780 rather than AntD's default 520 (2026-08-11): at 520 the narrow
+      // fields could only sit two per row, and the form ran to 10 rows in edit
+      // mode. The viewport cap below is what keeps it usable on a phone — the
+      // width goes up, the cap stays.
+      width={780}
+      // AntD's Modal defaults to a fixed width, which is wider than a 390px
       // viewport and pushes the PAGE into horizontal scroll. Capping to the
       // viewport is what keeps this form usable on a phone; the sections
       // inside already collapse to one column below `sm`.
       style={{ maxWidth: "calc(100vw - 24px)" }}
+      // `Row gutter` applies -8px horizontal margins, and inside the padded
+      // modal body Chrome counts that as 8px of scrollable overflow — measured
+      // as scrollWidth 480 against clientWidth 472 at every width, in both
+      // modes. It is a margin artifact, not content: nothing is actually cut
+      // off, and clipping it is what removes the stray horizontal scrollbar.
+      styles={{ body: { overflowX: "hidden" } }}
     >
       {mode === "edit" ? (
         <Form form={form} layout="vertical">
           <Divider orientation="left" orientationMargin={0}>
             Account
           </Divider>
-          <Form.Item label="Name" name="name" rules={[{ required: true, message: "Name is required" }]}>
-            <Input />
-          </Form.Item>
-
-          <Form.Item
-            label="Email"
-            name="email"
-            rules={[{ required: true, type: "email", message: "A valid email is required" }]}
-          >
-            <Input type="email" />
-          </Form.Item>
-
-          <Form.Item label="Phone" name="phone">
-            <Input />
-          </Form.Item>
-
-          <Form.Item label="Role" name="role" rules={[{ required: true, message: "Role is required" }]}>
-            <Select options={USER_ROLES.map((role) => ({ value: role, label: USER_ROLE_LABELS[role] }))} />
-          </Form.Item>
-
-          <Form.Item label="Manager" name="managerId">
-            <Select allowClear placeholder="No manager" options={managerOptions} showSearch optionFilterProp="label" />
-          </Form.Item>
-
-          {/* §7.4g — shown beside the name on the today's roster. Admin-only
-              (PRIVILEGED_FIELDS), so it appears here and not on EditProfile. */}
-          <Form.Item label="Designation" name="designation">
-            <Input placeholder="e.g. Field Technician" />
-          </Form.Item>
-
-          <HrProfileSections />
-        </Form>
-      ) : (
-        <Form form={form} layout="vertical">
-          <Divider orientation="left" orientationMargin={0}>
-            Account
-          </Divider>
+          {/* These six were stacked one per row, which is why edit ran to ten
+              rows against create's seven for the same twelve fields. */}
           <Row gutter={16}>
-            <Col span={12}>
+            <Col {...NARROW}>
               <Form.Item label="Name" name="name" rules={[{ required: true, message: "Name is required" }]}>
                 <Input />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col {...WIDE}>
               <Form.Item
                 label="Email"
                 name="email"
@@ -235,15 +220,61 @@ function UserFormModal({ open, mode, initialUser, onCancel, onSubmit, isSubmitti
                 <Input type="email" />
               </Form.Item>
             </Col>
-          </Row>
-
-          <Row gutter={16}>
-            <Col span={12}>
+            <Col {...NARROW}>
               <Form.Item label="Phone" name="phone">
                 <Input />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col {...NARROW}>
+              <Form.Item label="Role" name="role" rules={[{ required: true, message: "Role is required" }]}>
+                <Select options={USER_ROLES.map((role) => ({ value: role, label: USER_ROLE_LABELS[role] }))} />
+              </Form.Item>
+            </Col>
+            <Col {...NARROW}>
+              <Form.Item label="Manager" name="managerId">
+                <Select allowClear placeholder="No manager" options={managerOptions} showSearch optionFilterProp="label" />
+              </Form.Item>
+            </Col>
+            {/* §7.4g — shown beside the name on the today's roster. Admin-only
+                (PRIVILEGED_FIELDS), so it appears here and not on EditProfile. */}
+            <Col {...NARROW}>
+              <Form.Item label="Designation" name="designation">
+                <Input placeholder="e.g. Field Technician" />
+              </Form.Item>
+            </Col>
+          </Row>
+
+          <HrProfileSections />
+        </Form>
+      ) : (
+        <Form form={form} layout="vertical">
+          <Divider orientation="left" orientationMargin={0}>
+            Account
+          </Divider>
+          {/* One flowing Row rather than three fixed pairs: the fields wrap
+              themselves by span, so the same markup gives 3 per row at lg, 2 at
+              sm and 1 below without a second layout. */}
+          <Row gutter={16}>
+            <Col {...NARROW}>
+              <Form.Item label="Name" name="name" rules={[{ required: true, message: "Name is required" }]}>
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col {...WIDE}>
+              <Form.Item
+                label="Email"
+                name="email"
+                rules={[{ required: true, type: "email", message: "A valid email is required" }]}
+              >
+                <Input type="email" />
+              </Form.Item>
+            </Col>
+            <Col {...NARROW}>
+              <Form.Item label="Phone" name="phone">
+                <Input />
+              </Form.Item>
+            </Col>
+            <Col {...NARROW}>
               <Form.Item
                 label="Password"
                 name="password"
@@ -255,15 +286,12 @@ function UserFormModal({ open, mode, initialUser, onCancel, onSubmit, isSubmitti
                 <Input.Password autoComplete="new-password" />
               </Form.Item>
             </Col>
-          </Row>
-
-          <Row gutter={16}>
-            <Col span={12}>
+            <Col {...NARROW}>
               <Form.Item label="Role" name="role" rules={[{ required: true, message: "Role is required" }]}>
                 <Select options={CREATE_ROLE_OPTIONS} />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col {...NARROW}>
               <Form.Item label="Department" name="departmentTeamId">
                 <Select
                   allowClear

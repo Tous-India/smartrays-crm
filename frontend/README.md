@@ -2608,8 +2608,46 @@ a Department picker, edit has Role and Manager. Unifying that would mean conditi
 block, trading a real difference for a fake one.
 
 Sections: **Account** / **Personal** / **Employment**, with Documents and Bank to follow in part two.
-Two per row via `Col xs={24} sm={12}`, matching the Add Contact pattern; Address takes a full row as
-the one free-text field.
+Address takes a full row as the one free-text field.
+
+**Layout, reworked 2026-08-11 — 780px wide, three fields per row.** Two shared span constants
+replace the per-field spans: `NARROW` (`xs 24 / sm 12 / lg 8`) is a third of the row on desktop, a
+half at `sm`, full below; `WIDE` (`lg 16`) is email. Responsive spans rather than a fixed column
+count, so one set of markup degrades by itself. Edit mode's six Account fields were stacked one per
+row, which is why it ran to ten rows against create's seven for the same twelve fields; both are now
+six.
+
+**WHICH scrollbar was it? Vertical, and not on the element you would measure first.** The modal
+**body never scrolls** — `scrollHeight === clientHeight` in every mode and width, before and after.
+The scrollbar lives on `.ant-modal-wrap`. Measured:
+
+| | before | after |
+|---|---|---|
+| create @1280 | wrap 1030 vs 900 (+130px) | wrap 951 vs 900 (**+51px**) |
+| edit @1280 | wrap 1272 vs 900 (+372px) | wrap 951 vs 900 (**+51px**) |
+| create @1024 | wrap 1030 vs 801 (+229px) | wrap 951 vs 801 (**+150px**) |
+| edit @1024 | wrap 1272 vs 801 (+471px) | wrap 951 vs 801 (**+150px**) |
+
+So width alone was never going to fix it — repacking was the lever, and it removed 86% of the edit
+overflow at 1280. A scroll remains, and at 1024 it always will.
+
+**The stray 8px horizontal scroll was `Row gutter`.** `gutter={16}` applies ±8px margins, and inside
+the modal body Chrome counts that as 8px of scrollable overflow — scrollWidth 480 against clientWidth
+472, in both modes at every width. It is margin, not content, so `styles={{ body: { overflowX:
+"hidden" } }}` clips it; nothing is cut off.
+
+**At 390 the modal is 367px wide and the cap holds — but its right edge lands at 518.** That is not
+the cap failing: the Users PAGE has `scrollWidth` 670 against a 391 viewport (the documented table
+overflow), and the modal centres on the page, not the viewport. Fixing that belongs to the page's
+table, not this form.
+
+**Part two will not fit either — saying so now.** Aadhaar, PAN and three bank fields add five narrow
+fields, roughly two more rows (~200px). Twelve fields already overflow by 51px at 1280 and 150px at
+1024; seventeen will overflow by roughly 250px and 350px. **A taller or wider modal cannot solve
+this** — 780px is already most of a 1024 viewport, and the remaining height is the browser's, not
+ours. The form needs tabs or a stepper (Account / Personal / Employment / Documents & Bank), or the
+vertical scroll has to be accepted as normal for a form this long. Recommendation: accept the scroll
+now, and move to tabs when part two lands rather than widening further.
 
 **AntD `DatePicker` needs a dayjs value, not the ISO string the API returns.** Without converting on
 load, the pickers render empty for a user who HAS a date — which reads as "not set" and would clear
