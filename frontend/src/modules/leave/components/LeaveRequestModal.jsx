@@ -1,4 +1,4 @@
-import { Modal, Form, DatePicker, Select, Input, Checkbox, Button } from "antd";
+import { Modal, Form, DatePicker, Select, Input, Checkbox, Button, Row, Col } from "antd";
 import { REQUESTABLE_LEAVE_TYPES, LEAVE_TYPE_LABELS } from "../constants/leave.constants";
 
 const TYPE_OPTIONS = REQUESTABLE_LEAVE_TYPES.map((type) => ({ value: type, label: LEAVE_TYPE_LABELS[type] }));
@@ -75,24 +75,59 @@ function LeaveRequestModal({ open, onCancel, onSubmit, isSubmitting }) {
       ]}
     >
       <Form form={form} layout="vertical" initialValues={{ type: "paid", isHalfDay: false }}>
-        <Form.Item name="isHalfDay" valuePropName="checked">
-          <Checkbox onChange={handleHalfDayChange}>Half Day</Checkbox>
-        </Form.Item>
-        <Form.Item label="Start Date" name="startDate" rules={[{ required: true, message: "Start date is required" }]}>
-          <DatePicker className="w-full" onChange={handleStartDateChange} />
-        </Form.Item>
-        {!isHalfDay && (
-          <Form.Item
-            label="End Date"
-            name="endDate"
-            rules={[{ required: true, message: "End date is required" }]}
-          >
-            <DatePicker className="w-full" />
-          </Form.Item>
-        )}
-        <Form.Item label="Type" name="type" rules={[{ required: true }]}>
-          <Select options={TYPE_OPTIONS} />
-        </Form.Item>
+        {/*
+          Two fields per row (2026-08-10), following the Add Contact form on
+          Customer Detail — `Row gutter={16}` + `Col span={12}` — rather than
+          inventing new spacing. `xs={24} sm={12}` collapses to one column below
+          768px, which is AntD's `sm` breakpoint.
+
+          Pairing: the two dates belong together, and half/full day sits beside
+          paid/unpaid since both describe what KIND of leave this is. Reason is
+          free text and keeps its own full-width row.
+
+          Layout only — field names, rules and submitted payload are untouched.
+        */}
+        <Row gutter={16}>
+          <Col xs={24} sm={12}>
+            <Form.Item label="Start Date" name="startDate" rules={[{ required: true, message: "Start date is required" }]}>
+              <DatePicker className="w-full" onChange={handleStartDateChange} />
+            </Form.Item>
+          </Col>
+          {/* A half day is a single date, so End Date is not rendered at all —
+              Start Date then takes the full row rather than leaving a gap where
+              a field used to be. */}
+          {!isHalfDay && (
+            <Col xs={24} sm={12}>
+              <Form.Item
+                label="End Date"
+                name="endDate"
+                rules={[{ required: true, message: "End date is required" }]}
+              >
+                <DatePicker className="w-full" />
+              </Form.Item>
+            </Col>
+          )}
+        </Row>
+
+        <Row gutter={16}>
+          <Col xs={24} sm={12}>
+            <Form.Item label="Type" name="type" rules={[{ required: true }]}>
+              <Select options={TYPE_OPTIONS} />
+            </Form.Item>
+          </Col>
+          <Col xs={24} sm={12}>
+            {/* Deliberately NO `label` here. Adding one re-computes the
+                checkbox's accessible name from the label instead of its own
+                text, so it stopped being findable as "Half Day" — a behaviour
+                change, in a layout-only task. The top margin aligns it with
+                the Select beside it on desktop and drops away below `sm`,
+                where the fields stack anyway. */}
+            <Form.Item name="isHalfDay" valuePropName="checked" className="sm:!mt-[30px]">
+              <Checkbox onChange={handleHalfDayChange}>Half Day</Checkbox>
+            </Form.Item>
+          </Col>
+        </Row>
+
         <Form.Item
           label="Reason"
           name="reason"

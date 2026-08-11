@@ -2595,6 +2595,24 @@ overflowing horizontally.
 If you add a control here, check the total against ~1024px rather than trusting it to look fine —
 that is exactly the assumption that failed twice.
 
+### Leave request form: two fields per row (2026-08-10)
+
+`LeaveRequestModal` stacked every field full width. It now pairs them using the same pattern as the
+Add Contact form on Customer Detail — `Row gutter={16}` with `Col xs={24} sm={12}` — rather than
+inventing new spacing. Below AntD's `sm` breakpoint (768px) it collapses to one column.
+
+Pairing: the two dates together; half/full day beside paid/unpaid, since both describe what KIND of
+leave this is. Reason is free text and keeps its own full-width row. A half day is a single date, so
+End Date is not rendered at all and Start Date takes the whole row rather than leaving a gap.
+
+**The `isHalfDay` checkbox deliberately has no `Form.Item` label.** Adding one ("Duration") re-computed
+the checkbox's accessible name from the label instead of its own text, so it stopped being findable
+as "Half Day" and two existing tests failed — a behaviour change in a layout-only task. It aligns
+with the Select beside it via a top margin that drops away below `sm`, where the fields stack anyway.
+
+Nothing about the submitted payload, field names or validation changed; the existing 46 leave tests
+pass unmodified, including the two that assert what gets submitted.
+
 ### Pending leave requests are full-width strips (2026-08-10)
 
 The approval cards were a `Row`/`Col` grid at `xl={8}` — a narrow card floating left of the filter
