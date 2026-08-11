@@ -3400,3 +3400,43 @@ in 0aba084; the newly discriminating case is a zero deduction rather than a null
 
 Backend **31 files / 931 tests** (was 31/921, +10 balance tests). Frontend **90 / 821** (was 90/814). The four failing
 frontend files are the known flakes.
+
+### The Report tab becomes a pure leave report (§7.50, 2026-08-11)
+
+Final columns: Employee · Base Salary · Old Balance · This Month Credit · Absent · Paid Leave ·
+Unpaid Leave · Deduction · Net Payable · Balance. Present is gone — this answers what leave people
+took and what it costs, not who was at work.
+
+**Absence is now counted from approved Leave records only, never Attendance.** A roster-marked
+absence with no leave record behind it contributes nothing and is not deducted. That consequence
+is real and intended, and the subheading says "Absent counts leave days, not roster-marked
+attendance" in bold, because a column called Absent on a page called Attendance will otherwise be
+read as the attendance number.
+
+**This partially reverses 0aba084's two-source reconciliation, and both bugs that fix addressed
+stay fixed — structurally, not by special-casing.** An unapproved absence still costs 2 days: its
+Leave record *is* the absent day, so `markUnapprovedAbsence` writing no Attendance record cannot
+bite a calculation that never reads Attendance. The `on_leave`-vs-`absent` split cannot diverge
+either, because the status is never consulted — a test feeds deliberately contradictory Attendance
+rows (`present`, `on_leave` and `absent` all in one month) and asserts every figure is unmoved.
+
+**`presentDays` stays in the service even though no column shows it.** Payroll (§7.7) derives gross
+pay from it, and this service exists to become the one calculator Payroll consumes; dropping it to
+tidy a UI column would put that migration back. `attendance` now defaults to `[]` so a leave-only
+caller need not fetch it at all.
+
+**Width re-measured at ten columns rather than inherited from eight**, which was the point of
+asking. At 1280 they fit exactly — 980px into a 980px holder, no page overflow, no internal
+scroll. At 1024 (890 into 724) and 390 (890 into 311) they genuinely do NOT fit, so `scroll={{ x }}`
+is still doing real work rather than sitting there redundantly. Zero `.ant-table-body` containers
+at all three widths, so `scroll={{ y }}` is still absent. Money columns and the ×2 marker were
+exercised by fulfilling the response at the CDP network layer — nothing written, since every
+`baseSalary` in the database is unset.
+
+Failing-first: 18 of the reworked backend tests fail against the committed service, and 4 of the
+frontend ones. §11.7 and §7.49 are untouched — `PAID_LEAVE_MONTHLY_LIMIT = 1` stays, and the
+balance columns keep their meaning and their single-constant year boundary. The gate stays
+`payroll.run`.
+
+Backend **31 files / 934 tests** (was 31/931). Frontend **90 / 822** (was 90/821). The four failing
+frontend files are the known flakes.

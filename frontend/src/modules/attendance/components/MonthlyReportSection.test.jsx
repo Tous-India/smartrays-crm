@@ -58,7 +58,9 @@ describe("the report table", () => {
     const cells = await screen.findByRole("row", { name: /Asha Verma/ });
 
     expect(within(cells).getByText("₹30,000")).toBeInTheDocument();
-    expect(within(cells).getByText("28")).toBeInTheDocument();
+    // 3 days of leave: 1 paid, 2 unpaid. `presentDays` is deliberately not on
+    // this table any more (§7.50).
+    expect(within(cells).getByText("3")).toBeInTheDocument();
     expect(within(cells).getByText("₹1,935")).toBeInTheDocument();
     expect(within(cells).getByText("₹28,065")).toBeInTheDocument();
   });
@@ -85,18 +87,18 @@ describe("the report table", () => {
     // actually means nobody recorded what they are paid.
     expect(within(cells).queryByText("₹0")).not.toBeInTheDocument();
     expect(within(cells).getAllByText("—").length).toBeGreaterThan(0);
-    // The attendance columns still carry their real counts.
-    expect(within(cells).getByText("28")).toBeInTheDocument();
+    // The leave columns still carry their real counts.
+    expect(within(cells).getByText("3")).toBeInTheDocument();
   });
 
   it("shows half days as 0.5 rather than rounding them away", async () => {
-    respondWith([row({ presentDays: 20.5, absentDays: 0.5, unpaidLeave: 0.5 })]);
+    respondWith([row({ absentDays: 0.5, paidLeave: 0.5, unpaidLeave: 0 })]);
 
     render(<MonthlyReportSection />);
 
     const cells = await screen.findByRole("row", { name: /Asha Verma/ });
 
-    expect(within(cells).getByText("20.5")).toBeInTheDocument();
+    // Absent and Paid Leave, both halves — not rounded to 0 or 1.
     expect(within(cells).getAllByText("0.5").length).toBe(2);
   });
 });
@@ -107,12 +109,12 @@ describe("the annual balance columns (§7.49)", () => {
 
     const headers = (await screen.findAllByRole("columnheader")).map((h) => h.textContent.trim());
 
+    // No Present column (§7.50) — a leave report, not an attendance report.
     expect(headers).toEqual([
       "Employee",
       "Base Salary",
       "Old Balance",
       "This Month Credit",
-      "Present",
       "Absent",
       "Paid Leave",
       "Unpaid Leave",
@@ -120,6 +122,7 @@ describe("the annual balance columns (§7.49)", () => {
       "Net Payable",
       "Balance",
     ]);
+    expect(headers).not.toContain("Present");
   });
 
   it("shows the balance figures the backend computed, without re-deriving them", async () => {
@@ -130,10 +133,10 @@ describe("the annual balance columns (§7.49)", () => {
     const cells = (await screen.findByRole("row", { name: /Asha Verma/ })).querySelectorAll("td");
     const text = [...cells].map((c) => c.textContent.trim());
 
-    // Positions 2, 3 and 10 in the column order above.
+    // Positions 2, 3 and 9 in the ten-column order above.
     expect(text[2]).toBe("9");
     expect(text[3]).toBe("1");
-    expect(text[10]).toBe("8");
+    expect(text[9]).toBe("8");
   });
 
   it("shows halves as 0.5 in the balance columns too", async () => {
@@ -154,6 +157,15 @@ describe("the annual balance columns (§7.49)", () => {
     ).toBeInTheDocument();
   });
 
+  it("says in the subheading that Absent means leave days, not attendance", async () => {
+    // On a page called Attendance, a column called Absent will be read as the
+    // attendance number unless the header says otherwise.
+    render(<MonthlyReportSection />);
+
+    expect(await screen.findByText(/Absent counts leave days/)).toBeInTheDocument();
+    expect(screen.getByText(/not roster-marked attendance/)).toBeInTheDocument();
+  });
+
   it("still shows a balance for an employee with no base salary", async () => {
     // The balance is leave, not money — an unrecorded salary says nothing about
     // how much leave someone has left.
@@ -166,7 +178,7 @@ describe("the annual balance columns (§7.49)", () => {
     const cells = (await screen.findByRole("row", { name: /Asha Verma/ })).querySelectorAll("td");
 
     expect(cells[2].textContent.trim()).toBe("12");
-    expect(cells[10].textContent.trim()).toBe("12");
+    expect(cells[9].textContent.trim()).toBe("12");
   });
 });
 

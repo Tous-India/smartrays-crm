@@ -179,13 +179,15 @@ function MonthlyReportSection() {
       render: days,
     },
     {
-      title: "Present",
-      dataIndex: "presentDays",
-      key: "presentDays",
-      align: "right",
-      render: days,
-    },
-    {
+      // No Present column (§7.50) — this is a leave report, not an attendance
+      // report. The backend still returns `presentDays` because Payroll derives
+      // gross pay from it; it simply has no place on this table.
+      //
+      // "Absent" here means LEAVE DAYS TAKEN, counted from approved leave
+      // records only. A roster-marked absence with no leave record behind it is
+      // an attendance fact and does not appear. The subheading says so, because
+      // a column called "Absent" on a page called Attendance will otherwise be
+      // read as the attendance number.
       title: "Absent",
       dataIndex: "absentDays",
       key: "absentDays",
@@ -261,7 +263,8 @@ function MonthlyReportSection() {
           <div className="min-w-0 flex-1">
             <div className="font-semibold">Monthly Report</div>
             <Text type="secondary" className="text-xs">
-              {month.format("MMMM YYYY")} · per-day rate is the base salary ÷ {month.daysInMonth()}{" "}
+              {month.format("MMMM YYYY")} · <strong>Absent counts leave days</strong>, not
+              roster-marked attendance · per-day rate is the base salary ÷ {month.daysInMonth()}{" "}
               calendar days
               {/* Which year the balance is measured against — the backend
                   reports it rather than the UI re-deriving a boundary that is

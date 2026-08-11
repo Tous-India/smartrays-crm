@@ -1892,6 +1892,17 @@ service exists and is the single source for anything new.
 
 **The rules, and why each is written this way:**
 
+0. **Absence is LEAVE-SOURCED (§7.50)** — counted from approved `Leave` records only, never from
+   `Attendance`. A roster-marked absence with no Leave record behind it contributes nothing and is
+   not deducted: it is an attendance fact, and this is a leave report. `presentDays` is still
+   computed and returned (Payroll derives gross pay from it) but no longer drives anything here,
+   and `attendance` defaults to `[]` so a leave-only caller need not fetch it.
+
+   This partially reverses the two-source reconciliation below, and **both bugs that fix addressed
+   stay fixed** — structurally, not by special-casing. An unapproved absence still costs 2 days
+   because its Leave record IS the absent day, and `markUnapprovedAbsence` writing no Attendance
+   record cannot bite a calculation that never reads Attendance. The `on_leave`/`absent` split
+   cannot diverge because the status is never consulted.
 1. **Per-day rate is base salary ÷ CALENDAR days**, not working days. ₹30,000 over 31 days is
    ₹967.74/day; over ~22 working days it would be ₹1,363.64 — roughly 30% more deducted for the
    same single absence.
@@ -1964,7 +1975,7 @@ see-everyone tier — already used by `GET /payroll?scope=all`, and documented a
 `permissionRegistry.constants.js` because §5 never gave payroll a `view_all`. No new key was
 invented.
 
-Tests: `src/services/salaryCalculation.test.js` (28) covers the worked case
+Tests: `src/services/salaryCalculation.test.js` (31) covers the worked case
 (30000 / 31 days / 3 absent → 1 paid, 2 unpaid, ₹1,935 deduction, ₹28,065 net), the paid cap,
 half days, both per-date reconciliation cases above, the null-salary cases and
 February/30/31-day divisors, plus the balance columns: prior-month usage, the January

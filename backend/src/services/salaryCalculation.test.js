@@ -20,12 +20,14 @@ import {
 const user = (overrides = {}) => ({ _id: "u1", name: "Test", baseSalary: 30000, ...overrides });
 
 /**
- * Attendance and leave are reconciled per DATE, so fixtures carry real ones.
- * `day` is a day-of-month in August 2026; each record gets its own by default
- * so a fixture never accidentally collides with another.
+ * Absence is counted per DATE from LEAVE records (§7.50), so fixtures carry
+ * real dates. `day` is a day-of-month in August 2026; each gets its own by
+ * default so a fixture never accidentally collides with another.
  */
 let nextDay = 1;
 const record = (status, day = nextDay++) => ({ status, date: new Date(2026, 7, day) });
+
+/** One approved leave day. Defaults to a paid day on 10 August 2026. */
 const leave = (overrides = {}) => ({
   status: "approved",
   type: "paid",
@@ -35,6 +37,14 @@ const leave = (overrides = {}) => ({
   endDate: new Date(2026, 7, 10),
   ...overrides,
 });
+
+/** An approved leave day of `type` on a given August day. */
+const leaveOn = (day, overrides = {}) =>
+  leave({ startDate: new Date(2026, 7, day), endDate: new Date(2026, 7, day), ...overrides });
+
+/** `count` approved unpaid leave days, each on its own date. */
+const unpaidDays = (count, from = 1) =>
+  Array.from({ length: count }, (_, index) => leaveOn(from + index, { type: "unpaid" }));
 
 beforeEach(() => {
   nextDay = 1;
@@ -62,8 +72,9 @@ describe("the worked case", () => {
   it("salary 30000, 31 days, 3 absent → 1 paid, 2 unpaid, deduction 1935, net 28065", () => {
     const result = computeEmployeeMonth({
       user: user(),
-      attendance: [record("absent"), record("absent"), record("absent")],
-      leaves: [leave()],
+      // Three approved LEAVE days: the month's paid day plus two unpaid.
+      // Absence is leave-sourced now, so this is what "3 absent" means here.
+      leaves: [leave(), ...unpaidDays(2)],
       year: 2026,
       month: 8,
     });
@@ -82,28 +93,28 @@ describe("the one-paid-day cap", () => {
     // cannot silently misreport if a second approved day ever gets in.
     const result = computeEmployeeMonth({
       user: user(),
-      attendance: [record("absent"), record("absent"), record("absent")],
-      leaves: [
-        leave({ startDate: new Date(2026, 7, 10), endDate: new Date(2026, 7, 10) }),
-        leave({ startDate: new Date(2026, 7, 12), endDate: new Date(2026, 7, 12) }),
-      ],
+      // Two paid days approved in one month (which approval should prevent)
+      // plus one unpaid: 3 days away, only 1 of them creditable.
+      leaves: [leaveOn(10), leaveOn(12), ...unpaidDays(1, 20)],
       year: 2026,
       month: 8,
     });
 
+    expect(result.absentDays).toBe(3);
     expect(result.paidLeave).toBe(1);
     expect(result.unpaidLeave).toBe(2);
   });
 
-  it("covers an approved leave day recorded as `on_leave`, not just a bare `absent`", () => {
-    // This is what the data actually looks like after an approval:
-    // `writeApprovedLeaveAttendance` writes `on_leave`, never `absent`.
-    // Counting only `absent` subtracted the paid allowance from a total that
-    // never contained it — 1 day charged where 2 were owed.
+  it("cannot be fooled by the on_leave/absent status split, whatever Attendance says", () => {
+    // The bug 0aba084 fixed: approving a full-day leave writes `on_leave`, not
+    // `absent`, and reading that status wrongly subtracted the paid allowance
+    // from a total it had never joined. Sourcing absence from the Leave record
+    // removes the status question altogether — the Attendance rows below
+    // contradict each other on purpose and change nothing.
     const result = computeEmployeeMonth({
       user: user(),
-      attendance: [record("absent", 5), record("absent", 6), record("on_leave", 10)],
-      leaves: [leave()],
+      attendance: [record("present", 5), record("on_leave", 10), record("absent", 25)],
+      leaves: [leave(), ...unpaidDays(2)],
       year: 2026,
       month: 8,
     });
@@ -117,7 +128,6 @@ describe("the one-paid-day cap", () => {
   it("a half-day paid leave covers exactly its own half day", () => {
     const result = computeEmployeeMonth({
       user: user(),
-      attendance: [record("half_day", 10)],
       leaves: [leave({ isHalfDay: true })],
       year: 2026,
       month: 8,
@@ -132,19 +142,49 @@ describe("the one-paid-day cap", () => {
   it("does not count a PENDING or REJECTED paid request", () => {
     const result = computeEmployeeMonth({
       user: user(),
-      attendance: [record("absent")],
+      // Neither is approved, so neither is a day away NOR a paid day.
       leaves: [leave({ status: "pending" }), leave({ status: "rejected" })],
       year: 2026,
       month: 8,
     });
 
+    // A request that was never granted is not a day away at all, so it is
+    // neither absent nor unpaid — not "unpaid because it wasn't the paid one".
+    expect(result.absentDays).toBe(0);
     expect(result.paidLeave).toBe(0);
-    expect(result.unpaidLeave).toBe(1);
+    expect(result.unpaidLeave).toBe(0);
+    expect(result.deduction).toBe(0);
   });
 });
 
 describe("half days count 0.5", () => {
-  it("splits a half day across present AND absent", () => {
+  it("counts a half-day leave as half a day away", () => {
+    const result = computeEmployeeMonth({
+      user: user(),
+      leaves: [leaveOn(10, { type: "unpaid", isHalfDay: true })],
+      year: 2026,
+      month: 8,
+    });
+
+    expect(result.absentDays).toBe(0.5);
+  });
+
+  it("carries 0.5 through to the deduction", () => {
+    const result = computeEmployeeMonth({
+      user: user(),
+      leaves: [leaveOn(10, { type: "unpaid", isHalfDay: true })],
+      year: 2026,
+      month: 8,
+    });
+
+    // 0.5 unpaid × 967.74 = 483.87 -> 484
+    expect(result.unpaidLeave).toBe(0.5);
+    expect(result.deduction).toBe(484);
+  });
+
+  it("still reports presentDays from Attendance for Payroll, though no column shows it", () => {
+    // The Present COLUMN is gone (§7.50); the figure stays because Payroll
+    // derives gross pay from it and must eventually consume this service.
     const result = computeEmployeeMonth({
       user: user(),
       attendance: [record("present"), record("half_day")],
@@ -154,47 +194,62 @@ describe("half days count 0.5", () => {
     });
 
     expect(result.presentDays).toBe(1.5);
-    expect(result.absentDays).toBe(0.5);
+    // ...and that Attendance contributes NOTHING to absence any more.
+    expect(result.absentDays).toBe(0);
   });
+});
 
-  it("carries 0.5 through to the deduction", () => {
+describe("absence is LEAVE-sourced, not attendance-sourced (§7.50)", () => {
+  it("does NOT count a roster-marked absence with no leave record behind it", () => {
+    // A deliberate reversal of part of 0aba084: that reconciliation was right
+    // for an attendance report, and this is a leave report. The consequence is
+    // real and intended — a roster-marked absence alone is not deducted here.
     const result = computeEmployeeMonth({
       user: user(),
-      attendance: [record("half_day")],
+      attendance: [record("absent", 4), record("absent", 5), record("half_day", 6)],
       leaves: [],
       year: 2026,
       month: 8,
     });
 
-    // 0.5 unpaid × 967.74 = 483.87 -> 484
-    expect(result.unpaidLeave).toBe(0.5);
-    expect(result.deduction).toBe(484);
+    expect(result.absentDays).toBe(0);
+    expect(result.unpaidLeave).toBe(0);
+    expect(result.deduction).toBe(0);
+    expect(result.netPayable).toBe(30000);
   });
-});
 
-describe("unapproved absence deducts twice, visibly", () => {
-  it("charges 2 days when Attendance DID record the absence", () => {
+  it("counts every APPROVED leave type as a day away", () => {
     const result = computeEmployeeMonth({
       user: user(),
-      attendance: [record("absent", 10)],
-      leaves: [leave({ type: "unapproved_absence", isDoubleDeduction: true })],
+      leaves: [
+        leaveOn(3),
+        leaveOn(4, { type: "unpaid" }),
+        leaveOn(5, { type: "unapproved_absence", isDoubleDeduction: true }),
+      ],
       year: 2026,
       month: 8,
     });
 
-    // The same date appears in both lists and must be counted ONCE as an
-    // absence, then surcharged once: 1 unpaid + 1 doubled = 2 days.
-    expect(result.absentDays).toBe(1);
-    expect(result.unpaidLeave).toBe(1);
-    expect(result.doubleDeductionDays).toBe(1);
-    expect(result.deduction).toBe(1935);
+    expect(result.absentDays).toBe(3);
   });
 
-  it("STILL charges 2 days when Attendance has no record for that date", () => {
-    // `markUnapprovedAbsence` writes no Attendance record — it only flips the
-    // Leave row — so this is the ordinary case, not the exotic one. Counting
-    // the two lists separately charged 1 day here (the surcharge alone, the
-    // day itself invisible), which is half what the policy says.
+  it("ignores a leave record belonging to another month", () => {
+    const result = computeEmployeeMonth({
+      user: user(),
+      leaves: [leave({ startDate: new Date(2026, 6, 10), endDate: new Date(2026, 6, 10) })],
+      year: 2026,
+      month: 8,
+    });
+
+    expect(result.absentDays).toBe(0);
+  });
+});
+
+describe("unapproved absence deducts twice, visibly", () => {
+  it("charges 2 days for one unapproved absence — the day itself plus the surcharge", () => {
+    // The bug 0aba084 fixed, and it stays fixed for a different reason:
+    // `markUnapprovedAbsence` writes NO Attendance record, which cannot bite a
+    // calculation that never reads Attendance. The Leave row is the absent day.
     const result = computeEmployeeMonth({
       user: user(),
       attendance: [record("present", 3), record("present", 4)],
@@ -203,8 +258,8 @@ describe("unapproved absence deducts twice, visibly", () => {
       month: 8,
     });
 
-    expect(result.presentDays).toBe(2);
     expect(result.absentDays).toBe(1);
+    expect(result.unpaidLeave).toBe(1);
     expect(result.doubleDeductionDays).toBe(1);
     expect(result.deduction).toBe(1935);
   });
@@ -236,8 +291,7 @@ describe("unapproved absence deducts twice, visibly", () => {
   it("reports zero doubled days when nothing is unapproved, so no marker shows", () => {
     const result = computeEmployeeMonth({
       user: user(),
-      attendance: [record("absent")],
-      leaves: [],
+      leaves: [leaveOn(10, { type: "unpaid" })],
       year: 2026,
       month: 8,
     });
@@ -251,8 +305,7 @@ describe("an unset baseSalary is NOT zero", () => {
   it.each([[null], [undefined], [0]])("returns null for salary %p, never a computed ₹0", (value) => {
     const result = computeEmployeeMonth({
       user: user({ baseSalary: value }),
-      attendance: [record("absent"), record("absent")],
-      leaves: [],
+      leaves: unpaidDays(2),
       year: 2026,
       month: 8,
     });
@@ -262,7 +315,7 @@ describe("an unset baseSalary is NOT zero", () => {
     expect(result.baseSalary).toBeNull();
     expect(result.deduction).toBeNull();
     expect(result.netPayable).toBeNull();
-    // Attendance is still counted — only the money is unknown.
+    // Leave is still counted — only the money is unknown.
     expect(result.absentDays).toBe(2);
   });
 });
@@ -296,7 +349,6 @@ describe("the annual balance columns (§7.49)", () => {
     // the approval rule enforces), and a fourth this month.
     const result = computeEmployeeMonth({
       user: user(),
-      attendance: [record("on_leave", 10)],
       leaves: [paidOn(2, 3), paidOn(4, 9), paidOn(6, 21), paidOn(8, 10)],
       ...august,
     });
@@ -324,7 +376,6 @@ describe("the annual balance columns (§7.49)", () => {
   it("counts a half-day paid leave as 0.5 against the balance", () => {
     const result = computeEmployeeMonth({
       user: user(),
-      attendance: [record("half_day", 10)],
       leaves: [paidOn(3, 4, { isHalfDay: true }), paidOn(8, 10, { isHalfDay: true })],
       ...august,
     });
@@ -418,8 +469,7 @@ describe("the annual balance columns (§7.49)", () => {
     // single rupee of the figures the previous task locked in.
     const result = computeEmployeeMonth({
       user: user(),
-      attendance: [record("absent", 1), record("absent", 2), record("absent", 3)],
-      leaves: [paidOn(8, 10)],
+      leaves: [paidOn(8, 10), ...unpaidDays(2)],
       ...august,
     });
 

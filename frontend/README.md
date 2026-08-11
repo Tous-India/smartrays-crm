@@ -2798,15 +2798,23 @@ by the backend's shared `salaryCalculation.service.js` — the same service Payr
 Adding "just one" division in this file is what would eventually make the report and a payslip
 disagree, so the component's entire job is rendering.
 
-**Eleven columns, in a fixed order** (§7.49, 2026-08-11): Employee · Base Salary · Old Balance ·
-This Month Credit · Present · Absent · Paid Leave · Unpaid Leave · Deduction · Net Payable ·
-Balance. The balance opens and closes the row, with the month's activity in between.
+**Ten columns, in a fixed order** (§7.50, 2026-08-11): Employee · Base Salary · Old Balance ·
+This Month Credit · Absent · Paid Leave · Unpaid Leave · Deduction · Net Payable · Balance. The
+balance opens and closes the row, with the month's leave in between.
 
-**They fit at 1280 — measured, not assumed:** 979px of columns into a 980px holder, no page
-overflow and no internal scroll. That is one pixel of slack, so a longer name or a larger salary
-will start the table scrolling inside itself; `scroll={{ x }}` already handles that gracefully and
-the page still never scrolls sideways. Nothing was narrowed or dropped, and the header stayed the
-specified "This Month Credit" rather than being abbreviated to fit.
+**No Present column.** This is a leave report, not an attendance report. The backend still returns
+`presentDays` — Payroll derives gross pay from it — it simply has no place on this table.
+
+**"Absent" means LEAVE DAYS TAKEN**, counted from approved leave records only. A roster-marked
+absence with no leave record behind it does not appear here and is not deducted. The subheading
+says so in bold, because a column called Absent on a page called Attendance will otherwise be read
+as the attendance number.
+
+**Width re-measured at ten columns rather than inherited from eight.** At 1280 they fit exactly:
+980px into a 980px holder, no page overflow, no internal scroll. At 1024 (890 into 724) and 390
+(890 into 311) they genuinely do NOT fit — so `scroll={{ x }}` is still doing real work, and the
+page stays clean at every width. Zero `.ant-table-body` containers throughout, so `scroll={{ y }}`
+is still absent.
 
 **The balance columns render even when the salary does not.** They are leave, not money — an
 unrecorded `baseSalary` says nothing about how much leave someone has left, so those cells show
@@ -2879,9 +2887,9 @@ branch and additionally checks `can(user, "payroll", "run")`; the guarantee is t
 403. `payroll.view` would have been the wrong key — it means "own payslip only" and every
 employee holds it by default.
 
-Tests: `MonthlyReportSection.test.jsx` (18) — the worked case, the exact eleven-column order,
+Tests: `MonthlyReportSection.test.jsx` (19) — the worked case, the exact ten-column order,
 distinct headers, the em dash instead of ₹0, half days at 0.5 in both the day and balance columns,
-the leave-year subheading, the ×2 marker present, absent, suppressed on a null deduction and
+the leave-year and "Absent means leave" subheading, the ×2 marker present, absent, suppressed on a null deduction and
 suppressed on a zero one, the reported zero row reproduced verbatim, the three filters, and an
 error surfaced rather than an empty table that would read as "nobody worked".
 `AttendancePage.test.jsx` gained 2 for the tab itself.

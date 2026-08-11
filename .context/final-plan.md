@@ -4845,6 +4845,39 @@ answering "how much of the annual paid-leave allowance is left".
    internal scroll. One pixel of slack, so the table will begin scrolling inside itself on longer
    content; nothing was narrowed or dropped and the specified column titles were kept verbatim.
 
+## §7.50 — The Report tab becomes a pure LEAVE report (2026-08-11)
+
+Supersedes §7.49's column set. Final order: Employee · Base Salary · Old Balance · This Month
+Credit · Absent · Paid Leave · Unpaid Leave · Deduction · Net Payable · Balance.
+
+1. **Present is gone from the table.** This answers "what leave did people take and what does it
+   cost", not "who was at work". `presentDays` is still computed and returned by the service,
+   because Payroll (§7.7) derives GROSS pay from it and this service exists to be the one
+   calculator Payroll eventually consumes — dropping it to tidy a UI column would put that
+   migration back.
+2. **Absence is LEAVE-sourced: approved Leave records only, never Attendance.** A roster-marked
+   absence with no Leave record behind it contributes nothing and is not deducted. That is a real
+   consequence, deliberately accepted: it is an attendance fact and this is a leave table. The
+   subheading says "Absent counts leave days, not roster-marked attendance", because a column
+   called Absent on a page called Attendance will otherwise be read as the attendance number.
+3. **This partially reverses 0aba084's two-source reconciliation — but both bugs that fix
+   addressed stay fixed, structurally rather than by special-casing.** An unapproved absence still
+   costs 2 days: its Leave record IS the absent day, so the day and its surcharge are both
+   counted, and `markUnapprovedAbsence` writing no Attendance record cannot bite a calculation
+   that never reads Attendance. The `on_leave`-vs-`absent` split cannot diverge either: reading
+   that status wrongly is what previously let the paid allowance be subtracted from a total it had
+   never joined, and sourcing from the Leave record removes the status question entirely. A test
+   feeds deliberately contradictory Attendance rows and asserts nothing moves.
+4. **§11.7 and §7.49 unchanged.** `PAID_LEAVE_MONTHLY_LIMIT = 1` stays; the balance columns keep
+   their meaning and their single-constant year boundary.
+5. **Ten columns, re-measured rather than assumed.** At 1280 they fit exactly — 980px into 980px,
+   no page overflow and no internal scroll. At 1024 (890 into 724) and 390 (890 into 311) they do
+   NOT fit, and `scroll={{ x }}` is what keeps the page itself clean. So the setting introduced at
+   eight columns is still needed at ten, now demonstrated at each width rather than inherited.
+   Zero `.ant-table-body` containers everywhere — `scroll={{ y }}` stays absent.
+6. **Gate unchanged: `payroll.run`.** `payroll.view` is in the default employee template and would
+   publish every salary to every employee.
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a

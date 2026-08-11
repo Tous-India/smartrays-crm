@@ -107,44 +107,61 @@ function dateKey(value) {
   return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
 }
 
-export function computeEmployeeMonth({ user, attendance, leaves, year, month }) {
+export function computeEmployeeMonth({ user, attendance = [], leaves, year, month }) {
   const calendarDays = daysInMonth(year, month);
 
+  // The Report tab no longer shows a Present column (§7.50) — it is a leave
+  // report. `presentDays` is still computed and returned because Payroll (§7.7)
+  // derives GROSS pay from it, and this service exists to be the one calculator
+  // Payroll eventually consumes; dropping it to tidy a UI column would put that
+  // migration back. `attendance` defaults to [] so a caller that only cares
+  // about leave need not fetch it at all.
   const presentDays = attendance.reduce((total, record) => {
     if (record.status === "present") return total + 1;
     if (record.status === "half_day") return total + HALF;
     return total;
   }, 0);
 
-  // Absence is resolved PER DATE, not by adding two independent counts.
+  // ABSENCE IS LEAVE-SOURCED (§7.50, 2026-08-11) — approved Leave records only,
+  // never Attendance.
   //
-  // `markUnapprovedAbsence` writes no Attendance record at all — it only flips
-  // the Leave row — so an unapproved absence never appears in `attendance`.
-  // Summing the two lists separately therefore charged ONE day for a day the
-  // policy says costs two: the day itself was invisible, leaving only the
-  // doubling surcharge. Caught in the browser against real data, on a row
-  // reading "Absent 0" beside a ×2 marker.
-  // `on_leave` counts here too, and that is load-bearing. Approving a full-day
-  // leave writes an `on_leave` Attendance record (`writeApprovedLeaveAttendance`),
-  // so an approved paid day is NOT an `absent` record. Counting only `absent`
-  // then subtracted the paid allowance from a total it had never been part of,
-  // charging 1 day for 2 absences whenever someone actually used their paid
-  // leave. "Absent" is days not worked; Paid/Unpaid Leave decompose it — which
-  // is exactly the shape of the worked case (3 absent → 1 paid + 2 unpaid).
+  // This is a LEAVE report, not an attendance report, and the two answer
+  // different questions. A roster-marked absence with no Leave record behind it
+  // therefore contributes nothing here and is not deducted: it is an attendance
+  // fact, and this table is about leave. Stated in the tab's subheading so
+  // "Absent" is never read as the attendance number.
+  //
+  // This partially reverses 0aba084's reconciliation across both sources, but
+  // BOTH bugs that fix addressed stay fixed, structurally rather than by
+  // special-casing:
+  //
+  //  - An unapproved absence is charged 2 days, not 1. Its Leave record IS the
+  //    absent day here, so the day and its surcharge are both counted — the
+  //    earlier failure was that `markUnapprovedAbsence` writes no Attendance
+  //    record, which cannot bite a calculation that never reads Attendance.
+  //  - `on_leave` vs `absent` cannot diverge. Approving a full-day leave writes
+  //    `on_leave` and a half day writes `half_day`, and reading either status
+  //    wrongly is what previously let the paid allowance be subtracted from a
+  //    total it had never joined. Sourcing from the Leave record itself removes
+  //    the status question entirely.
+  //
+  // "Absent" is leave days taken; Paid and Unpaid Leave decompose it.
   const absentByDate = new Map();
 
-  attendance.forEach((record) => {
-    if (record.status === "absent" || record.status === "on_leave") {
-      absentByDate.set(dateKey(record.date), 1);
-    } else if (record.status === "half_day") {
-      absentByDate.set(dateKey(record.date), HALF);
-    }
-  });
+  leaves
+    .filter((leave) => leave.status === "approved")
+    .forEach((leave) => {
+      leaveDateKeys(leave, year, month).forEach((key) => {
+        absentByDate.set(key, leave.isHalfDay ? HALF : 1);
+      });
+    });
 
-  // §7.5 — an unapproved absence deducts TWICE: once as the absent day it is,
-  // once as the surcharge. Tracked per date so the day is counted exactly once
-  // even when Attendance DOES have a record for it (a marked-absent day later
-  // ruled unapproved), and so the surcharge count stays reportable.
+  const absentDays = [...absentByDate.values()].reduce((total, weight) => total + weight, 0);
+
+  // §7.5 — an unapproved absence deducts TWICE: once as the absent day it
+  // already is above, once as this surcharge. Kept as its own per-date map so
+  // the surcharge count stays reportable and a date claimed by two records is
+  // still only surcharged once.
   const unapprovedByDate = new Map();
 
   leaves
@@ -154,14 +171,6 @@ export function computeEmployeeMonth({ user, attendance, leaves, year, month }) 
         unapprovedByDate.set(key, leave.isHalfDay ? HALF : 1);
       });
     });
-
-  unapprovedByDate.forEach((weight, key) => {
-    // Attendance is the recorded truth where it exists; a leave row only fills
-    // in a day nothing was recorded for.
-    if (!absentByDate.has(key)) absentByDate.set(key, weight);
-  });
-
-  const absentDays = [...absentByDate.values()].reduce((total, weight) => total + weight, 0);
 
   // Approved PAID leave, capped at the one day a month §11.7 allows. The cap is
   // applied here as well as at approval time: a report that trusted the data to
