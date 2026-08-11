@@ -2595,6 +2595,28 @@ overflowing horizontally.
 If you add a control here, check the total against ~1024px rather than trusting it to look fine —
 that is exactly the assumption that failed twice.
 
+### Pending leave requests are full-width strips (2026-08-10)
+
+The approval cards were a `Row`/`Col` grid at `xl={8}` — a narrow card floating left of the filter
+row with a large empty area beside it. They are now **independent full-width strips**, stacked with
+`gap-3`, each its own surface using the shared `app-elevated-card` class (its own vertical margin
+overridden, so the stack owns spacing and it isn't applied twice).
+
+**Not a table**: no header row, no column borders, and crucially no shared column widths — each
+strip lays itself out, so a long name in one never shifts the fields in another.
+
+One line per strip: name · team · paid/unpaid · half/full day · date range · reason · actions.
+Fixed-ish fields are `shrink-0` and take only what they need; **reason gets `flex-1` and truncates**,
+with the full text on hover, since it and the name are the only variable-length fields. Actions pin
+right with `ms-auto`.
+
+`min-w-0` on the reason is load-bearing and easy to lose: without it a flex child refuses to shrink
+below its content width and `truncate` silently does nothing.
+
+Measured in a browser rather than judged by eye — strip width equals container width at 1280/1024/390,
+seven fields sharing one line (2px offsetTop spread) at 1280 and 1024, wrapping at 390 (60px spread),
+no table semantics, and `scrollWidth === clientWidth` throughout.
+
 ### The roster grows; the page scrolls (2026-08-10)
 
 `scroll={{ y: 260 }}` on the roster Table created a fixed-height body wrapper with its own

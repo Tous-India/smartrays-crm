@@ -3164,3 +3164,35 @@ before: ant-table-body { max-height: 260px, overflow-y: scroll }  -> FAIL
 The before/after run also caught a stale `vite preview` serving an old bundle, which had made the
 pre-fix check look identical to the post-fix one — worth knowing when doing before/after browser
 checks: kill the listener rather than starting a second server on the same port.
+
+---
+
+### Leave approval cards become full-width strips (2026-08-10)
+
+A `Row`/`Col` grid at `xl={8}` left a narrow card floating beside a large empty area. Replaced with
+independent full-width strips, stacked, each its own surface via the shared `app-elevated-card`
+(vertical margin overridden so spacing comes from the stack's `gap-3` only, not both).
+
+Not a table: no header, no column borders, no shared column widths — a long name in one strip cannot
+shift the fields in another. Fixed-ish fields are `shrink-0`; reason takes `flex-1` and truncates
+with the full text on hover; actions pin right with `ms-auto`.
+
+`min-w-0` on the reason is load-bearing: a flex child will not shrink below its content width
+without it, and `truncate` then does nothing at all.
+
+Measured against computed styles, not eye:
+
+```
+@1280 stripW=980 containerW=980  7 fields  offsetTop spread 2px  oneLine=True
+@1024 stripW=724 containerW=724  7 fields  offsetTop spread 2px  oneLine=True
+@390  stripW=310 containerW=310  reason truncates  spread 60px  wraps (expected)
+tableSemantics=False and scrollWidth===clientWidth at all three
+```
+
+The first pass called 1280 a wrap: children are `items-center` aligned but different heights (Tag vs
+Text vs span), so offsetTop varies 1-2px on a single line. Exact equality would report every strip
+as wrapped; a spread threshold separates a real wrap (60px, a whole line-height) from alignment
+noise. Status tints were deliberately NOT added — that is a separate item.
+
+Frontend 89 files / 801 tests, unchanged: this is layout only, and the existing leave suite (46
+tests across 4 files) already covers the actions and passes against the new markup.

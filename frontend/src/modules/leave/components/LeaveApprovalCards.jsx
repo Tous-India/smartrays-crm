@@ -1,9 +1,9 @@
 import dayjs from "dayjs";
-import { Card, Col, Row, Tag, Button, Popconfirm, Space, Tooltip, Empty, Typography } from "antd";
+import { Tag, Button, Popconfirm, Space, Tooltip, Empty, Typography } from "antd";
 import { CheckOutlined, CloseOutlined, ExclamationCircleOutlined, DeleteOutlined } from "@ant-design/icons";
 import { LEAVE_TYPE_LABELS } from "../constants/leave.constants";
 
-const { Text, Paragraph } = Typography;
+const { Text } = Typography;
 
 /**
  * Pending leave requests as decision cards (§B2, 2026-08-05).
@@ -41,36 +41,59 @@ function LeaveApprovalCards({
   }
 
   return (
-    <Row gutter={[16, 16]}>
+    <div className="flex flex-col gap-3" data-testid="leave-approval-strips">
       {requests.map((leave) => {
         const actionable = canActOnRow(leave);
         const teamName = teamNameByEmployeeId?.get(String(leave.employeeId));
 
         return (
-          <Col key={leave._id} xs={24} md={12} xl={8}>
-            <Card size="small" className="h-full" data-testid={`leave-approval-card-${leave._id}`}>
-              <div className="mb-1 flex items-start justify-between gap-2">
-                <Text strong>{employeeNameById.get(String(leave.employeeId)) || "Unknown"}</Text>
-                <Tag color={leave.type === "paid" ? "blue" : "default"}>{LEAVE_TYPE_LABELS[leave.type]}</Tag>
-              </div>
+          <div
+            key={leave._id}
+            // `app-elevated-card` is the shared surface used by cards
+            // elsewhere; a bespoke shadow here would drift from them. Its own
+            // vertical margin is overridden — the stack's `gap-3` owns spacing
+            // between strips, so a second source would double it.
+            className="app-elevated-card !my-0 flex w-full flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-white px-4 py-3"
+            data-testid={`leave-approval-card-${leave._id}`}
+          >
+            {/* Fixed-ish fields take only what they need; `reason` below gets
+                the flexible space, since it and the name are the only
+                variable-length ones and the reason is what the decision turns
+                on. */}
+            <Text strong className="shrink-0">
+              {employeeNameById.get(String(leave.employeeId)) || "Unknown"}
+            </Text>
 
-              {teamName && <div className="mb-1 text-xs text-gray-400">{teamName}</div>}
+            {teamName && (
+              <Text type="secondary" className="shrink-0 text-xs">
+                {teamName}
+              </Text>
+            )}
 
-              <div className="text-xs text-gray-500">
-                {dayjs(leave.startDate).format("DD MMM YYYY")} – {dayjs(leave.endDate).format("DD MMM YYYY")}
-                {leave.isHalfDay && (
-                  <Tag color="cyan" className="ml-2">
-                    Half Day
-                  </Tag>
-                )}
-              </div>
+            <Tag className="shrink-0 !me-0" color={leave.type === "paid" ? "blue" : "default"}>
+              {LEAVE_TYPE_LABELS[leave.type]}
+            </Tag>
 
-              {/* Full reason, not truncated — it's the field the decision
-                  actually turns on. */}
-              <Paragraph className="mt-2 !mb-3 text-sm">{leave.reason || <Text type="secondary">No reason given</Text>}</Paragraph>
+            <Tag className="shrink-0 !me-0" color={leave.isHalfDay ? "cyan" : "default"}>
+              {leave.isHalfDay ? "Half Day" : "Full Day"}
+            </Tag>
 
-              {actionable && (
-                <Space>
+            <Text type="secondary" className="shrink-0 whitespace-nowrap text-xs">
+              {dayjs(leave.startDate).format("DD MMM YYYY")} – {dayjs(leave.endDate).format("DD MMM YYYY")}
+            </Text>
+
+            {/* Truncated rather than wrapped: a strip is one line, and the full
+                text is a hover away. `min-w-0` is what actually lets a flex
+                child shrink below its content width — without it `truncate`
+                silently does nothing. */}
+            <Tooltip title={leave.reason || "No reason given"}>
+              <span className="min-w-0 flex-1 truncate text-sm" data-testid={`leave-reason-${leave._id}`}>
+                {leave.reason || <Text type="secondary">No reason given</Text>}
+              </span>
+            </Tooltip>
+
+            {actionable && (
+              <Space className="ms-auto shrink-0" data-testid={`leave-actions-${leave._id}`}>
                   {canApprove && (
                     <Popconfirm
                       title="Approve this leave request?"
@@ -129,13 +152,12 @@ function LeaveApprovalCards({
                       </Tooltip>
                     </Popconfirm>
                   )}
-                </Space>
-              )}
-            </Card>
-          </Col>
+              </Space>
+            )}
+          </div>
         );
       })}
-    </Row>
+    </div>
   );
 }
 
