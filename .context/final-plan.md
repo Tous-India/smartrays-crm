@@ -123,7 +123,7 @@ Source of Truth rule made concrete, and to mark what's real vs. planned in the d
 | `ticket` | ✅ Built (§7.8, Phase 5) | Internal + Customer Portal support ticket lifecycle — raise/list/assign/status/comments/attachments. Customer Portal self-signup (§7.0) is a companion piece, built the same task |
 | `payment` | ✅ Built (§7.9, Phase 7) | Admin-only manual payment log, with optional partial reconciliation against an existing `Invoice` (§11.3, resolved) |
 | `amc` | ✅ Built (§7.10, Phase 7) | Annual maintenance contract tracking per customer, "own team"/"own" scoped via the underlying Customer's ownership |
-| `report` | ✅ Built (§7.11, Phase 8; analytics endpoints added §7.23) | Unified `POST /reports/generate` dispatcher (attendance/leave/payroll/transport/leads/customers) — uploads to Cloudinary, returns a download URL. `GET /attendance/report`/`GET /travel-logs/report` now internally reuse it (breaking response-shape change). §7.23 adds 11 `GET /reports/analytics/*` MongoDB-aggregation endpoints (the first aggregation pipelines in this backend) in a new sibling `analytics.service.js`/`analytics.controller.js`, reusing each target module's own scoping logic |
+| `report` | ✅ Built (§7.11, Phase 8; analytics endpoints added §7.23) | Unified `POST /reports/generate` dispatcher (attendance/leave/payroll/**payrollRun**/transport/leads/customers) — **streams the file directly**; the Cloudinary upload/download-URL shape was removed 2026-08-04, see the Cloudinary row below. `GET /attendance/report`/`GET /travel-logs/report` now internally reuse it (breaking response-shape change). §7.23 adds 11 `GET /reports/analytics/*` MongoDB-aggregation endpoints (the first aggregation pipelines in this backend) in a new sibling `analytics.service.js`/`analytics.controller.js`, reusing each target module's own scoping logic |
 | `notification` | ✅ **Built (§6.7/§7.11-Platform, Phase 9, 2026-07-16)** | `Notification`/`PushSubscription` models, Web Push (VAPID) delivery via `web-push`, self-scoped subscribe/list/mark-read endpoints. Wired into Leads (assignment + a 24h/15m follow-up-reminder cron) and Ticket assignment (a deliberate small addition beyond the Leads-only spec) — see §7.16 |
 | `transport` | ✅ Built (§7.6, Phase 6, 2026-07-13) | Distance-per-shift (auto from Attendance checkout, or manual entry) via Google Maps, separate from `location`'s raw GPS stream. Approval workflow (`pending`/`approved`/`rejected`) added 2026-07-13; only `approved` entries feed Payroll mileage reimbursement (§11.4, resolved) |
 | Dashboards | ✅ **Built (§7.13/§7.20/§7.21, Phase 9)** | Frontend widget shell composed by role + permissions, declarative widget catalog (`dashboardConfig.js`) — no dedicated backend module. Leads + Customers widgets (§7.20) plus 6 operational glance widgets — Attendance/Leave/Tickets/AMC/Payments/Payroll (§7.21); an Employee-facing own-scoped widget is a future incremental addition using the same pattern |
@@ -3889,6 +3889,46 @@ submission's fields aren't recognized, the full raw payload is still preserved (
 dropped) in the created lead's `notes`, so nothing is lost even in that case.
 
 ---
+
+### §7.11 addendum — registering a report module takes THREE lists (2026-08-12)
+
+A module must appear in **all three** of these or it does not work:
+
+1. `MODULE_HANDLERS` — `report.service.js` (the handler and its permission gate)
+2. `SUPPORTED_MODULES` — `report.validation.js` (the allowlist)
+3. `FILTER_VALIDATORS` — `report.validation.js` (the per-module `filters` shape check)
+
+**Missing any one fails differently, and no error names the registry that was missed:**
+
+| Missing from | Symptom |
+|---|---|
+| `SUPPORTED_MODULES` | `400 — module must be one of: …` (the new module is absent from the list it prints) |
+| `FILTER_VALIDATORS` | `500 — FILTER_VALIDATORS[module] is not a function` |
+| `MODULE_HANDLERS` | `400 — module must be one of: …` from `generateReport` itself |
+
+Discovered through the `payrollRun` regression: §7.58 added the handler and neither validator entry,
+so every run-scoped PDF/Excel export 400d before reaching its code. Filling in the allowlist alone
+then produced the 500. Both were fixed in `0de5cb3`, and the reason is recorded beside the lists so
+the next module added does not repeat it.
+
+### §7.26 addendum — the read-on-visibility observer was REMOVED, not shipped (2026-08-12)
+
+An `IntersectionObserver` approach to clearing sidebar badges when the underlying items are actually
+rendered (`useMarkReadWhenVisible.js`, plus wiring in `LeaveApprovalCards.jsx` and
+`markForEntity.js`) was implemented and **tested in a real browser, where it fired ZERO network
+calls — no PATCHes, no GETs.** One cause was found and fixed (the ref callback ran before the effect
+created the observer) and it still did not fire. It was never committed and has now been deleted
+rather than carried in the working tree.
+
+**Why the bar for the next attempt is higher than "it looks right":** this feature exists to replace
+a badge-clearing mechanism that DESTROYED 18 real notifications by marking everything read on
+navigation. An observer that is too eager recreates exactly that bug — and it does so silently,
+because the damage is invisible until someone looks for a notification that no longer exists.
+
+**Therefore any future implementation must be validated against OBSERVED REAL-BROWSER NETWORK
+ACTIVITY before it is committed** — the actual PATCH requests, their count, and which notification
+ids they carry — not against a passing jsdom test, and not by eye. jsdom does not run
+`IntersectionObserver` meaningfully, which is precisely why the failure survived the test suite.
 
 ### 7.26 Sidebar Count Badges (2026-07-30)
 
