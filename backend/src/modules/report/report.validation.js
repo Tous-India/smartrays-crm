@@ -8,7 +8,22 @@ import { CUSTOMER_STATUSES } from "../customer/customer.model.js";
 
 // The exact six values §7.11 names — attendance, leave, payroll, transport
 // (TravelLog's module key, matching its folder name), leads, customers.
-const SUPPORTED_MODULES = ["attendance", "leave", "payroll", "transport", "leads", "customers"];
+// `payrollRun` (§7.58) was added to `MODULE_HANDLERS` in 6306ee7 but to
+// NEITHER of this file's two lists, so every run-scoped export 400d in the
+// validator. Adding it here alone then produced a 500 —
+// `FILTER_VALIDATORS[module] is not a function` — because a module has to
+// appear in THREE places to work: the handler map in report.service.js, the
+// allowlist below, and `FILTER_VALIDATORS`. Missing any one fails differently,
+// and neither failure names the list that was missed.
+const SUPPORTED_MODULES = [
+  "attendance",
+  "leave",
+  "payroll",
+  "payrollRun",
+  "transport",
+  "leads",
+  "customers",
+];
 const SUPPORTED_FORMATS = ["pdf", "xlsx"];
 
 const noop = () => {};
@@ -42,6 +57,22 @@ const FILTER_VALIDATORS = {
   customers: (filters) => {
     if (filters.status && !CUSTOMER_STATUSES.includes(filters.status)) {
       throw new ApiError(400, `filters.status must be one of: ${CUSTOMER_STATUSES.join(", ")}`);
+    }
+  },
+  // A run is identified by its PERIOD, so both parts are required — unlike the
+  // sibling `payroll` module, whose `?month=` is an optional narrowing of a
+  // list. Validated here rather than only in the handler so a bad period is a
+  // 400 from the same place every other module's is.
+  payrollRun: (filters) => {
+    const month = Number(filters.month);
+    const year = Number(filters.year);
+
+    if (!Number.isInteger(month) || month < 1 || month > 12) {
+      throw new ApiError(400, "filters.month must be a whole number between 1 and 12");
+    }
+
+    if (!Number.isInteger(year)) {
+      throw new ApiError(400, "filters.year is required");
     }
   },
 };

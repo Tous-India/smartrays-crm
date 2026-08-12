@@ -791,3 +791,50 @@ describe("POST /reports/generate — per-module filter validation reuses each mo
     expect(response.status).toBe(400);
   });
 });
+
+/**
+ * §7.58 regression — `payrollRun` must survive VALIDATION, not just have a
+ * handler.
+ *
+ * The module was added to `MODULE_HANDLERS` in 6306ee7 but not to
+ * `report.validation.js`'s own `SUPPORTED_MODULES`, so every run-scoped export
+ * 400d with "module must be one of…" before `generateReport` ever ran. Two
+ * separate lists of module names is how that happened; this pins the one that
+ * was missed.
+ */
+describe("module: payrollRun — validation allowlist", () => {
+  it("is ACCEPTED by the validator and reaches its handler", async () => {
+    const response = await adminAgent
+      .post("/api/v1/reports/generate")
+      .send({ module: "payrollRun", format: "xlsx", filters: { month: 6, year: 2026 } })
+      .buffer(true)
+      .parse(bufferParser);
+
+    // The bug was a 400 from the validator. Anything that is not that means
+    // the request got through to the handler.
+    expect(response.status).not.toBe(400);
+    expect(response.status).toBe(200);
+    expect(response.headers["content-type"]).toContain("spreadsheetml");
+  });
+
+  it("requires a PERIOD — a run is identified by one, unlike the payroll list", async () => {
+    const noPeriod = await adminAgent
+      .post("/api/v1/reports/generate")
+      .send({ module: "payrollRun", format: "xlsx", filters: {} });
+    expect(noPeriod.status).toBe(400);
+
+    const badMonth = await adminAgent
+      .post("/api/v1/reports/generate")
+      .send({ module: "payrollRun", format: "xlsx", filters: { month: 13, year: 2026 } });
+    expect(badMonth.status).toBe(400);
+  });
+
+  it("still rejects a module that genuinely does not exist", async () => {
+    const response = await adminAgent
+      .post("/api/v1/reports/generate")
+      .send({ module: "notARealModule", format: "xlsx", filters: {} });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/module must be one of/);
+  });
+});
