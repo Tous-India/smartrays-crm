@@ -66,6 +66,35 @@ export function showsDoubleMarker(row) {
   return row.deduction > 0 && row.doubleDeductionDays > 0;
 }
 
+/**
+ * Column-group tints (§7.51) — THREE for ten columns, not ten.
+ *
+ * The tint says what KIND of column this is, so the table reads as three
+ * blocks: what you are owed, what you used, what it costs. Employee is the
+ * anchor and stays untinted, which is what makes the blocks visible either side
+ * of it.
+ *
+ * Never by value: Deduction and Net Payable carry the SAME tint on purpose. A
+ * red deduction or a green net payable would have the table pass judgement on
+ * someone's pay, which is not its job.
+ *
+ * Applied to header AND body cells through `onHeaderCell`/`onCell`, so a column
+ * cannot end up tinted in one and not the other. Colours live in
+ * `styles/index.css` beside the other registered families.
+ */
+const GROUP = {
+  entitlement: "report-col-entitlement",
+  consumption: "report-col-consumption",
+  money: "report-col-money",
+};
+
+/** Both cell hooks from one group name, so they can never disagree. */
+function tint(group) {
+  const className = GROUP[group];
+
+  return { onHeaderCell: () => ({ className }), onCell: () => ({ className }) };
+}
+
 export function resolveMonth(filter, customMonth) {
   if (filter === "previous") {
     return dayjs().subtract(1, "month");
@@ -146,6 +175,7 @@ function MonthlyReportSection() {
       dataIndex: "baseSalary",
       key: "baseSalary",
       align: "right",
+      ...tint("money"),
       render: (value) =>
         value == null ? (
           <Tooltip title="No base salary recorded for this employee">
@@ -169,6 +199,7 @@ function MonthlyReportSection() {
       dataIndex: "oldBalance",
       key: "oldBalance",
       align: "right",
+      ...tint("entitlement"),
       render: days,
     },
     {
@@ -176,6 +207,7 @@ function MonthlyReportSection() {
       dataIndex: "monthCredit",
       key: "monthCredit",
       align: "right",
+      ...tint("entitlement"),
       render: days,
     },
     {
@@ -192,6 +224,7 @@ function MonthlyReportSection() {
       dataIndex: "absentDays",
       key: "absentDays",
       align: "right",
+      ...tint("consumption"),
       render: days,
     },
     {
@@ -199,6 +232,7 @@ function MonthlyReportSection() {
       dataIndex: "paidLeave",
       key: "paidLeave",
       align: "right",
+      ...tint("consumption"),
       render: days,
     },
     {
@@ -206,6 +240,7 @@ function MonthlyReportSection() {
       dataIndex: "unpaidLeave",
       key: "unpaidLeave",
       align: "right",
+      ...tint("consumption"),
       render: days,
     },
     {
@@ -213,6 +248,7 @@ function MonthlyReportSection() {
       dataIndex: "deduction",
       key: "deduction",
       align: "right",
+      ...tint("money"),
       // A doubled deduction does NOT match the day count, and a figure that
       // silently disagrees with the row beside it reads as a bug. The marker
       // says which rows are doubled and why, rather than leaving the reader to
@@ -240,6 +276,7 @@ function MonthlyReportSection() {
       dataIndex: "netPayable",
       key: "netPayable",
       align: "right",
+      ...tint("money"),
       render: (value) => <span className="font-semibold">{money(value)}</span>,
     },
     {
@@ -248,6 +285,7 @@ function MonthlyReportSection() {
       dataIndex: "balance",
       key: "balance",
       align: "right",
+      ...tint("entitlement"),
       render: days,
     },
   ];
@@ -300,6 +338,7 @@ function MonthlyReportSection() {
 
       <Table
         rowKey="employeeId"
+        className="app-report-table"
         dataSource={rows}
         columns={columns}
         loading={isLoading}

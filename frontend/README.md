@@ -2740,7 +2740,14 @@ rather than rediscovering it:
 | sky / violet | geofence |
 | blue / grey | live map current-position / stale marker |
 | rose / teal | roster state buttons — Half Day / Full Day |
-| **orange** | **pending leave strip (new)** |
+| orange | pending leave strip |
+| **indigo** | **Report tab — entitlement columns (new)** |
+| **lime** | **Report tab — consumption columns (new)** |
+| **fuchsia** | **Report tab — money columns (new)** |
+
+Still unclaimed after this: **stone** and **cyan**. Stone was considered and dropped — `stone-50`
+is `#fafaf9`, indistinguishable from white behind a table, so it fails the "palest tint that still
+reads as a tint" bar. Cyan sits between the already-taken sky and teal.
 
 On the amber question: the timeline's break band is `bg-amber-400` `rgb(251,191,36)` — a saturated
 mid-tone drawn as a thin bar inside a 24-hour track. This is `rgb(255,237,213)`, a pale wash across a
@@ -2753,6 +2760,57 @@ colours the strip already sets.
 
 Pending only — status tints (approved / declined / unapproved absence) are a separate item, and the
 strips render only pending requests today.
+
+### Report tab: columns tinted by MEANING, three tints for ten columns (§7.51, 2026-08-12)
+
+The report is ten columns of numbers. Tinting each one would have produced ten washes that flatten
+into noise and none that carry meaning, so the tint marks what KIND of column it is:
+
+| Group | Columns | Tint |
+|---|---|---|
+| Identity | Employee | none — the anchor |
+| Entitlement | Old Balance · This Month Credit · Balance | `indigo-50` `#eef2ff` |
+| Consumption | Absent · Paid Leave · Unpaid Leave | `lime-50` `#f7fee7` |
+| Money | Base Salary · Deduction · Net Payable | `fuchsia-50` `#fdf4ff` |
+
+A reader learns three blocks — what you are owed, what you used, what it costs — rather than a
+colour per column. **Employee stays untinted on purpose:** the anchor being plain is what makes the
+blocks either side of it visible.
+
+**Two groups are deliberately split across the row, and the tint is what reunites them.** Money
+covers Base Salary at the left and Deduction/Net Payable in the middle; Entitlement opens with Old
+Balance/Credit and closes with Balance at the far right. The column ORDER is the specified one; the
+tint is what lets the eye connect a group across the gap.
+
+**Never by value.** Deduction and Net Payable carry the same tint precisely because a red deduction
+or a green net payable would be the table passing judgement on someone's pay. `money` is fuchsia
+rather than the obvious green for the same reason — green-for-money would read as "good" on a row
+where the same tint also covers a loss.
+
+**Palette choice.** green/amber/red, sky/violet, blue/grey, rose/teal and orange were taken, and
+the pale ambers are avoided outright as near-identical to the pending-strip orange. Indigo, lime
+and fuchsia are the widest hue separation left — blue, yellow-green, magenta. All three are the
+`-50` step: the palest that still reads as a tint behind figures, which are thinner strokes than
+body text.
+
+**Header specificity was a real bug, invisible in a screenshot.** Body cells need only a plain class
+because AntD wraps those rules in `:where()` (zero specificity). Header cells do not — AntD sets
+`.ant-table-wrapper .ant-table-thead >tr >th` at (0,3,0), which silently beat the class and left
+every header grey while the bodies were tinted. Caught by reading computed backgrounds and comparing
+header against body per column; the fix matches AntD's own selector plus the class, (0,3,1), without
+reaching for `!important`.
+
+**Hover deepens to the `-100` step of the same family** rather than falling back to AntD's grey — a
+row highlight that dropped the group colour would break the three blocks apart exactly when the
+reader is tracking across one row. Verified with a real `Input.dispatchMouseEvent`: a synthetic
+`mouseover` does NOT trigger it, because AntD tracks hover through React's own handlers, and the
+first measurement pass reported meaningless numbers because of that.
+
+**Measured at 1280** (computed styles, not by eye): header and body backgrounds match on all nine
+tinted columns, contrast **18.78:1 to 20.29:1** against AntD's near-black text — far above AA's
+4.5:1 — and the layout is unchanged at **980px of columns in a 980px holder**, no page overflow and
+no internal scroll. At 1024 (890 into 724) and 390 (890 into 311) `scroll={{ x }}` still handles it,
+with zero `.ant-table-body` containers throughout.
 
 ### Leave request form: two fields per row (2026-08-10)
 

@@ -71,6 +71,62 @@
 }
 
 /*
+ * Monthly Report column-group tints (§7.51, 2026-08-12).
+ *
+ * THREE tints for ten columns, not ten. The tint marks what KIND of column it
+ * is, so a reader learns three blocks — what you are owed, what you used, what
+ * it costs — rather than memorising a colour per column. Ten distinct tints
+ * would flatten into noise and none would carry meaning.
+ *
+ * NEVER by value. Deduction and Net Payable share one tint precisely because a
+ * red Deduction or a green Net Payable would be the table passing judgement on
+ * someone's pay, which is not its job. `money` is deliberately fuchsia rather
+ * than green: green-for-money would read as "good" on a row where the same
+ * tint also covers a deduction.
+ *
+ * PALETTE (see frontend/README.md's running register). green/amber/red,
+ * sky/violet, blue/grey, rose/teal and orange were already spoken for, and the
+ * pale ambers are avoided outright as near-identical to the pending-strip
+ * orange. These three are the widest hue separation left — blue, yellow-green
+ * and magenta — and each is a -50 shade: the palest step that still reads as a
+ * tint behind figures, which are thinner strokes than body text.
+ *
+ * Hover deepens to the -100 step of the SAME family rather than falling back to
+ * AntD's grey. A row highlight that dropped the group colour would break the
+ * three blocks apart exactly when the reader is tracking across one row.
+ *
+ * SPECIFICITY: body cells need only a plain class — AntD wraps those rules in
+ * `:where()` (zero specificity), the same reason `.app-data-table` below works.
+ * HEADER cells do not: AntD sets `.ant-table-wrapper .ant-table-thead >tr >th`
+ * with real specificity (0,3,0), which silently beat a plain class and left the
+ * headers grey while the bodies were tinted. Caught by reading computed styles;
+ * it looks fine enough in a screenshot to miss. Matching that selector and
+ * adding the class takes it to (0,3,1) without reaching for `!important`.
+ */
+.app-report-table .report-col-entitlement,
+.app-report-table .ant-table-thead > tr > th.report-col-entitlement {
+  background-color: #eef2ff; /* indigo-50 */
+}
+.app-report-table .report-col-consumption,
+.app-report-table .ant-table-thead > tr > th.report-col-consumption {
+  background-color: #f7fee7; /* lime-50 */
+}
+.app-report-table .report-col-money,
+.app-report-table .ant-table-thead > tr > th.report-col-money {
+  background-color: #fdf4ff; /* fuchsia-50 */
+}
+
+.app-report-table .ant-table-tbody > tr > td.report-col-entitlement.ant-table-cell-row-hover {
+  background-color: #e0e7ff; /* indigo-100 */
+}
+.app-report-table .ant-table-tbody > tr > td.report-col-consumption.ant-table-cell-row-hover {
+  background-color: #ecfccb; /* lime-100 */
+}
+.app-report-table .ant-table-tbody > tr > td.report-col-money.ant-table-cell-row-hover {
+  background-color: #fae8ff; /* fuchsia-100 */
+}
+
+/*
  * Shared list-table treatment (`.app-data-table`) — originally
  * Leads-specific (`.leads-table`), generalized here once a second module
  * (Payments) needed the identical row density + card separation, per that

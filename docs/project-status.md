@@ -3440,3 +3440,42 @@ balance columns keep their meaning and their single-constant year boundary. The 
 
 Backend **31 files / 934 tests** (was 31/931). Frontend **90 / 822** (was 90/821). The four failing
 frontend files are the known flakes.
+
+### Report tab columns tinted by meaning (§7.51, 2026-08-12)
+
+Three tints for ten columns, not ten. The tint marks what KIND of column it is, so the table reads
+as three blocks: **entitlement** (Old Balance / This Month Credit / Balance, `indigo-50`),
+**consumption** (Absent / Paid Leave / Unpaid Leave, `lime-50`) and **money** (Base Salary /
+Deduction / Net Payable, `fuchsia-50`). Employee stays untinted — the anchor being plain is what
+makes the blocks either side of it visible.
+
+**Never by value.** Deduction and Net Payable share one tint precisely because a red deduction or a
+green net payable would be the table passing judgement on someone's pay. Money is fuchsia rather
+than the obvious green for the same reason.
+
+**Palette register updated — indigo, lime and fuchsia are now taken.** Remaining: stone and cyan.
+Stone was considered and dropped: `stone-50` is `#fafaf9`, indistinguishable from white behind a
+table, so it fails the "palest tint that still reads as a tint" bar.
+
+**A header/body mismatch was found by measurement and would have survived a screenshot.** Body cells
+need only a plain class since AntD wraps those rules in `:where()`; header cells do not —
+`.ant-table-wrapper .ant-table-thead >tr >th` is (0,3,0) and silently beat the class, leaving every
+header grey while the bodies were tinted. Comparing computed header against computed body per column
+is what caught it.
+
+**The hover check was wrong on the first pass, and the numbers it produced were meaningless.** A
+synthetic `mouseover` does not trigger AntD's row hover — it tracks hover through React's own
+handlers — so the cells reported `hovered=false`. Re-run with a real `Input.dispatchMouseEvent`:
+each group now deepens to its own `-100` step rather than reverting to grey, which keeps the three
+blocks intact while the reader tracks across a row.
+
+Measured at 1280: header and body match on all nine tinted columns, contrast **18.78:1 to 20.29:1**
+(AA needs 4.5:1), layout unchanged at **980px of columns in a 980px holder**. 1024 and 390 still
+handled by `scroll={{ x }}`, zero `.ant-table-body` containers.
+
+**Dev-environment note:** port 5173 is now occupied by another local project, so this app started on
+**5175** and the backend's `CLIENT_ORIGIN` (pinned to 5173) refused its requests. Rather than edit
+`backend/.env`, the verification rewrites CORS headers at the CDP layer — the server and its config
+are untouched. Worth knowing before anyone re-diagnoses that as broken credentials.
+
+Frontend **90 files / 825 tests** (was 90/822, +3). The four failing files are the known flakes.

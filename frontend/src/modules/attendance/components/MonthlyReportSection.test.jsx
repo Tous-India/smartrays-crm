@@ -182,6 +182,74 @@ describe("the annual balance columns (§7.49)", () => {
   });
 });
 
+describe("column-group tints (§7.51)", () => {
+  const GROUP_OF = {
+    Employee: null,
+    "Base Salary": "report-col-money",
+    "Old Balance": "report-col-entitlement",
+    "This Month Credit": "report-col-entitlement",
+    Absent: "report-col-consumption",
+    "Paid Leave": "report-col-consumption",
+    "Unpaid Leave": "report-col-consumption",
+    Deduction: "report-col-money",
+    "Net Payable": "report-col-money",
+    Balance: "report-col-entitlement",
+  };
+
+  it("tints header AND body cells of every column with its group", async () => {
+    render(<MonthlyReportSection />);
+
+    const headers = await screen.findAllByRole("columnheader");
+    const cells = (await screen.findByRole("row", { name: /Asha Verma/ })).querySelectorAll("td");
+
+    Object.entries(GROUP_OF).forEach(([title, group], index) => {
+      const header = headers[index];
+      const cell = cells[index];
+
+      expect(header.textContent.trim()).toBe(title);
+
+      if (group === null) {
+        // Employee is the anchor — untinted is what makes the blocks either
+        // side of it visible.
+        expect(header.className).not.toMatch(/report-col-/);
+        expect(cell.className).not.toMatch(/report-col-/);
+        return;
+      }
+
+      // Header and body must agree; a column tinted in one and not the other
+      // would read as a rendering fault rather than a grouping.
+      expect(header.className).toContain(group);
+      expect(cell.className).toContain(group);
+    });
+  });
+
+  it("uses THREE tints for ten columns, not one per column", async () => {
+    render(<MonthlyReportSection />);
+
+    const headers = await screen.findAllByRole("columnheader");
+    const groups = new Set(
+      headers.map((h) => (h.className.match(/report-col-\w+/) || [])[0]).filter(Boolean)
+    );
+
+    // Ten distinct tints would flatten into noise and none would carry meaning.
+    expect(groups.size).toBe(3);
+  });
+
+  it("gives Deduction and Net Payable the SAME tint, never one by value", async () => {
+    // A red deduction or a green net payable would be the table passing
+    // judgement on someone's pay. The tint marks the kind of column, nothing
+    // more — so a loss and a gain look identical.
+    respondWith([row({ deduction: 5000, netPayable: 25000 })]);
+
+    render(<MonthlyReportSection />);
+
+    const cells = (await screen.findByRole("row", { name: /Asha Verma/ })).querySelectorAll("td");
+
+    expect(cells[7].className).toContain("report-col-money");
+    expect(cells[8].className).toContain("report-col-money");
+  });
+});
+
 describe("a doubled deduction says so", () => {
   it("marks the row and explains why the figure exceeds the day count", async () => {
     respondWith([row({ unpaidLeave: 1, doubleDeductionDays: 1, deduction: 1935 })]);
