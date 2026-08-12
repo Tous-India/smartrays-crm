@@ -1,10 +1,58 @@
 import { Router } from "express";
+import ApiError from "../../utils/ApiError.js";
 import authenticate from "../../middlewares/authenticate.middleware.js";
 import { authorize, requireAdmin } from "../../middlewares/authorize.middleware.js";
-import { run, list, payslip, monthlyReport } from "./payroll.controller.js";
+import {
+  run,
+  list,
+  payslip,
+  monthlyReport,
+  periodReview,
+  submitForReview,
+  approve,
+  markPaid,
+  createAdjustment,
+  cronRun,
+} from "./payroll.controller.js";
 import { validateRunQuery, validateListQuery, validatePayslipQuery } from "./payroll.validation.js";
 
 const payrollRouter = Router();
+
+/**
+ * Machine-only pay-run trigger (§7.54) — VERCEL CRON, never node-cron.
+ *
+ * `node-cron` does not execute on Vercel at all, which is the entire reason
+ * payroll has never fired in production: the job was registered and simply
+ * never ran. This endpoint is what a Vercel Cron entry calls.
+ *
+ * Accepts GET as well as POST because Vercel Cron issues GET, and reads
+ * `CRON_SECRET` from `process.env` at REQUEST time rather than the import-time
+ * `env` snapshot — a serverless invocation can be handed its environment
+ * per-request, and reading live keeps the guard independent of module import
+ * order. Identical reasoning to /attendance/cleanup, deliberately.
+ *
+ * 503 when the secret is unset, never "open to everyone". CRON_SECRET is NOT
+ * currently set in Vercel production, so this WILL 503 there until it is —
+ * which is correct fail-closed behaviour for an endpoint that writes payroll.
+ */
+function verifyPayrollCronToken(req, res, next) {
+  const cronSecret = process.env.CRON_SECRET;
+
+  if (!cronSecret) {
+    throw new ApiError(503, "Payroll cron is not configured");
+  }
+
+  const bearer = (req.headers.authorization || "").replace(/^Bearer /, "");
+
+  if (bearer !== cronSecret) {
+    throw new ApiError(401, "Invalid or missing cron token");
+  }
+
+  next();
+}
+
+payrollRouter.post("/cron/run", verifyPayrollCronToken, cronRun);
+payrollRouter.get("/cron/run", verifyPayrollCronToken, cronRun);
 
 // Admin-only per §5's matrix — Payroll is the one workforce module where
 // Manager gets no grant at all, so this is a plain requireAdmin gate rather
@@ -30,6 +78,18 @@ payrollRouter.post("/run", authenticate, requireAdmin, validateRunQuery, run);
  * tier. Caught by the access test below, which returned 200.
  */
 payrollRouter.get("/monthly-report", authenticate, authorize("payroll", "run"), monthlyReport);
+
+/**
+ * The pay run's period endpoints (§7.54), all gated on `payroll.run` — the
+ * see-everyone tier. NEVER `payroll.view`: that means "own payslip only" and
+ * sits in the default employee template, so gating any company-wide action on
+ * it would hand every employee the whole company's pay.
+ */
+payrollRouter.get("/period/review", authenticate, authorize("payroll", "run"), periodReview);
+payrollRouter.post("/period/submit", authenticate, authorize("payroll", "run"), submitForReview);
+payrollRouter.post("/period/approve", authenticate, authorize("payroll", "run"), approve);
+payrollRouter.post("/period/paid", authenticate, authorize("payroll", "run"), markPaid);
+payrollRouter.post("/period/adjustments", authenticate, authorize("payroll", "run"), createAdjustment);
 
 payrollRouter.get("/", authenticate, validateListQuery, list);
 

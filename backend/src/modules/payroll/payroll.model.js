@@ -84,10 +84,71 @@ const payrollSchema = new mongoose.Schema(
       required: true,
     },
     // Defaults to the 1st of the month AFTER the payroll month — see
-    // payroll.service.js#runPayroll.
+    // payroll.service.js#runPayroll. This is the SCHEDULED pay date, computed
+    // at generation; `paidAt` below is when someone actually recorded payment.
     paidOn: {
       type: Date,
       required: true,
+    },
+
+    // --- The pay run state machine (§7.54, 2026-08-12) ---
+    //
+    // draft -> review -> approved -> paid, and every transition is validated in
+    // payroll.service.js. A draft is regenerated freely from live data; the
+    // moment a period is APPROVED its figures are frozen and no code path
+    // recomputes them, because a payslip that changes after the fact is not a
+    // payslip. Editing a July attendance record in September must not move
+    // July's pay.
+    status: {
+      type: String,
+      enum: ["draft", "review", "approved", "paid"],
+      default: "draft",
+      required: true,
+    },
+    // WHO approved, and WHEN. Approval is the point at which numbers become
+    // somebody's pay, so it is attributable by construction rather than by an
+    // audit log that could be missing.
+    approvedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    approvedAt: {
+      type: Date,
+      default: null,
+    },
+    paidBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    paidAt: {
+      type: Date,
+      default: null,
+    },
+
+    // Corrections to an EARLIER, already-approved period, carried onto this
+    // one. History is never mutated — the same discipline as an AMC renewal
+    // creating a new record rather than extending in place. Copied onto the
+    // record at generation from the `PayrollAdjustment` collection, so a
+    // regenerated draft picks up anything raised since.
+    adjustments: {
+      type: [
+        {
+          amount: { type: Number, required: true },
+          reason: { type: String, required: true, trim: true },
+          createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+          createdAt: { type: Date, default: Date.now },
+          // The period being corrected, which is NOT this record's period.
+          sourceMonth: { type: Number, min: 1, max: 12 },
+          sourceYear: { type: Number },
+        },
+      ],
+      default: [],
+    },
+    adjustmentTotal: {
+      type: Number,
+      default: 0,
     },
   },
   {

@@ -4906,6 +4906,36 @@ Payroll — so a change to either moves both. Payroll's own arithmetic is delete
 *This is the foundation only. The pay run itself (draft → review → approved → paid) is a separate
 task.*
 
+## §7.54 — The pay run (2026-08-12, §6.5/§7.7)
+
+draft → review → approved → paid, built on §7.53's shared calculator.
+
+1. **Approval is the freeze, and it is the point of the whole design.** An approved record stores
+   its own figures and nothing recomputes it — `runPayrollForEmployee` 409s on any non-draft record
+   whatever `regenerate` says, and the bulk path skips it. Editing a July attendance record in
+   September cannot move July's pay. Asserted directly: a test approves a period, deletes every
+   attendance record beneath it, adds three days of unpaid leave, and checks every figure is
+   unchanged.
+2. **A draft regenerates freely and has no payslip.** Its numbers are still moving. The payslip 409s
+   until approval, then renders from STORED figures — proven by deleting the underlying attendance
+   and still getting a valid PDF — with the §7.5 ×2 marked and one labelled line per adjustment.
+3. **Corrections are adjustments on the NEXT run, never edits to history**, the same discipline AMC
+   renewal follows. `PayrollAdjustment` is its own collection because an adjustment is raised before
+   the target draft exists and a draft is regenerated freely; embedding it would destroy it on the
+   next re-run. Re-collection at generation is also what stops a re-run double-counting. Reason and
+   actor are mandatory.
+4. **Anomalies are flagged, not blocked.** Every flag has an innocent cause as well as a suspicious
+   one — a long unpaid absence and a bad roster mark produce the same high deduction — so blocking
+   would punish the common case for the rare one.
+5. **Vercel Cron, never node-cron**, which does not execute on Vercel and is why payroll never
+   fired. GET as well as POST, `CRON_SECRET` read from `process.env` at request time, 503 when
+   unset. **Draft only: a machine must not decide what people are paid.**
+6. **`CRON_SECRET` is not set in Vercel production**, so the endpoint 503s there until it is. That
+   is correct fail-closed behaviour and is reported rather than worked around.
+7. **`payroll.run` gates every company-wide action.** `payroll.view` is own-payslip-only and sits in
+   the default employee template; a parameterised test walks all five endpoints as an employee
+   holding it and asserts 403.
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a

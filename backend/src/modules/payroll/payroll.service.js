@@ -7,6 +7,14 @@ import User from "../user/user.model.js";
 import Attendance from "../attendance/attendance.model.js";
 import Leave from "../leave/leave.model.js";
 import TravelLog from "../transport/travelLog.model.js";
+import PayrollAdjustment from "./payrollAdjustment.model.js";
+
+/**
+ * A deduction past this share of gross is FLAGGED, not blocked (§7.54). A long
+ * unpaid absence legitimately looks like this; so does a mistaken roster mark,
+ * and only a human can tell them apart.
+ */
+const DEDUCTION_ANOMALY_SHARE = 1 / 3;
 import {
   computeEmployeeMonth,
   leaveYearStart,
@@ -54,6 +62,18 @@ async function runPayrollForEmployee(employeeId, month, year, regenerate) {
 
   const existing = await Payroll.findOne({ employeeId, month, year });
 
+  // THE load-bearing rule (§7.54): once a period is approved its figures are
+  // frozen. Regenerating is a DRAFT-only operation — no flag reopens it,
+  // because an approved record is a payslip somebody has been shown, and a
+  // payslip that changes afterwards is not a payslip. Editing a July
+  // attendance record in September must leave July's pay exactly where it was.
+  if (existing && existing.status !== "draft") {
+    throw new ApiError(
+      409,
+      `Payroll for ${month}/${year} is ${existing.status} and can no longer be recomputed. Raise an adjustment on the next run instead.`
+    );
+  }
+
   if (existing && !regenerate) {
     throw new ApiError(
       409,
@@ -65,11 +85,248 @@ async function runPayrollForEmployee(employeeId, month, year, regenerate) {
 
   if (existing) {
     Object.assign(existing, fields);
+    await applyPendingAdjustments(existing);
     await existing.save();
     return existing;
   }
 
-  return Payroll.create({ employeeId, month, year, ...fields });
+  const created = await Payroll.create({ employeeId, month, year, ...fields });
+  await applyPendingAdjustments(created);
+  await created.save();
+
+  return created;
+}
+
+/**
+ * Copies any unapplied corrections for this record's period onto it and folds
+ * them into the net.
+ *
+ * Adjustments live in their own collection because a draft is regenerated
+ * freely — anything embedded in one would be destroyed by the next re-run.
+ * Re-running therefore RE-COLLECTS them rather than losing or double-counting
+ * them: the record's array is rebuilt from scratch each time, and
+ * `appliedToPayrollId` is repointed at it.
+ */
+async function applyPendingAdjustments(payroll) {
+  const pending = await PayrollAdjustment.find({
+    employeeId: payroll.employeeId,
+    month: payroll.month,
+    year: payroll.year,
+  }).sort({ createdAt: 1 });
+
+  payroll.adjustments = pending.map((adjustment) => ({
+    amount: adjustment.amount,
+    reason: adjustment.reason,
+    createdBy: adjustment.createdBy,
+    createdAt: adjustment.createdAt,
+    sourceMonth: adjustment.sourceMonth,
+    sourceYear: adjustment.sourceYear,
+  }));
+  payroll.adjustmentTotal = pending.reduce((total, one) => total + one.amount, 0);
+  payroll.netAmount += payroll.adjustmentTotal;
+
+  await PayrollAdjustment.updateMany(
+    { _id: { $in: pending.map((one) => one._id) } },
+    { $set: { appliedToPayrollId: payroll._id } }
+  );
+}
+
+/** The period a correction to `month`/`year` gets paid in — always the next. */
+export function nextPeriod(month, year) {
+  return month === 12 ? { month: 1, year: year + 1 } : { month: month + 1, year };
+}
+
+/**
+ * Raises a correction against an APPROVED period, payable on the next run.
+ *
+ * Refuses to correct a period that is not approved yet: while it is still a
+ * draft the right fix is to re-run it, and an adjustment there would be
+ * double-counted the moment somebody did.
+ */
+export async function addAdjustment({ employeeId, month, year, amount, reason }, actor) {
+  const numericAmount = Number(amount);
+
+  if (!Number.isFinite(numericAmount) || numericAmount === 0) {
+    throw new ApiError(400, "An adjustment needs a non-zero amount");
+  }
+
+  if (!reason || !String(reason).trim()) {
+    throw new ApiError(400, "An adjustment needs a reason");
+  }
+
+  const source = await Payroll.findOne({ employeeId, month, year });
+
+  if (!source) {
+    throw new ApiError(404, "No payroll record for that employee and period");
+  }
+
+  if (source.status === "draft" || source.status === "review") {
+    throw new ApiError(
+      409,
+      "That period is not approved yet — re-run it to correct the figures instead of adjusting them"
+    );
+  }
+
+  const target = nextPeriod(month, year);
+
+  return PayrollAdjustment.create({
+    employeeId,
+    month: target.month,
+    year: target.year,
+    sourceMonth: month,
+    sourceYear: year,
+    amount: numericAmount,
+    reason: String(reason).trim(),
+    createdBy: actor._id,
+  });
+}
+
+/** Legal transitions, in one place so no endpoint can invent its own. */
+const NEXT_STATUS = { draft: "review", review: "approved", approved: "paid" };
+
+async function transitionPeriod(month, year, from, to, actor, extra = {}) {
+  const records = await Payroll.find({ month, year });
+
+  if (records.length === 0) {
+    throw new ApiError(404, `No payroll records for ${month}/${year}`);
+  }
+
+  const wrongState = records.filter((record) => record.status !== from);
+
+  if (wrongState.length > 0) {
+    throw new ApiError(
+      409,
+      `Every record for ${month}/${year} must be "${from}" to become "${to}" — ${wrongState.length} is not.`
+    );
+  }
+
+  await Payroll.updateMany({ month, year }, { $set: { status: to, ...extra } });
+
+  return Payroll.find({ month, year });
+}
+
+/** draft -> review. Nothing is frozen yet; this only says "look at it". */
+export async function submitPeriodForReview(month, year, actor) {
+  return transitionPeriod(month, year, "draft", "review", actor);
+}
+
+/**
+ * review -> approved. THIS is the freeze.
+ *
+ * Requires an explicit action and records who did it and when — approval is the
+ * moment numbers become somebody's pay, so it is attributable by construction.
+ * Nothing recomputes an approved record afterwards; `runPayrollForEmployee`
+ * and the bulk path both refuse to touch one.
+ */
+export async function approvePeriod(month, year, actor) {
+  return transitionPeriod(month, year, "review", "approved", actor, {
+    approvedBy: actor._id,
+    approvedAt: new Date(),
+  });
+}
+
+/** approved -> paid. Recording only — no disbursement, no gateway. */
+export async function markPeriodPaid(month, year, actor, paidDate) {
+  const when = paidDate ? new Date(paidDate) : new Date();
+
+  if (Number.isNaN(when.getTime())) {
+    throw new ApiError(400, "Invalid payment date");
+  }
+
+  return transitionPeriod(month, year, "approved", "paid", actor, {
+    paidBy: actor._id,
+    paidAt: when,
+  });
+}
+
+/**
+ * The review screen's data (§7.54): every active employee for the period, with
+ * ANOMALIES flagged.
+ *
+ * The inputs are imperfect by design — a manual roster mark carries no device
+ * evidence, and an unapproved absence deducts at 2× — so an admin has to see
+ * the numbers before they become somebody's pay. Flagging is deliberately
+ * conservative: it points at rows worth a second look, it does not block.
+ */
+export async function getPeriodReview({ month, year }) {
+  const [records, employees] = await Promise.all([
+    Payroll.find({ month, year }).populate("employeeId", "name email"),
+    User.find({ isActive: true, role: { $ne: "customer" } }).select("+baseSalary name email"),
+  ]);
+
+  const byEmployee = new Map(records.map((record) => [String(record.employeeId?._id), record]));
+
+  const rows = employees.map((employee) => {
+    const record = byEmployee.get(String(employee._id));
+    const anomalies = [];
+
+    if (typeof employee.baseSalary !== "number" || employee.baseSalary <= 0) {
+      anomalies.push({ code: "NO_BASE_SALARY", detail: "No base salary recorded" });
+    }
+
+    if (!record) {
+      anomalies.push({ code: "NO_RECORD", detail: "No payroll record for this period" });
+    } else {
+      if (record.presentDays === 0) {
+        anomalies.push({ code: "NO_ATTENDANCE", detail: "No attendance recorded all month" });
+      }
+
+      // A deduction past a third of gross is not necessarily wrong — a long
+      // unpaid absence looks exactly like this — but it is the shape a bad
+      // roster mark also takes, and it is worth a human glance either way.
+      if (record.grossAmount > 0 && record.deduction / record.grossAmount > DEDUCTION_ANOMALY_SHARE) {
+        anomalies.push({
+          code: "HIGH_DEDUCTION",
+          detail: `Deduction is ${Math.round((record.deduction / record.grossAmount) * 100)}% of gross`,
+        });
+      }
+
+      if (record.doubleDeductionDays > 0) {
+        anomalies.push({
+          code: "UNAPPROVED_ABSENCE",
+          detail: `${record.doubleDeductionDays} day(s) charged at 2x`,
+        });
+      }
+
+      if (record.adjustmentTotal !== 0) {
+        anomalies.push({
+          code: "HAS_ADJUSTMENT",
+          detail: `Carries ${record.adjustments.length} correction(s) from an earlier period`,
+        });
+      }
+    }
+
+    return {
+      employeeId: String(employee._id),
+      name: employee.name,
+      status: record ? record.status : null,
+      payrollId: record ? String(record._id) : null,
+      baseSalary: typeof employee.baseSalary === "number" ? employee.baseSalary : null,
+      presentDays: record ? record.presentDays : null,
+      paidLeaveDays: record ? record.paidLeaveDays : null,
+      unpaidDeductionDays: record ? record.unpaidDeductionDays : null,
+      doubleDeductionDays: record ? record.doubleDeductionDays : 0,
+      grossAmount: record ? record.grossAmount : null,
+      deduction: record ? record.deduction : null,
+      adjustmentTotal: record ? record.adjustmentTotal : 0,
+      netAmount: record ? record.netAmount : null,
+      anomalies,
+    };
+  });
+
+  return {
+    month,
+    year,
+    status: records.length > 0 ? records[0].status : null,
+    approvedAt: records.find((record) => record.approvedAt)?.approvedAt || null,
+    totals: {
+      employees: rows.length,
+      withRecord: records.length,
+      flagged: rows.filter((row) => row.anomalies.length > 0).length,
+      net: records.reduce((total, record) => total + (record.netAmount || 0), 0),
+    },
+    rows,
+  };
 }
 
 /**
@@ -96,6 +353,16 @@ async function runPayrollBulk(month, year, regenerate) {
 
     const existing = await Payroll.findOne({ employeeId: employee._id, month, year });
 
+    // Approved and paid periods are frozen (§7.54) — a bulk run SKIPS them
+    // rather than erroring, matching how it already treats an
+    // already-generated employee, so one locked record cannot stop the rest of
+    // the run. The cron path goes through here, and a machine must never be
+    // able to move an approved figure.
+    if (existing && existing.status !== "draft") {
+      skipped.push({ employeeId: employee._id, reason: `already ${existing.status}` });
+      continue;
+    }
+
     if (existing && !regenerate) {
       skipped.push({ employeeId: employee._id, reason: "already generated" });
       continue;
@@ -105,10 +372,14 @@ async function runPayrollBulk(month, year, regenerate) {
 
     if (existing) {
       Object.assign(existing, fields);
+      await applyPendingAdjustments(existing);
       await existing.save();
       generated.push(existing);
     } else {
-      generated.push(await Payroll.create({ employeeId: employee._id, month, year, ...fields }));
+      const created = await Payroll.create({ employeeId: employee._id, month, year, ...fields });
+      await applyPendingAdjustments(created);
+      await created.save();
+      generated.push(created);
     }
   }
 
@@ -268,6 +539,17 @@ export async function getPayslip(payrollId, requestingUser) {
 export async function generatePayslipPdf(payrollId, requestingUser) {
   const payroll = await getPayslip(payrollId, requestingUser);
 
+  // STORED figures only — nothing here recomputes from live attendance, which
+  // is what makes a payslip reproducible months later. A draft has no payslip
+  // at all: its numbers are still moving, and handing someone a document that
+  // will change is worse than handing them nothing (§7.54).
+  if (payroll.status === "draft" || payroll.status === "review") {
+    throw new ApiError(
+      409,
+      "This period is not approved yet — a payslip is only issued once the figures are final"
+    );
+  }
+
   return generatePdfReport({
     title: `Payslip — ${payroll.employeeId.name}`,
     subtitle: `${payroll.month}/${payroll.year}`,
@@ -284,9 +566,28 @@ export async function generatePayslipPdf(payrollId, requestingUser) {
       { field: "Unpaid deduction days", value: payroll.unpaidDeductionDays },
       { field: "Working hours total", value: payroll.workingHoursTotal },
       { field: "Mileage reimbursement", value: payroll.mileageReimbursement },
+      ...adjustmentRows(payroll),
       { field: "Gross amount", value: payroll.grossAmount },
+      {
+        field: "Deduction",
+        // The ×2 is marked where it applies, so a deduction larger than the
+        // day count implies reads as policy rather than as an error.
+        value:
+          payroll.doubleDeductionDays > 0
+            ? `${payroll.deduction} (includes ${payroll.doubleDeductionDays} unapproved absence day(s) at 2x)`
+            : payroll.deduction,
+      },
       { field: "Net amount", value: payroll.netAmount },
+      { field: "Status", value: payroll.status },
       { field: "Paid on", value: payroll.paidOn },
     ],
   });
+}
+
+/** One labelled line per correction carried from an earlier period. */
+function adjustmentRows(payroll) {
+  return (payroll.adjustments || []).map((adjustment) => ({
+    field: `Adjustment (${adjustment.sourceMonth}/${adjustment.sourceYear})`,
+    value: `${adjustment.amount} — ${adjustment.reason}`,
+  }));
 }

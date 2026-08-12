@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import request from "supertest";
 import { startTestDatabase, stopTestDatabase } from "../../../tests/helpers/testDb.js";
 import { getTestApp } from "../../../tests/helpers/testApp.js";
 import { loginAsAgent } from "../../../tests/helpers/authHelpers.js";
@@ -7,6 +8,7 @@ import Payroll from "./payroll.model.js";
 import Attendance from "../attendance/attendance.model.js";
 import Leave from "../leave/leave.model.js";
 import TravelLog from "../transport/travelLog.model.js";
+import PayrollAdjustment from "./payrollAdjustment.model.js";
 
 // A fixed month, unrelated to whatever "today" happens to be — June 2026 has
 // 30 days, keeping the daysInMonth/dailyRate arithmetic simple everywhere
@@ -96,6 +98,7 @@ afterEach(async () => {
   await Attendance.deleteMany({});
   await Leave.deleteMany({});
   await TravelLog.deleteMany({});
+  await PayrollAdjustment.deleteMany({});
 });
 
 afterAll(async () => {
@@ -384,6 +387,12 @@ describe("GET /payroll?scope=own|all", () => {
   });
 });
 
+/** draft -> review -> approved, the two explicit transitions a payslip needs. */
+async function approvePeriodInTest(month = MONTH, year = YEAR) {
+  await adminAgent.post(`/api/v1/payroll/period/submit?month=${month}&year=${year}`);
+  await adminAgent.post(`/api/v1/payroll/period/approve?month=${month}&year=${year}`);
+}
+
 describe("GET /payroll/:id/payslip", () => {
   it("lets the employee download their own payslip as a PDF", async () => {
     await adminAgent.patch(`/api/v1/users/${employee1._id}`).send({ baseSalary: 25000 });
@@ -391,6 +400,9 @@ describe("GET /payroll/:id/payslip", () => {
       `/api/v1/payroll/run?employeeId=${employee1._id}&month=${MONTH}&year=${YEAR}`
     );
     const payrollId = runResponse.body.data._id;
+    // A draft has no payslip (§7.54) — its figures are still moving. Approve
+    // the period first, which is what makes them final.
+    await approvePeriodInTest();
 
     const response = await employee1Agent
       .get(`/api/v1/payroll/${payrollId}/payslip`)
@@ -408,6 +420,7 @@ describe("GET /payroll/:id/payslip", () => {
       `/api/v1/payroll/run?employeeId=${employee1._id}&month=${MONTH}&year=${YEAR}`
     );
     const payrollId = runResponse.body.data._id;
+    await approvePeriodInTest();
 
     const response = await employee1Agent
       .get(`/api/v1/payroll/${payrollId}/payslip`)
@@ -441,6 +454,7 @@ describe("GET /payroll/:id/payslip", () => {
       `/api/v1/payroll/run?employeeId=${sales1._id}&month=${MONTH}&year=${YEAR}`
     );
     const payrollId = runResponse.body.data._id;
+    await approvePeriodInTest();
 
     const response = await adminAgent
       .get(`/api/v1/payroll/${payrollId}/payslip`)
@@ -637,6 +651,371 @@ describe("Payroll and the leave report agree, because they share a calculator", 
 
     expect(response.status).toBe(400);
     expect(await Payroll.countDocuments({ employeeId: sales2._id })).toBe(0);
+  });
+});
+
+
+/**
+ * §7.54 — the pay run. NEW behaviour: none of this existed, so these do not
+ * "fail first" against a previous implementation; there was no state machine,
+ * no approval and no adjustment to fail against. What they pin is the set of
+ * properties that make a payslip trustworthy.
+ */
+describe("The pay run: draft -> review -> approved -> paid", () => {
+  async function seedDraft(salary = 30000, days = [2, 3, 4]) {
+    await adminAgent.patch(`/api/v1/users/${sales1._id}`).send({ baseSalary: salary });
+    await seedAttendance(sales1._id, days);
+    await adminAgent.post(`/api/v1/payroll/run?month=${MONTH}&year=${YEAR}`);
+  }
+
+  it("writes DRAFT records, and re-running regenerates them from current data", async () => {
+    await seedDraft();
+
+    const first = await Payroll.findOne({ employeeId: sales1._id, month: MONTH, year: YEAR });
+    expect(first.status).toBe("draft");
+
+    // Something changes after the draft was cut.
+    await Leave.create({
+      employeeId: sales1._id, startDate: juneDate(10), endDate: juneDate(10),
+      type: "unpaid", status: "approved", reason: "Test reason",
+    });
+    await adminAgent.post(`/api/v1/payroll/run?month=${MONTH}&year=${YEAR}&regenerate=true`);
+
+    const second = await Payroll.findOne({ employeeId: sales1._id, month: MONTH, year: YEAR });
+    expect(second.deduction).toBeGreaterThan(first.deduction);
+    expect(second.status).toBe("draft");
+  });
+
+  it("APPROVING LOCKS THE PERIOD — editing attendance afterwards does not move the figures", async () => {
+    // The single most important property in this module. A payslip that
+    // changes after it was issued is not a payslip; if a July attendance
+    // record is edited in September, July's pay must be exactly what it was.
+    await seedDraft();
+    await adminAgent.post(`/api/v1/payroll/period/submit?month=${MONTH}&year=${YEAR}`);
+    const approval = await adminAgent.post(
+      `/api/v1/payroll/period/approve?month=${MONTH}&year=${YEAR}`
+    );
+    expect(approval.status).toBe(200);
+
+    const approved = await Payroll.findOne({ employeeId: sales1._id, month: MONTH, year: YEAR });
+    const frozen = {
+      presentDays: approved.presentDays,
+      deduction: approved.deduction,
+      netAmount: approved.netAmount,
+    };
+    expect(approved.status).toBe("approved");
+    expect(approved.approvedBy).not.toBeNull();
+    expect(approved.approvedAt).not.toBeNull();
+
+    // Now change the world underneath it: three more absences and a wiped
+    // attendance record. Under a recomputing design every figure would move.
+    await Attendance.deleteMany({ employeeId: sales1._id });
+    await Leave.create({
+      employeeId: sales1._id, startDate: juneDate(15), endDate: juneDate(17),
+      type: "unpaid", status: "approved", reason: "Test reason",
+    });
+
+    // A re-run must refuse rather than quietly recompute.
+    const rerun = await adminAgent.post(
+      `/api/v1/payroll/run?employeeId=${sales1._id}&month=${MONTH}&year=${YEAR}&regenerate=true`
+    );
+    expect(rerun.status).toBe(409);
+
+    const after = await Payroll.findOne({ employeeId: sales1._id, month: MONTH, year: YEAR });
+    expect(after.presentDays).toBe(frozen.presentDays);
+    expect(after.deduction).toBe(frozen.deduction);
+    expect(after.netAmount).toBe(frozen.netAmount);
+  });
+
+  it("a bulk re-run SKIPS an approved period instead of erroring on it", async () => {
+    await seedDraft();
+    await adminAgent.post(`/api/v1/payroll/period/submit?month=${MONTH}&year=${YEAR}`);
+    await adminAgent.post(`/api/v1/payroll/period/approve?month=${MONTH}&year=${YEAR}`);
+
+    const rerun = await adminAgent.post(
+      `/api/v1/payroll/run?month=${MONTH}&year=${YEAR}&regenerate=true`
+    );
+
+    expect(rerun.status).toBe(200);
+    expect(rerun.body.data.skipped.some((one) => one.reason === "already approved")).toBe(true);
+  });
+
+  it("refuses transitions taken out of order", async () => {
+    await seedDraft();
+
+    // draft cannot jump straight to approved.
+    const early = await adminAgent.post(
+      `/api/v1/payroll/period/approve?month=${MONTH}&year=${YEAR}`
+    );
+    expect(early.status).toBe(409);
+
+    // ...nor can a draft be marked paid.
+    const paidTooEarly = await adminAgent.post(
+      `/api/v1/payroll/period/paid?month=${MONTH}&year=${YEAR}`
+    );
+    expect(paidTooEarly.status).toBe(409);
+  });
+
+  it("marks an approved period paid, with a date and an actor", async () => {
+    await seedDraft();
+    await adminAgent.post(`/api/v1/payroll/period/submit?month=${MONTH}&year=${YEAR}`);
+    await adminAgent.post(`/api/v1/payroll/period/approve?month=${MONTH}&year=${YEAR}`);
+
+    const response = await adminAgent
+      .post(`/api/v1/payroll/period/paid?month=${MONTH}&year=${YEAR}`)
+      .send({ paidAt: "2026-07-02" });
+
+    expect(response.status).toBe(200);
+    const paid = await Payroll.findOne({ employeeId: sales1._id, month: MONTH, year: YEAR });
+    expect(paid.status).toBe("paid");
+    expect(paid.paidAt).not.toBeNull();
+    expect(paid.paidBy).not.toBeNull();
+  });
+});
+
+describe("Corrections are adjustments on the NEXT run, never edits to history", () => {
+  async function approvedPeriod() {
+    await adminAgent.patch(`/api/v1/users/${sales1._id}`).send({ baseSalary: 30000 });
+    await seedAttendance(sales1._id, [2, 3, 4]);
+    await adminAgent.post(`/api/v1/payroll/run?month=${MONTH}&year=${YEAR}`);
+    await adminAgent.post(`/api/v1/payroll/period/submit?month=${MONTH}&year=${YEAR}`);
+    await adminAgent.post(`/api/v1/payroll/period/approve?month=${MONTH}&year=${YEAR}`);
+  }
+
+  it("carries a correction onto the following month with its reason and actor", async () => {
+    await approvedPeriod();
+
+    const raised = await adminAgent
+      .post(`/api/v1/payroll/period/adjustments?month=${MONTH}&year=${YEAR}`)
+      .send({ employeeId: sales1._id, amount: -1500, reason: "Overpaid: roster mark was wrong" });
+
+    expect(raised.status).toBe(201);
+    // Raised against June, payable in July — history is untouched.
+    expect(raised.body.data.month).toBe(MONTH + 1);
+    expect(raised.body.data.sourceMonth).toBe(MONTH);
+
+    const june = await Payroll.findOne({ employeeId: sales1._id, month: MONTH, year: YEAR });
+    expect(june.adjustments).toHaveLength(0);
+    expect(june.netAmount).toBe(30000);
+
+    await adminAgent.post(`/api/v1/payroll/run?month=${MONTH + 1}&year=${YEAR}`);
+    const july = await Payroll.findOne({ employeeId: sales1._id, month: MONTH + 1, year: YEAR });
+
+    expect(july.adjustments).toHaveLength(1);
+    expect(july.adjustments[0].reason).toBe("Overpaid: roster mark was wrong");
+    expect(july.adjustments[0].createdBy).not.toBeNull();
+    expect(july.adjustmentTotal).toBe(-1500);
+    expect(july.netAmount).toBe(30000 - 1500);
+  });
+
+  it("does not double-count an adjustment when the next month's draft is re-run", async () => {
+    await approvedPeriod();
+    await adminAgent
+      .post(`/api/v1/payroll/period/adjustments?month=${MONTH}&year=${YEAR}`)
+      .send({ employeeId: sales1._id, amount: 500, reason: "Underpaid" });
+
+    await adminAgent.post(`/api/v1/payroll/run?month=${MONTH + 1}&year=${YEAR}`);
+    await adminAgent.post(`/api/v1/payroll/run?month=${MONTH + 1}&year=${YEAR}&regenerate=true`);
+
+    const july = await Payroll.findOne({ employeeId: sales1._id, month: MONTH + 1, year: YEAR });
+    expect(july.adjustments).toHaveLength(1);
+    expect(july.adjustmentTotal).toBe(500);
+  });
+
+  it("refuses to adjust a period that is still a draft — re-run it instead", async () => {
+    await adminAgent.patch(`/api/v1/users/${sales1._id}`).send({ baseSalary: 30000 });
+    await adminAgent.post(`/api/v1/payroll/run?month=${MONTH}&year=${YEAR}`);
+
+    const response = await adminAgent
+      .post(`/api/v1/payroll/period/adjustments?month=${MONTH}&year=${YEAR}`)
+      .send({ employeeId: sales1._id, amount: 100, reason: "Too early" });
+
+    expect(response.status).toBe(409);
+  });
+
+  it("requires both an amount and a reason", async () => {
+    await approvedPeriod();
+
+    const noReason = await adminAgent
+      .post(`/api/v1/payroll/period/adjustments?month=${MONTH}&year=${YEAR}`)
+      .send({ employeeId: sales1._id, amount: 100 });
+    expect(noReason.status).toBe(400);
+
+    const noAmount = await adminAgent
+      .post(`/api/v1/payroll/period/adjustments?month=${MONTH}&year=${YEAR}`)
+      .send({ employeeId: sales1._id, reason: "No amount" });
+    expect(noAmount.status).toBe(400);
+  });
+});
+
+describe("The review screen flags anomalies without blocking", () => {
+  it("lists every active employee and flags the rows worth a second look", async () => {
+    await adminAgent.patch(`/api/v1/users/${sales1._id}`).send({ baseSalary: 30000 });
+    await adminAgent.patch(`/api/v1/users/${sales2._id}`).send({ baseSalary: null });
+    await seedAttendance(sales1._id, [2, 3, 4]);
+    // A long unpaid absence — legitimate, but the same shape a bad roster mark
+    // takes, so it is flagged rather than blocked.
+    await Leave.create({
+      employeeId: sales1._id, startDate: juneDate(10), endDate: juneDate(25),
+      type: "unpaid", status: "approved", reason: "Test reason",
+    });
+    await adminAgent.post(`/api/v1/payroll/run?month=${MONTH}&year=${YEAR}`);
+
+    const response = await adminAgent.get(
+      `/api/v1/payroll/period/review?month=${MONTH}&year=${YEAR}`
+    );
+
+    expect(response.status).toBe(200);
+    const review = response.body.data;
+    const codesFor = (id) =>
+      review.rows.find((row) => row.employeeId === String(id))?.anomalies.map((a) => a.code) || [];
+
+    expect(codesFor(sales1._id)).toContain("HIGH_DEDUCTION");
+    // No salary, and therefore no record either — both stated separately.
+    expect(codesFor(sales2._id)).toContain("NO_BASE_SALARY");
+    expect(codesFor(sales2._id)).toContain("NO_RECORD");
+    expect(review.totals.flagged).toBeGreaterThan(0);
+  });
+
+  it("flags an employee with no attendance at all for the month", async () => {
+    await adminAgent.patch(`/api/v1/users/${sales1._id}`).send({ baseSalary: 30000 });
+    await adminAgent.post(`/api/v1/payroll/run?month=${MONTH}&year=${YEAR}`);
+
+    const response = await adminAgent.get(
+      `/api/v1/payroll/period/review?month=${MONTH}&year=${YEAR}`
+    );
+    const row = response.body.data.rows.find((r) => r.employeeId === String(sales1._id));
+
+    expect(row.anomalies.map((a) => a.code)).toContain("NO_ATTENDANCE");
+    // Flagged, NOT withheld — they are still paid their salary.
+    expect(row.netAmount).toBe(30000);
+  });
+});
+
+describe("payroll.view cannot reach any company-wide pay-run endpoint", () => {
+  // `payroll.view` means own-payslip-only and sits in the DEFAULT employee
+  // template, so gating any of these on it would hand every employee the whole
+  // company's pay.
+  it.each([
+    ["get", "/period/review"],
+    ["post", "/period/submit"],
+    ["post", "/period/approve"],
+    ["post", "/period/paid"],
+    ["post", "/period/adjustments"],
+  ])("refuses %s %s for an employee holding payroll.view", async (method, path) => {
+    const response = await employee1Agent[method](
+      `/api/v1/payroll${path}?month=${MONTH}&year=${YEAR}`
+    );
+
+    expect(response.status).toBe(403);
+  });
+});
+
+describe("The cron endpoint generates DRAFTS only, behind CRON_SECRET", () => {
+  const originalSecret = process.env.CRON_SECRET;
+
+  afterEach(() => {
+    if (originalSecret === undefined) delete process.env.CRON_SECRET;
+    else process.env.CRON_SECRET = originalSecret;
+  });
+
+  it("503s when CRON_SECRET is unset — fail closed, never open", async () => {
+    delete process.env.CRON_SECRET;
+
+    const response = await request(app).get(
+      `/api/v1/payroll/cron/run?month=${MONTH}&year=${YEAR}`
+    );
+
+    expect(response.status).toBe(503);
+  });
+
+  it("401s on a wrong or missing secret", async () => {
+    process.env.CRON_SECRET = "right-secret";
+
+    const missing = await request(app).get("/api/v1/payroll/cron/run");
+    expect(missing.status).toBe(401);
+
+    const wrong = await request(app)
+      .get("/api/v1/payroll/cron/run")
+      .set("Authorization", "Bearer wrong-secret");
+    expect(wrong.status).toBe(401);
+  });
+
+  it("accepts GET as well as POST — Vercel Cron issues GET", async () => {
+    process.env.CRON_SECRET = "right-secret";
+    await adminAgent.patch(`/api/v1/users/${sales1._id}`).send({ baseSalary: 30000 });
+
+    const viaGet = await request(app)
+      .get(`/api/v1/payroll/cron/run?month=${MONTH}&year=${YEAR}`)
+      .set("Authorization", "Bearer right-secret");
+    expect(viaGet.status).toBe(200);
+
+    const viaPost = await request(app)
+      .post(`/api/v1/payroll/cron/run?month=${MONTH}&year=${YEAR}`)
+      .set("Authorization", "Bearer right-secret");
+    expect(viaPost.status).toBe(200);
+  });
+
+  it("creates DRAFTS and never approves — a machine must not decide what people are paid", async () => {
+    process.env.CRON_SECRET = "right-secret";
+    await adminAgent.patch(`/api/v1/users/${sales1._id}`).send({ baseSalary: 30000 });
+
+    const response = await request(app)
+      .get(`/api/v1/payroll/cron/run?month=${MONTH}&year=${YEAR}`)
+      .set("Authorization", "Bearer right-secret");
+
+    expect(response.body.data.status).toBe("draft");
+    const records = await Payroll.find({ month: MONTH, year: YEAR });
+    expect(records.length).toBeGreaterThan(0);
+    expect(records.every((record) => record.status === "draft")).toBe(true);
+  });
+
+  it("cannot move an already-approved period", async () => {
+    process.env.CRON_SECRET = "right-secret";
+    await adminAgent.patch(`/api/v1/users/${sales1._id}`).send({ baseSalary: 30000 });
+    await adminAgent.post(`/api/v1/payroll/run?month=${MONTH}&year=${YEAR}`);
+    await adminAgent.post(`/api/v1/payroll/period/submit?month=${MONTH}&year=${YEAR}`);
+    await adminAgent.post(`/api/v1/payroll/period/approve?month=${MONTH}&year=${YEAR}`);
+
+    await request(app)
+      .get(`/api/v1/payroll/cron/run?month=${MONTH}&year=${YEAR}`)
+      .set("Authorization", "Bearer right-secret");
+
+    const records = await Payroll.find({ month: MONTH, year: YEAR });
+    expect(records.every((record) => record.status === "approved")).toBe(true);
+  });
+});
+
+describe("The payslip renders from STORED figures", () => {
+  it("refuses to issue one for a draft — its numbers are still moving", async () => {
+    await adminAgent.patch(`/api/v1/users/${employee1._id}`).send({ baseSalary: 25000 });
+    const run = await adminAgent.post(
+      `/api/v1/payroll/run?employeeId=${employee1._id}&month=${MONTH}&year=${YEAR}`
+    );
+
+    const response = await employee1Agent.get(`/api/v1/payroll/${run.body.data._id}/payslip`);
+
+    expect(response.status).toBe(409);
+  });
+
+  it("renders an approved payslip even after the underlying attendance is deleted", async () => {
+    // Proof it reads the record, not the world.
+    await adminAgent.patch(`/api/v1/users/${employee1._id}`).send({ baseSalary: 25000 });
+    await seedAttendance(employee1._id, [2, 3, 4]);
+    const run = await adminAgent.post(
+      `/api/v1/payroll/run?employeeId=${employee1._id}&month=${MONTH}&year=${YEAR}`
+    );
+    await approvePeriodInTest();
+
+    await Attendance.deleteMany({ employeeId: employee1._id });
+
+    const response = await employee1Agent
+      .get(`/api/v1/payroll/${run.body.data._id}/payslip`)
+      .buffer(true)
+      .parse(bufferParser);
+
+    expect(response.status).toBe(200);
+    expect(response.body.subarray(0, 5).toString()).toBe("%PDF-");
   });
 });
 

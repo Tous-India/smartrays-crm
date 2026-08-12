@@ -2857,6 +2857,32 @@ reason `UserBasicInfoCard` omits it). Saving does not wipe the stored value — 
 `undefined` and omitted from the payload, confirmed on a captured request — but an admin sees a
 blank box where a real salary exists. Out of scope for a labelling task; worth its own.
 
+### The pay run review screen (§7.54, 2026-08-12)
+
+`/payroll` was a placeholder; it is now the review screen. Gated on `payroll.run` — never
+`payroll.view`, which means "own payslip only" and sits in the default employee template.
+
+**The screen exists because the inputs are imperfect by design.** A manual roster mark carries no
+device evidence, an unapproved absence deducts at 2×, and an employee nobody recorded anything for
+is paid their full salary. None of those are bugs — they are judgements the data cannot make — so an
+admin sees the numbers before they become somebody's pay. It is not a formality between the run and
+the payslip.
+
+**Anomalies are flagged, not blocked**, as coloured tags with the detail on hover: no salary set, no
+record, no attendance, high deduction, unapproved absence, correction carried. Every flag has a
+legitimate cause as well as a suspicious one — a long unpaid absence and a mistaken roster mark look
+identical — so the flag draws the eye and a human decides. A flagged row still shows its pay.
+
+**The state machine drives the buttons.** Send for review is enabled only on a draft, Approve only
+in review, Mark paid only once approved, and **Regenerate draft is disabled outright on an approved
+or paid period** — regenerating a frozen period is exactly what must not be possible. Approve is
+behind a Popconfirm saying what approval does, and an approved period shows a standing notice that
+its figures no longer recompute.
+
+**Corrections are offered only on a frozen period**, and the modal says in as many words that this
+becomes a line on the following month's run rather than a change to this one. Amount and reason are
+both required; the amount is signed, with helper text saying which direction claws back.
+
 ### Leave request form: two fields per row (2026-08-10)
 
 `LeaveRequestModal` stacked every field full width. It now pairs them using the same pattern as the

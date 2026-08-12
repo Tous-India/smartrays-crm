@@ -25,3 +25,36 @@ export function listPayroll({ scope, month }) {
 export function getMonthlyReport({ year, month }) {
   return apiClient.get("/payroll/monthly-report", { params: { year, month } });
 }
+
+/**
+ * The pay run (§7.54). Every one of these is gated on `payroll.run` — the
+ * see-everyone tier — never `payroll.view`, which means "own payslip only" and
+ * sits in the default employee template.
+ */
+export function getPeriodReview({ year, month }) {
+  return apiClient.get("/payroll/period/review", { params: { year, month } });
+}
+
+export function runPayrollDraft({ year, month, regenerate }) {
+  return apiClient.post("/payroll/run", null, { params: { year, month, regenerate } });
+}
+
+export function submitPeriodForReview({ year, month }) {
+  return apiClient.post("/payroll/period/submit", null, { params: { year, month } });
+}
+
+export function approvePeriod({ year, month }) {
+  return apiClient.post("/payroll/period/approve", null, { params: { year, month } });
+}
+
+export function markPeriodPaid({ year, month, paidAt }) {
+  return apiClient.post("/payroll/period/paid", { paidAt }, { params: { year, month } });
+}
+
+export function createAdjustment({ year, month, employeeId, amount, reason }) {
+  return apiClient.post(
+    "/payroll/period/adjustments",
+    { employeeId, amount, reason },
+    { params: { year, month } }
+  );
+}

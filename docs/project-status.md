@@ -3564,3 +3564,49 @@ claiming otherwise would overstate them.
 Backend **31 files / 939 tests** (was 31/934, +5). Two existing tests were rewritten rather than
 deleted: the payroll worked example, and a cron assertion that read  because no
 attendance had been seeded — that assertion encoded the very defect this fixes.
+
+### The pay run (§7.54, 2026-08-12)
+
+draft → review → approved → paid, on top of §7.53's shared calculator.
+
+**Approval is the freeze, and that is the property everything else serves.** An approved record
+holds its own figures and no code path recomputes it: the single-employee run 409s on any non-draft
+record whatever `regenerate` says, and the bulk path skips it. The test that matters approves a
+period, then deletes every attendance record beneath it and adds three days of unpaid leave, and
+asserts presentDays, deduction and net are exactly what they were. Editing a July record in
+September cannot move July's pay.
+
+**A draft has no payslip.** Its numbers are still moving, and a document that will change is worse
+than none — so the payslip 409s until approval, then renders from stored figures. Proven by deleting
+the underlying attendance and still getting a valid PDF. Three existing payslip tests had to approve
+their period first, which is the spec working rather than a regression.
+
+**Corrections never touch history.** `PayrollAdjustment` is its own collection, not a field on the
+record it corrects: an adjustment is raised before the target draft exists, and a draft regenerates
+freely, so anything embedded would be destroyed on the next re-run. Re-collecting at generation is
+also what stops a re-run double-counting — asserted. Reason and actor are mandatory, and adjusting a
+not-yet-approved period is refused because the right fix there is to re-run it.
+
+**Anomalies are flagged, not blocked** — no salary, no record, no attendance, deduction above a
+third of gross, unapproved absence, correction carried. Every one has a legitimate cause as well as
+a suspicious one: a long unpaid absence and a mistaken roster mark produce the same high deduction.
+
+**Cron is Vercel Cron, never node-cron** — the reason payroll never fired is that the job was
+registered through node-cron, which does not execute on Vercel at all. GET as well as POST,
+`CRON_SECRET` read from `process.env` at request time, 503 when unset, and **drafts only**: a test
+asserts the cron cannot move an already-approved period, because a machine must not decide what
+people are paid.
+
+> **`CRON_SECRET` is not set in Vercel production, so this endpoint will 503 there until someone
+> sets it.** That is correct fail-closed behaviour, reported rather than worked around. Payroll will
+> not run automatically in production until that variable exists.
+
+`/payroll` was a placeholder and is now the review screen: anomaly tags with detail on hover, the
+state machine driving which buttons are enabled, Regenerate disabled outright on a frozen period,
+and a correction modal that says in as many words that it writes to the following month.
+
+New behaviour throughout — there was no pay run, no approval and no adjustment to fail against, so
+these tests are stated as new rather than dressed up as failing-first.
+
+Backend **31 files / 962 tests** (was 31/939). Frontend **91 files / 839 tests** (was 90/829). The
+four failing frontend files are the known flakes.

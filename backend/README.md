@@ -2037,6 +2037,61 @@ New calculator outputs for Payroll's benefit: `grossAmount`, `workingHoursTotal`
 New `Payroll` fields: `deduction`, `doubleDeductionDays` — stored rather than re-derived so a
 payslip can mark the ×2 without recomputing.
 
+### The pay run: draft → review → approved → paid (§7.54, 2026-08-12)
+
+| Method | Path | Access | Notes |
+|---|---|---|---|
+| GET | `/payroll/period/review` | `payroll.run` | Every active employee for the period, with anomalies flagged. |
+| POST | `/payroll/period/submit` | `payroll.run` | draft → review. |
+| POST | `/payroll/period/approve` | `payroll.run` | review → approved. **The freeze.** Records who and when. |
+| POST | `/payroll/period/paid` | `payroll.run` | approved → paid. Recording only, no disbursement. |
+| POST | `/payroll/period/adjustments` | `payroll.run` | Raises a correction, payable on the NEXT run. |
+| GET/POST | `/payroll/cron/run` | `Bearer CRON_SECRET` | Vercel Cron. Generates a DRAFT and nothing else. |
+
+**APPROVAL IS THE FREEZE, and it is the most important property here.** An approved record holds its
+own computed figures and no code path recomputes it: `runPayrollForEmployee` returns 409 for any
+non-draft record whatever `regenerate` says, and the bulk path skips it. If a July attendance record
+is edited in September, July's payslip does not move. A test approves a period, then deletes every
+attendance record and adds three days of unpaid leave underneath it, and asserts presentDays,
+deduction and net are all exactly what they were.
+
+**A draft regenerates freely and has no payslip.** Its numbers are still moving; handing someone a
+document that will change is worse than handing them nothing, so `GET /:id/payslip` 409s until the
+period is approved. Once approved the PDF renders from the STORED figures — proven by a test that
+deletes the underlying attendance and still gets a valid PDF — with the §7.5 ×2 marked where it
+applies and one labelled line per adjustment.
+
+**Corrections never mutate history.** An approved run is immutable, so a correction is a labelled
+line on the NEXT run — the same discipline AMC renewal follows by creating a new record rather than
+extending one in place. `PayrollAdjustment` is its own collection, not a field on the record it
+corrects, for two reasons: it is raised before the target period's draft exists, and a draft is
+regenerated freely, so anything embedded in one would be destroyed by the next re-run. Generation
+re-collects them, which is also why a re-run does not double-count. Every adjustment carries a
+reason and an actor; adjusting a period that is not yet approved is refused (409) because the right
+fix there is to re-run it.
+
+**Anomalies are FLAGGED, not blocked** — `NO_BASE_SALARY`, `NO_RECORD`, `NO_ATTENDANCE`,
+`HIGH_DEDUCTION` (deduction above a third of gross), `UNAPPROVED_ABSENCE`, `HAS_ADJUSTMENT`. Every
+one has a legitimate cause as well as a suspicious one: a long unpaid absence and a mistaken roster
+mark produce the same high deduction, and only a human can tell them apart. Refusing to proceed
+would make the common case painful to serve the rare one.
+
+**CRON: Vercel Cron, never `node-cron`.** `node-cron` does not execute on Vercel, which is the
+entire reason payroll has never fired — the job was registered and simply never ran. The endpoint
+accepts GET as well as POST because Vercel Cron issues GET, and reads `CRON_SECRET` from
+`process.env` at REQUEST time rather than the import-time `env` snapshot, matching
+`/attendance/cleanup` exactly. It generates a DRAFT only: **a machine must not decide what people
+are paid**, so approval stays an explicit human action, and a test asserts the cron cannot move an
+already-approved period.
+
+> **`CRON_SECRET` is not set in Vercel production, so this endpoint will 503 there until it is.**
+> That is correct fail-closed behaviour for something that writes payroll — an unset secret must
+> never mean "open to everyone" — and it is reported here rather than worked around.
+
+**Permissions: `payroll.run` throughout.** Never `payroll.view`, which means own-payslip-only and is
+in the default employee template; a parameterised test walks all five period endpoints as an
+employee holding `payroll.view` and asserts 403 on each.
+
 ### Support & Ticketing (`/api/v1/tickets`) — Phase 5
 
 See `.context/final-plan.md` §6.6/§7.8. Two-part task: (A) Customer Portal self-signup — see
