@@ -201,7 +201,16 @@ describe("CustomersListPage — List View", () => {
     renderPage();
     await screen.findByText("Acme Corp");
 
-    await userEvent.click(screen.getByText("Signed Up"));
+    // BY ROLE, not by text. `scroll={{ x: "max-content" }}` makes AntD render
+    // an `ant-table-measure-row` in the TBODY that repeats every column title
+    // for width measurement, so "Signed Up" matches twice by text — one real
+    // `<th>` in the THEAD and one measure cell that is not a header at all.
+    //
+    // Deliberately NOT `getAllByText(...)[0]`: that would also swallow a
+    // genuine duplicate column. `getByRole("columnheader")` matches only the
+    // real header and still THROWS if a second real column ever shares this
+    // title, which is the failure worth keeping.
+    await userEvent.click(screen.getByRole("columnheader", { name: "Signed Up" }));
 
     const rows = screen.getAllByRole("row");
     // rows[0] is the header row; after ascending sort, the earlier date (Acme) leads.
