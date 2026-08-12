@@ -2266,6 +2266,36 @@ the January→prior-December wraparound. `registerPayrollCron` is tested by mock
 `schedule` export (`vi.spyOn`) and asserting it's called with the exact `"5 0 1 * *"` expression
 — nothing is ever left actually scheduled against a real timer during the test run.
 
+### §7.9 addendum — Record Payment modal rework, REVERTED unfinished (2026-08-12)
+
+An in-progress rework of `RecordPaymentModal` was found uncommitted in the working tree and has
+been **reverted, not committed**. Recorded here so the intent is not lost and the next attempt does
+not rediscover the same defect.
+
+**What it was attempting:**
+- Customer and Amount paired into a two-column `Row`/`Col` instead of two stacked full-width fields.
+- `Collected By` moved UP, next to Customer/Amount, so the form reads as "who was involved" before
+  "when and what about" — and **pre-filled from `sessionStore` with the logged-in user**, on the
+  reasoning that whoever fills the form is usually who collected the payment, while staying an
+  editable Select so an admin can record on someone else's behalf.
+- `Notes` relocated to sit with it.
+
+**Why it was reverted: the pre-fill does not work.** Its own test asserts the `Collected By` select
+shows "Vinay" after opening and receives an **empty string** — the control renders blank. The likely
+cause is that the form is initialised with the user's `_id` while `userOptions` (built from the
+`users` prop) contains no entry with that id, so AntD has an id with no matching option and
+therefore no label to render. Whatever the cause, the feature does not do the one thing it exists to
+do.
+
+Two smaller problems went with it: the accompanying `PaymentsListPage.jsx` edit passed
+`className="bg-amber-600"` to `RecordPaymentModal`, which **accepts no `className` prop** (so React
+dropped it silently), and amber collides with the registered palette — amber is the timeline break
+band, orange the pending-leave strips.
+
+**Note for whoever rebuilds it:** the failing test was sitting uncommitted in the tree, which is why
+`PaymentsListPage.test.jsx` appeared in this project's "known flakes" list all session. It was never
+flaky; it was a real failure from unfinished work being carried alongside committed code.
+
 ### 7.6 Transport / Travel Logs — frontend deferred
 
 ⏸️ **FRONTEND DEFERRED 2026-08-12 — hidden, NOT removed**, recorded the same way §7.8's Tickets
