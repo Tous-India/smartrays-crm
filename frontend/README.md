@@ -2812,6 +2812,51 @@ tinted columns, contrast **18.78:1 to 20.29:1** against AntD's near-black text �
 no internal scroll. At 1024 (890 into 724) and 390 (890 into 311) `scroll={{ x }}` still handles it,
 with zero `.ant-table-body` containers throughout.
 
+### Base Salary says MONTHLY, everywhere it appears (§7.52, 2026-08-12)
+
+`salaryCalculation.service.js#perDayRate` divides this field by the calendar days in ONE month, and
+Payroll's own `dailyRate` does the same — so an annual figure entered here produces a Net Payable
+roughly **12× too high, silently**. Nothing in the UI said which basis was meant. Every downstream
+number stays internally consistent, so there is no error to notice; the figures simply mean
+something other than what the reader assumes.
+
+**Two surfaces show the raw field, and both now state the basis:**
+
+| Surface | Before | After |
+|---|---|---|
+| User form (create + edit) | "Base Salary" | "Base Salary (Monthly)" + helper line + `₹` prefix |
+| Report tab column | "Base Salary" | "Base Salary" with "(monthly)" beneath |
+
+`UserBasicInfoCard` deliberately does not show it (`select: false`, no endpoint returns it), and the
+payroll exports show derived Gross/Net rather than the stored field — so those needed no change.
+
+**Net Payable carries "(monthly)" too.** It shares the money tint with Base Salary, and the point is
+that the two are on the same basis; saying it on one and leaving the other to inference is what
+created the ambiguity in the first place.
+
+**The basis goes on a second LINE, not into the title.** The ten columns fit 1280 with zero pixels
+to spare (980px of columns in a 980px holder), so a longer header would have pushed the table into
+an internal scroll. "(monthly)" is narrower than the title above it — measured after the change,
+Base Salary is still 97px and Net Payable still 101px, total still 980px.
+
+**No range validation, deliberately.** A legitimate salary can be almost any figure, and a warning
+that fires on real values teaches people to dismiss warnings.
+
+**The `₹` prefix is decoration, not part of the value** — a real risk with `InputNumber`, since a
+prefix rendered inside the control could end up in the submitted string. Verified both ways: in the
+browser the typed value reads back as `"41000"` with the prefix a sibling node, and a test submits
+the create form and asserts the payload carries `baseSalary: 30000` as a number.
+
+**Height cost: 1px.** The helper line sits in the last row, whose height was already set by the
+taller Joining Date control, so the modal body went 617px → 618px and both 1280 and 1024 stay
+scroll-free.
+
+**Known, pre-existing, NOT fixed here:** the edit form renders Base Salary **empty even for a user
+who has one**, because `baseSalary` is `select: false` and no list endpoint returns it (the same
+reason `UserBasicInfoCard` omits it). Saving does not wipe the stored value — an untouched field is
+`undefined` and omitted from the payload, confirmed on a captured request — but an admin sees a
+blank box where a real salary exists. Out of scope for a labelling task; worth its own.
+
 ### Leave request form: two fields per row (2026-08-10)
 
 `LeaveRequestModal` stacked every field full width. It now pairs them using the same pattern as the

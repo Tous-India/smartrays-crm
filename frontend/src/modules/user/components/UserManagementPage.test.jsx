@@ -507,9 +507,52 @@ describe("UserManagementPage", () => {
       expect(within(dialog).getByLabelText("Department")).toBeInTheDocument();
       // Renamed to "Base Salary" 2026-08-11 so create and edit agree — it was
       // "Salary" here and "Base Salary" in edit mode, one field reading as two.
-      expect(within(dialog).getByLabelText("Base Salary")).toBeInTheDocument();
+      // "(Monthly)" added 2026-08-12: the report divides this by the days in a
+      // MONTH, so an annual figure would silently produce a ~12x Net Payable.
+      expect(within(dialog).getByLabelText("Base Salary (Monthly)")).toBeInTheDocument();
       // No standalone "Manager" field in create mode — Department implies it.
       expect(within(dialog).queryByLabelText("Manager")).not.toBeInTheDocument();
+    });
+
+    it("states the monthly basis on the label AND in helper text", async () => {
+      renderPage();
+      await screen.findAllByText("Manager One");
+
+      await userEvent.click(screen.getByRole("button", { name: "New User" }));
+      const dialog = await screen.findByRole("dialog", { name: "New User" });
+
+      // The label carries the accessible name, so the basis is announced to a
+      // screen reader too — not only shown as helper text beneath.
+      expect(within(dialog).getByLabelText("Base Salary (Monthly)")).toBeInTheDocument();
+      expect(
+        within(dialog).getByText(/Monthly gross — used for the per-day rate in the leave report/)
+      ).toBeInTheDocument();
+    });
+
+    it("submits baseSalary as a NUMBER — the ₹ prefix is decoration, not part of the value", async () => {
+      // The prefix renders inside the control, so the risk is it ending up in
+      // the submitted value as "₹30000" and being rejected or stored as a
+      // string. It is a sibling node; this pins that.
+      userApi.createUser.mockResolvedValue({ data: {} });
+      renderPage();
+      await screen.findAllByText("Manager One");
+
+      await userEvent.click(screen.getByRole("button", { name: "New User" }));
+      const dialog = await screen.findByRole("dialog", { name: "New User" });
+
+      await userEvent.type(within(dialog).getByLabelText("Name"), "Salary Probe");
+      await userEvent.type(within(dialog).getByLabelText("Email"), "probe@test.local");
+      await userEvent.type(within(dialog).getByLabelText("Password"), "Password123");
+      await userEvent.click(within(dialog).getByLabelText("Role"));
+      await userEvent.click(await screen.findByTitle("Executive"));
+      await userEvent.type(within(dialog).getByLabelText("Base Salary (Monthly)"), "30000");
+
+      await userEvent.click(within(dialog).getByRole("button", { name: "OK" }));
+
+      await waitFor(() => expect(userApi.createUser).toHaveBeenCalled());
+      expect(userApi.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({ baseSalary: 30000 })
+      );
     });
 
     it("Role dropdown offers only Manager and Executive, not Sales Associate or Customer", async () => {

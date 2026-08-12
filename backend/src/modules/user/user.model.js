@@ -107,6 +107,14 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    // MONTHLY GROSS. Not annual, not net — every consumer divides this by the
+    // number of days in ONE month to get a per-day rate
+    // (`salaryCalculation.service.js#perDayRate` and
+    // `payroll.service.js`'s own `dailyRate`), so an annual figure stored here
+    // produces a Net Payable roughly 12× too high with no error anywhere. The
+    // basis was implicit in the arithmetic and stated nowhere until 2026-08-12;
+    // it is now on the form label, the report's column headers, and here.
+    //
     // Added 2026-07-13 for Payroll (§7.7) — nothing before this tracked a
     // salary figure, and Payroll can't compute gross/net without one.
     // `select: false` (same defense-in-depth pattern as `passwordHash`):

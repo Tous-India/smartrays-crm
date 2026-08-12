@@ -108,9 +108,26 @@ function HrProfileSections() {
             <DatePicker className="w-full" />
           </Form.Item>
         </Col>
+        {/*
+          MONTHLY, and the label has to say so (2026-08-12). The leave report
+          divides this by the calendar days IN A MONTH
+          (`salaryCalculation.service.js#perDayRate`), and Payroll's own
+          `dailyRate` does the same — so an annual figure typed here produces a
+          Net Payable roughly 12× too high, silently and with no error.
+          Rendered once here, so create and edit cannot drift apart again the
+          way "Salary"/"Base Salary" did (9ee7bea).
+
+          Deliberately NO range validation: a legitimate salary can be almost
+          any figure, and a warning that fires on real values trains people to
+          dismiss warnings.
+        */}
         <Col {...NARROW}>
-          <Form.Item label="Base Salary" name="baseSalary">
-            <InputNumber min={0} style={{ width: "100%" }} />
+          <Form.Item
+            label="Base Salary (Monthly)"
+            name="baseSalary"
+            extra="Monthly gross — used for the per-day rate in the leave report."
+          >
+            <InputNumber min={0} style={{ width: "100%" }} prefix="₹" />
           </Form.Item>
         </Col>
       </Row>

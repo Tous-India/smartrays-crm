@@ -3479,3 +3479,45 @@ handled by `scroll={{ x }}`, zero `.ant-table-body` containers.
 are untouched. Worth knowing before anyone re-diagnoses that as broken credentials.
 
 Frontend **90 files / 825 tests** (was 90/822, +3). The four failing files are the known flakes.
+
+### Base Salary is labelled MONTHLY wherever it appears (§7.52, 2026-08-12)
+
+The report divides this field by the calendar days in ONE month, and Payroll's `dailyRate` does the
+same, so an annual figure entered here produces a Net Payable roughly 12× too high **with no error
+anywhere** — every downstream number stays internally consistent and simply means something other
+than what the reader assumes. Nothing in the UI said which basis was meant.
+
+Both surfaces that show the raw field now state it: the User form reads **"Base Salary (Monthly)"**
+with a helper line and a `₹` prefix, and the report's column carries **"(monthly)"** on a second
+line. Net Payable carries it too — it shares the money tint with Base Salary, and saying it on one
+and leaving the other to inference is what created the ambiguity. Recorded in `user.model.js`,
+`backend/README.md` and final-plan §6.1, none of which had said so.
+
+**No range validation**, deliberately: a legitimate salary can be almost any figure, and a warning
+that fires on real values teaches people to dismiss warnings.
+
+**The basis went on a second line rather than into the title** because the ten columns fit 1280 with
+zero pixels to spare. Re-measured after: Base Salary still 97px, Net Payable still 101px, total
+still 980px in a 980px holder. Modal body 617px → 618px, both 1280 and 1024 still scroll-free.
+
+**Two verification notes, both worth keeping.** The `₹` prefix could have ended up inside the
+submitted value — it does not: the browser reads the typed value back as `"41000"` with the prefix a
+sibling node, and a new test asserts the create payload carries `baseSalary: 30000` as a number.
+And the live end-to-end submit could NOT be exercised in the browser: :5173 is held by another local
+project, this app runs on :5175, and the backend's `CLIENT_ORIGIN` refuses it — the CORS preflight
+fails before the PATCH is ever sent. Rather than edit `backend/.env`, that path is covered by the
+test suite; it is stated here rather than claimed as browser-verified.
+
+**Known, pre-existing, NOT fixed:** the edit form shows Base Salary **empty even for a user who has
+one**, because the field is `select: false` and no list endpoint returns it. Saving does not wipe it
+(an untouched field is omitted from the payload — confirmed on a captured request), but an admin
+sees a blank box where a real salary exists. Deserves its own task.
+
+**Also observed:** `Testing User 2` now has a `baseSalary` of 32000, where every salary in this
+database was unset earlier the same day. It was not set by this session's automation — no write was
+ever captured, and the value does not match anything typed — but it is recorded here because the
+verification scripts do drive the real app against the production database, and the first version of
+one script intercepted writes at Response stage, where a write would already have been performed.
+Fixed to intercept at Request stage.
+
+Frontend **90 files / 828 tests** (was 90/825, +3). The four failing files are the known flakes.

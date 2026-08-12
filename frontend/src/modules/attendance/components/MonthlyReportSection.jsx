@@ -95,6 +95,30 @@ function tint(group) {
   return { onHeaderCell: () => ({ className }), onCell: () => ({ className }) };
 }
 
+/**
+ * A header with its basis on a second line (2026-08-12).
+ *
+ * Base Salary is a MONTHLY figure, and nothing on this table said so. It sits
+ * in the same money group as Deduction and Net Payable, which are monthly by
+ * construction, and a reader who assumed an annual salary would read every
+ * figure in that group as inconsistent.
+ *
+ * A second LINE rather than a longer title, because the ten columns fit 1280
+ * with zero pixels to spare (980px of columns in a 980px holder) — widening a
+ * header would push the table into an internal scroll. "(monthly)" is narrower
+ * than the title above it, so the column cannot grow.
+ */
+function basisHeader(title, basis) {
+  return (
+    <span className="inline-flex flex-col leading-tight">
+      <span>{title}</span>
+      <Text type="secondary" className="text-[11px] font-normal">
+        {basis}
+      </Text>
+    </span>
+  );
+}
+
 export function resolveMonth(filter, customMonth) {
   if (filter === "previous") {
     return dayjs().subtract(1, "month");
@@ -170,8 +194,9 @@ function MonthlyReportSection() {
     {
       // "Base Salary" is the STORED monthly figure. Deliberately worded
       // differently from "Net Payable" below, which is derived — one is what
-      // was agreed, the other what this month works out to.
-      title: "Base Salary",
+      // was agreed, the other what this month works out to. Both now carry
+      // "(monthly)" so the shared basis is visible, not inferred.
+      title: basisHeader("Base Salary", "(monthly)"),
       dataIndex: "baseSalary",
       key: "baseSalary",
       align: "right",
@@ -271,8 +296,9 @@ function MonthlyReportSection() {
       ),
     },
     {
-      // Derived, unlike "Base Salary" above.
-      title: "Net Payable",
+      // Derived, unlike "Base Salary" above — but on the SAME monthly basis,
+      // which is the point of repeating it here.
+      title: basisHeader("Net Payable", "(monthly)"),
       dataIndex: "netPayable",
       key: "netPayable",
       align: "right",
@@ -302,8 +328,8 @@ function MonthlyReportSection() {
             <div className="font-semibold">Monthly Report</div>
             <Text type="secondary" className="text-xs">
               {month.format("MMMM YYYY")} · <strong>Absent counts leave days</strong>, not
-              roster-marked attendance · per-day rate is the base salary ÷ {month.daysInMonth()}{" "}
-              calendar days
+              roster-marked attendance · per-day rate is the <strong>monthly</strong> base salary ÷{" "}
+              {month.daysInMonth()} calendar days
               {/* Which year the balance is measured against — the backend
                   reports it rather than the UI re-deriving a boundary that is
                   defined once in the shared service. */}

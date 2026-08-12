@@ -1934,6 +1934,17 @@ service exists and is the single source for anything new.
 7. **Every active employee gets a row**, including those with no attendance that month — a
    missing row reads as "no data" when the truth is "nobody recorded anything".
 
+**`User.baseSalary` is MONTHLY GROSS (§7.52, 2026-08-12)** — not annual, not net. `perDayRate`
+divides it by the calendar days in ONE month, and `payroll.service.js` computes its own `dailyRate`
+the same way, so an annual figure stored in this field produces a Net Payable roughly 12× too high
+**with no error raised anywhere**: every downstream number stays internally consistent and simply
+means something different from what the reader assumes.
+
+The basis was implicit in the arithmetic and stated nowhere. It is now on the model field, on the
+User form's label and helper text, and on the report's Base Salary and Net Payable column headers.
+No range validation was added — a legitimate salary can be almost any figure, and a warning that
+fires on real values trains people to dismiss warnings.
+
 **Annual balance columns (§7.49, 2026-08-11).** Three derived figures per row — `oldBalance`,
 `monthCredit`, `balance` — plus a `leaveYear` label. Nothing is stored and no schema changed:
 all three come from year-to-date approved paid leave, so there is no balance field that can drift

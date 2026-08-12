@@ -69,9 +69,10 @@ describe("the report table", () => {
     render(<MonthlyReportSection />);
 
     // One is stored, the other derived. A single "Salary" column would blur
-    // what the reader is looking at.
-    expect(await screen.findByRole("columnheader", { name: "Base Salary" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "Net Payable" })).toBeInTheDocument();
+    // what the reader is looking at. Both carry "(monthly)" beneath, so the
+    // accessible name includes it.
+    expect(await screen.findByRole("columnheader", { name: /Base Salary/ })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: /Net Payable/ })).toBeInTheDocument();
   });
 
   it("shows an em dash, NOT ₹0, when no base salary is recorded", async () => {
@@ -103,6 +104,29 @@ describe("the report table", () => {
   });
 });
 
+describe("Base Salary is shown as a MONTHLY figure (§7.52)", () => {
+  it("labels both money headers with their basis", async () => {
+    // An annual figure entered as the base salary produces a Net Payable
+    // roughly 12x too high, silently. Base Salary and Net Payable sit in the
+    // same money group, so saying "(monthly)" on both makes the shared basis
+    // visible rather than something to infer.
+    render(<MonthlyReportSection />);
+
+    const salary = await screen.findByRole("columnheader", { name: /Base Salary/ });
+    const net = screen.getByRole("columnheader", { name: /Net Payable/ });
+
+    expect(salary.textContent).toContain("(monthly)");
+    expect(net.textContent).toContain("(monthly)");
+  });
+
+  it("says in the subheading that the per-day rate divides the MONTHLY salary", async () => {
+    render(<MonthlyReportSection />);
+
+    expect(await screen.findByText(/per-day rate is the/)).toBeInTheDocument();
+    expect(screen.getByText("monthly")).toBeInTheDocument();
+  });
+});
+
 describe("the annual balance columns (§7.49)", () => {
   it("renders Old Balance, This Month Credit and Balance in the specified order", async () => {
     render(<MonthlyReportSection />);
@@ -110,16 +134,18 @@ describe("the annual balance columns (§7.49)", () => {
     const headers = (await screen.findAllByRole("columnheader")).map((h) => h.textContent.trim());
 
     // No Present column (§7.50) — a leave report, not an attendance report.
+    // The two money headers carry their basis on a second line, so their
+    // textContent runs together — the ORDER is what this pins.
     expect(headers).toEqual([
       "Employee",
-      "Base Salary",
+      "Base Salary(monthly)",
       "Old Balance",
       "This Month Credit",
       "Absent",
       "Paid Leave",
       "Unpaid Leave",
       "Deduction",
-      "Net Payable",
+      "Net Payable(monthly)",
       "Balance",
     ]);
     expect(headers).not.toContain("Present");
@@ -185,14 +211,14 @@ describe("the annual balance columns (§7.49)", () => {
 describe("column-group tints (§7.51)", () => {
   const GROUP_OF = {
     Employee: null,
-    "Base Salary": "report-col-money",
+    "Base Salary(monthly)": "report-col-money",
     "Old Balance": "report-col-entitlement",
     "This Month Credit": "report-col-entitlement",
     Absent: "report-col-consumption",
     "Paid Leave": "report-col-consumption",
     "Unpaid Leave": "report-col-consumption",
     Deduction: "report-col-money",
-    "Net Payable": "report-col-money",
+    "Net Payable(monthly)": "report-col-money",
     Balance: "report-col-entitlement",
   };
 
