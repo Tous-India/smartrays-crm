@@ -2092,6 +2092,37 @@ already-approved period.
 in the default employee template; a parameterised test walks all five period endpoints as an
 employee holding `payroll.view` and asserts 403 on each.
 
+### `baseSalary` reaches the admin edit form, and nothing else (§7.55, 2026-08-12)
+
+`GET /users/:id` now selects `+baseSalary` **for an admin only**. `select: false` stays on the model:
+removing it would leak salary into every list, every dropdown and every user payload in the app,
+which is the entire reason it is there.
+
+**The bug it fixes:** nothing returned the field, so the admin edit form rendered an EMPTY box for a
+user who has a real salary. Saving happened not to wipe it — AntD omits untouched fields from the
+payload — but that is a property of the payload shape, not a guarantee. Anything that later
+submitted full form state would have zeroed a real salary with no error raised anywhere.
+
+The self branch needed the same treatment: it short-circuits to the already-loaded document, which
+also lacks the field, so an admin editing their OWN record hit the identical blank box.
+
+**Gated on being an ADMIN, not on being able to reach the record.** A manager can legitimately fetch
+a team member through this endpoint; their salary is still not the manager's to see. Asserted
+directly, along with: the list payload contains no `baseSalary` at all, the dropdown picker contains
+none, and a non-admin fetching their own record gets none.
+
+**Audit of every other `select: false` field on `User`** — asked for, and the answer is that
+`baseSalary` was the only one with this problem. Bound to a form input: `baseSalary` alone.
+`passwordHash`, `passwordResetToken`, `passwordResetExpiresAt`, `twoFactorSecretEncrypted`,
+`twoFactorSecretIv`, `twoFactorRecoveryCodeHashes`, `trustedDevices` and `twoFactorFailedAttempts`
+appear in no form at all — the 2FA state is driven through its own dedicated flow, which fetches
+what it needs. A test asserts none of them appear in the admin fetch either.
+
+> **The encrypted bank fields in §7.48 part two will have exactly this problem** if they are added
+> to `UserFormModal` while `select: false`. They must either be returned by this same admin-only
+> single-user fetch, or be edited through their own flow rather than a form that silently renders
+> them blank.
+
 ### Support & Ticketing (`/api/v1/tickets`) — Phase 5
 
 See `.context/final-plan.md` §6.6/§7.8. Two-part task: (A) Customer Portal self-signup — see

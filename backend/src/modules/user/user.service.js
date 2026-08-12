@@ -193,8 +193,24 @@ export async function listUsers(filters, requestingUser) {
  * leaking whether an out-of-scope record exists).
  */
 export async function getUserById(targetId, requestingUser) {
+  // `baseSalary` is `select: false`, so nothing returned it and the admin edit
+  // form rendered an EMPTY box for a user who has a real salary (§7.55,
+  // 2026-08-12). Saving happened not to wipe it — AntD omits untouched fields
+  // from the payload — but that is a property of the payload shape, not a
+  // guarantee: anything that later submits full form state would zero a real
+  // salary with no error.
+  //
+  // Selected HERE and only here, and only for an admin. `select: false` stays
+  // on the model: removing it would leak salary into every list, every
+  // dropdown and every user payload in the app, which is the whole reason it
+  // is there. This is the single-user fetch the edit form uses, nothing else.
+  const isAdmin = requestingUser.role === "admin";
+
   if (String(targetId) === String(requestingUser._id)) {
-    return requestingUser;
+    // The self branch normally short-circuits to the already-loaded document,
+    // which also lacks baseSalary — an admin editing their OWN record would
+    // hit the same blank box, so re-read it for them.
+    return isAdmin ? User.findById(targetId).select("+baseSalary") : requestingUser;
   }
 
   const scopeFilter = await resolveVisibleUserFilter(requestingUser);
@@ -204,7 +220,13 @@ export async function getUserById(targetId, requestingUser) {
   // silently let that key clobber the explicit `_id: targetId` constraint —
   // unlike Leads' ownership filter, which scopes by a separate `ownerId`
   // field and never collides with `_id` this way.
-  const user = await User.findOne({ $and: [{ _id: targetId }, scopeFilter] });
+  const query = User.findOne({ $and: [{ _id: targetId }, scopeFilter] });
+
+  if (isAdmin) {
+    query.select("+baseSalary");
+  }
+
+  const user = await query;
 
   if (!user) {
     throw new ApiError(404, "User not found");

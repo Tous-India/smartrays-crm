@@ -2,11 +2,12 @@ import { useState } from "react";
 import { App } from "antd";
 import {
   createUser,
-  updateUser,
   deactivateUser,
-  reactivateUser,
   deleteUser,
   getDeactivationImpact,
+  getUser,
+  reactivateUser,
+  updateUser,
 } from "../api/userApi";
 
 /**
@@ -47,10 +48,31 @@ export function useUserLifecycleActions({ refetch, onDeleted }) {
     setIsFormOpen(true);
   }
 
-  function openEditForm(user) {
+  /**
+   * Opens the edit form on a FRESHLY FETCHED user, not the table row (§7.55).
+   *
+   * `baseSalary` is `select: false`, so `GET /users` does not return it and the
+   * row carries no salary at all — the form rendered an empty box for someone
+   * who has one. `GET /users/:id` returns it for an admin, so the form is
+   * filled from that.
+   *
+   * The row is shown FIRST and replaced when the fetch lands, rather than
+   * blocking the modal on a request: every other field is already correct in
+   * the row, and an edit dialog that hangs on open is worse than one that fills
+   * in a beat later. If the fetch fails the row's own data stands, which is
+   * exactly the previous behaviour rather than a broken form.
+   */
+  async function openEditForm(user) {
     setFormMode("edit");
     setEditingUser(user);
     setIsFormOpen(true);
+
+    try {
+      const response = await getUser(user._id);
+      setEditingUser(response.data.data);
+    } catch {
+      // Keep the row's data — no worse than before this fetch existed.
+    }
   }
 
   async function handleSubmitForm(values) {

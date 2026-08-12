@@ -33,6 +33,7 @@ vi.mock("../api/userApi", () => ({
   reactivateUser: vi.fn(),
   adminResetPassword: vi.fn(),
   createUser: vi.fn(),
+  getUser: vi.fn(),
   deleteUser: vi.fn(),
   getDeactivationImpact: vi.fn(),
 }));
@@ -552,6 +553,26 @@ describe("UserManagementPage", () => {
       await waitFor(() => expect(userApi.createUser).toHaveBeenCalled());
       expect(userApi.createUser).toHaveBeenCalledWith(
         expect.objectContaining({ baseSalary: 30000 })
+      );
+    });
+
+    it("PRE-FILLS the real salary, which the list row does not carry", async () => {
+      // `baseSalary` is select:false, so `GET /users` returns no salary at all
+      // and the form used to render an empty box for someone who has one.
+      // Saving happened not to wipe it — AntD omits untouched fields — but
+      // that is the payload shape being kind, not a guarantee.
+      userApi.getUser.mockResolvedValue({
+        data: { data: { ...SAMPLE_USERS[0], baseSalary: 41000 } },
+      });
+
+      renderPage();
+      await screen.findAllByText("Manager One");
+
+      await userEvent.click(screen.getAllByRole("button", { name: /edit/i })[0]);
+      const dialog = await screen.findByRole("dialog", { name: "Edit User" });
+
+      await waitFor(() =>
+        expect(within(dialog).getByLabelText("Base Salary (Monthly)")).toHaveValue("41000")
       );
     });
 

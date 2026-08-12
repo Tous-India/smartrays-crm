@@ -851,3 +851,113 @@ describe("DELETE /users/:id — guarded hard-delete (§7.28, 2026-07-30)", () =>
     expect(stillPresent.ownerId).toBe(String(sales1._id));
   });
 });
+
+/**
+ * §7.55 — `baseSalary` reaches the admin edit form, and nowhere else.
+ *
+ * The field is `select: false`, so nothing returned it and the edit form
+ * rendered an empty box for a user who has a real salary. Saving happened not
+ * to wipe it, because AntD omits untouched fields — but that is the payload
+ * shape being kind, not a guarantee.
+ */
+describe("baseSalary visibility (§7.55)", () => {
+  let salariedUser;
+
+  beforeEach(async () => {
+    const created = await adminAgent.post("/api/v1/auth/register").send({
+      name: "Salaried Person",
+      email: `salaried-${Date.now()}@test.local`,
+      password: "Password123",
+      role: "employee",
+    });
+    salariedUser = created.body.data;
+    await adminAgent.patch(`/api/v1/users/${salariedUser._id}`).send({ baseSalary: 41000 });
+  });
+
+  it("returns the real salary on the single-user fetch an admin edit form uses", async () => {
+    const response = await adminAgent.get(`/api/v1/users/${salariedUser._id}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.baseSalary).toBe(41000);
+  });
+
+  it("returns it for an admin viewing their OWN record too", async () => {
+    // The self branch short-circuits to the already-loaded document, which
+    // also lacks the field — an admin editing themselves hit the same blank
+    // box.
+    const me = await adminAgent.get("/api/v1/auth/me");
+    await adminAgent.patch(`/api/v1/users/${me.body.data._id}`).send({ baseSalary: 90000 });
+
+    const response = await adminAgent.get(`/api/v1/users/${me.body.data._id}`);
+
+    expect(response.body.data.baseSalary).toBe(90000);
+  });
+
+  it("does NOT leak into the LIST, which is what select:false protects", async () => {
+    const response = await adminAgent.get("/api/v1/users");
+
+    const serialised = JSON.stringify(response.body.data);
+    expect(serialised).not.toContain("baseSalary");
+    expect(serialised).not.toContain("41000");
+  });
+
+  it("does NOT leak into the dropdown picker every module can reach", async () => {
+    const response = await sales1Agent.get("/api/v1/users/dropdown");
+
+    expect(JSON.stringify(response.body.data)).not.toContain("baseSalary");
+  });
+
+  it("does NOT appear in a NON-ADMIN payload — not for a manager on their own team member", async () => {
+    // The manager can legitimately fetch this user; salary is still not theirs
+    // to see. Gated on being an admin, not on being able to reach the record.
+    await adminAgent.patch(`/api/v1/users/${salariedUser._id}`).send({ managerId: manager1._id });
+
+    const response = await managerAgent.get(`/api/v1/users/${salariedUser._id}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).not.toHaveProperty("baseSalary");
+    expect(JSON.stringify(response.body.data)).not.toContain("41000");
+  });
+
+  it("does NOT appear when a non-admin fetches their OWN record", async () => {
+    const response = await sales1Agent.get("/api/v1/auth/me");
+
+    expect(response.body.data).not.toHaveProperty("baseSalary");
+  });
+
+  it("keeps every other select:false field hidden from the admin fetch", async () => {
+    // Only baseSalary was un-hidden. The 2FA secrets and the password hash
+    // stay out of every payload — they are select:false for a different
+    // reason and appear in no form.
+    const response = await adminAgent.get(`/api/v1/users/${salariedUser._id}`);
+    const serialised = JSON.stringify(response.body.data);
+
+    for (const hidden of [
+      "passwordHash",
+      "passwordResetToken",
+      "twoFactorSecretEncrypted",
+      "twoFactorSecretIv",
+      "twoFactorRecoveryCodeHashes",
+      "trustedDevices",
+    ]) {
+      expect(serialised).not.toContain(hidden);
+    }
+  });
+
+  it("PRESERVES the existing salary when a save omits the field", async () => {
+    // The behaviour the old form depended on, now asserted rather than
+    // assumed — this is what made the blank box survivable.
+    await adminAgent.patch(`/api/v1/users/${salariedUser._id}`).send({ phone: "9998887777" });
+
+    const response = await adminAgent.get(`/api/v1/users/${salariedUser._id}`);
+    expect(response.body.data.baseSalary).toBe(41000);
+  });
+
+  it("persists a CHANGED salary", async () => {
+    await adminAgent.patch(`/api/v1/users/${salariedUser._id}`).send({ baseSalary: 52000 });
+
+    const response = await adminAgent.get(`/api/v1/users/${salariedUser._id}`);
+    expect(response.body.data.baseSalary).toBe(52000);
+  });
+});
+

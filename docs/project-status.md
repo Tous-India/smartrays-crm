@@ -3610,3 +3610,37 @@ these tests are stated as new rather than dressed up as failing-first.
 
 Backend **31 files / 962 tests** (was 31/939). Frontend **91 files / 839 tests** (was 90/829). The
 four failing frontend files are the known flakes.
+
+### Base Salary pre-fills the edit form (§7.55, 2026-08-12)
+
+`GET /users/:id` selects `+baseSalary` for an admin only; `select: false` stays on the model. The
+edit form now opens on a freshly fetched user rather than the table row it was clicked from — the
+row comes from `GET /users`, which does not carry the field and never should.
+
+**What was actually wrong:** the form rendered an empty box for a user with a real salary. Saving
+did not wipe it, because AntD omits untouched fields — but that is the payload shape being kind, not
+a guarantee, and anything that later submitted full form state would have zeroed a real salary
+silently. The old behaviour is now pinned by a test rather than relied on.
+
+**Gated on being an admin, not on reaching the record.** A manager can legitimately fetch a team
+member; the salary is still not theirs. Asserted, along with: no `baseSalary` in the list payload,
+none in the dropdown picker, and none when a non-admin fetches their own record.
+
+**Audit of every other `select: false` field, as asked.** `baseSalary` was the only one bound to a
+form input. The password hash, reset token and all six 2FA fields appear in no form — 2FA is driven
+through its own flow — and a test asserts none of them appear in the admin fetch either. **The
+encrypted bank fields in §7.48 part two will hit exactly this problem** if they go into
+`UserFormModal` while `select: false`; they need either this same admin-only fetch or their own
+flow.
+
+**Browser-verified against live data:** the form pre-filled **32000** for Testing User 2, the real
+stored value, while the `GET /users` payload carried no `baseSalary` and `GET /users/:id` did. Both
+halves confirmed in one run. **The live submit was NOT reachable** — `CLIENT_ORIGIN` is pinned to
+:5173 while the app runs on :5175 — so the save paths are covered by tests rather than the browser,
+and that is stated rather than glossed. Writes were intercepted at REQUEST stage; nothing reached
+the database.
+
+Backend **31 files / 971 tests** (was 31/962, +9). Frontend **91 / 840** (was 91/839, +1). Four of
+the new backend tests fail against the committed code, as does the frontend pre-fill test; the
+remaining five are the leak assertions, which passed before and after — they guard what
+`select: false` was already doing right.
