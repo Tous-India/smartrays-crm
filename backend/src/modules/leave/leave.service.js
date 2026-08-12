@@ -215,6 +215,8 @@ export async function approveLeave(leaveId, requestingUser) {
 
   if (leave.type === "paid") {
     await ensureWithinMonthlyPaidLeaveQuota(leave);
+  } else {
+    await applyFreeMonthlyPaidDay(leave);
   }
 
   leave.status = "approved";
@@ -360,6 +362,60 @@ export function computeLeaveDays(leave) {
   }
 
   return countInclusiveDays(leave.startDate, leave.endDate);
+}
+
+/**
+ * Spends the employee's one free paid day per calendar month, AT APPROVAL
+ * (§7.56, rule C, 2026-08-12).
+ *
+ * The free day is granted here rather than inferred by the report, and that
+ * choice is the whole point: the report reads what `approveLeave` actually
+ * granted, so `Paid Leave` and `Balance` can never disagree with the approval
+ * record about what was spent. A report that applied the allowance itself
+ * would credit a paid day nobody approved.
+ *
+ * NEVER for an unapproved absence. `markUnapprovedAbsence` does not route
+ * through `approveLeave` at all — it sets `type`/`status` directly — so it
+ * cannot reach here; the explicit guard below states the rule anyway rather
+ * than leaving it as an accident of call graphs. The day being penalised at 2×
+ * (§7.5) must not also be the day being forgiven.
+ *
+ * MULTI-DAY REQUESTS STAY ENTIRELY UNPAID. `type` is a property of the whole
+ * Leave record, so "one day paid, two unpaid" is not expressible without
+ * splitting the request into records the employee never submitted — which
+ * would corrupt the audit trail that makes leave defensible. The system
+ * already treats paid leave as an at-most-one-day concept:
+ * `ensureWithinMonthlyPaidLeaveQuota` rejects an explicit paid request longer
+ * than a day outright (409). The trade-off is real and deliberate — someone
+ * who takes a single 3-day unpaid block forfeits that month's free day, and
+ * gets it back only by requesting a separate single day.
+ *
+ * `PAID_LEAVE_MONTHLY_LIMIT` now bounds automatic granting as well as explicit
+ * requests; both paths consume from the same `getApprovedPaidLeaveDaysForMonth`
+ * total, so a granted day and a requested day cannot both be spent.
+ */
+async function applyFreeMonthlyPaidDay(leave) {
+  if (leave.type === "unapproved_absence" || leave.isDoubleDeduction) {
+    return;
+  }
+
+  const requestedDays = computeLeaveDays(leave);
+
+  if (requestedDays > PAID_LEAVE_MONTHLY_LIMIT) {
+    return;
+  }
+
+  const alreadyUsedDays = await getApprovedPaidLeaveDaysForMonth(
+    leave.employeeId,
+    leave.startDate,
+    leave._id
+  );
+
+  if (alreadyUsedDays + requestedDays > PAID_LEAVE_MONTHLY_LIMIT) {
+    return;
+  }
+
+  leave.type = "paid";
 }
 
 async function ensureWithinMonthlyPaidLeaveQuota(leave) {

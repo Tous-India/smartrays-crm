@@ -4936,6 +4936,38 @@ draft → review → approved → paid, built on §7.53's shared calculator.
    the default employee template; a parameterised test walks all five endpoints as an employee
    holding it and asserts 403.
 
+## §7.56 — The free monthly day is granted at approval; the surcharge is shown (2026-08-12, §7.5/§11.7)
+
+**§11.7 is unchanged in substance: one paid day per calendar month, no carry-forward.** What changes
+is WHEN it is applied and by WHOM.
+
+1. **Rule C, at approval.** `approveLeave` re-types a leave requested as `unpaid` to `paid` when the
+   month's allowance is unused. Previously the allowance only honoured a leave explicitly REQUESTED
+   as paid, so anyone who did not know to ask forfeited it silently.
+2. **The report does NOT apply the allowance**, and that is the reason approval time was chosen: it
+   reads what `approveLeave` granted, so `Paid Leave` and `Balance` cannot disagree with the
+   approval record about what was spent. A report that inferred the allowance would credit a paid
+   day nobody approved.
+3. **Never for an unapproved absence.** `markUnapprovedAbsence` does not route through
+   `approveLeave`; the explicit guard states the rule regardless. The day penalised at 2× cannot
+   also be the day forgiven.
+4. **Multi-day requests stay entirely unpaid.** `type` belongs to the whole record, so part-paying
+   one would mean splitting it into documents the employee never submitted, corrupting the audit
+   trail. Paid leave is already an at-most-one-day concept — an explicit paid request over a day is
+   rejected 409. The cost is stated: a 3-day unpaid block forfeits that month's free day.
+5. **`PAID_LEAVE_MONTHLY_LIMIT = 1` now bounds automatic granting as well as explicit requests**,
+   both drawing on the same monthly total. Half days compose: 0.5 + 0.5 fills it, a third stays
+   unpaid.
+6. **Existing approved leave is not retroactively re-marked.** Future approvals only; historical
+   figures do not shift.
+7. **The surcharge is surfaced as its own amount.** `surchargeAmount` and `absenceAmount` sum to
+   `deduction`, rendered as a second line in the cell — a column would not fit the table's zero
+   pixels of slack, and a tooltip alone would make reconciliation require hovering.
+
+*Note on the traced case: it is UNCHANGED at ₹5,161, and would be even if approved today. Its two
+`unpaid` records are 2-day blocks, which rule 4 leaves unpaid, and its third is an unapproved
+absence, which rule 3 excludes. The row is now readable — ₹4,645 + ₹516 — rather than different.*
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a

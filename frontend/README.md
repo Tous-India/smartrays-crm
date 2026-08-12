@@ -2883,6 +2883,26 @@ its figures no longer recompute.
 becomes a line on the following month's run rather than a change to this one. Amount and reason are
 both required; the amount is signed, with helper text saying which direction claws back.
 
+### The deduction row states what the surcharge cost (§7.56, 2026-08-12)
+
+The ×2 marker said a doubling existed; it never said what it was worth. A row reading "Absent 4.5 ·
+Deduction ₹5,161" could not be reconciled — 4.5 days at the per-day rate is ₹4,645, and the missing
+₹516 was only recoverable by reading the calculator.
+
+**Chosen: a second LINE inside the Deduction cell**, not a column and not a tooltip alone.
+
+- Not a column, because the ten columns fit 1280 with zero pixels to spare — anything wider pushes
+  the table into an internal scroll. Height is free here; width is not.
+- Not a tooltip alone, because reconciling a figure should not require hovering it. The tooltip is
+  still there and now carries the full split, but the amount is on the row unconditionally.
+
+So an affected row reads `₹5,161 ×2` with `incl. ₹516 surcharge` beneath it, and `4,645 + 516`
+visibly makes the total. Measured after: the Deduction column widens to 153px and the other columns
+yield, so the table still fits 980px in a 980px holder with no internal scroll at 1280; 1024 and 390
+are handled by `scroll={{ x }}` as before.
+
+The footnote changed too — it explained that a doubling exists, which was never the missing part.
+
 ### Leave request form: two fields per row (2026-08-10)
 
 `LeaveRequestModal` stacked every field full width. It now pairs them using the same pattern as the

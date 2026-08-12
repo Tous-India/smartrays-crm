@@ -193,9 +193,17 @@ export function computeEmployeeMonth({
       });
     });
 
-  // Approved PAID leave, capped at the one day a month §11.7 allows. The cap is
-  // applied here as well as at approval time: a report that trusted the data to
-  // already obey the rule would silently misreport if a second day ever got in.
+  // Approved PAID leave, capped at the one day a month §11.7 allows.
+  //
+  // This READS what `approveLeave` granted; it grants nothing itself. The free
+  // monthly day is applied at APPROVAL (§7.56 rule C,
+  // `leave.service.js#applyFreeMonthlyPaidDay`) precisely so this figure and
+  // the approval record cannot disagree about what was spent — a report that
+  // inferred the allowance would credit a paid day nobody approved, and the
+  // Balance column would drift away from the leave documents behind it.
+  //
+  // The cap is still re-applied here: a report that trusted the data to already
+  // obey the rule would silently misreport if a second day ever got in.
   const { start: monthStart, end: monthEnd } = monthBounds(year, month);
 
   const approvedPaidDays = leaves
@@ -246,6 +254,14 @@ export function computeEmployeeMonth({
   const rate = hasSalary ? perDayRate(user.baseSalary, year, month) : null;
   const deduction = hasSalary ? Math.round(deductibleDays * rate) : null;
 
+  // What the §7.5 surcharge COST, split out (§7.56). The deduction exceeds the
+  // absent-day count whenever an unapproved absence is in play, and a row that
+  // says only "×2" tells the reader a doubling exists without telling them what
+  // it was worth — leaving them unable to reconcile 4.5 absent days against a
+  // 5.0-day charge without reading the source. These two add up to `deduction`.
+  const surchargeAmount = hasSalary ? Math.round(doubleDeductionDays * rate) : null;
+  const absenceAmount = hasSalary ? deduction - surchargeAmount : null;
+
   // REPORTED ONLY — never part of any amount, and Payroll must not start using
   // it. A shift where no heartbeat landed computes to zero working hours (a
   // real 17.4-hour overnight shift did exactly that), and heartbeats stop the
@@ -272,6 +288,8 @@ export function computeEmployeeMonth({
     unpaidLeave,
     doubleDeductionDays,
     deduction,
+    surchargeAmount,
+    absenceAmount,
     // GROSS is the agreed monthly salary, not a figure built up from days
     // attended. Payroll used to compute `dailyRate × (present + paidLeave)`,
     // which paid nothing to an employee with no attendance records — missing

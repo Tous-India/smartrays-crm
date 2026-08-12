@@ -771,3 +771,134 @@ describe("GET /leave/pending-count (§7.26, sidebar badge)", () => {
     expect(response.body.data.count).toBe(0);
   });
 });
+
+/**
+ * §7.56 rule C — the free monthly paid day is granted AT APPROVAL.
+ *
+ * These fail against the previous code, which only ever honoured a leave
+ * explicitly REQUESTED as paid: an unpaid request stayed unpaid however much
+ * allowance was unused, so the allowance was silently forfeited by anyone who
+ * did not know to ask for it.
+ */
+describe("The free monthly paid day is spent at approval (§7.56)", () => {
+  it("marks an UNPAID single-day request paid when the month's day is unused", async () => {
+    const request = await sales1Agent.post("/api/v1/leave/request").send({
+      startDate: "2026-09-07",
+      endDate: "2026-09-07",
+      type: "unpaid",
+      reason: "Personal errand",
+    });
+
+    const approved = await adminAgent.patch(`/api/v1/leave/${request.body.data._id}/approve`);
+
+    expect(approved.status).toBe(200);
+    // Granted, not requested — the employee asked for unpaid.
+    expect(approved.body.data.type).toBe("paid");
+  });
+
+  it("does NOT grant a second one in the same month", async () => {
+    const first = await sales1Agent.post("/api/v1/leave/request").send({
+      startDate: "2026-09-07", endDate: "2026-09-07", type: "unpaid", reason: "First",
+    });
+    await adminAgent.patch(`/api/v1/leave/${first.body.data._id}/approve`);
+
+    const second = await sales1Agent.post("/api/v1/leave/request").send({
+      startDate: "2026-09-14", endDate: "2026-09-14", type: "unpaid", reason: "Second",
+    });
+    const approved = await adminAgent.patch(`/api/v1/leave/${second.body.data._id}/approve`);
+
+    expect(approved.status).toBe(200);
+    expect(approved.body.data.type).toBe("unpaid");
+  });
+
+  it("grants it again the FOLLOWING month — the allowance is per calendar month", async () => {
+    const september = await sales1Agent.post("/api/v1/leave/request").send({
+      startDate: "2026-09-07", endDate: "2026-09-07", type: "unpaid", reason: "September",
+    });
+    await adminAgent.patch(`/api/v1/leave/${september.body.data._id}/approve`);
+
+    const october = await sales1Agent.post("/api/v1/leave/request").send({
+      startDate: "2026-10-05", endDate: "2026-10-05", type: "unpaid", reason: "October",
+    });
+    const approved = await adminAgent.patch(`/api/v1/leave/${october.body.data._id}/approve`);
+
+    expect(approved.body.data.type).toBe("paid");
+  });
+
+  it("leaves a MULTI-DAY request entirely unpaid", async () => {
+    // `type` is a property of the whole record, so "one day paid, two unpaid"
+    // would mean splitting the request into documents the employee never
+    // submitted. The system already treats paid leave as at-most-one-day.
+    const request = await sales1Agent.post("/api/v1/leave/request").send({
+      startDate: "2026-09-07", endDate: "2026-09-09", type: "unpaid", reason: "Three days",
+    });
+
+    const approved = await adminAgent.patch(`/api/v1/leave/${request.body.data._id}/approve`);
+
+    expect(approved.body.data.type).toBe("unpaid");
+  });
+
+  it("grants a HALF day and leaves the remaining half of the allowance", async () => {
+    const half = await sales1Agent.post("/api/v1/leave/request").send({
+      startDate: "2026-09-07", endDate: "2026-09-07", type: "unpaid",
+      isHalfDay: true, reason: "Half day",
+    });
+    const first = await adminAgent.patch(`/api/v1/leave/${half.body.data._id}/approve`);
+    expect(first.body.data.type).toBe("paid");
+
+    const secondHalf = await sales1Agent.post("/api/v1/leave/request").send({
+      startDate: "2026-09-21", endDate: "2026-09-21", type: "unpaid",
+      isHalfDay: true, reason: "Another half",
+    });
+    const second = await adminAgent.patch(`/api/v1/leave/${secondHalf.body.data._id}/approve`);
+
+    // 0.5 + 0.5 exactly fills the one-day allowance.
+    expect(second.body.data.type).toBe("paid");
+
+    const third = await sales1Agent.post("/api/v1/leave/request").send({
+      startDate: "2026-09-28", endDate: "2026-09-28", type: "unpaid",
+      isHalfDay: true, reason: "One too many",
+    });
+    const overflow = await adminAgent.patch(`/api/v1/leave/${third.body.data._id}/approve`);
+    expect(overflow.body.data.type).toBe("unpaid");
+  });
+
+  it("NEVER consumes the allowance for an unapproved absence", async () => {
+    // The day being penalised at 2x cannot also be the day being forgiven.
+    const request = await sales1Agent.post("/api/v1/leave/request").send({
+      startDate: "2026-09-07", endDate: "2026-09-07", type: "unpaid", reason: "Did not show",
+    });
+    const marked = await adminAgent.patch(
+      `/api/v1/leave/${request.body.data._id}/mark-unapproved-absence`
+    );
+
+    expect(marked.status).toBe(200);
+    expect(marked.body.data.type).toBe("unapproved_absence");
+    expect(marked.body.data.isDoubleDeduction).toBe(true);
+
+    // ...and the allowance is still there for a later, genuine request.
+    const later = await sales1Agent.post("/api/v1/leave/request").send({
+      startDate: "2026-09-21", endDate: "2026-09-21", type: "unpaid", reason: "Genuine",
+    });
+    const approved = await adminAgent.patch(`/api/v1/leave/${later.body.data._id}/approve`);
+
+    expect(approved.body.data.type).toBe("paid");
+  });
+
+  it("still rejects an EXPLICIT paid request once the day is spent", async () => {
+    // PAID_LEAVE_MONTHLY_LIMIT now bounds automatic granting as well as
+    // explicit requests, and both draw on the same monthly total.
+    const granted = await sales1Agent.post("/api/v1/leave/request").send({
+      startDate: "2026-09-07", endDate: "2026-09-07", type: "unpaid", reason: "Auto-granted",
+    });
+    await adminAgent.patch(`/api/v1/leave/${granted.body.data._id}/approve`);
+
+    const explicit = await sales1Agent.post("/api/v1/leave/request").send({
+      startDate: "2026-09-14", endDate: "2026-09-14", type: "paid", reason: "Explicit paid",
+    });
+    const rejected = await adminAgent.patch(`/api/v1/leave/${explicit.body.data._id}/approve`);
+
+    expect(rejected.status).toBe(409);
+  });
+});
+

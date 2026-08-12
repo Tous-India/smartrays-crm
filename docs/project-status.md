@@ -3644,3 +3644,50 @@ Backend **31 files / 971 tests** (was 31/962, +9). Frontend **91 / 840** (was 91
 the new backend tests fail against the committed code, as does the frontend pre-fill test; the
 remaining five are the leak assertions, which passed before and after — they guard what
 `select: false` was already doing right.
+
+### The free monthly day moves to approval time; the surcharge becomes visible (§7.56, 2026-08-12)
+
+**Rule C, implemented at approval.** `approveLeave` re-types a leave requested as `unpaid` to `paid`
+when the month's allowance is unused. Before this, the allowance only honoured leave explicitly
+REQUESTED as paid — so anyone who did not know to ask forfeited it silently, which is exactly what
+the investigated row showed.
+
+**The report applies no allowance logic of its own**, and that is why approval time was chosen: it
+reads what `approveLeave` granted, so Paid Leave and Balance cannot disagree with the approval
+record about what was spent.
+
+**Never for an unapproved absence** — the day being penalised at 2× cannot also be the day being
+forgiven. `markUnapprovedAbsence` does not route through `approveLeave` at all, so it cannot reach
+the grant; the guard states the rule rather than relying on that.
+
+**Multi-day requests stay entirely unpaid, and the trade-off is deliberate.** `type` belongs to the
+whole Leave record, so "one day paid, two unpaid" would mean splitting a request into documents the
+employee never submitted — corrupting the audit trail that makes leave defensible. The system
+already rejects an explicit paid request longer than a day (409). The cost: a single 3-day unpaid
+block forfeits that month's free day.
+
+**`PAID_LEAVE_MONTHLY_LIMIT = 1` is untouched** and now bounds automatic granting as well as
+explicit requests; both draw on the same monthly total, asserted by auto-granting a day and watching
+an explicit paid request for the same month be rejected. Half days compose correctly: 0.5 + 0.5
+fills the allowance, a third half day stays unpaid.
+
+**Existing approved leave is NOT retroactively re-marked** — future approvals only. Historical rows
+keep the type they were approved with.
+
+**The surcharge is now shown as its own amount.** `surchargeAmount` and `absenceAmount` sum to
+`deduction`, rendered as a second line inside the cell: `₹5,161 ×2` with `incl. ₹516 surcharge`
+beneath. A column would not fit — the table has zero pixels of slack at 1280 — and a tooltip alone
+would make reconciling a figure require hovering it. Measured after: Deduction widens to 153px, the
+other columns yield, and the table still fits 980px in a 980px holder.
+
+**The traced row is unchanged at ₹5,161, and would be even if approved today** — its two `unpaid`
+records are 2-day blocks that the multi-day rule leaves unpaid, and its third is an unapproved
+absence the rule excludes. Live check after the change confirms it: absent 4.5, paid 0, deduction
+5,161, split as ₹4,645 + ₹516. It is now readable rather than different.
+
+Failing-first: 5 of the 7 new leave tests fail against the committed code. The other two — "no
+second grant in a month" and "multi-day stays unpaid" — pass before and after, because nothing was
+ever granted before; they are regression guards, not discriminating tests.
+
+Backend **31 files / 978 tests** (was 31/971, +7). Frontend **91 / 840**, unchanged in count. The
+four failing frontend files are the known flakes.

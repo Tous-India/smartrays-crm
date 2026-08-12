@@ -35,6 +35,8 @@ function row(overrides = {}) {
     unpaidLeave: 2,
     doubleDeductionDays: 0,
     deduction: 1935,
+    surchargeAmount: 0,
+    absenceAmount: 1935,
     netPayable: 28065,
     ...overrides,
   };
@@ -277,16 +279,25 @@ describe("column-group tints (§7.51)", () => {
 });
 
 describe("a doubled deduction says so", () => {
-  it("marks the row and explains why the figure exceeds the day count", async () => {
-    respondWith([row({ unpaidLeave: 1, doubleDeductionDays: 1, deduction: 1935 })]);
+  it("marks the row AND states what the surcharge cost", async () => {
+    respondWith([
+      row({
+        unpaidLeave: 1,
+        doubleDeductionDays: 1,
+        deduction: 1935,
+        absenceAmount: 968,
+        surchargeAmount: 967,
+      }),
+    ]);
 
     render(<MonthlyReportSection />);
 
-    // 1 unpaid day at 967.74 would be ₹968. The row shows ₹1,935, and a
-    // deduction that silently disagrees with the column beside it reads as a
-    // bug rather than a policy.
+    // 1 unpaid day at 967.74 would be ₹968. The row shows ₹1,935 — the marker
+    // alone said a doubling existed without saying what it was worth, which is
+    // what made the row impossible to reconcile (§7.56).
     expect(await screen.findByText("×2")).toBeInTheDocument();
-    expect(screen.getByText(/deducted at twice the per-day rate/i)).toBeInTheDocument();
+    expect(screen.getByText(/incl\. ₹967 surcharge/)).toBeInTheDocument();
+    expect(screen.getByText(/charged twice/i)).toBeInTheDocument();
   });
 
   it("does NOT render on the zero row from the screenshot — 0 absent, 0 unpaid, no salary", async () => {

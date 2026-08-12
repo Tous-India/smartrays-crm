@@ -2123,6 +2123,50 @@ what it needs. A test asserts none of them appear in the admin fetch either.
 > single-user fetch, or be edited through their own flow rather than a form that silently renders
 > them blank.
 
+### The free monthly paid day is spent at APPROVAL (§7.56, 2026-08-12)
+
+`approveLeave` now grants the employee's one free paid day per calendar month automatically:
+approving a leave that was requested as `unpaid` re-types it to `paid` when the month's allowance is
+unused. `leave.service.js#applyFreeMonthlyPaidDay`.
+
+**Granted at approval, NOT inferred by the report — and that is the whole point.** The report reads
+what `approveLeave` actually granted, so `Paid Leave` and `Balance` cannot disagree with the
+approval record about what was spent. A report that applied the allowance itself would credit a paid
+day nobody approved, and the Balance column would drift away from the Leave documents behind it.
+`salaryCalculation.service.js` therefore has NO allowance logic; it only reads `type === "paid"`.
+
+**NEVER for an unapproved absence.** `markUnapprovedAbsence` sets `type`/`status` directly and does
+not route through `approveLeave`, so it cannot reach the grant — the explicit guard states the rule
+anyway rather than leaving it as an accident of the call graph. The day being penalised at 2× (§7.5)
+must not also be the day being forgiven.
+
+**MULTI-DAY REQUESTS STAY ENTIRELY UNPAID**, and the reasoning is worth stating because the
+alternative looks tempting. `type` is a property of the whole Leave record, so "one day paid, two
+unpaid" is not expressible without splitting the request into documents the employee never
+submitted — which corrupts the audit trail that makes leave defensible in the first place. The
+system already treats paid leave as an at-most-one-day concept:
+`ensureWithinMonthlyPaidLeaveQuota` rejects an explicit paid request longer than a day (409). The
+cost is real: someone who takes a single 3-day unpaid block forfeits that month's free day, and gets
+it back only by requesting a separate single day.
+
+**`PAID_LEAVE_MONTHLY_LIMIT = 1` is unchanged and now bounds BOTH paths.** Automatic grants and
+explicit requests draw on the same `getApprovedPaidLeaveDaysForMonth` total, so a granted day and a
+requested day cannot both be spent — a test auto-grants a day and then watches an explicit paid
+request for the same month be rejected 409. Half days work out too: 0.5 + 0.5 exactly fills the
+allowance and a third half day stays unpaid.
+
+> **Existing approved leave is NOT retroactively re-marked.** This changes future approvals only.
+> Historical rows keep whatever `type` they were approved with, and their reported figures do not
+> shift.
+
+### The report says what the §7.5 surcharge COST (§7.56)
+
+`computeEmployeeMonth` now returns `surchargeAmount` and `absenceAmount`, which sum to `deduction`.
+The row previously said only "×2" — that a doubling existed, never what it was worth — so a line
+reading "4.5 days absent, ₹5,161 deducted" could not be reconciled without reading the source.
+
+The traced case now renders ₹4,645 for the days away plus ₹516 of surcharge, and the two add up.
+
 ### Support & Ticketing (`/api/v1/tickets`) — Phase 5
 
 See `.context/final-plan.md` §6.6/§7.8. Two-part task: (A) Customer Portal self-signup — see

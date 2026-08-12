@@ -280,17 +280,34 @@ function MonthlyReportSection() {
       // work out the arithmetic.
       // See `showsDoubleMarker` for why the marker is gated on the deduction
       // rather than on the leave record alone.
+      //
+      // The surcharge is shown as its own AMOUNT on a second line (§7.56), not
+      // only as a "×2" marker. The marker said a doubling existed; it never
+      // said what it cost, so a row reading "4.5 absent, ₹5,161 deducted" could
+      // not be reconciled without reading the source. With the split visible,
+      // 4.5 days × the rate plus the stated surcharge adds up on the row.
+      //
+      // A second LINE rather than a column: the ten columns fit 1280 with zero
+      // pixels to spare, so anything wider pushes the table into an internal
+      // scroll. Height is free here; width is not.
       render: (value, row) => (
-        <span className="whitespace-nowrap">
-          {money(value)}
-          {showsDoubleMarker(row) && (
-            <Tooltip
-              title={`Includes ${days(row.doubleDeductionDays)} unapproved absence day(s), deducted at 2× (§7.5)`}
-            >
-              <Text type="danger" className="ml-1 cursor-help font-semibold">
-                ×2
-              </Text>
-            </Tooltip>
+        <span className="inline-flex flex-col items-end leading-tight">
+          <span className="whitespace-nowrap">
+            {money(value)}
+            {showsDoubleMarker(row) && (
+              <Tooltip
+                title={`${days(row.doubleDeductionDays)} unapproved absence day(s) charged twice (§7.5) — ${money(row.absenceAmount)} for the days away plus ${money(row.surchargeAmount)} surcharge`}
+              >
+                <Text type="danger" className="ml-1 cursor-help font-semibold">
+                  ×2
+                </Text>
+              </Tooltip>
+            )}
+          </span>
+          {showsDoubleMarker(row) && row.surchargeAmount != null && (
+            <Text type="secondary" className="whitespace-nowrap text-[11px]">
+              incl. {money(row.surchargeAmount)} surcharge
+            </Text>
           )}
         </span>
       ),
@@ -387,8 +404,9 @@ function MonthlyReportSection() {
 
       {hasDoubleDeduction && (
         <Text type="secondary" className="text-xs">
-          ×2 — an unapproved absence is deducted at twice the per-day rate (§7.5), so the deduction
-          on that row is larger than its absent-day count alone would suggest.
+          ×2 — an unapproved absence is charged twice (§7.5): once as the day away, once again as a
+          surcharge. Each affected row states the surcharge beneath its deduction, so the total
+          reconciles against the absent-day count rather than merely exceeding it.
         </Text>
       )}
     </div>
