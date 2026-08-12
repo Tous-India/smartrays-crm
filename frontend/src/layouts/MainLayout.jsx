@@ -9,7 +9,6 @@ import {
   CalendarOutlined,
   FileDoneOutlined,
   WalletOutlined,
-  CustomerServiceOutlined,
   CreditCardOutlined,
   BarChartOutlined,
   IdcardOutlined,
