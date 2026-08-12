@@ -2266,6 +2266,32 @@ the January→prior-December wraparound. `registerPayrollCron` is tested by mock
 `schedule` export (`vi.spyOn`) and asserting it's called with the exact `"5 0 1 * *"` expression
 — nothing is ever left actually scheduled against a real timer during the test run.
 
+### 7.6 Transport / Travel Logs — frontend deferred
+
+⏸️ **FRONTEND DEFERRED 2026-08-12 — hidden, NOT removed**, recorded the same way §7.8's Tickets
+deferral was. The sidebar nav item and the `/travel-logs` route are gone from the UI; **the backend
+module, routes, model and data are completely untouched and every test still passes.** A scope
+deferral, not a removal and not a change of intent.
+
+It was found **half-deferred**: the nav item had been commented out in `MainLayout.jsx` while
+`router.jsx` still served `/travel-logs`, leaving the page reachable by URL but unreachable by
+navigation — the worst of both. Deferring properly means both go.
+
+**Nothing linked to it.** Every reference was audited before removing the route: only the
+`ROUTE_PATHS.TRAVEL_LOGS` constant, `TravelLogsPage.jsx` itself and the router entry. No widget,
+dashboard tile or button pointed at it, so this leaves no dead link.
+
+What deliberately stayed: the `travelLogs.*` permission tiers, `ROUTE_PATHS.TRAVEL_LOGS`, and
+`TravelLogsPage.jsx` — restoring the module is re-adding one nav entry and one `<Route>`. The
+`CarOutlined` import was removed with the nav item; leaving it would have been dead code that lint
+flags.
+
+> **A dead link DOES exist elsewhere, found during this audit and NOT fixed here:**
+> `AmcRenewalsDueWidget` renders `<Link to={ROUTE_PATHS.AMC}>View all AMC records →</Link>`, but
+> **no `/amc` route is defined in `router.jsx`** — AMC lives inside Customer Detail (§7.35). That
+> link is live on the Dashboard today and goes nowhere. Reported rather than folded into an
+> unrelated deferral.
+
 ### 7.8 Support & Ticketing
 
 ⏸️ **FRONTEND DEFERRED 2026-08-07 — hidden, NOT removed.** The nav item, both `/tickets` routes

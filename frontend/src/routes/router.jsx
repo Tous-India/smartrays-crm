@@ -17,7 +17,6 @@ import AttendancePage from "../pages/AttendancePage";
 import AttendanceTeamPage from "../pages/AttendanceTeamPage";
 import PayrollPage from "../pages/PayrollPage";
 import PayslipDetailPage from "../pages/PayslipDetailPage";
-import TravelLogsPage from "../pages/TravelLogsPage";
 // Tickets is DEFERRED from the UI, 2026-08-07 — see the routes below.
 import PaymentsPage from "../pages/PaymentsPage";
 import ReportsPage from "../pages/ReportsPage";
@@ -62,7 +61,6 @@ export const router = createBrowserRouter(
           <Route path="attendance/team" element={<AttendanceTeamPage />} />
           <Route path="payroll" element={<PayrollPage />} />
           <Route path="payroll/:id/payslip" element={<PayslipDetailPage />} />
-          <Route path="travel-logs" element={<TravelLogsPage />} />
           {/* Tickets DEFERRED from the UI 2026-08-07 — hidden, not removed.
               A core module in final-plan.md with a Customer Portal
               dependency; backend module/routes/model/data all untouched.

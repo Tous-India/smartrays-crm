@@ -9,7 +9,6 @@ import {
   CalendarOutlined,
   FileDoneOutlined,
   WalletOutlined,
-  CarOutlined,
   CustomerServiceOutlined,
   CreditCardOutlined,
   BarChartOutlined,
@@ -182,7 +181,6 @@ function MainLayout() {
         icon: <WalletOutlined />,
         show: can(user, "payroll", "view") || can(user, "payroll", "run"),
       },
-      { key: ROUTE_PATHS.TRAVEL_LOGS, label: "Travel Logs", icon: <CarOutlined />, show: true },
       // Tickets is DEFERRED from the UI, 2026-08-07 — hidden, not removed. It
       // is still a core module in final-plan.md with a Customer Portal
       // dependency, and its backend module, routes, model and data are all
