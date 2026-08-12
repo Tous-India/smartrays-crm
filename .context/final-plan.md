@@ -5005,6 +5005,69 @@ that page. There is no second way in, which is what keeps "which run am I lookin
 10. **Shared files untouched.** `/payroll` already routed to `PayrollPage` and MainLayout already
     carried the nav entry, so neither router nor layout needed a patch.
 
+## §7.58 — Paid days, run provenance, and the run export (2026-08-12, §6.5)
+
+Three decisions, settled by the project owner and recorded here so none is re-litigated.
+
+### 1. `paidDays` lives in the shared calculator
+
+`paidDays = calendarDays − unpaidLeave`, added to `salaryCalculation.service.js` and read by BOTH
+Payroll and the leave/attendance report. Neither recomputes it.
+
+**The ×2 surcharge does NOT reduce `paidDays`.** It is a monetary penalty, not a day not worked: an
+employee absent half a day was absent half a day, and charging the surcharge against the attendance
+column would punish them twice in the same place and misstate what they actually did.
+
+**INTENDED CONSEQUENCE, stated rather than hidden: `paidDays × dailyRate` does NOT equal
+`baseSalary − deduction` when a surcharge exists.** On the traced row 26.5 × ₹1,032.26 = ₹27,355
+against a net of ₹26,839 — the ₹516 gap IS the surcharge. This is correct, and it is why the LOP
+Deduction cell ALWAYS shows its split (`₹4,645 + ₹516 (0.5 day absence, 2×)`): the gap has to be
+explainable from the row itself rather than looking like an arithmetic error. A test asserts
+`paidDays` is unaffected by `doubleDeductionDays`, and another asserts the gap equals the surcharge
+exactly.
+
+### 2. `generatedBy` — a null actor is "—", never "Automatic"
+
+Added to the Payroll model; `runPayroll` accepts an actor. **A null actor renders as an em dash, NOT
+"Automatic (cron)".** `node-cron` does not execute on Vercel serverless, so no run has ever been
+cron-generated — labelling null as automatic would assert something false about every record written
+before the field existed. An automatic label is shown only when an explicit system actor is stored.
+**Existing documents are not backfilled**: inventing an actor for a run nobody can vouch for is
+worse than admitting we do not know.
+
+### 3. The run export extends the existing report service
+
+A `payrollRun` module inside `report.service.js`, matching the review table's columns. Not a second
+export service.
+
+**Gated on `payroll.run`, NEVER `payroll.view`.** This returns every employee's salary for a period
+in one file, and `payroll.view` means "own payslip only" while sitting in the DEFAULT employee role
+template — gating it there would hand the whole company's pay to every employee. That is the §7.47
+trap, found there by an access test returning 200 with every salary in the body. The reasoning is
+stated in the code comment, not just here. The sibling `payroll` module keeps `payroll.view` and is
+not a leak: it scopes internally by `?scope=`, so a `view` holder only ever receives their own
+records.
+
+### Also settled in this pass
+
+- **Re-running REPLACES**, never duplicates — compound unique index plus `Object.assign` on the same
+  document. The modal says so, and says an approved or paid run will be refused outright.
+- **Finalise = approve.** The existing state; nothing invented.
+- **The payslip link renders only on a finalised run** — a draft 409s by design, because its figures
+  are still moving.
+- **"Days in Month" sits in the run header, not as a column** — it is a property of the period and
+  identical on every row.
+- **Currency is `en-IN` explicitly.** A bare `toLocaleString()` follows the runtime's locale, so the
+  same figure rendered `₹1,20,000` under jsdom and `₹120,000` in a browser started elsewhere. One
+  shared `money()` helper pins it.
+- **Shared files needed no changes** — `/payroll` already routed to `PayrollPage` and MainLayout
+  already carried the nav entry.
+
+**Measured in a browser** (jsdom does not do layout): the run list is 980/980 at 1280 and needs
+`scroll={{ x }}` at 1024 (808/724) and 390; the review table's eleven columns need it at every width
+including 1280 (1144/980). The page never overflows and there are zero `.ant-table-body` containers
+anywhere.
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a

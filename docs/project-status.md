@@ -3739,3 +3739,61 @@ leave the browser.
 
 Backend **31 files / 984 tests** (was 31/978). Frontend **92 files / 857 tests** (was 91/840, +17). The
 four failing frontend files remain the known flakes.
+
+### Payroll: paid days, run provenance, run export (§7.58, 2026-08-12)
+
+Three settled decisions, built in one pass.
+
+**`paidDays` is in the shared calculator**, read by both Payroll and the report, recomputed nowhere.
+The ×2 surcharge does not reduce it — a monetary penalty is not a day not worked, and charging it
+against the attendance column would punish someone twice in the same place.
+
+**The non-reconciliation is intended and is stated on the row.** `paidDays × dailyRate` does not
+equal `baseSalary − deduction` when a surcharge exists: 26.5 × ₹1,032.26 = ₹27,355 against a net of
+₹26,839, and the ₹516 gap is the surcharge exactly. That is why the LOP Deduction cell always shows
+`₹4,645 + ₹516 (0.5 day absence, 2×)` — the bare "×2" it replaces read as though the whole ₹5,161
+had been doubled, which it had not.
+
+**`generatedBy`: a null actor renders "—", never "Automatic (cron)".** node-cron does not execute on
+Vercel serverless, so no run has ever been cron-generated; calling null automatic would assert
+something false about every record predating the field. Existing documents are not backfilled.
+
+**The run export extends the existing report service** rather than adding a second one, and is gated
+on `payroll.run` — never `payroll.view`, which is the own-payslip tier in the default employee
+template. Gating a whole-run export there would expose every salary to every employee: the §7.47
+trap, and the reason is in the code comment rather than only here.
+
+**Traced row, derived live with nothing written:**
+
+| Column | Value |
+|---|---|
+| Base Salary | ₹32,000 |
+| Paid Days | 26.5 (31 − 4.5 LOP; surcharge excluded) |
+| Paid Leave | 0 |
+| LOP Days | 4.5 |
+| LOP Deduction | ₹5,161 = ₹4,645 + ₹516 (0.5 day absence, 2×) |
+| Bonus | ₹0 |
+| Other Deductions | ₹0 |
+| Net Payable | ₹26,839 |
+
+`paidDays × dailyRate − netPayable = ₹516`, equal to the surcharge — asserted in a test, not just
+observed.
+
+**Browser measurements** (jsdom does not do layout):
+
+| | @1280 | @1024 | @390 |
+|---|---|---|---|
+| Run list (9 cols) | 980/980 fits | 808/724 → `scroll x` | 808/311 → `scroll x` |
+| Review table (11 cols) | 1144/980 → `scroll x` | 1144/724 → `scroll x` | 1144/311 → `scroll x` |
+
+The page never overflows at any width; zero `.ant-table-body` containers throughout. Adding the two
+Scope 1 columns pushed the run list past 1024, where it previously fitted — reported rather than
+left to be discovered.
+
+**Currency is now `en-IN` explicitly** through one shared helper. A bare `toLocaleString()` follows
+the runtime's locale, so the same figure rendered `₹1,20,000` under jsdom and `₹120,000` in a
+browser started elsewhere — a real inconsistency on a screen showing pay.
+
+Backend **31 files / 988 tests** (was 31/984, +4). Frontend **92 / 867** (was 92/857, +10). The four
+failing frontend files remain the known flakes; PayrollYearView also failed once under load and
+passes 16/16 in isolation.

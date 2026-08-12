@@ -301,6 +301,65 @@ describe("unapproved absence deducts twice, visibly", () => {
   });
 });
 
+describe("paidDays — days paid for (§7.58)", () => {
+  it("is the calendar month minus the days lost to pay", () => {
+    const result = computeEmployeeMonth({
+      user: user(),
+      leaves: unpaidDays(3),
+      year: 2026,
+      month: 8,
+    });
+
+    expect(result.paidDays).toBe(31 - 3);
+  });
+
+  it("is NOT reduced by the 2x surcharge — that is money, not a day not worked", () => {
+    // The employee was absent half a day, not one day. Charging the surcharge
+    // against the attendance column would punish them twice in the same place,
+    // and would misstate what they actually did.
+    const withSurcharge = computeEmployeeMonth({
+      user: user(),
+      leaves: [leaveOn(10, { type: "unapproved_absence", isDoubleDeduction: true, isHalfDay: true })],
+      year: 2026,
+      month: 8,
+    });
+
+    expect(withSurcharge.doubleDeductionDays).toBe(0.5);
+    // 0.5 of a day away -> 30.5 paid days, surcharge notwithstanding.
+    expect(withSurcharge.paidDays).toBe(30.5);
+  });
+
+  it("does NOT reconcile against net pay when a surcharge exists — and that is intended", () => {
+    // The traced row. `paidDays × dailyRate` overstates the pay by exactly the
+    // surcharge, which is why the deduction cell always shows its split.
+    const result = computeEmployeeMonth({
+      user: user({ baseSalary: 32000 }),
+      leaves: [
+        leaveOn(3, { type: "unpaid" }),
+        leaveOn(4, { type: "unpaid" }),
+        leaveOn(11, { type: "unapproved_absence", isDoubleDeduction: true, isHalfDay: true }),
+        leaveOn(14, { type: "unpaid" }),
+        leaveOn(15, { type: "unpaid" }),
+      ],
+      year: 2026,
+      month: 8,
+    });
+
+    const dailyRate = 32000 / 31;
+
+    expect(result.paidDays).toBe(26.5);
+    expect(result.netPayable).toBe(26839);
+    // The gap is the surcharge, exactly.
+    expect(Math.round(result.paidDays * dailyRate) - result.netPayable).toBe(result.surchargeAmount);
+  });
+
+  it("is the whole month for an employee who took no leave", () => {
+    const result = computeEmployeeMonth({ user: user(), leaves: [], year: 2026, month: 8 });
+
+    expect(result.paidDays).toBe(31);
+  });
+});
+
 describe("an unset baseSalary is NOT zero", () => {
   it.each([[null], [undefined], [0]])("returns null for salary %p, never a computed ₹0", (value) => {
     const result = computeEmployeeMonth({

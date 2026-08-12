@@ -37,6 +37,25 @@ const payrollSchema = new mongoose.Schema(
     // working hours (a real 17.4-hour overnight shift did), and heartbeats stop
     // whenever a phone locks or a tab is backgrounded. Pay is derived from DAY
     // COUNTS; this is carried for display and must not affect any amount.
+    // Days actually paid for (§7.58) — calendar days minus days lost to pay.
+    // The 2x surcharge does NOT reduce it: that is a monetary penalty, not a
+    // day not worked. Consequence, intended: paidDays x dailyRate does not
+    // reconcile to netAmount when a surcharge exists, which is why the LOP cell
+    // always shows its split.
+    paidDays: {
+      type: Number,
+      default: 0,
+    },
+    // The deduction split, stored so a payslip or an export can explain the
+    // figure without recomputing it.
+    surchargeAmount: {
+      type: Number,
+      default: 0,
+    },
+    absenceAmount: {
+      type: Number,
+      default: 0,
+    },
     workingHoursTotal: {
       type: Number,
       required: true,
@@ -78,6 +97,20 @@ const payrollSchema = new mongoose.Schema(
     mileageReimbursement: {
       type: Number,
       default: 0,
+    },
+    // WHO ran it (§7.58). Null on every record written before this field
+    // existed, and deliberately NOT backfilled — inventing an actor for a run
+    // nobody can vouch for is worse than admitting we do not know.
+    //
+    // A null actor renders as "—", never "Automatic (cron)". `node-cron` does
+    // not execute on Vercel serverless, so no run has ever been
+    // cron-generated; labelling null as automatic would assert something false
+    // about existing records. An automatic label is only ever shown when an
+    // explicit system actor has been stored.
+    generatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
     },
     generatedAt: {
       type: Date,

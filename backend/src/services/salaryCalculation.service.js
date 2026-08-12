@@ -235,6 +235,21 @@ export function computeEmployeeMonth({
   // Everything beyond the paid allowance is unpaid.
   const unpaidLeave = Math.max(0, absentDays - paidLeave);
 
+  // DAYS PAID FOR (§7.58) — calendar days minus the days lost to pay.
+  //
+  // The ×2 surcharge deliberately does NOT reduce this. It is a monetary
+  // PENALTY, not a day not worked: the employee was absent half a day, not one
+  // day, and saying otherwise would misstate their attendance to punish them
+  // twice in the same column.
+  //
+  // KNOWN, INTENDED CONSEQUENCE: `paidDays × dailyRate` will NOT equal
+  // `baseSalary − deduction` whenever a surcharge exists. On the traced row
+  // 26.5 × ₹1,032.26 = ₹27,355 against a net of ₹26,839 — the ₹516 gap IS the
+  // surcharge. That is why the LOP Deduction cell always shows its split
+  // ("₹4,645 + ₹516"): the gap has to be explainable from the row itself
+  // rather than looking like an arithmetic error.
+  const paidDays = calendarDays - unpaidLeave;
+
   // The surcharge only — the day itself is already inside `absentDays` above.
   // Kept as its own figure so the row can say exactly how many days were
   // doubled, rather than leaving a deduction that silently disagrees with the
@@ -284,6 +299,7 @@ export function computeEmployeeMonth({
     balance,
     presentDays,
     absentDays,
+    paidDays,
     paidLeave,
     unpaidLeave,
     doubleDeductionDays,

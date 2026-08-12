@@ -39,7 +39,9 @@ function period(month, overrides = {}) {
     status: null,
     employeeCount: 0,
     grossTotal: 0,
+    deductionTotal: 0,
     netTotal: 0,
+    generatedBy: null,
     adjustmentTotal: 0,
     generatedAt: null,
     approvedBy: null,
@@ -226,6 +228,75 @@ describe("Run payroll", () => {
         "Payroll for 6/2026 is approved and can no longer be recomputed."
       )
     );
+  });
+});
+
+
+describe("Scope 1 columns (§7.58)", () => {
+  it("shows total deductions and who generated the run", async () => {
+    respondWith({
+      rows: [
+        period(6, {
+          status: "draft", employeeCount: 4, grossTotal: 120000,
+          deductionTotal: 5500, netTotal: 114500,
+          generatedAt: "2026-07-01T09:00:00.000Z", generatedBy: "Vinay",
+        }),
+      ],
+    });
+
+    render(<PayrollYearView />);
+
+    await screen.findByText("June");
+    const june = document.querySelector(".ant-table-tbody tr.ant-table-row").textContent;
+
+    expect(june.replace(/,/g, "")).toContain("₹5500");
+    expect(june).toContain("Vinay");
+  });
+
+  it("renders a NULL generator as an em dash, never as an automatic label", async () => {
+    // node-cron does not run on Vercel serverless, so no record was ever
+    // cron-generated. Calling null "Automatic" would assert something false
+    // about every row written before the field existed.
+    respondWith({
+      rows: [period(6, { status: "draft", employeeCount: 1, generatedBy: null })],
+    });
+
+    render(<PayrollYearView />);
+
+    await screen.findByText("June");
+    const june = document.querySelector(".ant-table-tbody tr.ant-table-row").textContent;
+
+    expect(june).not.toMatch(/automatic/i);
+    expect(june).not.toMatch(/cron/i);
+    expect(june).toContain("—");
+  });
+});
+
+describe("the Run Payroll modal warns precisely (§7.58)", () => {
+  it("says re-running REPLACES an existing draft, not duplicates it", async () => {
+    respondWith({
+      rows: [period(dayjs().month() + 1, { status: "draft", employeeCount: 1 })],
+    });
+
+    render(<PayrollYearView />);
+    await userEvent.click(await screen.findByRole("button", { name: /run payroll/i }));
+
+    expect(await screen.findByText(/A run already exists for/)).toBeInTheDocument();
+    expect(screen.getByText(/REPLACES the existing draft in place/)).toBeInTheDocument();
+    expect(screen.getByText(/does not create a second one/)).toBeInTheDocument();
+  });
+
+  it("says an approved run will be REFUSED, and does not block the attempt", async () => {
+    respondWith({
+      rows: [period(dayjs().month() + 1, { status: "approved", employeeCount: 1 })],
+    });
+
+    render(<PayrollYearView />);
+    await userEvent.click(await screen.findByRole("button", { name: /run payroll/i }));
+
+    expect(await screen.findByText(/frozen — this will be REFUSED/)).toBeInTheDocument();
+    // Warned, not blocked.
+    expect(screen.getByRole("button", { name: /generate draft/i })).toBeEnabled();
   });
 });
 

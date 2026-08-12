@@ -34,15 +34,15 @@ import {
  * "admin-only"; nothing re-checks that here, the same reasoning
  * `markUnapprovedAbsence` already relies on its route's `requireAdmin`.
  */
-export async function runPayroll({ employeeId, month, year, regenerate }) {
+export async function runPayroll({ employeeId, month, year, regenerate }, actor = null) {
   const monthNumber = Number(month);
   const yearNumber = Number(year);
 
   if (employeeId) {
-    return runPayrollForEmployee(employeeId, monthNumber, yearNumber, Boolean(regenerate));
+    return runPayrollForEmployee(employeeId, monthNumber, yearNumber, Boolean(regenerate), actor);
   }
 
-  return runPayrollBulk(monthNumber, yearNumber, Boolean(regenerate));
+  return runPayrollBulk(monthNumber, yearNumber, Boolean(regenerate), actor);
 }
 
 /**
@@ -51,7 +51,7 @@ export async function runPayroll({ employeeId, month, year, regenerate }) {
  * asked for a judgment call on; the exact shape chosen is a `regenerate=true`
  * query flag on the same run endpoint, not a separate route.
  */
-async function runPayrollForEmployee(employeeId, month, year, regenerate) {
+async function runPayrollForEmployee(employeeId, month, year, regenerate, actor = null) {
   const employee = await User.findById(employeeId).select("+baseSalary");
 
   if (!employee) {
@@ -82,6 +82,7 @@ async function runPayrollForEmployee(employeeId, month, year, regenerate) {
   }
 
   const fields = await computePayrollFields(employee, month, year);
+  fields.generatedBy = actor?._id || null;
 
   if (existing) {
     Object.assign(existing, fields);
@@ -264,7 +265,9 @@ export async function markPeriodPaid(month, year, actor, paidDate) {
  */
 export async function listPayrollPeriods(year) {
   const numericYear = Number(year);
-  const records = await Payroll.find({ year: numericYear }).populate("approvedBy", "name");
+  const records = await Payroll.find({ year: numericYear })
+    .populate("approvedBy", "name")
+    .populate("generatedBy", "name");
 
   const byMonth = new Map();
 
@@ -275,9 +278,11 @@ export async function listPayrollPeriods(year) {
       status: record.status,
       employeeCount: 0,
       grossTotal: 0,
+      deductionTotal: 0,
       netTotal: 0,
       adjustmentTotal: 0,
       generatedAt: null,
+      generatedBy: null,
       approvedBy: null,
       approvedAt: null,
       paidAt: null,
@@ -285,6 +290,7 @@ export async function listPayrollPeriods(year) {
 
     existing.employeeCount += 1;
     existing.grossTotal += record.grossAmount || 0;
+    existing.deductionTotal += record.deduction || 0;
     existing.netTotal += record.netAmount || 0;
     existing.adjustmentTotal += record.adjustmentTotal || 0;
 
@@ -296,6 +302,8 @@ export async function listPayrollPeriods(year) {
 
     if (!existing.generatedAt || record.generatedAt > existing.generatedAt) {
       existing.generatedAt = record.generatedAt;
+      // Null stays null — rendered as "—", never as an automatic label.
+      existing.generatedBy = record.generatedBy?.name || null;
     }
 
     if (record.approvedAt) {
@@ -320,9 +328,11 @@ export async function listPayrollPeriods(year) {
         status: null,
         employeeCount: 0,
         grossTotal: 0,
+        deductionTotal: 0,
         netTotal: 0,
         adjustmentTotal: 0,
         generatedAt: null,
+        generatedBy: null,
         approvedBy: null,
         approvedAt: null,
         paidAt: null,
@@ -405,11 +415,17 @@ export async function getPeriodReview({ month, year }) {
       payrollId: record ? String(record._id) : null,
       baseSalary: typeof employee.baseSalary === "number" ? employee.baseSalary : null,
       presentDays: record ? record.presentDays : null,
+      paidDays: record ? record.paidDays : null,
+      daysInMonth: record ? record.daysInMonth : null,
       paidLeaveDays: record ? record.paidLeaveDays : null,
       unpaidDeductionDays: record ? record.unpaidDeductionDays : null,
       doubleDeductionDays: record ? record.doubleDeductionDays : 0,
       grossAmount: record ? record.grossAmount : null,
       deduction: record ? record.deduction : null,
+      // The split, so the LOP cell can always explain itself rather than
+      // showing a bare "x2" that reads as though the whole figure doubled.
+      surchargeAmount: record ? record.surchargeAmount : null,
+      absenceAmount: record ? record.absenceAmount : null,
       adjustmentTotal: record ? record.adjustmentTotal : 0,
       // Split by SIGN (§7.57): positive pays, negative claws back. One record
       // type carries both — the sign already says which, and a second way of
@@ -463,7 +479,7 @@ export async function getPeriodReview({ month, year }) {
  * never has one) are skipped too, not errored — payroll silently doesn't run
  * for them until an admin sets one, which is expected, not a bug.
  */
-async function runPayrollBulk(month, year, regenerate) {
+async function runPayrollBulk(month, year, regenerate, actor = null) {
   const employees = await User.find({ isActive: true }).select("+baseSalary");
   const generated = [];
   const skipped = [];
@@ -492,6 +508,7 @@ async function runPayrollBulk(month, year, regenerate) {
     }
 
     const fields = await computePayrollFields(employee, month, year);
+    fields.generatedBy = actor?._id || null;
 
     if (existing) {
       Object.assign(existing, fields);
@@ -564,6 +581,7 @@ async function computePayrollFields(employee, month, year) {
 
   return {
     daysInMonth: computed.calendarDays,
+    paidDays: computed.paidDays,
     presentDays: computed.presentDays,
     paidLeaveDays: computed.paidLeave,
     // The calculator returns the surcharge separately so a payslip can mark it;
@@ -573,6 +591,8 @@ async function computePayrollFields(employee, month, year) {
     workingHoursTotal: computed.workingHoursTotal,
     grossAmount: computed.grossAmount,
     deduction: computed.deduction,
+    surchargeAmount: computed.surchargeAmount,
+    absenceAmount: computed.absenceAmount,
     netAmount: computed.netPayable,
     mileageReimbursement: computed.reimbursements,
     generatedAt: new Date(),

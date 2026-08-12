@@ -3,6 +3,12 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import PayrollRunReview from "./PayrollRunReview";
 import * as payrollApi from "../api/payrollApi";
+import * as reportApi from "../../../services/reportApi";
+
+vi.mock("../../../services/reportApi", () => ({
+  generateReport: vi.fn(),
+  triggerBlobDownload: vi.fn(),
+}));
 
 vi.mock("../api/payrollApi", () => ({
   getPeriodReview: vi.fn(),
@@ -39,6 +45,10 @@ function row(overrides = {}) {
     bonusTotal: 0,
     otherDeductionTotal: 0,
     adjustmentLines: [],
+    paidDays: 28,
+    daysInMonth: 30,
+    surchargeAmount: 0,
+    absenceAmount: 2000,
     netAmount: 28000,
     anomalies: [],
     ...overrides,
@@ -121,12 +131,26 @@ describe("anomalies are flagged, not blocked", () => {
     expect(within(line).getByText("No record")).toBeInTheDocument();
   });
 
-  it("marks a doubled deduction on the charged-days column", async () => {
-    respondWith({ rows: [row({ doubleDeductionDays: 2, unpaidDeductionDays: 4 })] });
+  it("spells out the surcharge split rather than a bare ×2 (§7.58)", async () => {
+    // "×2" read as though the WHOLE deduction had been doubled. It had not —
+    // the doubling applied to a fraction of a day. The split is also what makes
+    // the paidDays/net gap explainable from the row itself.
+    respondWith({
+      rows: [
+        row({
+          doubleDeductionDays: 0.5,
+          unpaidDeductionDays: 4.5,
+          deduction: 5161,
+          absenceAmount: 4645,
+          surchargeAmount: 516,
+        }),
+      ],
+    });
 
     render(<PayrollRunReview />);
 
-    expect(await screen.findByText("×2")).toBeInTheDocument();
+    expect(await screen.findByText(/₹4,645 \+ ₹516 \(0.5 day absence, 2×\)/)).toBeInTheDocument();
+    expect(screen.queryByText("×2")).not.toBeInTheDocument();
   });
 });
 
@@ -136,7 +160,7 @@ describe("the state machine gates every action", () => {
     await screen.findByText("Asha Verma");
 
     expect(screen.getByRole("button", { name: /send for review/i })).toBeEnabled();
-    expect(screen.getByRole("button", { name: /^approve$/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^finalise$/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /mark paid/i })).toBeDisabled();
   });
 
@@ -146,7 +170,7 @@ describe("the state machine gates every action", () => {
     render(<PayrollRunReview />);
     await screen.findByText("Asha Verma");
 
-    expect(screen.getByRole("button", { name: /^approve$/i })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /^finalise$/i })).toBeEnabled();
     expect(screen.getByRole("button", { name: /send for review/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /mark paid/i })).toBeDisabled();
   });
@@ -260,6 +284,87 @@ describe("bonus and other deductions (§7.57)", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Correct" }));
 
     expect(await screen.findByText("History is not edited.")).toBeInTheDocument();
+  });
+});
+
+
+describe("Scope 3 essentials (§7.58)", () => {
+  it("renders the specced column order", async () => {
+    render(<PayrollRunReview />);
+
+    const heads = (await screen.findAllByRole("columnheader")).map((h) => h.textContent.trim());
+
+    expect(heads.slice(0, 9)).toEqual([
+      "Employee",
+      "Base Salary",
+      "Paid Days",
+      "Paid Leave",
+      "LOP Days",
+      "LOP Deduction",
+      "Bonus",
+      "Other Deductions",
+      "Net Payable",
+    ]);
+    // Days in Month is a property of the PERIOD, not of a row — same number on
+    // every line, so it lives in the header.
+    expect(heads).not.toContain("Days in Month");
+  });
+
+  it("puts Days in Month in the run header", async () => {
+    render(<PayrollRunReview />);
+
+    expect(await screen.findByText(/days in month/i)).toBeInTheDocument();
+  });
+
+  it("filters the rows by employee search", async () => {
+    respondWith({
+      rows: [row(), row({ employeeId: "u2", payrollId: "p2", name: "Rahul Nair" })],
+    });
+
+    render(<PayrollRunReview />);
+    await screen.findByText("Rahul Nair");
+
+    await userEvent.type(screen.getByLabelText("Find an employee"), "rahul");
+
+    expect(screen.queryByText("Asha Verma")).not.toBeInTheDocument();
+    expect(screen.getByText("Rahul Nair")).toBeInTheDocument();
+  });
+
+  it("exports the run through the SHARED report dispatcher, run-scoped", async () => {
+    reportApi.generateReport.mockResolvedValue({ data: new Blob(["x"]) });
+
+    render(<PayrollRunReview />);
+    await screen.findByText("Asha Verma");
+    await userEvent.click(screen.getByRole("button", { name: "Excel" }));
+
+    await waitFor(() =>
+      expect(reportApi.generateReport).toHaveBeenCalledWith(
+        expect.objectContaining({ module: "payrollRun", format: "xlsx" })
+      )
+    );
+    expect(reportApi.triggerBlobDownload).toHaveBeenCalled();
+  });
+
+  it("offers a payslip only once the run is finalised — a draft 409s by design", async () => {
+    render(<PayrollRunReview />);
+    await screen.findByText("Asha Verma");
+    expect(screen.queryByRole("link", { name: "Payslip" })).not.toBeInTheDocument();
+
+    respondWith({ status: "approved", rows: [row({ status: "approved" })] });
+    render(<PayrollRunReview />);
+
+    expect(await screen.findByRole("link", { name: "Payslip" })).toBeInTheDocument();
+  });
+
+  it("formats money as en-IN explicitly, not by whatever locale the runtime has", async () => {
+    respondWith({ rows: [row({ grossAmount: 120000 })] });
+
+    render(<PayrollRunReview />);
+
+    // Lakh grouping, pinned — a bare toLocaleString() renders this differently
+    // depending on where the process started.
+    // Appears in the row AND the totals — both go through the same helper.
+    expect((await screen.findAllByText("₹1,20,000")).length).toBeGreaterThan(0);
   });
 });
 

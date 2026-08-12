@@ -15,7 +15,10 @@ import { runPayroll, listPayroll, generatePayslipPdf } from "./payroll.service.j
 
 export const run = asyncWrapper(async (req, res) => {
   const { employeeId, month, year, regenerate } = req.query;
-  const result = await runPayroll({ employeeId, month, year, regenerate: regenerate === "true" });
+  const result = await runPayroll(
+    { employeeId, month, year, regenerate: regenerate === "true" },
+    req.user
+  );
 
   res.status(200).json(new ApiResponse(200, result, "Payroll run completed"));
 });
@@ -123,7 +126,7 @@ export const cronRun = asyncWrapper(async (req, res) => {
   const month = Number(req.query.month) || (now.getMonth() === 0 ? 12 : now.getMonth());
   const year = Number(req.query.year) || (now.getMonth() === 0 ? now.getFullYear() - 1 : now.getFullYear());
 
-  const result = await runPayroll({ month, year, regenerate: true });
+  const result = await runPayroll({ month, year, regenerate: true }, null);
 
   res.status(200).json(
     new ApiResponse(

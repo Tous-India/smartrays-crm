@@ -19,6 +19,8 @@ import {
   Typography,
   message,
 } from "antd";
+import { money } from "../../../utils/currency.utils";
+import { generateReport, triggerBlobDownload } from "../../../services/reportApi";
 import {
   approvePeriod,
   createAdjustment,
@@ -67,9 +69,7 @@ const STATUS_TONE = {
   paid: { color: "green", help: "Recorded as paid." },
 };
 
-function money(value) {
-  return value == null ? "—" : `₹${value.toLocaleString()}`;
-}
+
 
 /**
  * A bonus / other-deduction cell.
@@ -104,6 +104,7 @@ function PayrollRunReview({ month: monthProp, year: yearProp, onChanged }) {
   const [isWorking, setIsWorking] = useState(false);
   const [error, setError] = useState(null);
   const [adjustingFor, setAdjustingFor] = useState(null);
+  const [search, setSearch] = useState("");
   const [form] = Form.useForm();
 
   const period = useMemo(() => ({ year: month.year(), month: month.month() + 1 }), [month]);
@@ -132,6 +133,26 @@ function PayrollRunReview({ month: monthProp, year: yearProp, onChanged }) {
       setMonth(dayjs().year(yearProp).month(monthProp - 1));
     }
   }, [monthProp, yearProp]);
+
+  /** PDF / Excel through the shared report dispatcher, run-scoped. */
+  async function exportRun(format) {
+    try {
+      // The dispatcher STREAMS the file rather than returning a URL, so this
+      // goes through the same blob-download helper every other export uses.
+      const response = await generateReport({
+        module: "payrollRun",
+        format,
+        filters: { month: period.month, year: period.year },
+      });
+
+      triggerBlobDownload(
+        response.data,
+        `pay-run-${period.year}-${String(period.month).padStart(2, "0")}.${format}`
+      );
+    } catch (requestError) {
+      message.error(requestError.response?.data?.message || "Could not export this run.");
+    }
+  }
 
   /** Every action shares this: run it, surface the server's own message, reload. */
   async function act(operation, successMessage) {
@@ -185,12 +206,23 @@ function PayrollRunReview({ month: monthProp, year: yearProp, onChanged }) {
       title: "Employee",
       dataIndex: "name",
       key: "name",
+      fixed: "left",
       render: (name) => <span className="font-medium">{name}</span>,
     },
     {
-      title: "Present",
-      dataIndex: "presentDays",
-      key: "presentDays",
+      title: "Base Salary",
+      dataIndex: "grossAmount",
+      key: "grossAmount",
+      align: "right",
+      render: money,
+    },
+    // "Days in Month" is a property of the PERIOD, not of an employee — it is
+    // the same number on every row. It lives in the run header instead of
+    // costing a column that says nothing per row.
+    {
+      title: "Paid Days",
+      dataIndex: "paidDays",
+      key: "paidDays",
       align: "right",
       render: (value) => (value == null ? "—" : value),
     },
@@ -202,35 +234,34 @@ function PayrollRunReview({ month: monthProp, year: yearProp, onChanged }) {
       render: (value) => (value == null ? "—" : value),
     },
     {
-      title: "Charged Days",
+      title: "LOP Days",
       dataIndex: "unpaidDeductionDays",
       key: "unpaidDeductionDays",
       align: "right",
-      render: (value, row) =>
-        value == null ? (
-          "—"
-        ) : (
-          <span className="whitespace-nowrap">
-            {value}
-            {row.doubleDeductionDays > 0 && (
-              <Tooltip title={`${row.doubleDeductionDays} unapproved absence day(s) charged at 2×`}>
-                <Text type="danger" className="ml-1 cursor-help font-semibold">
-                  ×2
-                </Text>
-              </Tooltip>
-            )}
-          </span>
-        ),
+      render: (value) => (value == null ? "—" : value),
     },
-    { title: "Gross", dataIndex: "grossAmount", key: "grossAmount", align: "right", render: money },
-    { title: "Deduction", dataIndex: "deduction", key: "deduction", align: "right", render: money },
-    // BONUS and OTHER DEDUCTIONS are the same PayrollAdjustment record, split
-    // by SIGN (§7.57) — positive pays, negative claws back. One record type
-    // rather than a `kind` field, because the sign already carries the meaning
-    // and a second way of saying it could disagree with the first.
-    //
-    // Editable on an OPEN run only. Once approved the figures are frozen and
-    // every cell here is read-only; the freeze is the point of the state.
+    {
+      // The split is ALWAYS shown where a surcharge exists, never a bare "×2".
+      // "×2" read as though the whole figure had been doubled; it had not —
+      // the doubling applied to a fraction of a day. Spelling out
+      // "₹4,645 + ₹516 (0.5 day absence, 2×)" is also what makes the
+      // paidDays/net gap explainable from the row itself.
+      title: "LOP Deduction",
+      dataIndex: "deduction",
+      key: "deduction",
+      align: "right",
+      render: (value, row) => (
+        <span className="inline-flex flex-col items-end leading-tight">
+          <span>{money(value)}</span>
+          {row.surchargeAmount > 0 && (
+            <Text type="secondary" className="whitespace-nowrap text-[11px]">
+              {money(row.absenceAmount)} + {money(row.surchargeAmount)} (
+              {row.doubleDeductionDays} day absence, 2×)
+            </Text>
+          )}
+        </span>
+      ),
+    },
     {
       title: "Bonus",
       key: "bonus",
@@ -258,7 +289,7 @@ function PayrollRunReview({ month: monthProp, year: yearProp, onChanged }) {
       ),
     },
     {
-      title: "Net",
+      title: "Net Payable",
       dataIndex: "netAmount",
       key: "netAmount",
       align: "right",
@@ -290,16 +321,38 @@ function PayrollRunReview({ month: monthProp, year: yearProp, onChanged }) {
       title: "",
       key: "actions",
       render: (_value, row) =>
-        // On a FROZEN run this raises a correction that lands on the next
-        // period. On an open run the Bonus / Other Deductions cells are the
-        // way in, so there is nothing to offer here.
-        !isOpen && row.payrollId ? (
-          <Button size="small" onClick={() => setAdjustingFor({ ...row, intent: "correction" })}>
-            Correct
-          </Button>
-        ) : null,
+        isOpen ? null : (
+          <Space size={4}>
+            {/* A payslip only exists once the figures are final — a draft 409s
+                by design, so the link is not offered there. */}
+            {row.payrollId && (
+              <Button
+                size="small"
+                type="link"
+                className="!px-0"
+                href={`${import.meta.env.VITE_API_BASE_URL || ""}/payroll/${row.payrollId}/payslip`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Payslip
+              </Button>
+            )}
+            {row.payrollId && (
+              <Button size="small" onClick={() => setAdjustingFor({ ...row, intent: "correction" })}>
+                Correct
+              </Button>
+            )}
+          </Space>
+        ),
     },
   ];
+
+  // Employee search. Filtering the ROWS rather than asking the server keeps the
+  // totals honest: they are the run's totals, not the filtered subset's, and
+  // the header says which.
+  const visibleRows = (review?.rows || []).filter((row) =>
+    row.name.toLowerCase().includes(search.trim().toLowerCase())
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -311,7 +364,7 @@ function PayrollRunReview({ month: monthProp, year: yearProp, onChanged }) {
               {tone && <Tag color={tone.color}>{status}</Tag>}
             </div>
             <Text type="secondary" className="text-xs">
-              {month.format("MMMM YYYY")}
+              {month.format("MMMM YYYY")} · {month.daysInMonth()} days in month
               {tone ? ` · ${tone.help}` : " · no run generated for this period yet"}
             </Text>
           </div>
@@ -322,6 +375,18 @@ function PayrollRunReview({ month: monthProp, year: yearProp, onChanged }) {
             onChange={(value) => setMonth(value || dayjs())}
             allowClear={false}
             aria-label="Pay run month"
+          />
+
+          {/* Filters the ROWS only. The totals stay the run's totals rather
+              than the filtered subset's — a search box must not quietly change
+              what an admin is about to approve. */}
+          <Input.Search
+            allowClear
+            placeholder="Find an employee"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            style={{ width: 200 }}
+            aria-label="Find an employee"
           />
 
           <Space wrap>
@@ -340,14 +405,14 @@ function PayrollRunReview({ month: monthProp, year: yearProp, onChanged }) {
               Send for review
             </Button>
             <Popconfirm
-              title="Approve this period?"
+              title="Finalise this run?"
               description="Approving freezes every figure. Later attendance edits will not change it."
               okText="Approve"
               onConfirm={() => act(() => approvePeriod(period), "Period approved and frozen")}
               disabled={status !== "review"}
             >
               <Button type="primary" loading={isWorking} disabled={status !== "review"}>
-                Approve
+                Finalise
               </Button>
             </Popconfirm>
             <Button
@@ -356,6 +421,14 @@ function PayrollRunReview({ month: monthProp, year: yearProp, onChanged }) {
               disabled={status !== "approved"}
             >
               Mark paid
+            </Button>
+            {/* The existing shared report service, run-scoped and gated on
+                `payroll.run`. Not a second export. */}
+            <Button onClick={() => exportRun("pdf")} disabled={!status}>
+              PDF
+            </Button>
+            <Button onClick={() => exportRun("xlsx")} disabled={!status}>
+              Excel
             </Button>
           </Space>
         </div>
@@ -395,7 +468,7 @@ function PayrollRunReview({ month: monthProp, year: yearProp, onChanged }) {
 
       <Table
         rowKey="employeeId"
-        dataSource={review?.rows || []}
+        dataSource={visibleRows}
         columns={columns}
         loading={isLoading}
         pagination={false}

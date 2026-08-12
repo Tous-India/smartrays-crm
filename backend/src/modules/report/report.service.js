@@ -95,6 +95,46 @@ const MODULE_HANDLERS = {
         : generateExcelReport({ sheetName: "Payroll", columns: PAYROLL_XLSX_COLUMNS, rows });
     },
   },
+  /**
+   * A whole PAY RUN, matching the review table's columns (§7.58).
+   *
+   * GATED ON `payroll.run`, NEVER `payroll.view`. This returns every
+   * employee's salary for a period in one file, and `payroll.view` means "own
+   * payslip only" — it sits in the DEFAULT employee role template, so gating
+   * this on it would hand the whole company's pay to every employee. That is
+   * the §7.47 trap, found there by an access test returning 200 with every
+   * salary in the body; `payroll.run` is this module's existing see-everyone
+   * tier.
+   *
+   * The sibling `payroll` module above stays on `payroll.view` and is NOT a
+   * leak: it scopes internally by `?scope=`, so a `view` holder only ever gets
+   * their own records. This one has no such scoping — it is the run.
+   */
+  payrollRun: {
+    canAccess: (user) => can(user, "payroll", "run"),
+    generateBuffer: async (filters, format) => {
+      const month = Number(filters.month);
+      const year = Number(filters.year);
+
+      if (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(year)) {
+        throw new ApiError(400, "A valid month (1-12) and year are required");
+      }
+
+      const records = await Payroll.find({ month, year })
+        .populate("employeeId", "name isActive")
+        .sort({ "employeeId.name": 1 });
+      const rows = buildPayrollRunRows(excludeInactiveOrDeletedRefs(records, "employeeId"));
+
+      return format === "pdf"
+        ? generatePdfReport({
+            title: "Pay Run",
+            subtitle: `${month}/${year}`,
+            columns: PAYROLL_RUN_PDF_COLUMNS,
+            rows,
+          })
+        : generateExcelReport({ sheetName: "Pay Run", columns: PAYROLL_RUN_XLSX_COLUMNS, rows });
+    },
+  },
   leads: {
     canAccess: (user) => can(user, "leads", "view"),
     generateBuffer: async (filters, format, user) => {
@@ -219,6 +259,56 @@ function buildPayrollRows(records) {
     mileageReimbursement: record.mileageReimbursement,
   }));
 }
+
+/**
+ * One row per employee, in the review table's column order so the export and
+ * the screen cannot tell different stories. Every figure is read from the
+ * stored record — nothing is recomputed here.
+ */
+function buildPayrollRunRows(records) {
+  return records.map((record) => ({
+    employee: record.employeeId?.name || "—",
+    baseSalary: record.grossAmount,
+    paidDays: record.paidDays,
+    paidLeave: record.paidLeaveDays,
+    lopDays: record.unpaidDeductionDays,
+    lopDeduction: record.deduction,
+    surcharge: record.surchargeAmount || 0,
+    bonus: (record.adjustments || [])
+      .filter((one) => one.amount > 0)
+      .reduce((total, one) => total + one.amount, 0),
+    otherDeductions: (record.adjustments || [])
+      .filter((one) => one.amount < 0)
+      .reduce((total, one) => total - one.amount, 0),
+    netPayable: record.netAmount,
+  }));
+}
+
+const PAYROLL_RUN_XLSX_COLUMNS = [
+  { header: "Employee", key: "employee", width: 25 },
+  { header: "Base Salary", key: "baseSalary", width: 14 },
+  { header: "Paid Days", key: "paidDays", width: 12 },
+  { header: "Paid Leave", key: "paidLeave", width: 12 },
+  { header: "LOP Days", key: "lopDays", width: 12 },
+  { header: "LOP Deduction", key: "lopDeduction", width: 16 },
+  { header: "of which 2x surcharge", key: "surcharge", width: 20 },
+  { header: "Bonus", key: "bonus", width: 12 },
+  { header: "Other Deductions", key: "otherDeductions", width: 18 },
+  { header: "Net Payable", key: "netPayable", width: 16 },
+];
+
+const PAYROLL_RUN_PDF_COLUMNS = [
+  { header: "Employee", key: "employee", width: 2 },
+  { header: "Base", key: "baseSalary", width: 1 },
+  { header: "Paid Days", key: "paidDays", width: 0.9 },
+  { header: "Paid Leave", key: "paidLeave", width: 0.9 },
+  { header: "LOP Days", key: "lopDays", width: 0.9 },
+  { header: "LOP Ded.", key: "lopDeduction", width: 1 },
+  { header: "2x", key: "surcharge", width: 0.8 },
+  { header: "Bonus", key: "bonus", width: 0.9 },
+  { header: "Other Ded.", key: "otherDeductions", width: 1 },
+  { header: "Net", key: "netPayable", width: 1 },
+];
 
 const PAYROLL_XLSX_COLUMNS = [
   { header: "Employee", key: "employee", width: 25 },
