@@ -3521,3 +3521,46 @@ one script intercepted writes at Response stage, where a write would already hav
 Fixed to intercept at Request stage.
 
 Frontend **90 files / 828 tests** (was 90/825, +3). The four failing files are the known flakes.
+
+### Payroll consumes the shared calculator (§7.53, 2026-08-12)
+
+`payroll.service.js#computePayrollFields` no longer computes anything — it fetches inputs and calls
+`salaryCalculation.service.js`. The service is owned by the leave report and consumed by Payroll,
+noted in both so a future change to either knows it moves both. Payroll's arithmetic is deleted, not
+left behind a flag.
+
+**The "no historical data" premise was checked, not assumed:** `payrolls.countDocuments()` returned
+0 against the production database before any code changed. The run was registered through
+`node-cron`, which does not execute on Vercel, so it has genuinely never fired.
+
+**Four differences, each of which mispaid somebody:**
+
+| | Before | After |
+|---|---|---|
+| Gross | `dailyRate × (present + paidLeave)` | the agreed monthly salary |
+| Half day | a whole present day (`countDocuments`) | 0.5 |
+| Paid leave | uncapped | 1/month (§11.7) |
+| Deduction | day count doubled | leave-sourced, surcharge counted once |
+
+The gross change matters most: building gross UP from attendance meant **an employee with no
+attendance records earned nothing**, marked absent or not. The suite's worked example moves from net
+18,250 to 27,250 because only 20 of June's 30 days had a record and the other 10 were priced as
+unworked. Missing data read as unpaid; now only recorded absence costs anyone money.
+
+**`workingHours` prices nothing and must not start to.** A shift with no heartbeat computes to zero
+hours — a real 17.4-hour overnight shift did — so a test gives two employees identical days and
+wildly different hours and asserts every amount is equal.
+
+**Payroll equals the report, asserted directly** — one test runs payroll for an employee with no
+travel logs, fetches that month's report row, and compares presentDays, paidLeave, chargeable days,
+gross, deduction and net field by field. Mileage is passed INTO the calculator rather than added
+afterwards, which is what keeps that claim exact rather than approximate.
+
+Failing-first: 4 of the 6 new/changed tests fail against the committed code. The other two —
+`workingHours` affects no amount, and an unset baseSalary is refused rather than priced at 0 — pass
+both before and after: they are regression guards on behaviour that was already correct, and
+claiming otherwise would overstate them.
+
+Backend **31 files / 939 tests** (was 31/934, +5). Two existing tests were rewritten rather than
+deleted: the payroll worked example, and a cron assertion that read  because no
+attendance had been seeded — that assertion encoded the very defect this fixes.

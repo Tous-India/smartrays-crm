@@ -4878,6 +4878,34 @@ Credit · Absent · Paid Leave · Unpaid Leave · Deduction · Net Payable · Ba
 6. **Gate unchanged: `payroll.run`.** `payroll.view` is in the default employee template and would
    publish every salary to every employee.
 
+## §7.53 — Payroll consumes the shared calculator (2026-08-12, §6.5)
+
+`payroll.service.js` no longer computes salary. It fetches inputs and calls
+`salaryCalculation.service.js`, which is OWNED by the leave report (§7.47) and now CONSUMED by
+Payroll — so a change to either moves both. Payroll's own arithmetic is deleted, not flagged off.
+
+1. **Verified before changing anything: zero payroll documents exist.** The run was registered
+   through `node-cron`, which does not execute on Vercel, so it has never fired.
+   `payrolls.countDocuments()` returned 0. No migration, nothing to preserve — the cheapest moment
+   this change will ever be, as claimed, and confirmed rather than taken on trust.
+2. **Gross is the agreed MONTHLY salary**, not `dailyRate × days attended`. The old formula paid
+   nothing to an employee with no attendance records, marked absent or not: missing data read as
+   unpaid. Only RECORDED absence now reduces pay. The suite's worked example moves from net 18,250
+   to 27,250 because 10 of June's 30 days simply had no record.
+3. **Three further corrections came free with the shared service:** a half day counts 0.5 rather
+   than a whole present day, paid leave is capped at 1/month per §11.7, and the §7.5 unapproved
+   surcharge is counted once rather than by doubling a day count.
+4. **`workingHours` prices nothing.** A shift with no heartbeat computes to zero hours (a real
+   17.4-hour overnight shift did), and heartbeats stop when a phone locks. Pay is day counts;
+   `workingHoursTotal` is carried for display and marked reported-only in both the model and the
+   calculator.
+5. **Mileage is passed INTO the calculator** rather than added by Payroll afterwards, keeping every
+   payable arithmetic step in one file — and making "Payroll equals the report" directly assertable
+   for an employee with no travel logs, which a test does field by field.
+
+*This is the foundation only. The pay run itself (draft → review → approved → paid) is a separate
+task.*
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a

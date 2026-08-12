@@ -1878,9 +1878,10 @@ rather than inside `payroll/`:
 > salary calculations do not fail as a red test — they fail months later as a disputed payslip
 > with two numbers and no way to say which is right.
 
-`payroll.service.js#computePayrollFields` is NOT yet migrated onto it — that is a change to a
-dormant-but-real code path and belongs in Payroll's own task, not smuggled into a report. The
-service exists and is the single source for anything new.
+**`payroll.service.js` CONSUMES this as of §7.53 (2026-08-12).** The service is OWNED by the leave
+report and consumed by Payroll, so a change to either moves both — that is the price of one
+calculator, and it is cheaper than the alternative. Payroll's own arithmetic is deleted, not left
+behind a flag.
 
 | Export | Purpose |
 |---|---|
@@ -1993,6 +1994,48 @@ February/30/31-day divisors, plus the balance columns: prior-month usage, the Ja
 reset, half days at 0.5, and a guard that deduction and net payable did not move.
 `payroll.test.js` gained 6, including the gate above and a check that the refused response
 carries no salary figure at all.
+
+### Payroll consumes the shared calculator (§7.53, 2026-08-12)
+
+`payroll.service.js#computePayrollFields` no longer computes anything. It fetches the inputs and
+calls `salaryCalculation.service.js#computeEmployeeMonth`; what it returns is a mapping onto the
+`Payroll` model's field names. **Zero payroll documents existed** — the run was registered through
+`node-cron`, which does not execute on Vercel, so it has never fired — which is checked, not
+assumed: `payrolls.countDocuments()` was 0 before the change. No migration, no historical data to
+preserve.
+
+**Four differences, and every one of them mispaid somebody:**
+
+| | Before | After |
+|---|---|---|
+| Gross | `dailyRate × (presentDays + paidLeaveDays)` | the agreed **monthly salary** |
+| Half day | counted as a whole present day (`countDocuments`) | 0.5 |
+| Paid leave | uncapped sum of approved paid days | capped at 1/month (§11.7) |
+| Deduction | `unpaidDeductionDays × dailyRate` | leave-sourced, §7.5 surcharge counted once |
+
+The gross change is the one that mattered most. Building gross UP from attendance meant an employee
+with **no attendance records earned nothing**, whether or not anybody had marked them absent —
+missing data read as unpaid. The worked example in `payroll.test.js` moves from a net of 18,250 to
+27,250 for exactly that reason: only 20 of June's 30 days had a record, and the other 10 were priced
+as unworked. Gross is now the salary that was agreed, and only RECORDED absence takes anything off
+it.
+
+**`workingHours` affects no amount, and must not start to.** A shift where no heartbeat landed
+computes to zero working hours — a real 17.4-hour overnight shift did exactly that — and heartbeats
+stop whenever a phone locks or a tab is backgrounded. Pay is derived from DAY COUNTS.
+`workingHoursTotal` is still computed and stored, marked on both the model and the calculator as
+reported-only. A test gives two employees identical days and wildly different hours and asserts
+every amount matches.
+
+**Mileage is passed INTO the calculator** (`reimbursements`), not added afterwards, so every step
+that produces a payable figure lives in one file. The report passes none. That is also what makes
+"Payroll and the report agree" a checkable claim: a test runs payroll for an employee with no travel
+logs, fetches the same month's report row, and asserts presentDays, paidLeave, chargeable days,
+gross, deduction and net are all identical.
+
+New calculator outputs for Payroll's benefit: `grossAmount`, `workingHoursTotal`, `reimbursements`.
+New `Payroll` fields: `deduction`, `doubleDeductionDays` — stored rather than re-derived so a
+payslip can mark the ×2 without recomputing.
 
 ### Support & Ticketing (`/api/v1/tickets`) — Phase 5
 

@@ -66,7 +66,14 @@ describe("runMonthlyPayrollJob", () => {
 
     expect(payroll).not.toBeNull();
     expect(payroll.daysInMonth).toBe(30);
-    expect(payroll.grossAmount).toBe(0); // no Attendance/Leave records seeded for this employee
+    // Gross is the agreed monthly salary (§7.53), NOT a figure built up from
+    // attendance. This assertion used to read `toBe(0)` — "no Attendance/Leave
+    // records seeded for this employee" — which is exactly the defect: an
+    // employee nobody recorded anything for earned nothing. Nobody marked them
+    // absent, so nothing is deducted.
+    expect(payroll.grossAmount).toBe(24000);
+    expect(payroll.deduction).toBe(0);
+    expect(payroll.netAmount).toBe(24000);
   });
 
   it("is idempotent — running it twice for the same reference date does not throw or duplicate the record", async () => {

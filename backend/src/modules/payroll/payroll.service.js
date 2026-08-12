@@ -6,8 +6,11 @@ import Payroll from "./payroll.model.js";
 import User from "../user/user.model.js";
 import Attendance from "../attendance/attendance.model.js";
 import Leave from "../leave/leave.model.js";
-import { computeLeaveDays } from "../leave/leave.service.js";
 import TravelLog from "../transport/travelLog.model.js";
+import {
+  computeEmployeeMonth,
+  leaveYearStart,
+} from "../../services/salaryCalculation.service.js";
 
 /**
  * Entry point for both `POST /payroll/run` shapes (§7.7): a specific
@@ -122,93 +125,62 @@ function ensureHasBaseSalary(employee) {
 }
 
 /**
- * Implements §7.7's formulas exactly:
- * - presentDays: Attendance `present`/`half_day` records this month.
- * - paidLeaveDays: approved `paid` Leave this month (capped at 1 in practice
- *   by leave.service.js#approveLeave's own monthly quota, §11.7 — this just
- *   sums whatever's actually approved, it doesn't re-enforce the cap here).
- * - unpaidDeductionDays: approved `unpaid` Leave days, plus approved
- *   `unapproved_absence` days doubled — driven by the existing
- *   `isDoubleDeduction` flag already on the Leave model, not a duplicated
- *   type check. Both day counts go through `leave.service.js#computeLeaveDays`
- *   (added for half-day support) rather than a second, local day-counting
- *   function — an `isHalfDay` leave correctly contributes 0.5 here, the same
- *   value the monthly paid-leave quota check already uses it for.
- * - mileageReimbursement: `status: "approved"` TravelLog distanceKm this
- *   month × `MILEAGE_RATE_PER_KM` (§11.4, resolved) — `pending`/`rejected`
- *   entries never count.
- * - paidOn: the 1st of the month after the payroll month.
+ * Every figure comes from the SHARED calculator (§7.53, 2026-08-12).
  *
- * Leave records are attributed to the month containing their `startDate`
- * (mirrors leave.service.js's own monthly-quota window) — a multi-day leave
- * that spans a month boundary is counted entirely in its start month. Stated
- * simplification, not an oversight: the source Leave data for this app is
- * always short (paid leave is capped at 1 day; unpaid/absence spans are rare
- * and short in practice), so a split-across-months day count isn't worth the
- * added complexity for v1.
+ * This function used to do its own arithmetic and it is gone, not flagged off.
+ * `salaryCalculation.service.js` is owned by the leave report (§7.47) and
+ * consumed here, so the two cannot drift into a disputed payslip. What remains
+ * here is fetching — the inputs the calculator needs — plus the Payroll-only
+ * mileage, which is passed IN so the addition still happens in the calculator.
  */
 async function computePayrollFields(employee, month, year) {
   const { start, end } = resolveMonthRange(month, year);
-  const daysInMonth = new Date(year, month, 0).getDate();
+  const yearStart = leaveYearStart(year, month);
 
-  const presentDays = await Attendance.countDocuments({
-    employeeId: employee._id,
-    date: { $gte: start, $lt: end },
-    status: { $in: ["present", "half_day"] },
-  });
+  // Attendance is fetched for `workingHoursTotal` ONLY, which is reported and
+  // never priced. Leave spans the leave year to date because the calculator's
+  // balance figures need what was spent before this month.
+  const [attendance, leaves, approvedTravelLogs] = await Promise.all([
+    Attendance.find({ employeeId: employee._id, date: { $gte: start, $lt: end } }),
+    Leave.find({
+      employeeId: employee._id,
+      startDate: { $lt: end },
+      endDate: { $gte: yearStart },
+    }),
+    TravelLog.find({
+      employeeId: employee._id,
+      status: "approved",
+      date: { $gte: start, $lt: end },
+    }).select("distanceKm"),
+  ]);
 
-  const paidLeaves = await Leave.find({
-    employeeId: employee._id,
-    type: "paid",
-    status: "approved",
-    startDate: { $gte: start, $lt: end },
-  });
-  const paidLeaveDays = paidLeaves.reduce((total, leave) => total + computeLeaveDays(leave), 0);
-
-  const deductingLeaves = await Leave.find({
-    employeeId: employee._id,
-    type: { $in: ["unpaid", "unapproved_absence"] },
-    status: "approved",
-    startDate: { $gte: start, $lt: end },
-  });
-  const unpaidDeductionDays = deductingLeaves.reduce((total, leave) => {
-    const days = computeLeaveDays(leave);
-    return total + (leave.isDoubleDeduction ? days * 2 : days);
-  }, 0);
-
-  const attendanceRecords = await Attendance.find({
-    employeeId: employee._id,
-    date: { $gte: start, $lt: end },
-  }).select("workingHours");
-  const workingHoursTotal = attendanceRecords.reduce(
-    (total, record) => total + (record.workingHours || 0),
-    0
-  );
-
-  const approvedTravelLogs = await TravelLog.find({
-    employeeId: employee._id,
-    status: "approved",
-    date: { $gte: start, $lt: end },
-  }).select("distanceKm");
   const totalApprovedKm = approvedTravelLogs.reduce(
     (total, log) => total + (log.distanceKm || 0),
     0
   );
-  const mileageReimbursement = totalApprovedKm * env.mileageRatePerKm;
 
-  const dailyRate = employee.baseSalary / daysInMonth;
-  const grossAmount = dailyRate * (presentDays + paidLeaveDays);
-  const netAmount = grossAmount - unpaidDeductionDays * dailyRate + mileageReimbursement;
+  const computed = computeEmployeeMonth({
+    user: employee,
+    attendance,
+    leaves,
+    year,
+    month,
+    reimbursements: totalApprovedKm * env.mileageRatePerKm,
+  });
 
   return {
-    daysInMonth,
-    presentDays,
-    paidLeaveDays,
-    unpaidDeductionDays,
-    workingHoursTotal,
-    grossAmount,
-    netAmount,
-    mileageReimbursement,
+    daysInMonth: computed.calendarDays,
+    presentDays: computed.presentDays,
+    paidLeaveDays: computed.paidLeave,
+    // The calculator returns the surcharge separately so a payslip can mark it;
+    // the model stores the total number of days actually charged.
+    unpaidDeductionDays: computed.unpaidLeave + computed.doubleDeductionDays,
+    doubleDeductionDays: computed.doubleDeductionDays,
+    workingHoursTotal: computed.workingHoursTotal,
+    grossAmount: computed.grossAmount,
+    deduction: computed.deduction,
+    netAmount: computed.netPayable,
+    mileageReimbursement: computed.reimbursements,
     generatedAt: new Date(),
     paidOn: new Date(year, month, 1),
   };

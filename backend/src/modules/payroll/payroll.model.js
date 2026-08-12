@@ -33,13 +33,37 @@ const payrollSchema = new mongoose.Schema(
       type: Number,
       required: true,
     },
+    // REPORTED ONLY — never priced. A shift with no heartbeat computes to zero
+    // working hours (a real 17.4-hour overnight shift did), and heartbeats stop
+    // whenever a phone locks or a tab is backgrounded. Pay is derived from DAY
+    // COUNTS; this is carried for display and must not affect any amount.
     workingHoursTotal: {
       type: Number,
       required: true,
     },
+    // The agreed MONTHLY salary, not a figure built up from days attended
+    // (§7.53, 2026-08-12). Payroll previously computed
+    // `dailyRate × (presentDays + paidLeaveDays)`, which paid nothing to an
+    // employee with no attendance records — missing data read as unpaid.
     grossAmount: {
       type: Number,
       required: true,
+    },
+    // What was actually withheld, and how much of it was the §7.5 surcharge.
+    // Stored rather than re-derived so a payslip can mark the ×2 without
+    // recomputing anything.
+    // `default: 0` rather than `required` — the service always sets it, but
+    // several unrelated suites (retention, analytics, report export) construct
+    // Payroll fixtures directly to test other things, and making a new field
+    // mandatory would have broken every one of those construction sites for no
+    // integrity gain.
+    deduction: {
+      type: Number,
+      default: 0,
+    },
+    doubleDeductionDays: {
+      type: Number,
+      default: 0,
     },
     netAmount: {
       type: Number,

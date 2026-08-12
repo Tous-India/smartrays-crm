@@ -5,12 +5,23 @@ import User from "../modules/user/user.model.js";
 /**
  * THE salary calculator (§7.47, 2026-08-11) — one place, deliberately.
  *
- * The monthly report and the Payroll module compute the same figures. Payroll's
- * run has never fired in production; when it is fixed it must consume THIS,
- * not its own copy. Two independent salary calculations will eventually
- * disagree, and the disagreement does not surface as a failing test — it
- * surfaces as a disputed payslip, months later, with two numbers and no way to
- * say which is right.
+ * **OWNED by the leave report (§7.47), CONSUMED by Payroll (§7.7) since
+ * 2026-08-12.** A change here moves both, and a change wanted by only one of
+ * them still has to be safe for the other — that is the price of there being
+ * one calculator, and it is cheaper than the alternative. Two independent
+ * salary calculations do not disagree as a failing test; they disagree months
+ * later as a disputed payslip, with two numbers and no way to say which is
+ * right.
+ *
+ * Payroll's own arithmetic is GONE, not hidden behind a flag. It differed from
+ * this in four ways, every one of which underpaid or overpaid somebody:
+ *   - gross was built UP from attendance (`dailyRate × presentDays`), so an
+ *     employee with no attendance records earned nothing, whether or not they
+ *     had been marked absent. Missing data read as unpaid. Gross is now the
+ *     agreed monthly salary, and only RECORDED absence reduces it.
+ *   - `half_day` counted as a whole present day (`countDocuments`), not 0.5.
+ *   - paid leave had no monthly cap, so two approved paid days both counted.
+ *   - `workingHours` never touched pay here and must not start to — see below.
  *
  * LEAVE MODEL (§11.7, resolved 2026-07-13, re-confirmed 2026-08-11): ONE paid
  * leave day per calendar month, no carry-forward, no accumulated balance.
@@ -107,7 +118,17 @@ function dateKey(value) {
   return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
 }
 
-export function computeEmployeeMonth({ user, attendance = [], leaves, year, month }) {
+export function computeEmployeeMonth({
+  user,
+  attendance = [],
+  leaves,
+  year,
+  month,
+  // Money owed on top of salary — Payroll's approved mileage. Passed IN rather
+  // than added by the caller afterwards, so every arithmetic step that produces
+  // a payable amount lives in this file (§7.53). The report passes none.
+  reimbursements = 0,
+}) {
   const calendarDays = daysInMonth(year, month);
 
   // The Report tab no longer shows a Present column (§7.50) — it is a leave
@@ -225,6 +246,17 @@ export function computeEmployeeMonth({ user, attendance = [], leaves, year, mont
   const rate = hasSalary ? perDayRate(user.baseSalary, year, month) : null;
   const deduction = hasSalary ? Math.round(deductibleDays * rate) : null;
 
+  // REPORTED ONLY — never part of any amount, and Payroll must not start using
+  // it. A shift where no heartbeat landed computes to zero working hours (a
+  // real 17.4-hour overnight shift did exactly that), and heartbeats stop the
+  // moment a phone locks or a tab is backgrounded. Pay derived from this would
+  // underpay people for shifts they actually worked, so pay is derived from DAY
+  // COUNTS and this figure is carried for display alone.
+  const workingHoursTotal = attendance.reduce(
+    (total, record) => total + (record.workingHours || 0),
+    0
+  );
+
   return {
     employeeId: String(user._id),
     name: user.name,
@@ -240,7 +272,15 @@ export function computeEmployeeMonth({ user, attendance = [], leaves, year, mont
     unpaidLeave,
     doubleDeductionDays,
     deduction,
-    netPayable: hasSalary ? user.baseSalary - deduction : null,
+    // GROSS is the agreed monthly salary, not a figure built up from days
+    // attended. Payroll used to compute `dailyRate × (present + paidLeave)`,
+    // which paid nothing to an employee with no attendance records — missing
+    // data read as unpaid. Deductions come off this; absence has to be
+    // RECORDED to cost anyone money.
+    grossAmount: hasSalary ? user.baseSalary : null,
+    workingHoursTotal,
+    reimbursements,
+    netPayable: hasSalary ? user.baseSalary - deduction + reimbursements : null,
   };
 }
 
