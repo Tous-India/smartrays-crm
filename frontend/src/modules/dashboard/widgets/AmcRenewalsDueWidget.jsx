@@ -73,7 +73,7 @@ function AmcRenewalsDueWidget() {
         value={dueCount}
         valueStyle={{ fontSize: 20 }}
       />
-      <div className="mt-2 text-right text-sm">
+      <div className="mt-2 text-left text-sm">
         <Link to={ROUTE_PATHS.AMC}>View all AMC records →</Link>
       </div>
     </WidgetCard>

@@ -95,7 +95,7 @@ function CustomersOverviewWidget() {
           </Tag>
         ))}
       </div>
-      <div className="mt-2 text-right text-sm">
+      <div className="mt-2 text-left text-sm">
         <Link to={ROUTE_PATHS.CUSTOMERS}>View all customers →</Link>
       </div>
     </WidgetCard>

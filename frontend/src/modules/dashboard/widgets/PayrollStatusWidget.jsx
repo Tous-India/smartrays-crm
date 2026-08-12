@@ -73,7 +73,7 @@ function PayrollStatusWidget() {
           Employees processed: <strong>{processedCount}</strong>
         </div>
       )}
-      <div className="mt-2 text-right text-sm">
+      <div className="mt-2 text-left text-sm">
         <Link to={ROUTE_PATHS.PAYROLL}>View payroll →</Link>
       </div>
     </WidgetCard>

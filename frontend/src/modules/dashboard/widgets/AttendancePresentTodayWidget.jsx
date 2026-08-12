@@ -78,7 +78,7 @@ function AttendancePresentTodayWidget() {
         value={presentCount}
         valueStyle={{ fontSize: 20 }}
       />
-      <div className="mt-2 text-right text-sm">
+      <div className="mt-2 text-left text-sm">
         <Link to={ROUTE_PATHS.ATTENDANCE_TEAM}>View team attendance →</Link>
       </div>
     </WidgetCard>

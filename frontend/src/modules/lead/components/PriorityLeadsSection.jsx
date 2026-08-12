@@ -124,7 +124,7 @@ function PriorityLeadsSection({
                 className={`cursor-pointer ${urgency ? urgency.borderClass : "border-orange-200"}`}
                 onClick={() => navigate(`/leads/${lead._id}`)}
               >
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex flex-col items-start justify-between gap-2">
                   <span className="flex items-center gap-1 font-medium">
                     {/* `style` for color, not a Tailwind className — AntD's
                         `Card` sets its own text color that a plain utility
@@ -137,7 +137,7 @@ function PriorityLeadsSection({
                     {lead.name}
                   </span>
                   {lead.followUpDate && (
-                    <span className="whitespace-nowrap text-xs text-gray-500">
+                    <span className="whitespace-nowrap text-xs text-gray-500 mb-1">
                       {new Date(lead.followUpDate).toLocaleString()}
                     </span>
                   )}

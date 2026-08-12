@@ -74,7 +74,7 @@ function PaymentsThisMonthWidget() {
         prefix="₹"
         valueStyle={{ fontSize: 20 }}
       />
-      <div className="mt-2 text-right text-sm">
+      <div className="mt-2 text-left text-sm">
         <Link to={ROUTE_PATHS.PAYMENTS}>View all payments →</Link>
       </div>
     </WidgetCard>

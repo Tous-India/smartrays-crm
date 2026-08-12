@@ -151,6 +151,12 @@ function CustomersTable({
 
       <Table
         rowKey="_id"
+        // Missing here before (2026-07-31 fix) — Leads/Payments both already
+        // have this (row density + card separation + the sticky-scrollbar
+        // pastel-blue styling, styles/index.css), confirmed via a live
+        // check that this table's own sticky scrollbar was still rendering
+        // AntD's plain grey default, not an intentional omission.
+        className="app-data-table"
         loading={isLoading}
         dataSource={customers}
         columns={columns}
