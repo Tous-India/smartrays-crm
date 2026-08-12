@@ -7,6 +7,8 @@ import {
   getPeriodReview,
   markPeriodPaid,
   submitPeriodForReview,
+  listPayrollPeriods,
+  listPayrollYears,
 } from "./payroll.service.js";
 import ApiResponse from "../../utils/ApiResponse.js";
 import { runPayroll, listPayroll, generatePayslipPdf } from "./payroll.service.js";
@@ -136,4 +138,12 @@ export const cronRun = asyncWrapper(async (req, res) => {
       "Payroll draft generated"
     )
   );
+});
+
+/** The `/payroll` page's list: every month of a year, run or not. */
+export const periods = asyncWrapper(async (req, res) => {
+  const year = Number(req.query.year) || new Date().getFullYear();
+  const [rows, years] = await Promise.all([listPayrollPeriods(year), listPayrollYears()]);
+
+  res.status(200).json(new ApiResponse(200, { year, years, rows }, "Payroll periods"));
 });

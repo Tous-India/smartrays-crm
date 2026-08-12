@@ -4968,6 +4968,43 @@ is WHEN it is applied and by WHOM.
 `unpaid` records are 2-day blocks, which rule 4 leaves unpaid, and its third is an unapproved
 absence, which rule 3 excludes. The row is now readable — ₹4,645 + ₹516 — rather than different.*
 
+## §7.57 — The Payroll page and the pay-run review table (2026-08-12, §6.5)
+
+**ONE entry point.** `/payroll` is a year of runs, one row per month; clicking a row opens that
+run's review table. The month/year picker exists only inside the "Run payroll" modal launched from
+that page. There is no second way in, which is what keeps "which run am I looking at" answerable.
+
+1. **A month with no run is a ROW, not an omission.** A payroll that silently skipped March is
+   exactly what a list of runs exists to catch; leaving the month out would hide the one thing worth
+   seeing. `GET /payroll/periods?year=` returns all twelve, most recent first, plus the years that
+   actually have runs (and the current year, always).
+2. **A period is reported as its LEAST advanced record.** One unapproved employee means the period
+   is not approved, however the rest of it looks.
+3. **Bonus and Other Deductions are the same `PayrollAdjustment`, split by SIGN** — positive pays,
+   negative claws back. One record type rather than a `kind` field, because the sign already carries
+   the meaning and a second way of saying it could disagree with the first. The form always takes a
+   positive number and the COLUMN decides the sign, so nobody has to remember that a deduction is
+   negative. **The Payroll document's computed fields are never mutated.**
+4. **An adjustment on an OPEN run lands on THAT run; on a frozen one it lands on the next.** Same
+   record, different target. Previously a draft refused adjustments outright ("re-run it instead");
+   that made sense when the only use was correcting history, and does not now that a run is prepared
+   here.
+5. **Every cell is read-only once approved.** The freeze is the point of the state, and a cell that
+   still looked editable would promise something the server refuses.
+6. **A REASON is mandatory**, the same discipline manual attendance marks follow (§7.4h). An amount
+   on somebody's pay with no stated reason is exactly what an audit needs and would not have.
+7. **Totals row** — employees, gross, deduction, bonus, other deductions, net. An admin approving a
+   run needs the aggregate, and every figure is the server's own total so the row cannot drift from
+   what the run holds.
+8. **Nothing in the payroll module computes salary.** `salaryCalculation.service.js` remains the
+   only calculator; the page and the table sum what a run already stored.
+9. **Measured, not assumed** (jsdom does not do layout): the run list fits at 1280 (980/980) and
+   1024 (724/724) and scrolls horizontally at 390. The review table's ELEVEN columns need
+   `scroll={{ x }}` **even at 1280** — 1033px into a 980px holder, 53px over. `scroll={{ y }}` is
+   absent throughout; zero `.ant-table-body` containers at every width.
+10. **Shared files untouched.** `/payroll` already routed to `PayrollPage` and MainLayout already
+    carried the nav entry, so neither router nor layout needed a patch.
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a

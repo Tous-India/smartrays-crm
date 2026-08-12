@@ -58,3 +58,8 @@ export function createAdjustment({ year, month, employeeId, amount, reason }) {
     { params: { year, month } }
   );
 }
+
+/** Every month of a year, run or not — the `/payroll` page's list (§7.57). */
+export function getPayrollPeriods({ year }) {
+  return apiClient.get("/payroll/periods", { params: { year } });
+}

@@ -3691,3 +3691,51 @@ ever granted before; they are regression guards, not discriminating tests.
 
 Backend **31 files / 978 tests** (was 31/971, +7). Frontend **91 / 840**, unchanged in count. The
 four failing frontend files are the known flakes.
+
+### The Payroll page and the pay-run review table (§7.57, 2026-08-12)
+
+`/payroll` was a placeholder and is now the single entry point into the pay run: a year dropdown, a
+row per month, click through to that run's review table. The month/year picker lives only in the
+"Run payroll" modal.
+
+**A month with no run is a row, not an omission** — a payroll that silently skipped March is what
+the list exists to catch. A period reports as its least advanced record, so one unapproved employee
+keeps the whole period unapproved.
+
+**Bonus and Other Deductions write `PayrollAdjustment` records; the Payroll document's computed
+fields are never mutated.** They are one record type split by SIGN rather than a `kind` field — the
+sign already carries the meaning, and a second way of saying it could disagree with the first. The
+form takes a positive number and the column decides the sign. A reason is mandatory, the same
+discipline manual attendance marks follow.
+
+**One behaviour change to an existing endpoint:** an adjustment raised against a draft used to be
+refused ("re-run it instead"). That was right when correcting history was the only use; now a draft
+is where bonuses are added while the run is prepared, so it lands on that run and carries no source
+period. Against an approved period it is still a correction and still lands on the next run. The
+test that encoded the old rule was rewritten rather than deleted.
+
+**Read-only once approved** — the finalised state already existed (draft → review → approved →
+paid, from 0732346), so nothing was invented for it.
+
+**The hard constraint holds:** nothing in the payroll module computes salary.
+`salaryCalculation.service.js` is still the only calculator; the page and the table sum what a run
+already stored.
+
+**Shared files were not touched, as required.** `/payroll` already routed to `PayrollPage` and
+MainLayout already carried the nav entry, so neither needed a staged patch — reported before
+starting rather than discovered midway.
+
+**Browser-measured, because jsdom does not do layout:** the run list fits at 1280 (980/980) and 1024
+(724/724) and scrolls horizontally at 390; the review table's eleven columns need `scroll={{ x }}`
+**even at 1280** — 1033px into a 980px holder, 53px over — and at every narrower width. The page
+never overflows, and there are zero `.ant-table-body` containers anywhere.
+
+Two things the work surfaced. `toLocaleString()` follows the environment's locale, so the same
+figure renders `₹1,20,000` under jsdom and `₹120,000` in the browser; tests now assert the figure
+rather than the grouping. And a **real July run exists in production** — draft → approved → paid
+across 43 seconds at 06:37 UTC — which is the §7.54 flow being exercised through the UI, not
+anything this session's scripts created; every browser script here intercepts writes before they
+leave the browser.
+
+Backend **31 files / 984 tests** (was 31/978). Frontend **92 files / 857 tests** (was 91/840, +17). The
+four failing frontend files remain the known flakes.

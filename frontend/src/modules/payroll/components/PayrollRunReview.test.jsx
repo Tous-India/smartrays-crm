@@ -25,6 +25,7 @@ vi.mock("../api/payrollApi", () => ({
 function row(overrides = {}) {
   return {
     employeeId: "u1",
+    payrollId: "p1",
     name: "Asha Verma",
     status: "draft",
     baseSalary: 30000,
@@ -35,6 +36,9 @@ function row(overrides = {}) {
     grossAmount: 30000,
     deduction: 2000,
     adjustmentTotal: 0,
+    bonusTotal: 0,
+    otherDeductionTotal: 0,
+    adjustmentLines: [],
     netAmount: 28000,
     anomalies: [],
     ...overrides,
@@ -52,6 +56,10 @@ function respondWith({ status = "draft", rows = [row()], totals = {} } = {}) {
           employees: rows.length,
           withRecord: rows.filter((r) => r.status).length,
           flagged: rows.filter((r) => r.anomalies.length > 0).length,
+          gross: rows.reduce((t, r) => t + (r.grossAmount || 0), 0),
+          deduction: rows.reduce((t, r) => t + (r.deduction || 0), 0),
+          bonus: rows.reduce((t, r) => t + (r.bonusTotal || 0), 0),
+          otherDeductions: rows.reduce((t, r) => t + (r.otherDeductionTotal || 0), 0),
           net: rows.reduce((t, r) => t + (r.netAmount || 0), 0),
           ...totals,
         },
@@ -167,19 +175,84 @@ describe("the state machine gates every action", () => {
   });
 });
 
-describe("corrections", () => {
-  it("offers Correct only on a frozen period", async () => {
+describe("bonus and other deductions (§7.57)", () => {
+  it("is EDITABLE on an open run", async () => {
     render(<PayrollRunReview />);
     await screen.findByText("Asha Verma");
-    expect(screen.queryByRole("button", { name: "Correct" })).not.toBeInTheDocument();
 
-    respondWith({ status: "approved", rows: [row({ status: "approved" })] });
-    render(<PayrollRunReview />);
-
-    expect(await screen.findByRole("button", { name: "Correct" })).toBeInTheDocument();
+    // Both money columns offer a way in while the run is still a draft.
+    expect(screen.getAllByRole("button", { name: "Add" })).toHaveLength(2);
   });
 
-  it("sends the amount and reason, and says history is not edited", async () => {
+  it("is READ-ONLY once approved — the freeze is the point", async () => {
+    respondWith({
+      status: "approved",
+      rows: [row({ status: "approved", bonusTotal: 2000, otherDeductionTotal: 500 })],
+    });
+
+    render(<PayrollRunReview />);
+    const line = await screen.findByRole("row", { name: /Asha Verma/ });
+
+    // The figures still show; nothing offers to change them. Targeted by
+    // column position — ₹2,000 is also this fixture's deduction.
+    const cells = line.querySelectorAll("td");
+    expect(cells[6].textContent).toContain("₹2,000"); // Bonus
+    expect(cells[7].textContent).toContain("₹500"); // Other Deductions
+    expect(within(line).queryByRole("button", { name: "Add" })).not.toBeInTheDocument();
+  });
+
+  it("signs a DEDUCTION negative from a positive input, so nobody has to remember", async () => {
+    payrollApi.createAdjustment.mockResolvedValue({ data: {} });
+
+    render(<PayrollRunReview />);
+    await screen.findByText("Asha Verma");
+
+    // The second "Add" is the Other Deductions column.
+    await userEvent.click(screen.getAllByRole("button", { name: "Add" })[1]);
+    expect(await screen.findByText("This is a line on this run.")).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("Amount"), "500");
+    await userEvent.type(screen.getByLabelText("Reason"), "Equipment recovery");
+    await userEvent.click(screen.getByRole("button", { name: /add deduction/i }));
+
+    await waitFor(() =>
+      expect(payrollApi.createAdjustment).toHaveBeenCalledWith(
+        expect.objectContaining({ amount: -500, reason: "Equipment recovery" })
+      )
+    );
+  });
+
+  it("keeps a BONUS positive", async () => {
+    payrollApi.createAdjustment.mockResolvedValue({ data: {} });
+
+    render(<PayrollRunReview />);
+    await screen.findByText("Asha Verma");
+
+    await userEvent.click(screen.getAllByRole("button", { name: "Add" })[0]);
+    await userEvent.type(screen.getByLabelText("Amount"), "3000");
+    await userEvent.type(screen.getByLabelText("Reason"), "Diwali bonus");
+    await userEvent.click(screen.getByRole("button", { name: /add bonus/i }));
+
+    await waitFor(() =>
+      expect(payrollApi.createAdjustment).toHaveBeenCalledWith(
+        expect.objectContaining({ amount: 3000, reason: "Diwali bonus" })
+      )
+    );
+  });
+
+  it("REQUIRES a reason — an amount on someone's pay with no reason is what an audit needs", async () => {
+    render(<PayrollRunReview />);
+    await screen.findByText("Asha Verma");
+
+    await userEvent.click(screen.getAllByRole("button", { name: "Add" })[0]);
+    await userEvent.type(screen.getByLabelText("Amount"), "3000");
+    await userEvent.click(screen.getByRole("button", { name: /add bonus/i }));
+
+    expect(await screen.findByText("A reason is required")).toBeInTheDocument();
+    expect(payrollApi.createAdjustment).not.toHaveBeenCalled();
+  });
+
+  it("offers Correct only on a FROZEN run, where it lands on the next period", async () => {
     respondWith({ status: "approved", rows: [row({ status: "approved" })] });
     payrollApi.createAdjustment.mockResolvedValue({ data: {} });
 
@@ -187,16 +260,31 @@ describe("corrections", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Correct" }));
 
     expect(await screen.findByText("History is not edited.")).toBeInTheDocument();
+  });
+});
 
-    await userEvent.type(screen.getByLabelText("Amount"), "-1500");
-    await userEvent.type(screen.getByLabelText("Reason"), "Roster mark was wrong");
-    await userEvent.click(screen.getByRole("button", { name: /raise correction/i }));
+describe("the totals row", () => {
+  it("reconciles the aggregate an admin approves against", async () => {
+    respondWith({
+      rows: [
+        row({ grossAmount: 30000, deduction: 2000, bonusTotal: 1000, otherDeductionTotal: 500, netAmount: 28500 }),
+        row({ employeeId: "u2", payrollId: "p2", name: "Rahul Nair", grossAmount: 40000, deduction: 0, bonusTotal: 0, otherDeductionTotal: 0, netAmount: 40000 }),
+      ],
+    });
 
-    await waitFor(() =>
-      expect(payrollApi.createAdjustment).toHaveBeenCalledWith(
-        expect.objectContaining({ employeeId: "u1", amount: -1500, reason: "Roster mark was wrong" })
-      )
-    );
+    render(<PayrollRunReview />);
+    await screen.findByText("Rahul Nair");
+
+    // Read off the summary row itself — ₹1,000 also appears in a body cell.
+    const summary = document.querySelector(".ant-table-summary");
+    const totals = [...summary.querySelectorAll("td")].map((cell) => cell.textContent.trim());
+
+    expect(totals[0]).toBe("2 employees");
+    expect(totals[4]).toBe("₹70,000"); // gross
+    expect(totals[5]).toBe("₹2,000"); // deduction
+    expect(totals[6]).toBe("₹1,000"); // bonus
+    expect(totals[7]).toBe("₹500"); // other deductions
+    expect(totals[8]).toBe("₹68,500"); // net
   });
 });
 

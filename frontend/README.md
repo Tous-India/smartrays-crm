@@ -2903,6 +2903,47 @@ are handled by `scroll={{ x }}` as before.
 
 The footnote changed too — it explained that a doubling exists, which was never the missing part.
 
+### The Payroll page: one entry point into the pay run (§7.57, 2026-08-12)
+
+`/payroll` was a placeholder; it is now a year of runs. Year dropdown → one row per month → click a
+row → that run's review table. The month/year picker exists **only** inside the "Run payroll" modal,
+so there is no second way in and "which run am I looking at" always has an answer.
+
+**A month with no run is a row, greyed, reading "No run".** Omitting it would hide exactly what the
+list is for — a period nobody ran.
+
+**Run payroll surfaces the server's refusal.** The endpoint 409s on an approved month; the modal
+shows that sentence rather than failing quietly, because "already approved" is the useful thing to
+read and a silent failure looks like a broken button.
+
+**The review table is REUSED, not rebuilt.** It takes the period as props now, keeping its own
+picker only so it still works standalone.
+
+**Bonus / Other Deductions are editable on an open run and read-only once approved.** They write
+`PayrollAdjustment` records — the Payroll document's computed fields are never touched. They are one
+record type split by SIGN, and the form takes a positive number with the column deciding the sign,
+so nobody has to remember that a deduction is negative. A reason is mandatory, the same discipline
+manual attendance marks follow: an amount on somebody's pay with no stated reason is what an audit
+needs and would not have.
+
+**A totals row** carries employees, gross, deduction, bonus, other deductions and net — an admin
+approving a run needs the aggregate, not just rows.
+
+**Measured in a browser, because jsdom does not do layout:**
+
+| | @1280 | @1024 | @390 |
+|---|---|---|---|
+| Run list (7 cols) | 980/980 fits | 724/724 fits | 619/311 → `scroll x` |
+| Review table (11 cols) | **1033/980 → `scroll x`** | 1033/709 → `scroll x` | 1033/311 → `scroll x` |
+
+The page itself never overflows at any width, and there are zero `.ant-table-body` containers
+throughout — `scroll={{ y }}` stays absent. The review table needs horizontal scroll **even at
+1280**, 53px over; that is reported rather than papered over.
+
+One thing the tests turned up: `toLocaleString()` follows the environment's locale, so the same
+figure renders `₹1,20,000` under jsdom and `₹120,000` in this browser. Tests therefore assert the
+figure, not the grouping.
+
 ### Leave request form: two fields per row (2026-08-10)
 
 `LeaveRequestModal` stacked every field full width. It now pairs them using the same pattern as the

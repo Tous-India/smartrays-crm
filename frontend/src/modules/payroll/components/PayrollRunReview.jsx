@@ -71,8 +71,34 @@ function money(value) {
   return value == null ? "—" : `₹${value.toLocaleString()}`;
 }
 
-function PayrollRunReview() {
-  const [month, setMonth] = useState(() => dayjs().subtract(1, "month"));
+/**
+ * A bonus / other-deduction cell.
+ *
+ * Editable only while the run is OPEN. Once approved every cell here is
+ * read-only — the freeze is the whole point of that state, and a cell that
+ * still looked editable would be promising something the server would refuse.
+ */
+function AdjustmentCell({ row, amount, editable, onEdit }) {
+  const shown = amount ? money(amount) : <Text type="secondary">—</Text>;
+
+  if (!editable || !row.payrollId) {
+    return <span className="whitespace-nowrap">{shown}</span>;
+  }
+
+  return (
+    <Button type="link" size="small" className="!px-0" onClick={onEdit}>
+      {amount ? money(amount) : "Add"}
+    </Button>
+  );
+}
+
+function PayrollRunReview({ month: monthProp, year: yearProp, onChanged }) {
+  // Driven by the period the `/payroll` page opened (§7.57). The internal
+  // picker remains only for the standalone case, so this component still works
+  // on its own rather than depending on a parent to exist.
+  const [month, setMonth] = useState(() =>
+    monthProp && yearProp ? dayjs().year(yearProp).month(monthProp - 1) : dayjs().subtract(1, "month")
+  );
   const [review, setReview] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isWorking, setIsWorking] = useState(false);
@@ -101,6 +127,12 @@ function PayrollRunReview() {
     load();
   }, [load]);
 
+  useEffect(() => {
+    if (monthProp && yearProp) {
+      setMonth(dayjs().year(yearProp).month(monthProp - 1));
+    }
+  }, [monthProp, yearProp]);
+
   /** Every action shares this: run it, surface the server's own message, reload. */
   async function act(operation, successMessage) {
     setIsWorking(true);
@@ -120,24 +152,33 @@ function PayrollRunReview() {
 
   async function submitAdjustment() {
     const values = await form.validateFields();
+    // The form always takes a positive number; the COLUMN decides the sign, so
+    // nobody has to remember that a deduction is negative.
+    const magnitude = Math.abs(values.amount);
+    const amount = adjustingFor.intent === "deduction" ? -magnitude : magnitude;
 
     await act(
       () =>
         createAdjustment({
           ...period,
           employeeId: adjustingFor.employeeId,
-          amount: values.amount,
+          amount,
           reason: values.reason,
         }),
-      "Correction raised — it will appear on the next run"
+      isOpen ? "Added to this run" : "Correction raised — it will appear on the next run"
     );
 
     setAdjustingFor(null);
     form.resetFields();
+    onChanged?.();
   }
 
   const status = review?.status || null;
   const tone = status ? STATUS_TONE[status] : null;
+  // Open == still changeable. Everything editable on this screen is gated on
+  // it, so "approved" makes the whole table read-only in one place rather than
+  // per control.
+  const isOpen = status === "draft" || status === "review";
 
   const columns = [
     {
@@ -183,12 +224,38 @@ function PayrollRunReview() {
     },
     { title: "Gross", dataIndex: "grossAmount", key: "grossAmount", align: "right", render: money },
     { title: "Deduction", dataIndex: "deduction", key: "deduction", align: "right", render: money },
+    // BONUS and OTHER DEDUCTIONS are the same PayrollAdjustment record, split
+    // by SIGN (§7.57) — positive pays, negative claws back. One record type
+    // rather than a `kind` field, because the sign already carries the meaning
+    // and a second way of saying it could disagree with the first.
+    //
+    // Editable on an OPEN run only. Once approved the figures are frozen and
+    // every cell here is read-only; the freeze is the point of the state.
     {
-      title: "Adjustments",
-      dataIndex: "adjustmentTotal",
-      key: "adjustmentTotal",
+      title: "Bonus",
+      key: "bonus",
       align: "right",
-      render: (value) => (value ? money(value) : <Text type="secondary">—</Text>),
+      render: (_value, row) => (
+        <AdjustmentCell
+          row={row}
+          amount={row.bonusTotal}
+          editable={isOpen}
+          onEdit={() => setAdjustingFor({ ...row, intent: "bonus" })}
+        />
+      ),
+    },
+    {
+      title: "Other Deductions",
+      key: "otherDeductions",
+      align: "right",
+      render: (_value, row) => (
+        <AdjustmentCell
+          row={row}
+          amount={row.otherDeductionTotal}
+          editable={isOpen}
+          onEdit={() => setAdjustingFor({ ...row, intent: "deduction" })}
+        />
+      ),
     },
     {
       title: "Net",
@@ -223,10 +290,11 @@ function PayrollRunReview() {
       title: "",
       key: "actions",
       render: (_value, row) =>
-        // A correction only makes sense once a period is frozen — while it is
-        // still a draft the right fix is to re-run it.
-        status === "approved" || status === "paid" ? (
-          <Button size="small" onClick={() => setAdjustingFor(row)}>
+        // On a FROZEN run this raises a correction that lands on the next
+        // period. On an open run the Bonus / Other Deductions cells are the
+        // way in, so there is nothing to offer here.
+        !isOpen && row.payrollId ? (
+          <Button size="small" onClick={() => setAdjustingFor({ ...row, intent: "correction" })}>
             Correct
           </Button>
         ) : null,
@@ -338,10 +406,50 @@ function PayrollRunReview() {
             <Empty description="No pay run for this period yet — generate a draft to begin." />
           ),
         }}
+        // An admin approving a run needs the aggregate, not just the rows.
+        // Every figure is the server's own total, so the row cannot drift from
+        // what the run actually holds.
+        summary={() =>
+          review && review.totals.withRecord > 0 ? (
+            <Table.Summary fixed>
+              <Table.Summary.Row className="font-semibold">
+                <Table.Summary.Cell index={0}>
+                  {review.totals.employees} employees
+                </Table.Summary.Cell>
+                <Table.Summary.Cell index={1} />
+                <Table.Summary.Cell index={2} />
+                <Table.Summary.Cell index={3} />
+                <Table.Summary.Cell index={4} align="right">
+                  {money(review.totals.gross)}
+                </Table.Summary.Cell>
+                <Table.Summary.Cell index={5} align="right">
+                  {money(review.totals.deduction)}
+                </Table.Summary.Cell>
+                <Table.Summary.Cell index={6} align="right">
+                  {money(review.totals.bonus)}
+                </Table.Summary.Cell>
+                <Table.Summary.Cell index={7} align="right">
+                  {money(review.totals.otherDeductions)}
+                </Table.Summary.Cell>
+                <Table.Summary.Cell index={8} align="right">
+                  {money(review.totals.net)}
+                </Table.Summary.Cell>
+                <Table.Summary.Cell index={9} />
+                <Table.Summary.Cell index={10} />
+              </Table.Summary.Row>
+            </Table.Summary>
+          ) : null
+        }
       />
 
       <Modal
-        title="Raise a correction"
+        title={
+          adjustingFor?.intent === "bonus"
+            ? "Add a bonus"
+            : adjustingFor?.intent === "deduction"
+              ? "Add a deduction"
+              : "Raise a correction"
+        }
         open={Boolean(adjustingFor)}
         onOk={submitAdjustment}
         onCancel={() => {
@@ -349,14 +457,24 @@ function PayrollRunReview() {
           form.resetFields();
         }}
         confirmLoading={isWorking}
-        okText="Raise correction"
+        okText={
+          adjustingFor?.intent === "bonus"
+            ? "Add bonus"
+            : adjustingFor?.intent === "deduction"
+              ? "Add deduction"
+              : "Raise correction"
+        }
       >
         <Alert
           type="info"
           showIcon
           className="!mb-4"
-          message="History is not edited."
-          description={`This becomes a labelled line on the following month's run, not a change to ${month.format("MMMM YYYY")}.`}
+          message={isOpen ? "This is a line on this run." : "History is not edited."}
+          description={
+            isOpen
+              ? `Recorded as an adjustment on ${month.format("MMMM YYYY")}. The computed salary figures are not touched.`
+              : `This becomes a labelled line on the following month's run, not a change to ${month.format("MMMM YYYY")}.`
+          }
         />
         <Form form={form} layout="vertical" className="app-compact-form">
           <Form.Item label="Employee">
@@ -365,17 +483,28 @@ function PayrollRunReview() {
           <Form.Item
             label="Amount"
             name="amount"
-            extra="Negative claws back an overpayment; positive pays a shortfall."
+            extra={
+              adjustingFor?.intent === "deduction"
+                ? "Entered as a positive figure; it is deducted."
+                : adjustingFor?.intent === "bonus"
+                  ? "Entered as a positive figure; it is added."
+                  : "Negative claws back an overpayment; positive pays a shortfall."
+            }
             rules={[{ required: true, message: "An amount is required" }]}
           >
-            <InputNumber style={{ width: "100%" }} prefix="₹" />
+            <InputNumber style={{ width: "100%" }} prefix="₹" min={0} />
           </Form.Item>
+          {/*
+            A reason is mandatory, the same discipline manual attendance marks
+            follow (§7.4h). An amount on somebody's pay with no stated reason is
+            exactly what an audit needs and would not have.
+          */}
           <Form.Item
             label="Reason"
             name="reason"
             rules={[{ required: true, message: "A reason is required" }]}
           >
-            <Input.TextArea rows={2} placeholder="e.g. Roster mark was wrong on the 14th" />
+            <Input.TextArea rows={2} placeholder="e.g. Diwali bonus, or equipment recovery" />
           </Form.Item>
         </Form>
       </Modal>

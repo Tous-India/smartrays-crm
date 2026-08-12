@@ -822,15 +822,46 @@ describe("Corrections are adjustments on the NEXT run, never edits to history", 
     expect(july.adjustmentTotal).toBe(500);
   });
 
-  it("refuses to adjust a period that is still a draft — re-run it instead", async () => {
+  it("puts an adjustment on a DRAFT period onto THAT run, not the next one", async () => {
+    // §7.57 — on an open run this is a bonus or an other-deduction being added
+    // while the run is prepared, not a correction to history. It therefore
+    // lands on this period and carries no source period.
     await adminAgent.patch(`/api/v1/users/${sales1._id}`).send({ baseSalary: 30000 });
     await adminAgent.post(`/api/v1/payroll/run?month=${MONTH}&year=${YEAR}`);
 
     const response = await adminAgent
       .post(`/api/v1/payroll/period/adjustments?month=${MONTH}&year=${YEAR}`)
-      .send({ employeeId: sales1._id, amount: 100, reason: "Too early" });
+      .send({ employeeId: sales1._id, amount: 2500, reason: "Festival bonus" });
 
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(201);
+    expect(response.body.data.month).toBe(MONTH);
+    expect(response.body.data.sourceMonth).toBeNull();
+
+    // It reaches the run on the next regeneration, without being lost.
+    await adminAgent.post(`/api/v1/payroll/run?month=${MONTH}&year=${YEAR}&regenerate=true`);
+    const record = await Payroll.findOne({ employeeId: sales1._id, month: MONTH, year: YEAR });
+
+    expect(record.adjustmentTotal).toBe(2500);
+    expect(record.netAmount).toBe(30000 + 2500);
+  });
+
+  it("keeps bonus and deduction lines apart by SIGN on the same run", async () => {
+    await adminAgent.patch(`/api/v1/users/${sales1._id}`).send({ baseSalary: 30000 });
+    await adminAgent.post(`/api/v1/payroll/run?month=${MONTH}&year=${YEAR}`);
+
+    await adminAgent
+      .post(`/api/v1/payroll/period/adjustments?month=${MONTH}&year=${YEAR}`)
+      .send({ employeeId: sales1._id, amount: 3000, reason: "Bonus" });
+    await adminAgent
+      .post(`/api/v1/payroll/period/adjustments?month=${MONTH}&year=${YEAR}`)
+      .send({ employeeId: sales1._id, amount: -500, reason: "Equipment recovery" });
+
+    await adminAgent.post(`/api/v1/payroll/run?month=${MONTH}&year=${YEAR}&regenerate=true`);
+    const record = await Payroll.findOne({ employeeId: sales1._id, month: MONTH, year: YEAR });
+
+    expect(record.adjustments).toHaveLength(2);
+    expect(record.adjustmentTotal).toBe(2500);
+    expect(record.netAmount).toBe(30000 + 2500);
   });
 
   it("requires both an amount and a reason", async () => {
@@ -845,6 +876,88 @@ describe("Corrections are adjustments on the NEXT run, never edits to history", 
       .post(`/api/v1/payroll/period/adjustments?month=${MONTH}&year=${YEAR}`)
       .send({ employeeId: sales1._id, reason: "No amount" });
     expect(noAmount.status).toBe(400);
+  });
+});
+
+describe("GET /payroll/periods — the /payroll page's run list (§7.57)", () => {
+  it("returns every month of the year, including months with NO run", async () => {
+    // A payroll that silently skipped March is exactly what a list of runs
+    // exists to catch, so an empty month is a row rather than an omission.
+    await adminAgent.patch(`/api/v1/users/${sales1._id}`).send({ baseSalary: 30000 });
+    await adminAgent.post(`/api/v1/payroll/run?month=${MONTH}&year=${YEAR}`);
+
+    const response = await adminAgent.get(`/api/v1/payroll/periods?year=${YEAR}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.rows).toHaveLength(12);
+    // Most recent first.
+    expect(response.body.data.rows[0].month).toBe(12);
+    expect(response.body.data.rows[11].month).toBe(1);
+
+    // Counted against the records actually written rather than a hardcoded
+    // number — `afterEach` clears Payroll but not the salaries earlier tests
+    // set, so a bulk run legitimately covers more than one employee.
+    const written = await Payroll.find({ month: MONTH, year: YEAR });
+    const june = response.body.data.rows.find((row) => row.month === MONTH);
+
+    expect(june.status).toBe("draft");
+    expect(june.employeeCount).toBe(written.length);
+    expect(june.grossTotal).toBe(written.reduce((total, one) => total + one.grossAmount, 0));
+    expect(june.netTotal).toBe(written.reduce((total, one) => total + one.netAmount, 0));
+    expect(june.generatedAt).not.toBeNull();
+
+    const march = response.body.data.rows.find((row) => row.month === 3);
+    expect(march.status).toBeNull();
+    expect(march.employeeCount).toBe(0);
+  });
+
+  it("offers the years that have runs, plus the current year", async () => {
+    await adminAgent.patch(`/api/v1/users/${sales1._id}`).send({ baseSalary: 30000 });
+    await adminAgent.post(`/api/v1/payroll/run?month=${MONTH}&year=${YEAR}`);
+
+    const response = await adminAgent.get(`/api/v1/payroll/periods?year=${YEAR}`);
+
+    expect(response.body.data.years).toContain(YEAR);
+    expect(response.body.data.years).toContain(new Date().getFullYear());
+  });
+
+  it("reports a period as its LEAST advanced record", async () => {
+    // One unapproved employee means the period is not approved, however the
+    // rest of it looks.
+    await adminAgent.patch(`/api/v1/users/${sales1._id}`).send({ baseSalary: 30000 });
+    await adminAgent.post(`/api/v1/payroll/run?month=${MONTH}&year=${YEAR}`);
+    await adminAgent.post(`/api/v1/payroll/period/submit?month=${MONTH}&year=${YEAR}`);
+    await adminAgent.post(`/api/v1/payroll/period/approve?month=${MONTH}&year=${YEAR}`);
+
+    await Payroll.updateOne(
+      { employeeId: sales1._id, month: MONTH, year: YEAR },
+      { $set: { status: "draft" } }
+    );
+
+    const response = await adminAgent.get(`/api/v1/payroll/periods?year=${YEAR}`);
+    const june = response.body.data.rows.find((row) => row.month === MONTH);
+
+    expect(june.status).toBe("draft");
+  });
+
+  it("names who approved and when, once a period is approved", async () => {
+    await adminAgent.patch(`/api/v1/users/${sales1._id}`).send({ baseSalary: 30000 });
+    await adminAgent.post(`/api/v1/payroll/run?month=${MONTH}&year=${YEAR}`);
+    await adminAgent.post(`/api/v1/payroll/period/submit?month=${MONTH}&year=${YEAR}`);
+    await adminAgent.post(`/api/v1/payroll/period/approve?month=${MONTH}&year=${YEAR}`);
+
+    const response = await adminAgent.get(`/api/v1/payroll/periods?year=${YEAR}`);
+    const june = response.body.data.rows.find((row) => row.month === MONTH);
+
+    expect(june.status).toBe("approved");
+    expect(june.approvedBy).toBe("Admin");
+    expect(june.approvedAt).not.toBeNull();
+  });
+
+  it("refuses an employee holding only payroll.view", async () => {
+    const response = await employee1Agent.get(`/api/v1/payroll/periods?year=${YEAR}`);
+
+    expect(response.status).toBe(403);
   });
 });
 

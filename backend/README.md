@@ -2167,6 +2167,29 @@ reading "4.5 days absent, ₹5,161 deducted" could not be reconciled without rea
 
 The traced case now renders ₹4,645 for the days away plus ₹516 of surcharge, and the two add up.
 
+### `GET /payroll/periods` — a year of runs (§7.57, 2026-08-12)
+
+Backs the `/payroll` page. Returns **all twelve months** of a year, most recent first, plus the
+years that have runs and the current year. A month with no run comes back as an empty row rather
+than being omitted: a payroll that silently skipped March is exactly what a list of runs exists to
+catch.
+
+Every figure is summed from the Payroll documents themselves, so this cannot disagree with the runs
+it describes. **Nothing here computes salary** — `salaryCalculation.service.js` is still the only
+calculator.
+
+A period reports as its **least advanced** record: one unapproved employee means the period is not
+approved, however the rest of it looks.
+
+Gated on `payroll.run` like every other company-wide payroll endpoint.
+
+**Adjustments on an OPEN run now target THAT run.** `POST /payroll/period/adjustments` previously
+refused a draft ("re-run it instead"), which was right when correcting history was the only use.
+Now a draft is where bonuses and other deductions are added while the run is prepared, so an
+adjustment raised against a draft or in-review period lands on it and carries no `sourceMonth`; one
+raised against an approved or paid period is still a correction and still lands on the next run.
+Bonus and deduction are the same record split by sign — positive pays, negative claws back.
+
 ### Support & Ticketing (`/api/v1/tickets`) — Phase 5
 
 See `.context/final-plan.md` §6.6/§7.8. Two-part task: (A) Customer Portal self-signup — see

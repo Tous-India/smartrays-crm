@@ -13,6 +13,7 @@ import {
   markPaid,
   createAdjustment,
   cronRun,
+  periods,
 } from "./payroll.controller.js";
 import { validateRunQuery, validateListQuery, validatePayslipQuery } from "./payroll.validation.js";
 
@@ -85,6 +86,7 @@ payrollRouter.get("/monthly-report", authenticate, authorize("payroll", "run"), 
  * sits in the default employee template, so gating any company-wide action on
  * it would hand every employee the whole company's pay.
  */
+payrollRouter.get("/periods", authenticate, authorize("payroll", "run"), periods);
 payrollRouter.get("/period/review", authenticate, authorize("payroll", "run"), periodReview);
 payrollRouter.post("/period/submit", authenticate, authorize("payroll", "run"), submitForReview);
 payrollRouter.post("/period/approve", authenticate, authorize("payroll", "run"), approve);

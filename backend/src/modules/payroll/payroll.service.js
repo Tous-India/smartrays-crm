@@ -160,21 +160,29 @@ export async function addAdjustment({ employeeId, month, year, amount, reason },
     throw new ApiError(404, "No payroll record for that employee and period");
   }
 
-  if (source.status === "draft" || source.status === "review") {
-    throw new ApiError(
-      409,
-      "That period is not approved yet — re-run it to correct the figures instead of adjusting them"
-    );
-  }
-
-  const target = nextPeriod(month, year);
+  // WHERE the adjustment lands depends on whether the period is still open
+  // (§7.57).
+  //
+  //  - draft/review: it is a LINE ON THIS RUN — a bonus or an other-deduction
+  //    the admin is adding while preparing it. Targets this same period.
+  //  - approved/paid: the period is frozen, so it is a CORRECTION and lands on
+  //    the next run. History is never mutated.
+  //
+  // Both write the same PayrollAdjustment record; only the target period
+  // differs. Regeneration re-collects them either way, which is what stops a
+  // re-run losing a bonus or double-counting one.
+  const isOpen = source.status === "draft" || source.status === "review";
+  const target = isOpen ? { month, year } : nextPeriod(month, year);
 
   return PayrollAdjustment.create({
     employeeId,
     month: target.month,
     year: target.year,
-    sourceMonth: month,
-    sourceYear: year,
+    // A line on the run being prepared corrects nothing, so it carries no
+    // source period — that is what distinguishes it from a correction on a
+    // payslip, which must say which month it puts right.
+    sourceMonth: isOpen ? null : month,
+    sourceYear: isOpen ? null : year,
     amount: numericAmount,
     reason: String(reason).trim(),
     createdBy: actor._id,
@@ -183,6 +191,9 @@ export async function addAdjustment({ employeeId, month, year, amount, reason },
 
 /** Legal transitions, in one place so no endpoint can invent its own. */
 const NEXT_STATUS = { draft: "review", review: "approved", approved: "paid" };
+
+/** How far along each state is, for "least advanced record wins" above. */
+const STATUS_ORDER = { draft: 0, review: 1, approved: 2, paid: 3 };
 
 async function transitionPeriod(month, year, from, to, actor, extra = {}) {
   const records = await Payroll.find({ month, year });
@@ -237,6 +248,97 @@ export async function markPeriodPaid(month, year, actor, paidDate) {
     paidBy: actor._id,
     paidAt: when,
   });
+}
+
+/**
+ * One summary per pay run in a year (§7.57) — what the `/payroll` page lists.
+ *
+ * Aggregated from the Payroll documents themselves rather than recomputed:
+ * every figure here is a sum of what a run already stored, so this cannot
+ * disagree with the run it describes. Nothing in this file computes salary —
+ * that is `salaryCalculation.service.js`'s job and only its job.
+ *
+ * Months with NO run are returned as empty rows rather than omitted, so a
+ * missed month is visible instead of invisible. A payroll that silently skipped
+ * March is exactly the thing a list of runs exists to catch.
+ */
+export async function listPayrollPeriods(year) {
+  const numericYear = Number(year);
+  const records = await Payroll.find({ year: numericYear }).populate("approvedBy", "name");
+
+  const byMonth = new Map();
+
+  records.forEach((record) => {
+    const existing = byMonth.get(record.month) || {
+      month: record.month,
+      year: numericYear,
+      status: record.status,
+      employeeCount: 0,
+      grossTotal: 0,
+      netTotal: 0,
+      adjustmentTotal: 0,
+      generatedAt: null,
+      approvedBy: null,
+      approvedAt: null,
+      paidAt: null,
+    };
+
+    existing.employeeCount += 1;
+    existing.grossTotal += record.grossAmount || 0;
+    existing.netTotal += record.netAmount || 0;
+    existing.adjustmentTotal += record.adjustmentTotal || 0;
+
+    // A run is only as advanced as its LEAST advanced record — one unapproved
+    // employee means the period is not approved, however the others look.
+    if (STATUS_ORDER[record.status] < STATUS_ORDER[existing.status]) {
+      existing.status = record.status;
+    }
+
+    if (!existing.generatedAt || record.generatedAt > existing.generatedAt) {
+      existing.generatedAt = record.generatedAt;
+    }
+
+    if (record.approvedAt) {
+      existing.approvedAt = record.approvedAt;
+      existing.approvedBy = record.approvedBy?.name || null;
+    }
+
+    if (record.paidAt) {
+      existing.paidAt = record.paidAt;
+    }
+
+    byMonth.set(record.month, existing);
+  });
+
+  const rows = [];
+
+  for (let month = 12; month >= 1; month -= 1) {
+    rows.push(
+      byMonth.get(month) || {
+        month,
+        year: numericYear,
+        status: null,
+        employeeCount: 0,
+        grossTotal: 0,
+        netTotal: 0,
+        adjustmentTotal: 0,
+        generatedAt: null,
+        approvedBy: null,
+        approvedAt: null,
+        paidAt: null,
+      }
+    );
+  }
+
+  return rows;
+}
+
+/** Which years actually have runs, plus the current one so it is always offered. */
+export async function listPayrollYears() {
+  const years = await Payroll.distinct("year");
+  const currentYear = new Date().getFullYear();
+
+  return [...new Set([...years, currentYear])].sort((a, b) => b - a);
 }
 
 /**
@@ -309,6 +411,23 @@ export async function getPeriodReview({ month, year }) {
       grossAmount: record ? record.grossAmount : null,
       deduction: record ? record.deduction : null,
       adjustmentTotal: record ? record.adjustmentTotal : 0,
+      // Split by SIGN (§7.57): positive pays, negative claws back. One record
+      // type carries both — the sign already says which, and a second way of
+      // saying it could disagree with the first.
+      bonusTotal: record
+        ? record.adjustments.filter((one) => one.amount > 0).reduce((t, one) => t + one.amount, 0)
+        : 0,
+      otherDeductionTotal: record
+        ? record.adjustments.filter((one) => one.amount < 0).reduce((t, one) => t - one.amount, 0)
+        : 0,
+      adjustmentLines: record
+        ? record.adjustments.map((one) => ({
+            amount: one.amount,
+            reason: one.reason,
+            sourceMonth: one.sourceMonth,
+            sourceYear: one.sourceYear,
+          }))
+        : [],
       netAmount: record ? record.netAmount : null,
       anomalies,
     };
@@ -323,6 +442,10 @@ export async function getPeriodReview({ month, year }) {
       employees: rows.length,
       withRecord: records.length,
       flagged: rows.filter((row) => row.anomalies.length > 0).length,
+      gross: records.reduce((total, record) => total + (record.grossAmount || 0), 0),
+      deduction: records.reduce((total, record) => total + (record.deduction || 0), 0),
+      bonus: rows.reduce((total, row) => total + row.bonusTotal, 0),
+      otherDeductions: rows.reduce((total, row) => total + row.otherDeductionTotal, 0),
       net: records.reduce((total, record) => total + (record.netAmount || 0), 0),
     },
     rows,
