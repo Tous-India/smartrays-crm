@@ -73,8 +73,15 @@ function AmcRenewalsDueWidget() {
         value={dueCount}
         valueStyle={{ fontSize: 20 }}
       />
+      {/*
+        Points at CUSTOMERS, not ROUTE_PATHS.AMC. There is no `/amc` route —
+        AMC moved inside Customer Detail (§7.35) and the renewals worklist is
+        `ExpiringAmcPanel`, rendered above the Customers table (§7.42). The
+        constant survived the move and this link kept pointing at it, so
+        "View all AMC records" went nowhere from the Dashboard.
+      */}
       <div className="mt-2 text-left text-sm">
-        <Link to={ROUTE_PATHS.AMC}>View all AMC records →</Link>
+        <Link to={ROUTE_PATHS.CUSTOMERS}>View AMC renewals →</Link>
       </div>
     </WidgetCard>
   );

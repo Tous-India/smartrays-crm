@@ -32,7 +32,6 @@ export const ROUTE_PATHS = {
   // because `AmcRenewalsDueWidget` still references it, and that file has
   // uncommitted work from a concurrent session. Its "View all AMC records"
   // link needs repointing at /customers as a follow-up; see frontend/README.
-  AMC: "/amc",
   PAYMENTS: "/payments",
   REPORTS: "/reports",
   // Bare `/settings` redirects to `SETTINGS_USERS` — the sidebar's single
