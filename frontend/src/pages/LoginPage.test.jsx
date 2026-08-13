@@ -76,4 +76,46 @@ describe("LoginPage", () => {
     );
     expect(screen.queryByText("Home Page")).not.toBeInTheDocument();
   });
+
+  /**
+   * §7.59 — the submit button used to vanish for the whole request.
+   *
+   * `<Form disabled={isSubmitting}>` propagates a GENUINE `disabled` to the
+   * submit button, so AntD paints its disabled tokens; on AuthLayout's frosted
+   * card those composite to the card's own luminance and the button disappears.
+   * The `.auth-submit-button` hook in index.css restores contrast while a
+   * submit is in flight.
+   *
+   * jsdom cannot check the colors — it applies neither index.css nor AntD's
+   * CSS-in-JS, and it does not composite `backdrop-blur`. That verification was
+   * done by sampling painted pixels in a real browser. What these two pin is
+   * the pair of things a future edit could silently break: the hook the CSS
+   * targets, and the disabled-while-submitting behaviour the fix must NOT
+   * trade away to get contrast back.
+   */
+  describe("while a submit is in flight", () => {
+    it("carries the `auth-submit-button` hook the contrast rule targets", () => {
+      renderLoginPage();
+
+      expect(screen.getByRole("button", { name: "Log in" })).toHaveClass("auth-submit-button");
+    });
+
+    it("stays disabled, so a second click cannot fire a second login", async () => {
+      let release;
+      loginRequest.mockReturnValue(new Promise((resolve) => { release = resolve; }));
+
+      renderLoginPage();
+      await userEvent.type(screen.getByLabelText("Email"), "admin@test.local");
+      await userEvent.type(screen.getByLabelText("Password"), "Password123");
+      await userEvent.click(screen.getByRole("button", { name: "Log in" }));
+
+      const button = screen.getByRole("button", { name: /Log in/ });
+      await waitFor(() => expect(button).toBeDisabled());
+
+      await userEvent.click(button);
+      expect(loginRequest).toHaveBeenCalledTimes(1);
+
+      release({ data: { data: { name: "Admin", role: "admin", permissions: {} } } });
+    });
+  });
 });

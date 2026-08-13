@@ -58,7 +58,15 @@ function ForgotPasswordPage() {
           </Form.Item>
 
           <Form.Item className="!mb-0">
-            <Button type="primary" htmlType="submit" loading={isSubmitting} size="large" block>
+            {/* `auth-submit-button` — see LoginPage.jsx / index.css. */}
+            <Button
+              type="primary"
+              htmlType="submit"
+              loading={isSubmitting}
+              size="large"
+              block
+              className="auth-submit-button"
+            >
               Send reset link
             </Button>
           </Form.Item>

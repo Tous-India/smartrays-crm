@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import ForgotPasswordPage from "./ForgotPasswordPage";
@@ -59,5 +59,36 @@ describe("ForgotPasswordPage", () => {
     renderPage();
 
     expect(screen.getByRole("link", { name: "Back to login" })).toBeInTheDocument();
+  });
+
+  // §7.59 — same construction as Login: `<Form disabled={isSubmitting}>` makes
+  // the submit button genuinely disabled, and AntD's disabled tokens vanish
+  // into AuthLayout's frosted card. See LoginPage.test.jsx for why the colors
+  // themselves are verified in a browser rather than here.
+  describe("while a submit is in flight", () => {
+    it("carries the `auth-submit-button` hook the contrast rule targets", () => {
+      renderPage();
+
+      expect(screen.getByRole("button", { name: "Send reset link" })).toHaveClass(
+        "auth-submit-button"
+      );
+    });
+
+    it("stays disabled, so a second click cannot fire a second request", async () => {
+      let release;
+      forgotPasswordRequest.mockReturnValue(new Promise((resolve) => { release = resolve; }));
+
+      renderPage();
+      await userEvent.type(screen.getByLabelText("Email"), "someone@test.local");
+      await userEvent.click(screen.getByRole("button", { name: "Send reset link" }));
+
+      const button = screen.getByRole("button", { name: /Send reset link/ });
+      await waitFor(() => expect(button).toBeDisabled());
+
+      await userEvent.click(button);
+      expect(forgotPasswordRequest).toHaveBeenCalledTimes(1);
+
+      release({ data: {} });
+    });
   });
 });

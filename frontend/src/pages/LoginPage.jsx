@@ -113,7 +113,21 @@ function LoginPage() {
         </div>
 
         <Form.Item className="!mb-0">
-          <Button type="primary" htmlType="submit" loading={isSubmitting} size="large" block>
+          {/*
+            `auth-submit-button` (index.css) keeps this legible while the login
+            request is in flight. The Form's `disabled={isSubmitting}` above
+            makes this button genuinely disabled, and AntD's disabled tokens
+            composite into the frosted card until it is invisible. The disabled
+            state itself is kept — it is the double-submit guard.
+          */}
+          <Button
+            type="primary"
+            htmlType="submit"
+            loading={isSubmitting}
+            size="large"
+            block
+            className="auth-submit-button"
+          >
             Log in
           </Button>
         </Form.Item>
