@@ -5164,6 +5164,67 @@ records.
 including 1280 (1144/980). The page never overflows and there are zero `.ant-table-body` containers
 anywhere.
 
+## §7.59 — The auth submit button disappeared while submitting (2026-08-13, index.css)
+
+Reported as cosmetic. It was: nothing broke, and the double-submit guard worked throughout. Recorded
+anyway because the **stated cause was wrong**, and the wrong cause would have produced the wrong fix.
+
+**Stated:** "AntD applies disabled styling to `<Button>` when `loading=true`."
+
+**Actual:** `loading` never applies disabled styling. All three auth pages wrap their fields in
+`<Form disabled={isSubmitting}>`, and that propagates a GENUINE `disabled` through AntD's
+`DisabledContext` down to the submit button. Isolated in a live browser by removing **only** the
+`disabled` attribute from the element while leaving `ant-btn-loading` in place — the navy/white
+button came straight back. Had the cause really been `loading`, the obvious fix would have been to
+drop `loading`, which would have removed the double-submit guard to solve a colour problem.
+
+Two AntD rules stack during submit:
+
+| Rule | Effect |
+|---|---|
+| `.ant-btn-variant-solid:disabled` | background `rgba(0,0,0,0.04)`, text `rgba(0,0,0,0.25)`, border `#d9d9d9` |
+| `.ant-btn.ant-btn-loading` | `opacity: 0.65` |
+
+Those tokens are tuned for opaque light surfaces. On `AuthLayout`'s `bg-white/12` +
+`backdrop-blur-xl` card they composite to the card's own luminance.
+
+**Measured from painted pixels, not from computed styles.** Computed styles cannot answer this one:
+the card's background is an `oklab()` at 12% alpha over a blurred photo, so what the eye receives is
+a composite no single declaration describes. Screenshot → canvas → sample the button's rect:
+
+| | idle | submitting (before) | submitting (after) |
+|---|---|---|---|
+| Login @1280, button vs card | 1.40:1 | **1.06:1** | 1.39:1 |
+| Login @390, button vs card | 1.38:1 | **1.01:1** | 1.37:1 |
+| Login @1280, label vs button | 10.92:1 | 4.02:1 | 10.88:1 |
+
+1.01:1 is literally indistinguishable. Forgot Password and Reset Password are the same construction
+and were fixed in the same commit: 1.39:1 / 1.21:1 and 1.39:1 / 1.18:1 after.
+
+**Specificity, checked rather than guessed** (the `.ant-table-thead` tinting incident is why): AntD
+emits both rules as `:where(.css-HASH).ant-…`, and **`:where()` contributes zero specificity**, so
+both are (0,2,0). `.auth-submit-button.ant-btn-variant-solid.ant-btn-loading` is (0,3,0) and wins
+outright whatever order AntD injects its runtime `<style>` tags. No `!important`.
+
+**Scope decisions:**
+
+- Keyed on `.ant-btn-loading`, NOT `:disabled` — contrast is restored only while a request is
+  actually in flight. A button disabled for any other reason keeps AntD's disabled look, which is
+  the honest signal.
+- AntD's global disabled tokens are untouched, so every other disabled control in the app —
+  including these same forms' own inputs, which *should* look disabled while submitting — is
+  unaffected.
+- The spinner needs no rule: its SVG is `fill="currentColor"`, so it follows the button's `color`.
+
+**Not hits, checked:** `TwoFactorChallenge` and `TwoFactorEnrolment` also use
+`<Button type="primary" loading>`, but neither `<Form>` sets `disabled`, and both render on opaque
+surfaces. `AuthLayout`'s card is the only translucent surface in the app; no modal is translucent.
+
+**jsdom cannot verify any of the above** — it applies neither `index.css` nor AntD's CSS-in-JS and
+does not composite `backdrop-blur`. The two tests per page pin the `.auth-submit-button` hook the
+CSS targets (failed against the pre-change components) and the disabled-while-submitting guard
+(passed before and after, present so a future fix cannot trade it away for contrast).
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a
