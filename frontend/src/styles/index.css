@@ -567,6 +567,58 @@ input:-webkit-autofill:focus {
 }
 
 /*
+ * The auth screens' submit button WHILE A SUBMIT IS IN FLIGHT (Login, Forgot
+ * Password, Reset Password) — without this it disappears completely for the
+ * whole request.
+ *
+ * Cause, measured rather than assumed: all three pages wrap their fields in
+ * `<Form disabled={isSubmitting}>`, which propagates a GENUINE `disabled`
+ * through AntD's DisabledContext down to the submit button. `loading` alone
+ * never applies disabled styling — confirmed in a browser by removing only the
+ * `disabled` attribute from the live element, with `ant-btn-loading` left in
+ * place, which immediately restored the full-contrast navy/white button. So
+ * two AntD rules stack on the button during submit:
+ *
+ *   .ant-btn-variant-solid:disabled  -> background rgba(0,0,0,0.04),
+ *                                       color rgba(0,0,0,0.25),
+ *                                       border-color #d9d9d9
+ *   .ant-btn.ant-btn-loading         -> opacity 0.65
+ *
+ * Those disabled tokens are tuned for an opaque light surface. On AuthLayout's
+ * `bg-white/12` + `backdrop-blur-xl` card they composite to almost exactly the
+ * card's own luminance: sampling the painted pixels gave a button-vs-card
+ * contrast of 1.06:1 at 1280px and 1.01:1 at 390px (1.0 being literally
+ * indistinguishable), against 1.40:1 / 1.38:1 when idle. Computed styles alone
+ * cannot show this — the card's background is an `oklab()` at 12% alpha over a
+ * blurred photo, so what the eye receives is a composite no single declaration
+ * describes.
+ *
+ * Specificity: both AntD rules are emitted as `:where(.css-HASH).ant-…`, and
+ * `:where()` contributes ZERO specificity, so both are (0,2,0). The selector
+ * below is three classes — (0,3,0) — and therefore wins outright, whatever the
+ * injection order of AntD's runtime <style> tags. No `!important`, and none of
+ * AntD's global disabled tokens are touched, so every genuinely-disabled
+ * control elsewhere (including these same forms' own inputs, which SHOULD look
+ * disabled while submitting) is unaffected.
+ *
+ * Deliberately keyed on `.ant-btn-loading`, not on `:disabled`: this restores
+ * contrast only while a request is actually in flight. A button disabled for
+ * any other reason keeps AntD's disabled appearance, which is the honest
+ * signal. And the disabled-while-submitting behaviour itself is preserved on
+ * purpose — it is what prevents a double submit, so it must not be traded away
+ * to win back contrast.
+ *
+ * The spinner needs no rule of its own: its SVG is `fill="currentColor"`, so it
+ * follows the `color` set here and turns white with the label.
+ */
+.auth-submit-button.ant-btn-variant-solid.ant-btn-loading {
+  background: var(--color-brand-navy);
+  border-color: transparent;
+  color: #ffffff;
+  opacity: 1;
+}
+
+/*
  * MainLayout's sidebar — darker navy nav + footer (`.app-sidebar-dark`,
  * name kept even though the color is no longer literally black — it still
  * means "the dark region," as opposed to the white logo header), with the
@@ -805,7 +857,7 @@ input:-webkit-autofill:focus {
 }
 
 :where(.css-dev-only-do-not-override-80gjo0).ant-btn-variant-solid:disabled{
-background-color: white;
-opacity: 1;
-color:black;
+background-color: white !important;
+opacity: 1 !important;
+color:black !important;
 }
