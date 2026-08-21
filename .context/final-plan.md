@@ -5699,6 +5699,79 @@ slate-900 at 12px, matching its neighbours: §7.63 established that at this size
 Auth tests 29 passed. Full suite 10 failed / 869 passed of 879 — four files, all documented load
 flakes, eight literal 5000ms timeouts.
 
+## §7.65 — The auth pages fit the viewport (2026-08-13)
+
+### The literal test sizes did not reproduce it — the screen is not the viewport
+
+At 1920x1080, 1440x900, 1280x800 and 1366x768 the page already fitted, because those are **screen**
+sizes. A 1366x768 laptop has roughly 625–657px of actual viewport once browser chrome is subtracted,
+and that is where it broke:
+
+| Viewport | Rendered | Result |
+|---|---|---|
+| 1366x657 | 676 | scrolled by 19px |
+| 1366x625 | 667 | scrolled by 42px |
+| 1280x600 | 659 | scrolled by 59px |
+
+**Testing at the reported numbers would have shown a clean bill of health and fixed nothing.**
+
+Cause: `main` needed `pt(28vh) + card(444px) + pb(48px)`, which exceeds the viewport whenever it is
+shorter than **~683px**. The card was the binding constraint, exactly as suspected — it had grown to
+444px in §7.64 (wider, more padding) and §7.64 also raised the shared offset to 28vh.
+
+### Reduced in the given order — 56px off the card, 10vh off the offset
+
+| | before | after |
+|---|---|---|
+| card padding | 36 / 40px | 24 / 28px |
+| form item gaps | 24px | 12px |
+| heading → form | 28px | 24px |
+| button → link | 20px | 16px |
+| shared offset | 28vh | 18vh |
+| panel padding | 48px | 40px |
+
+The form gaps reuse the **existing `.app-compact-form`** class (index.css) rather than inventing new
+spacing — the same precedent that class was generalised for. Card 444px → **388px**. Nothing on the
+do-not-touch list moved: heading still 36px, inputs 39.6px, button 40px.
+
+### Result — threshold moved from ~683px to ~522px
+
+Fits at 1920x1080, 1440x900, 1280x800, 1366x768, 1920x937, 1440x789, 1280x689, 1366x657, 1366x625,
+1280x600, 1280x540, and 390x844.
+
+At 1280x500 login scrolls by 17px — **correctly**. Forgot and reset still fit at 500 because their
+forms are shorter.
+
+### Scrolling is preserved, deliberately
+
+`min-height` (not `height`), no `overflow: hidden`, no `scrollbar-width: none` on any auth surface.
+`100vh` is declared first as the fallback and `100dvh` second — Tailwind cannot express that pair,
+since `min-h-screen` and `min-h-[100dvh]` are separate rules setting the same property and the winner
+depends on sheet ordering rather than class order. Hence `.auth-shell` in index.css.
+
+**Mobile keyboard, 390 with the viewport shortened to 400px:** the page scrolls by 177px and the
+Log in button scrolls into view — visible, reachable, not trapped. This is the case the forbidden
+scrollbar-suppression would have broken.
+
+(The one place in the sheet that does hide a scrollbar is `.app-sidebar-scroll`, which is the app
+shell's nav and not an auth surface. A test now pins that nothing auth-scoped may do the same.)
+
+### Unchanged, verified
+
+- Card shadow **1.13:1** against the panel at every width — not weakened to save height — and the
+  border is still absent (0px).
+- `logoTop == cardTop`, delta **0.0px** on all three pages at 1920/1280/1024. The offset dropped to
+  18vh but both panels share it, so the alignment is untouched; forgot and reset sit at the same
+  height as login rather than oddly high.
+- sub-line 4.68:1, supporting list 4.66:1, footer 4.60:1 (ink-mean).
+- Divider painted at all four widths.
+- Heading gradient 9.2:1 near / 5.60–5.75:1 far, `@supports` fallback intact; selection and the a11y
+  name unchanged.
+- §7.59 untouched. Double-submit blocked **12/12**. Loading button 10.88:1.
+
+Auth tests 30 passed. Full suite 9 failed / 871 passed of 880 — four files, all documented load
+flakes, seven literal 5000ms timeouts.
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a
