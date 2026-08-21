@@ -452,6 +452,50 @@ input:-webkit-autofill:focus {
 }
 
 /*
+ * Brand-gradient heading on the auth brand panel (§7.61, 2026-08-13).
+ *
+ * FAILURE MODE THIS IS BUILT AROUND: the usual `background-clip: text` recipe
+ * pairs a gradient with `-webkit-text-fill-color: transparent`. If the clip is
+ * unsupported or fails, the fill stays transparent and the heading renders
+ * INVISIBLE — the worst possible degradation for the first line of copy on a
+ * public page.
+ *
+ * So the solid navy is declared FIRST, unconditionally, and the transparent
+ * fill is only ever applied inside `@supports`. Anything that cannot do
+ * `background-clip: text` never sees `-webkit-text-fill-color` at all and
+ * degrades to readable navy. Declaration order alone would NOT be enough: a
+ * browser that understands `-webkit-text-fill-color` but not the clip would
+ * still blank the text, which is exactly the case the feature query excludes.
+ *
+ * GRADIENT RANGE — retuned for a LIGHT surface. The logo's own green (#1d8343)
+ * is too light against off-white, so the far stop is pulled darker and
+ * teal-ward. Measured against the `#f7f3ec` panel, painted pixels:
+ *
+ *   near stop  #163b78 (navy)       9.79:1
+ *   mid stop   #10607f (teal blue)  6.31:1
+ *   far stop   #0d6e52 (deep teal)  5.71:1
+ *
+ * Both ENDS clear 4.5:1, not just the midpoint — a ramp that is only legible
+ * where you happen to sample it is not legible.
+ *
+ * `background-clip: text` does not touch the text node: selection and the
+ * accessibility tree are unaffected, both verified in a browser rather than
+ * assumed.
+ */
+.auth-gradient-heading {
+  color: #163b78;
+}
+
+@supports (background-clip: text) or (-webkit-background-clip: text) {
+  .auth-gradient-heading {
+    background-image: linear-gradient(100deg, #163b78 0%, #10607f 45%, #0d6e52 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+}
+
+/*
  * The auth screens' submit button WHILE A SUBMIT IS IN FLIGHT (Login, Forgot
  * Password, Reset Password) — without this it disappears completely for the
  * whole request.
