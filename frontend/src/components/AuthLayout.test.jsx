@@ -109,6 +109,22 @@ describe("AuthLayout", () => {
     expect(css).not.toMatch(/^\s*(body|html|:root)\s*\{[^}]*Montserrat/m);
   });
 
+
+  it("carries a real list of what the CMS covers, not decorated markup", () => {
+    render(<AuthLayout>x</AuthLayout>);
+
+    // A <ul>, so it announces as a list; the separators are CSS ::before on
+    // each item after the first, never sibling <li>s that would announce as
+    // empty list items.
+    const items = screen.getAllByRole("listitem").map((li) => li.textContent);
+
+    expect(items).toEqual([
+      "Leads & Customers",
+      "Attendance & Payroll",
+      "Projects & Tickets",
+    ]);
+  });
+
   it("takes no `background` prop — both of its surfaces were deleted", () => {
     // The prop used to select between "photo" and "gradient". Passing it now
     // must be inert rather than quietly selecting a surface that no longer

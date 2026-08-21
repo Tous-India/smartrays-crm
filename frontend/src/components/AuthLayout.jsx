@@ -33,20 +33,26 @@ function AuthLayout({ children }) {
         <BrandLogo className="w-36" variant="color" layout="horizontal" />
       </header>
 
-      {/* `lg:border-r` is the hairline divider — see the note above on why the
-          tone difference alone is not enough to separate the two panels. */}
       {/*
-        `justify-center`, NOT `justify-between`. Spreading three blocks across
-        the full panel height left them reading as three disconnected islands
-        with the footer pinned to the bottom edge under a large void. Centring
-        the stack and setting the gaps explicitly makes the panel one composition
-        (§7.63); every gap below is a deliberate value, not leftover slack.
+        TOP-ALIGNED, not centred (§7.64). Both panels start their content at the
+        same offset, so the logo's top edge and the card's top edge sit on one
+        line. Centring — which this was — makes that line drift with content
+        height, and the drift is worst exactly where it shows: Forgot Password
+        and Reset Password have much shorter forms, so a centred card floated to
+        a different height on every auth screen.
+
+        `lg:border-r` is the hairline divider; see the note above on why the tone
+        difference alone cannot separate the two panels.
       */}
-      <aside className="hidden bg-[#ededed] px-12 py-12 lg:flex lg:w-1/2 lg:flex-col lg:justify-center lg:border-r lg:border-[#c8c8c8] xl:px-16 xl:py-14">
+      <aside className="hidden bg-[#ededed] px-12 pb-12 pt-24 lg:pt-[28vh] lg:flex lg:w-1/2 lg:flex-col lg:justify-start lg:border-r lg:border-[#c8c8c8] xl:px-16">
         <BrandLogo className="w-44" variant="color" layout="horizontal" />
 
-        {/* 40px below the logo — close enough to read as the same block. */}
-        <div className="mt-10 max-w-xl">
+        {/* 40px below the logo — close enough to read as the same block.
+            `max-w-md`: at 576px (and still at 512px) the heading wrapped well
+            before the column edge, leaving ~82px of dead measure to its right so
+            the column edge did not agree with the text edge. 448px puts the edge
+            just past the longest line without forcing a third line. */}
+        <div className="mt-10 max-w-md">
           {/* Accent rule — the same ramp as the heading, so the two read as one
               gesture rather than a bar that happens to sit above a title. 16px
               below it keeps that reading; more and the rule floats free. */}
@@ -61,6 +67,26 @@ function AuthLayout({ children }) {
             Smartrays CMS keeps your team, customers, and field operations in sync — from the
             first lead to the last invoice.
           </p>
+
+          {/*
+            The connective tissue between the heading group and the footer — what
+            the CMS actually covers, in one compact line.
+
+            A real <ul>, so it reads as a list to assistive tech; the separators
+            are CSS `::before` on every item after the first rather than markup,
+            because a middot as a sibling <li> would announce as a list item.
+            Deliberately no icons, cards or badges — the panel's restraint is the
+            point, and three short phrases carry it.
+
+            slate-900 at 12px, matching the sub-line: §7.63 measured that at this
+            size anything lighter fails 4.5:1 on PAINTED contrast once
+            antialiasing is accounted for, however muted it looks declared.
+          */}
+          <ul className="!mt-4 !mb-0 flex list-none flex-wrap items-center gap-x-2 gap-y-1 !p-0 text-xs text-slate-900 [&>li+li]:before:mr-2 [&>li+li]:before:text-slate-400 [&>li+li]:before:content-['·']">
+            <li>Leads &amp; Customers</li>
+            <li>Attendance &amp; Payroll</li>
+            <li>Projects &amp; Tickets</li>
+          </ul>
         </div>
 
         {/* 48px below the group. Enough to read as a separate register, far less
@@ -68,8 +94,18 @@ function AuthLayout({ children }) {
         <p className="!mt-12 !mb-0 text-xs text-slate-900">© 2026 Smartrays Solutions. All rights reserved.</p>
       </aside>
 
-      <main className="flex flex-1 items-center justify-center bg-white px-6 py-14 sm:px-10 lg:w-1/2">
-        <div className="w-full max-w-[380px] rounded border bg-white p-8 shadow-[0_24px_64px_-20px_rgba(15,23,42,0.20),0_8px_24px_-12px_rgba(15,23,42,0.10)] sm:p-9">
+      {/*
+        Panel tinted #fbfbfa so a pure #ffffff card reads as raised against it.
+        The card previously carried BOTH a 1px border and a shadow on a white
+        panel — two treatments doing the same job, neither committing, and the
+        border was the only thing actually separating card from panel. The tint
+        gives the shadow a ground to fall on, so the border is gone.
+
+        `lg:items-start` + the same `pt-24` as the aside is what puts the card's
+        top edge on the logo's.
+      */}
+      <main className="flex flex-1 items-center justify-center bg-[#fbfbfa] px-6 py-14 sm:px-10 lg:w-1/2 lg:items-start lg:pb-12 lg:pt-[28vh]">
+        <div className="w-full max-w-[420px] rounded-xl bg-white p-9 shadow-[0_24px_64px_-20px_rgba(15,23,42,0.20),0_8px_24px_-12px_rgba(15,23,42,0.10)] sm:p-10">
           {children}
         </div>
       </main>
