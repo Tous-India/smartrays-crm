@@ -5324,6 +5324,99 @@ and `data-testid`, so none referenced removed markup and none needed rewriting.
 is kept rather than deleted — it is referenced by the README's Login-background section, and deleting
 a source asset is not reversible from the diff alone.
 
+## §7.61 — Auth brand panel goes light; gradient heading (2026-08-13)
+
+Surface revision on top of §7.60. The split, the breakpoint and the form column are unchanged; the
+brand panel goes from solid navy to a warm off-white with the original full-colour logo, the form
+panel goes to pure white with the form raised on a shadow, and the heading takes the brand gradient.
+
+### Two near-whites cannot separate themselves
+
+`#f7f3ec` (left) against `#ffffff` (right) measures **1.11:1** — far below anything the eye reads as
+an edge. The warm/neutral hue difference is what makes them *feel* like different surfaces; the
+hairline `#e0d7c6` divider is what actually *draws* the boundary. Both are required. A tone shift
+this small, on its own, reads as a rendering artefact rather than a design decision.
+
+### Type re-checked against the new ground — two values failed and were changed
+
+The old panel was navy, so every value on it was white or near-white and would have been unreadable.
+Painted-pixel contrast against `#f7f3ec`:
+
+| Element | Colour | Contrast |
+|---|---|---|
+| heading, near end | `#153c78` | 9.74:1 |
+| heading, far end | `#0e6765` | 5.93–6.03:1 |
+| accent rule, near | `#153d75` | 9.71:1 |
+| accent rule, far | `#0f5f5c` | 6.75:1 |
+| sub-line | `#45556c` | 6.86:1 |
+| footer | `#45556c` | 6.86:1 |
+
+**The footer failed on the first pass.** slate-500 measured **4.31:1**, below the 4.5:1 floor for
+normal-size text; moved to slate-600. Hierarchy is carried by size, not by a tint too faint to read.
+The divider was likewise darkened from `#e7e0d4`, which sampled as low as 1.06:1 at 1024.
+
+### The gradient heading fails SAFE
+
+`background-clip: text` is normally paired with `-webkit-text-fill-color: transparent`. If the clip
+does not apply, the fill stays transparent and the heading renders **invisible**. The solid navy is
+therefore declared first and unconditionally, and the transparent fill only ever appears inside
+`@supports`.
+
+**Declaration order alone would not be enough** — a browser that understands
+`-webkit-text-fill-color` but not the clip would still blank the text. The feature query is the
+mechanism, not belt-and-braces. A test asserts the stylesheet's shape (navy outside the query,
+transparent fill inside it) and was mutation-checked: removing the fallback fails it.
+
+Range measured at **both ends**, not the midpoint — a ramp legible only where you happen to sample it
+is not legible. The logo's own green `#1d8343` is too light on off-white, so the far stop is pulled
+darker and teal-ward to `#0d6e52`.
+
+`background-clip` does not touch the text node: selection returns the full string and the
+accessibility tree still reports `role=heading` with the correct name. Both verified in a browser.
+
+### Form elevation
+
+The card is white on a white panel, so the shadow is the only thing defining it — wide and
+low-opacity rather than tight and dark, which at this size would read as a border. Measured against
+the panel: **1.13:1** at 1920/1280, **1.02:1** at 1024, **1.08:1** at 390 where the panels stack.
+
+### §7.59 DISPOSITION — re-measured a THIRD time on the new surface. KEPT.
+
+The brief again described this rule as written for "a translucent card over a photo". That
+description has now been wrong twice, and the numbers say so again. The surface changed twice — glass
+over a photo, then `#f6f7f9`, now a white card on white — and removing the rule produces the same
+collapse every time:
+
+| | with rule | without |
+|---|---|---|
+| login @1280 | 9.30:1 | **1.07:1** |
+| login @390 | 9.14:1 | **1.07:1** |
+| forgot @1280 | 7.83:1 | **1.07:1** |
+| forgot @390 | 7.40:1 | **1.08:1** |
+| reset @1280 | 7.31:1 | **1.08:1** |
+| reset @390 | 7.23:1 | **1.08:1** |
+
+Without the rule the button paints `rgba(0,0,0,0.04)` on `rgba(0,0,0,0.25)` at `opacity: 0.65`.
+**Translucency was never the mechanism.** `<Form disabled={isSubmitting}>` propagates a genuine
+`disabled` through AntD's `DisabledContext`, and AntD's disabled tokens are near-white — invisible on
+*any* light surface. Every surface this design has had is light, which is why the rule has survived
+all three of them. It is not dead code and it is not orphaned; deleting it re-breaks the button
+immediately.
+
+### Carry-forward verified
+
+- `<Form disabled={isSubmitting}>` intact on all three pages — second click during an in-flight
+  request reaches no handler and fires no second request, at 1920/1280/1024/390.
+- Loading button `#163b78`, white label, white spinner: 10.88:1 label-on-button, 7.2–9.3:1 against
+  the card.
+- Backend validation errors still render through the `login-error` alert.
+- 2FA challenge flow untouched.
+
+Auth tests: **26 passed**, including three new ones (gradient class, the fallback shape, and the
+inert `background` prop). Full frontend suite 9 failed / 867 passed of 876 — all five failing files
+are the documented load flakes; `LeaveSection` passes 36/36 alone, and 8 of the 9 failures are
+literal 5000ms timeouts.
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a
