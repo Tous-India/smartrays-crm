@@ -35,23 +35,37 @@ function AuthLayout({ children }) {
 
       {/* `lg:border-r` is the hairline divider — see the note above on why the
           tone difference alone is not enough to separate the two panels. */}
-      <aside className="hidden bg-[#ededed] px-12 py-12 lg:flex lg:w-1/2 lg:flex-col lg:justify-between lg:border-r lg:border-[#c8c8c8] xl:px-16 xl:py-14">
+      {/*
+        `justify-center`, NOT `justify-between`. Spreading three blocks across
+        the full panel height left them reading as three disconnected islands
+        with the footer pinned to the bottom edge under a large void. Centring
+        the stack and setting the gaps explicitly makes the panel one composition
+        (§7.63); every gap below is a deliberate value, not leftover slack.
+      */}
+      <aside className="hidden bg-[#ededed] px-12 py-12 lg:flex lg:w-1/2 lg:flex-col lg:justify-center lg:border-r lg:border-[#c8c8c8] xl:px-16 xl:py-14">
         <BrandLogo className="w-44" variant="color" layout="horizontal" />
 
-        <div className="max-w-xl">
+        {/* 40px below the logo — close enough to read as the same block. */}
+        <div className="mt-10 max-w-xl">
           {/* Accent rule — the same ramp as the heading, so the two read as one
-              gesture rather than a bar that happens to sit above a title. */}
-          <div className="mb-7 h-1 w-12 rounded-full bg-[linear-gradient(100deg,#163b78_0%,#0d6e52_100%)]" />
+              gesture rather than a bar that happens to sit above a title. 16px
+              below it keeps that reading; more and the rule floats free. */}
+          <div className="mb-4 h-1 w-12 rounded-full bg-[linear-gradient(100deg,#163b78_0%,#0d6e52_100%)]" />
           <h1 className="auth-gradient-heading font-bold tracking-tight">
             Run every job, lead, and shift from one place
           </h1>
-          <p className="mt-5 max-w-md text-base leading-relaxed text-slate-600">
+          {/* 12px — heading and sub-line are one tight group. `!` because AntD's
+              global reset zeroes `p` margin-top and adds `margin-bottom: 1em`,
+              which silently ate this gap and the footer's until it was measured. */}
+          <p className="!mt-3 !mb-0 max-w-md text-xs leading-relaxed text-slate-900">
             Smartrays CMS keeps your team, customers, and field operations in sync — from the
             first lead to the last invoice.
           </p>
         </div>
 
-        <p className="text-sm text-slate-600">© 2026 Smartrays Solutions. All rights reserved.</p>
+        {/* 48px below the group. Enough to read as a separate register, far less
+            than the full-height gap it replaces. */}
+        <p className="!mt-12 !mb-0 text-xs text-slate-900">© 2026 Smartrays Solutions. All rights reserved.</p>
       </aside>
 
       <main className="flex flex-1 items-center justify-center bg-white px-6 py-14 sm:px-10 lg:w-1/2">
