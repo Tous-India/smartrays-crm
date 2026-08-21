@@ -452,6 +452,30 @@ input:-webkit-autofill:focus {
 }
 
 /*
+ * The auth screens' full-height shell (§7.65).
+ *
+ * Two declarations, deliberately, and in this order. `100vh` is the fallback
+ * for anything without `dvh` support; `100dvh` then wins where it is
+ * understood. Tailwind cannot express this — `min-h-screen` and
+ * `min-h-[100dvh]` are two separate rules setting the same property, and which
+ * one wins depends on the generated sheet's ordering rather than on class
+ * order, so the pair has to live in one rule.
+ *
+ * `dvh` matters here because `100vh` on mobile browsers resolves against the
+ * viewport WITHOUT the retracting URL bar, so the shell is taller than the
+ * space actually available and the page reports an overflow it does not have.
+ *
+ * NOT `height`, and no `overflow: hidden` anywhere: if the content genuinely
+ * cannot fit — a very short window, or a mobile keyboard covering half the
+ * screen — the page must still scroll. Suppressing the scrollbar would put the
+ * submit button out of reach, which is worse than a scrollbar.
+ */
+.auth-shell {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/*
  * Montserrat 700 — SELF-HOSTED, and only for the auth brand heading (§7.62).
  *
  * Vendored as a single file (`assets/fonts/montserrat-700-latin.woff2`,
