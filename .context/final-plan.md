@@ -5600,6 +5600,105 @@ subject.
 Auth tests 28 passed. Full suite 12 failed / 866 passed of 878, four files, all documented load
 flakes, eight of them literal 5000ms timeouts.
 
+## §7.64 — Auth panels: tinted ground, aligned tops, supporting list (2026-08-13)
+
+Visual refinement pass. No functional change.
+
+### The card had two treatments and neither committed
+
+It carried a 1px border AND a shadow, on a white panel — and the border was the only one actually
+separating card from panel, because a shadow has nothing to fall on when the ground is the same
+colour as the card. The right panel is now tinted `#fbfbfa`, the border is gone, and the shadow does
+the work.
+
+Reported as **two numbers, because they are two different cues** — collapsing them hides which one is
+carrying the card:
+
+| | face vs panel | shadow vs panel |
+|---|---|---|
+| 1920 / 1280 / 1024 / 390 | 1.035:1 | **1.13:1** |
+
+The shadow measures 1.13:1 at every width **including 1024, where it was 1.02:1** before the tint. It
+carries the card unaided; no border was quietly reinstated.
+
+### Alignment: top-edge, not optical centring
+
+Both options were on the table. Top-edge was chosen because centring is what produced the mismatch in
+the first place, and it fails worst exactly where it shows: **Forgot Password and Reset Password have
+much shorter forms**, so a centred card floated to a different height on every auth screen.
+
+All three pages now report `logoTop == cardTop`, delta **0.0px**:
+
+| Width | logo top = card top |
+|---|---|
+| 1920 | 302.4px |
+| 1280 | 252.0px |
+| 1024 | 224.2px |
+
+Implemented as a shared `pt-[28vh]` on both panels, so the tops agree at any viewport height without
+either block knowing the other's content height.
+
+### Proportions
+
+| | before | after |
+|---|---|---|
+| left content column | 576px | **448px** |
+| heading trailing space | 82.3px | **19.2px** |
+| card width | 380px | **420px** |
+| card padding | 32px | **40px** |
+
+At 1024 the column is width-limited rather than max-width-limited (415.3px) and trailing space is
+65.2px — the heading wraps a word earlier at that panel width. Reported rather than smoothed over.
+
+### The empty run below the footer was NOT reduced — and cannot be
+
+This pulls directly against the alignment above. Top-alignment forces all the slack to the bottom;
+only re-centring moves it back, and that breaks the top alignment that was the primary request. The
+28vh offset was tuned to get as close to the previous centred figures as possible:
+
+| Width | this pass | previous (centred) |
+|---|---|---|
+| 1920 | 445.3px | 390px |
+| 1280 | 315.7px | 300px |
+| 1024 | **202.9px** | 230px |
+
+Better at 1024, marginally worse at 1280, worse at 1920. **The two requests are mutually exclusive**;
+the levers are re-centring (loses the aligned tops) or bottom-pinning the footer (rejected in §7.63
+for leaving a void above it).
+
+### Supporting list
+
+Three phrases under the sub-line: *Leads & Customers · Attendance & Payroll · Projects & Tickets*.
+
+A real `<ul>`, so it announces as a list. **The separators are CSS `::before` on every item after the
+first, never sibling `<li>`s** — a middot as its own list item would announce as an empty list item to
+a screen reader. No icons, cards or badges; the panel's restraint is the point.
+
+slate-900 at 12px, matching its neighbours: §7.63 established that at this size anything lighter fails
+4.5:1 on painted contrast once antialiasing is counted, however muted it looks declared.
+
+### Painted contrast (ink-mean, on `#ededed`)
+
+| Element | Ratio |
+|---|---|
+| sub-line | 4.68:1 |
+| supporting list | 4.66:1 |
+| footer | 4.60:1 |
+
+### Unchanged, verified
+
+- Divider painted at all four widths — `#d1d1d1` 1.30:1 @1920/1280, `#dfdfdf` 1.14:1 @1024,
+  `#c8c8c8` 1.43:1 @390. (Its right-hand neighbour is now `#fbfbfa` rather than `#ffffff`, so the
+  vs-right figure moved slightly.)
+- Heading 36px Montserrat; gradient 9.2:1 near, 5.61–5.75:1 far; `@supports` fallback intact
+  (`color: rgb(22,59,120)` with `background-clip: text`).
+- Selection returns the full string; a11y still `role=heading` with that name.
+- §7.59 untouched, as instructed. Double-submit blocked **12/12**. Loading button 10.88:1.
+- At 390 the panels stack; the card clears the logo header with no crowding.
+
+Auth tests 29 passed. Full suite 10 failed / 869 passed of 879 — four files, all documented load
+flakes, eight literal 5000ms timeouts.
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a
