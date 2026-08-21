@@ -67,6 +67,48 @@ describe("AuthLayout", () => {
     expect(fillIndex).toBeGreaterThan(supportsStart);
   });
 
+
+  /**
+   * §7.62 — the font is deliberately narrow in scope and self-hosted. jsdom
+   * loads no stylesheet, so these assert the stylesheet's own shape: one
+   * @font-face, one weight, the vendored file (never a CDN), and a fallback
+   * stack that ends where the rest of the app already is.
+   */
+  it("self-hosts exactly one Montserrat weight and never imports it from a CDN", () => {
+    const raw = readFileSync(resolve(process.cwd(), "src/styles/index.css"), "utf8");
+    // Comments in this sheet discuss `@import` and CDNs by name; scanning them
+    // would match the prose rather than the rules.
+    const css = raw.replace(/\/\*[\s\S]*?\*\//g, "");
+
+    const faces = css.match(/@font-face\s*\{[^}]*\}/g) || [];
+    expect(faces).toHaveLength(1);
+    expect(faces[0]).toMatch(/font-family:\s*"Montserrat"/);
+    expect(faces[0]).toMatch(/font-weight:\s*700/);
+    expect(faces[0]).toMatch(/font-display:\s*swap/);
+    expect(faces[0]).toMatch(/url\("\.\.\/assets\/fonts\/montserrat-700-latin\.woff2"\)/);
+
+    // No render-blocking third-party pull. The only @import in this sheet is
+    // Tailwind's own, which is required and is not a network font fetch.
+    const imports = css.match(/@import[^;]+;/g) || [];
+    expect(imports).toEqual(['@import "tailwindcss";']);
+    expect(css).not.toMatch(/fonts\.googleapis|fonts\.gstatic|https?:\/\/[^)]*\.woff/);
+  });
+
+  it("applies Montserrat at 36px to the heading only, over the project stack", () => {
+    const css = readFileSync(resolve(process.cwd(), "src/styles/index.css"), "utf8");
+    const rule = css.slice(
+      css.indexOf(".auth-gradient-heading {"),
+      css.indexOf("}", css.indexOf(".auth-gradient-heading {"))
+    );
+
+    expect(rule).toMatch(/font-size:\s*36px/);
+    // Fallback tail is the app's own stack, so a font-load failure lands where
+    // every other screen already is rather than on an unrelated family.
+    expect(rule).toMatch(/font-family:\s*"Montserrat",\s*ui-sans-serif,\s*system-ui,\s*sans-serif/);
+    // Scoped: the global stack is not touched anywhere in the sheet.
+    expect(css).not.toMatch(/^\s*(body|html|:root)\s*\{[^}]*Montserrat/m);
+  });
+
   it("takes no `background` prop — both of its surfaces were deleted", () => {
     // The prop used to select between "photo" and "gradient". Passing it now
     // must be inert rather than quietly selecting a surface that no longer
