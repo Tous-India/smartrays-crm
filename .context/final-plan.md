@@ -5225,6 +5225,105 @@ does not composite `backdrop-blur`. The two tests per page pin the `.auth-submit
 CSS targets (failed against the pre-change components) and the disabled-while-submitting guard
 (passed before and after, present so a future fix cannot trade it away for contrast).
 
+## §7.60 — The auth screens rebuilt as a two-panel opaque split (2026-08-13)
+
+Structural redesign of Login, Forgot Password and Reset Password. The floating dark-glass card over a
+blurred photograph is gone; `AuthLayout` is now two fully **opaque** panels — brand navy on the left,
+`#f6f7f9` form panel on the right, collapsing below `lg` to a compact logo header above a full-width
+form. No `backdrop-filter` anywhere in the app any more.
+
+### The `background` prop was removed, not kept for compatibility
+
+It selected between `"photo"` and `"gradient"`. Both surfaces are deleted, so keeping the prop would
+leave three call sites choosing between options that no longer exist. A test asserts passing it is
+inert.
+
+### §7.59 DISPOSITION — the override is KEPT, and its stated cause was WRONG
+
+§7.59 recorded that `.auth-submit-button…ant-btn-loading` existed *because the card was translucent
+over a photo*. **That explanation was incorrect, and this redesign is what proved it.** Both panels
+are opaque now, and removing the rule still makes the button disappear.
+
+Measured on the NEW panel by removing the class from the live element mid-request — exactly
+equivalent to deleting the rule:
+
+| | with rule | without rule |
+|---|---|---|
+| login @1280 | 8.92:1 | **1.06:1** |
+| login @390 | 8.72:1 | **1.06:1** |
+| forgot @1280 | 7.31:1 | **1.06:1** |
+| forgot @390 | 7.83:1 | **1.07:1** |
+
+The real cause is unchanged from what §7.59 *measured* (only from what it *concluded*):
+`<Form disabled={isSubmitting}>` propagates a genuine `disabled` through AntD's `DisabledContext`,
+and AntD paints `rgba(0,0,0,0.04)` on `rgba(0,0,0,0.25)` at `opacity: 0.65`. **Over a near-white
+panel that is near-white.** The button is invisible on *any* light surface — which is what the old
+glass card and the new `#f6f7f9` panel actually have in common. Translucency was a coincidence of
+the first sighting, not the mechanism. The rule's comment in `index.css` now says so.
+
+### Other CSS the redesign orphaned
+
+The brief asked about §7.59 specifically; the same reasoning applies to four more blocks, all removed
+in `a744bfd`:
+
+| Rule | Keyed to | Disposition |
+|---|---|---|
+| `.auth-gradient-bg` | navy/green gradient behind Forgot/Reset | deleted |
+| `.auth-photo-layer` | the blurred login photograph | deleted |
+| `.auth-photo-scrim` | the dark scrim over it | deleted |
+| `.auth-frosted-input` | glass-card placeholder/icon colours | deleted |
+| `input:-webkit-autofill` | **global**, but tuned for the glass card | **retuned** |
+
+The autofill rule is the one worth flagging. It is global, and v2 set a translucent dark-navy inset
+with near-white text *for the frosted card*. With the card gone, those values described no surface
+anywhere: an autofilled field rendered dark navy beside a white typed sibling — on the auth pages and
+on every other form in the app. v3 uses AntD's own `#ffffff` / `rgba(0,0,0,0.88)`. **This change
+reaches beyond the auth screens by nature**, and is recorded here rather than buried.
+
+`FROSTED_INPUT_STYLE` went with them: it existed only to beat AntD's CSS-in-JS on a translucent dark
+surface, and AntD's defaults are already correct on an opaque panel. Replaced by shared
+label/title/link class constants so the three screens stay in sync.
+
+### Contrast, before and after
+
+Painted-pixel sampling (screenshot → canvas), button against its own panel, idle / mid-request:
+
+| | before (glass) | after (opaque) |
+|---|---|---|
+| login @1920 | 1.43 / 1.42 | 9.02 / 8.93 |
+| login @1280 | 1.42 / 1.42 | 9.02 / 8.92 |
+| login @1024 | 1.44 / 1.43 | 9.01 / 8.91 |
+| login @390 | 1.38 / 1.37 | 8.85 / 8.72 |
+| forgot @1920 | 1.34 / 1.33 | 7.72 / 7.66 |
+| forgot @1280 | 1.40 / 1.39 | 7.72 / 7.30 |
+| forgot @1024 | 1.38 / 1.37 | 7.94 / 7.64 |
+| forgot @390 | 1.22 / 1.21 | 7.94 / 7.83 |
+| reset @1920 | 1.33 / 1.33 | 7.59 / 7.53 |
+| reset @1280 | 1.39 / 1.38 | 7.59 / 7.18 |
+| reset @1024 | 1.36 / 1.35 | 7.80 / 7.52 |
+| reset @390 | 1.19 / 1.18 | 7.77 / 7.67 |
+
+The "before" figures are low because the button and the glass card behind it were both mid-luminance;
+the "after" figures are navy on near-white.
+
+### Nothing on the must-not-regress list moved
+
+- `<Form disabled={isSubmitting}>` stays on all three. A second click during an in-flight request
+  reaches no handler and fires no second request — confirmed at every width, on every page.
+- The button keeps its loading state, and its spinner stays white on navy.
+- Login still renders the backend's own message through the `login-error` alert.
+- The 2FA challenge is unchanged. It drops only its `bg-white` card wrapper, because the panel
+  underneath it is opaque already.
+
+**All 22 existing auth assertions passed unaltered** — the redesign preserved every accessible name
+and `data-testid`, so none referenced removed markup and none needed rewriting.
+
+### Left behind deliberately
+
+`assets/login-bg.webp` (120KB) is now imported by nothing and is excluded from the bundle. The file
+is kept rather than deleted — it is referenced by the README's Login-background section, and deleting
+a source asset is not reversible from the diff alone.
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a
