@@ -48,7 +48,7 @@ function ForgotPasswordPage() {
           onFinish={handleSubmit}
           disabled={isSubmitting}
           requiredMark={false}
-          className="!mt-7"
+          className="app-compact-form !mt-6"
         >
           <Form.Item
             label={<span className={AUTH_LABEL_CLASS}>Email</span>}
@@ -74,7 +74,7 @@ function ForgotPasswordPage() {
         </Form>
       )}
 
-      <div className="mt-5 text-center">
+      <div className="mt-4 text-center">
         <Link to={ROUTE_PATHS.LOGIN} className={AUTH_LINK_CLASS}>
           Back to login
         </Link>

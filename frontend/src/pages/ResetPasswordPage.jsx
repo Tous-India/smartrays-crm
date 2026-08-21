@@ -44,7 +44,7 @@ function ResetPasswordPage() {
           message="This password reset link is missing its token."
           data-testid="reset-password-missing-token"
         />
-        <div className="mt-5 text-center">
+        <div className="mt-4 text-center">
           <Link to={ROUTE_PATHS.FORGOT_PASSWORD} className={AUTH_LINK_CLASS}>
             Request a new reset link
           </Link>
@@ -83,7 +83,7 @@ function ResetPasswordPage() {
           type="error"
           message={errorMessage}
           showIcon
-          className="!mt-6"
+          className="app-compact-form !mt-6"
           data-testid="reset-password-error"
         />
       )}
@@ -93,7 +93,7 @@ function ResetPasswordPage() {
         onFinish={handleSubmit}
         disabled={isSubmitting}
         requiredMark={false}
-        className="!mt-7"
+        className="app-compact-form !mt-6"
       >
         <Form.Item
           label={<span className={AUTH_LABEL_CLASS}>New password</span>}
@@ -121,7 +121,7 @@ function ResetPasswordPage() {
         </Form.Item>
       </Form>
 
-      <div className="mt-5 text-center">
+      <div className="mt-4 text-center">
         <Link to={ROUTE_PATHS.LOGIN} className={AUTH_LINK_CLASS}>
           Back to login
         </Link>

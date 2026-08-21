@@ -125,6 +125,33 @@ describe("AuthLayout", () => {
     ]);
   });
 
+
+  /**
+   * §7.65 — the shell must be able to scroll. Suppressing the scrollbar would
+   * put the submit button out of reach on a short window or with a mobile
+   * keyboard open, which is worse than a scrollbar. jsdom applies no
+   * stylesheet, so this asserts the sheet itself never contains the escape
+   * hatches, and that the shell declares a 100vh fallback before 100dvh.
+   */
+  it("never suppresses the scrollbar on the auth shell, and falls back from dvh to vh", () => {
+    const raw = readFileSync(resolve(process.cwd(), "src/styles/index.css"), "utf8");
+    const css = raw.replace(/\/\*[\s\S]*?\*\//g, "");
+
+    const start = css.indexOf(".auth-shell {");
+    const rule = css.slice(start, css.indexOf("}", start));
+    expect(start).toBeGreaterThan(-1);
+    expect(rule.indexOf("100vh")).toBeGreaterThan(-1);
+    expect(rule.indexOf("100dvh")).toBeGreaterThan(rule.indexOf("100vh"));
+    expect(rule).not.toMatch(/overflow/);
+
+    // The one place that does hide a scrollbar is the app sidebar, which is not
+    // an auth surface; nothing auth-scoped may.
+    const hidden = css.match(/[^}]*scrollbar-width:\s*none[^}]*\}/g) || [];
+    hidden.forEach((block) => expect(block).toMatch(/app-sidebar-scroll/));
+    const webkit = css.match(/[^{]*::-webkit-scrollbar[^{]*\{/g) || [];
+    webkit.forEach((sel) => expect(sel).toMatch(/app-sidebar-scroll/));
+  });
+
   it("takes no `background` prop — both of its surfaces were deleted", () => {
     // The prop used to select between "photo" and "gradient". Passing it now
     // must be inert rather than quietly selecting a surface that no longer

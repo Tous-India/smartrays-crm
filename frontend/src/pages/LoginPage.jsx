@@ -93,7 +93,7 @@ function LoginPage() {
         onFinish={handleSubmit}
         disabled={isSubmitting}
         requiredMark={false}
-        className="!mt-7"
+        className="app-compact-form !mt-6"
       >
         <Form.Item
           label={<span className={AUTH_LABEL_CLASS}>Email</span>}
@@ -126,7 +126,7 @@ function LoginPage() {
       </Form>
 
       {/* Below the button, not floating above the field it belongs to. */}
-      <div className="mt-5 text-center">
+      <div className="mt-4 text-center">
         <Link to={ROUTE_PATHS.FORGOT_PASSWORD} className={AUTH_LINK_CLASS}>
           Forgot password?
         </Link>

@@ -27,7 +27,7 @@ import BrandLogo from "./BrandLogo";
  */
 function AuthLayout({ children }) {
   return (
-    <div className="flex min-h-screen flex-col lg:flex-row">
+    <div className="auth-shell flex flex-col lg:flex-row">
       {/* Compact brand header — below `lg` only. Logo and wordmark, nothing else. */}
       <header className="flex items-center justify-center border-b border-[#c8c8c8] bg-[#ededed] px-6 py-7 lg:hidden">
         <BrandLogo className="w-36" variant="color" layout="horizontal" />
@@ -44,7 +44,7 @@ function AuthLayout({ children }) {
         `lg:border-r` is the hairline divider; see the note above on why the tone
         difference alone cannot separate the two panels.
       */}
-      <aside className="hidden bg-[#ededed] px-12 pb-12 pt-24 lg:pt-[28vh] lg:flex lg:w-1/2 lg:flex-col lg:justify-start lg:border-r lg:border-[#c8c8c8] xl:px-16">
+      <aside className="hidden bg-[#ededed] px-12 pb-10 pt-20 lg:pt-[18vh] lg:flex lg:w-1/2 lg:flex-col lg:justify-start lg:border-r lg:border-[#c8c8c8] xl:px-16">
         <BrandLogo className="w-44" variant="color" layout="horizontal" />
 
         {/* 40px below the logo — close enough to read as the same block.
@@ -104,8 +104,8 @@ function AuthLayout({ children }) {
         `lg:items-start` + the same `pt-24` as the aside is what puts the card's
         top edge on the logo's.
       */}
-      <main className="flex flex-1 items-center justify-center bg-[#fbfbfa] px-6 py-14 sm:px-10 lg:w-1/2 lg:items-start lg:pb-12 lg:pt-[28vh]">
-        <div className="w-full max-w-[420px] rounded-xl bg-white p-9 shadow-[0_24px_64px_-20px_rgba(15,23,42,0.20),0_8px_24px_-12px_rgba(15,23,42,0.10)] sm:p-10">
+      <main className="flex flex-1 items-center justify-center bg-[#fbfbfa] px-6 py-14 sm:px-10 lg:w-1/2 lg:items-start lg:pb-10 lg:pt-[18vh]">
+        <div className="w-full max-w-[420px] rounded-xl bg-white p-6 shadow-[0_24px_64px_-20px_rgba(15,23,42,0.20),0_8px_24px_-12px_rgba(15,23,42,0.10)] sm:p-7">
           {children}
         </div>
       </main>
