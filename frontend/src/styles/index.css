@@ -426,144 +426,29 @@ main {
 }
 
 /*
- * Auth screen background — v3. v2's diagonal read as one flat navy at a
- * glance because its three linear-gradient stops were too close in
- * lightness and the green glow (12% opacity, near a corner) was too faint
- * to register as a real accent. Fixed with:
- *   - A genuine 3-stop diagonal with real lightness range: a near-black
- *     corner (#081527), a mid-navy band at the brand color's own strength
- *     (#163b78), and a distinctly lighter navy toward the far corner
- *     (#2a4f8f) — enough spread to read as directional light, not a flat
- *     fill.
- *   - A much more present green glow (~22% opacity vs. v2's 12%), sized
- *     larger and positioned lower-right, behind/near where the card sits,
- *     so it's an obvious color accent breaking up the navy instead of a
- *     barely-there tint.
- *   - The dark vignette kept, but pulled to the opposite (top-left) corner
- *     from the glow so the two don't cancel each other into flatness.
- */
-.auth-gradient-bg {
-  background-color: #163b78;
-  background-image:
-    radial-gradient(
-      130% 130% at 8% 8%,
-      rgba(2, 6, 16, 0.6) 0%,
-      rgba(2, 6, 16, 0) 42%
-    ),
-    radial-gradient(
-      65% 60% at 82% 78%,
-      rgba(29, 131, 67, 0.45) 0%,
-      rgba(29, 131, 67, 0) 72%
-    ),
-    linear-gradient(135deg, #081527 0%, #163b78 52%, #2a4f8f 100%);
-}
-
-/*
- * Login page background — a real outdoor solar-field photo
- * (assets/login-bg.webp, sourced from smartrayssolutions.com) instead of
- * the CSS gradient above, per the task that added this. Split across two
- * absolutely-positioned layers (both painted by AuthLayout.jsx, behind the
- * actual z-10 content) rather than one element, because the photo needs a
- * blur that the scrim and the real content on top must NOT inherit:
- *
- * `.auth-photo-layer` — the photo itself, blurred. This photo has its own
- * marketing text baked into the image ("GO SOLAR WITH SMARTRAYS SOLUTIONS")
- * that a dark overlay alone cannot reliably hide: an overlay dims a photo's
- * pixels *proportionally*, so it darkens the (already dark navy) baked text
- * and the (very bright) sky behind it together, preserving most of their
- * relative contrast — confirmed by testing an overlay as strong as 88%
- * opacity in an earlier pass, which still left the text legible. A blur,
- * unlike opacity, attacks legibility directly regardless of color/contrast.
- * `scale(1.1)` compensates for the blur's edge-fringing (a Gaussian blur
- * samples past the element's own edge for real image data; with nothing
- * there it fades toward transparent) by pushing those fringed edges outside
- * the visible viewport, so they're cropped away by the parent's
- * `overflow-hidden` instead of ever being visible.
- *
- * `.auth-photo-scrim` — the exact same two-gradient dark scrim from the
- * first version of this feature, unchanged, layered on top of (not mixed
- * into) the blurred photo. Still doing real work on its own: the raw
- * photo's brightness varies a lot (bright sky vs. dark panels) even once
- * blurred, so without this neither the white logo/text on the left nor the
- * glass card's contents would have reliable contrast everywhere. Stronger
- * on the left (logo/tagline sit directly on the photo, no glass card behind
- * them) than the right (the card's own `bg-white/12` + `backdrop-blur-xl`
- * already does most of the contrast work there); the vertical component is
- * for the stacked mobile layout, where the logo sits at the top of the
- * photo rather than literally on its left.
- */
-.auth-photo-layer {
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  filter: blur(8px);
-  transform: scale(1.1);
-}
-
-.auth-photo-scrim {
-  background-image:
-    linear-gradient(
-      100deg,
-      rgba(6, 13, 26, 0.58) 0%,
-      rgba(6, 13, 26, 0.44) 35%,
-      rgba(6, 13, 26, 0.32) 65%,
-      rgba(6, 13, 26, 0.26) 100%
-    ),
-    linear-gradient(
-      180deg,
-      rgba(4, 9, 20, 0.5) 0%,
-      rgba(4, 9, 20, 0.22) 30%,
-      rgba(4, 9, 20, 0.2) 68%,
-      rgba(4, 9, 20, 0.36) 100%
-    );
-}
-
-/*
- * Fixes browsers forcing an opaque yellow/white background on autofilled
- * inputs (`-webkit-autofill`) — invisible on an ordinary opaque input, but
- * breaks any translucent/glass surface (e.g. the login card's frosted-dark
- * inputs) by punching an opaque rectangle through it. Global, not scoped to
- * Login, since every form in the app will hit this eventually once a
- * browser has saved credentials for it. The huge transition delay is the
- * standard trick to prevent the browser's own yellow flash from appearing
+ * Suppresses the browser's forced yellow background on autofilled inputs
+ * (`-webkit-autofill`). Global, not scoped to any one screen — every form in
+ * the app hits this once a browser has saved credentials for it. The huge
+ * transition delay is the standard trick that stops the yellow flash showing
  * even for a single frame before this rule takes over.
  *
- * Retuned for the dark frosted-glass card (v2): a translucent dark navy
- * inset (not white) so an autofilled field still reads as part of the same
- * dark glass surface, with light text-fill-color to match the card's
- * white/light input text instead of the v1 navy-on-white pairing.
+ * v3 (2026-08-13, §7.60) — back to a LIGHT inset with dark text. v2 painted a
+ * translucent dark navy inset with near-white text, tuned for the frosted-glass
+ * login card. That card is gone, and because this rule is global, v2's values
+ * were left describing a surface that no longer exists ANYWHERE: an autofilled
+ * field would render dark-navy-on-white next to an ordinary white sibling, on
+ * the auth panels and on every other form in the app alike.
+ *
+ * `#ffffff` and `rgba(0, 0, 0, 0.88)` are AntD's own input background and text
+ * colour, so an autofilled field is now indistinguishable from a typed one.
  */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus {
-  -webkit-box-shadow: 0 0 0 1000px rgba(13, 33, 69, 0.85) inset !important;
-  -webkit-text-fill-color: #f5f7fb !important;
-  caret-color: #f5f7fb;
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+  -webkit-text-fill-color: rgba(0, 0, 0, 0.88) !important;
+  caret-color: rgba(0, 0, 0, 0.88);
   transition: background-color 5000s ease-in-out 0s;
-}
-
-/*
- * The login card's frosted-dark inputs (`FROSTED_INPUT_STYLE` in
- * LoginPage.jsx) set text color via inline style, but AntD's placeholder
- * and the Input.Password eye-toggle icon aren't reachable that way — both
- * default to a mid-gray tuned for light backgrounds, which is nearly
- * invisible on this dark glass card. Scoped to `.auth-frosted-input` rather
- * than global so it doesn't affect the rest of the app's ordinary light
- * inputs.
- */
-.auth-frosted-input::placeholder {
-  color: rgba(245, 247, 251, 0.45);
-}
-
-.auth-frosted-input .ant-input,
-.auth-frosted-input.ant-input {
-  background: transparent;
-  color: #f5f7fb;
-}
-
-.auth-frosted-input .ant-input-suffix .anticon,
-.auth-frosted-input .ant-input-prefix .anticon {
-  color: rgba(245, 247, 251, 0.6);
 }
 
 /*
@@ -571,45 +456,47 @@ input:-webkit-autofill:focus {
  * Password, Reset Password) — without this it disappears completely for the
  * whole request.
  *
- * Cause, measured rather than assumed: all three pages wrap their fields in
- * `<Form disabled={isSubmitting}>`, which propagates a GENUINE `disabled`
- * through AntD's DisabledContext down to the submit button. `loading` alone
- * never applies disabled styling — confirmed in a browser by removing only the
- * `disabled` attribute from the live element, with `ant-btn-loading` left in
- * place, which immediately restored the full-contrast navy/white button. So
- * two AntD rules stack on the button during submit:
+ * KEPT, and its rationale CORRECTED, at the §7.60 redesign (2026-08-13). The
+ * original §7.59 note blamed the translucent glass card. That was wrong, and
+ * the redesign proved it: the card is gone, both panels are fully opaque, and
+ * removing this rule still makes the button vanish.
+ *
+ * The real cause has nothing to do with translucency. All three pages wrap
+ * their fields in `<Form disabled={isSubmitting}>`, which propagates a GENUINE
+ * `disabled` through AntD's DisabledContext to the submit button — `loading`
+ * alone never applies disabled styling. AntD then stacks:
  *
  *   .ant-btn-variant-solid:disabled  -> background rgba(0,0,0,0.04),
  *                                       color rgba(0,0,0,0.25),
  *                                       border-color #d9d9d9
  *   .ant-btn.ant-btn-loading         -> opacity 0.65
  *
- * Those disabled tokens are tuned for an opaque light surface. On AuthLayout's
- * `bg-white/12` + `backdrop-blur-xl` card they composite to almost exactly the
- * card's own luminance: sampling the painted pixels gave a button-vs-card
- * contrast of 1.06:1 at 1280px and 1.01:1 at 390px (1.0 being literally
- * indistinguishable), against 1.40:1 / 1.38:1 when idle. Computed styles alone
- * cannot show this — the card's background is an `oklab()` at 12% alpha over a
- * blurred photo, so what the eye receives is a composite no single declaration
- * describes.
+ * `rgba(0,0,0,0.04)` over a near-white panel is near-white. So the button is
+ * invisible on ANY light surface, which is what the old glass card and the new
+ * `#f6f7f9` form panel have in common — not translucency.
  *
- * Specificity: both AntD rules are emitted as `:where(.css-HASH).ant-…`, and
- * `:where()` contributes ZERO specificity, so both are (0,2,0). The selector
- * below is three classes — (0,3,0) — and therefore wins outright, whatever the
- * injection order of AntD's runtime <style> tags. No `!important`, and none of
- * AntD's global disabled tokens are touched, so every genuinely-disabled
- * control elsewhere (including these same forms' own inputs, which SHOULD look
- * disabled while submitting) is unaffected.
+ * Measured on the NEW opaque panel by removing this class from the live element
+ * mid-request, which is exactly equivalent to deleting the rule:
  *
- * Deliberately keyed on `.ant-btn-loading`, not on `:disabled`: this restores
- * contrast only while a request is actually in flight. A button disabled for
- * any other reason keeps AntD's disabled appearance, which is the honest
- * signal. And the disabled-while-submitting behaviour itself is preserved on
- * purpose — it is what prevents a double submit, so it must not be traded away
- * to win back contrast.
+ *              with rule   without rule
+ *   login  @1280   8.92:1       1.06:1
+ *   login  @390    8.72:1       1.06:1
+ *   forgot @1280   7.31:1       1.06:1
+ *   forgot @390    7.83:1       1.07:1
  *
- * The spinner needs no rule of its own: its SVG is `fill="currentColor"`, so it
- * follows the `color` set here and turns white with the label.
+ * Specificity: AntD emits both of its rules as `:where(.css-HASH).ant-…`, and
+ * `:where()` contributes ZERO specificity, so both are (0,2,0). The three-class
+ * selector below is (0,3,0) and wins outright whatever order AntD injects its
+ * runtime <style> tags. No `!important`, and none of AntD's global disabled
+ * tokens are touched, so genuinely-disabled controls elsewhere still read as
+ * disabled.
+ *
+ * Keyed on `.ant-btn-loading`, not `:disabled`, so contrast is restored only
+ * while a request is actually in flight. The disabled state itself is preserved
+ * deliberately — it is the double-submit guard, and must not be traded away to
+ * win back contrast.
+ *
+ * The spinner needs no rule of its own: its SVG is `fill="currentColor"`.
  */
 .auth-submit-button.ant-btn-variant-solid.ant-btn-loading {
   background: var(--color-brand-navy);
