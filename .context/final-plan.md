@@ -5521,6 +5521,85 @@ of the failures literal 5000ms timeouts. `LeaveRequestModal` and `PayrollRunRevi
 run taken while the preview server and Chrome were still up, and pass 26/26 alone; the flake count
 tracks machine load, not the change.
 
+## §7.63 — Brand-panel rhythm, 12px type, and what antialiasing does to contrast (2026-08-13)
+
+Spacing and type-scale pass on the auth brand panel. Two findings here are worth more than the
+cosmetic change that prompted them.
+
+### FINDING 1 — two margins were silently not applying
+
+`justify-between` was replaced with a centred stack and explicit gaps. The first attempt set `mt-3`
+on the sub-line and `mt-12` on the footer, and **neither took effect**: AntD's global reset declares
+`p { margin-top: 0; margin-bottom: 1em }` and beats a plain Tailwind margin utility on a `<p>`. The
+footer's intended 48px gap measured **13.2px** in the browser while the class list said `mt-12`.
+
+Both now use the important modifier — the same reason the rest of this codebase reaches for `!mt-*`
+around AntD. **This was only caught by measuring boxes**; the markup reads as correct, and a
+screenshot at a glance looks plausible.
+
+Resulting gaps, ink-to-ink (the gap the eye sees, not a margin that may be collapsing), identical on
+all three pages at 1920/1280/1024:
+
+| Gap | Value |
+|---|---|
+| logo → accent rule | 40.0px |
+| accent rule → heading | 14.3px |
+| heading → sub-line | 17.7px |
+| sub-line → footer | 49.2px |
+
+The stack is centred, so the space *below* the footer varies with viewport height (390 / 300 / 230px
+at 1920 / 1280 / 1024) instead of the footer sitting on the bottom edge.
+
+### FINDING 2 — at 12px, painted contrast is far below the declared value
+
+This is the important one. The declared colour passed comfortably and the glyph **core** measured
+6.48:1 — but at 12px only ~84% of a stroke is solid ink; the rest is antialiased edge. Three views of
+the same text on `#ededed`:
+
+| | core (darkest px) | 10th percentile | **ink mean** |
+|---|---|---|---|
+| sub-line, slate-600 | 6.48:1 | 2.61:1 | **3.41:1** |
+| footer, slate-600 | 6.48:1 | 3.05:1 | **3.39:1** |
+
+**Every earlier pass in this series reported the core figure.** At 14–16px that is close to honest
+because the stroke is mostly solid; at 12px it flatters the result badly. The ink mean is what the
+eye integrates, and it was under the 4.5:1 floor.
+
+Darkened until the *painted* number passed, without touching the font size:
+
+| Colour | sub-line ink mean | footer ink mean | verdict |
+|---|---|---|---|
+| slate-600 `#475569` | 3.41:1 | 3.39:1 | fails |
+| slate-800 `#1e293b` | 4.16:1 | 4.10:1 | still fails |
+| **slate-900 `#0f172a`** | **4.68:1** | **4.60:1** | passes |
+
+**Trade-off, stated rather than buried:** clearing 4.5:1 on ink mean at 12px requires near-black, so
+the sub-line and footer are no longer visually "muted" — hierarchy is now carried by size alone.
+Note also that WCAG itself is defined on *declared* colours, where slate-600 already passed at
+6.40:1; the ink-mean criterion applied here is stricter than the standard. If the muted look matters
+more than the stricter reading, the lever is font size, not colour.
+
+### Unchanged, verified
+
+- Panels `#ededed` / `#ffffff`, 1.17:1. **The brief listed `#f7f3ec` / `#e0d7c6` as "unchanged", but
+  those are the §7.61 values superseded by §7.62's `#ededed`.** Treated as a stale checklist and
+  `#ededed` kept; it is also the stricter surface to measure against, being darker.
+- Divider painted at all four widths: `#d1d1d1` 1.30:1 @1920/1280, `#e0e0e0` 1.13:1 @1024,
+  `#c8c8c8` 1.43:1 @390.
+- Gradient heading 36px, `@supports` fallback intact, near end 9.2–9.3:1, far end 5.70–5.75:1.
+  Selection returns the full string; a11y still reports `role=heading` with that name.
+- Form card shadow 1.13:1 @1920/1280, **1.04:1 @1024**, 1.08:1 @390 — not weakened.
+- §7.59 rule untouched, as instructed.
+- Double-submit blocked **12/12**; loading button 10.88:1.
+- At 390 the panels stack and the card sits clear of the logo header — no crowding.
+
+**The sub-line and footer do not render at 390 at all** — the brand panel collapses to a logo-only
+header below `lg`, so there is nothing to measure there and the request for a 390 figure has no
+subject.
+
+Auth tests 28 passed. Full suite 12 failed / 866 passed of 878, four files, all documented load
+flakes, eight of them literal 5000ms timeouts.
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a
