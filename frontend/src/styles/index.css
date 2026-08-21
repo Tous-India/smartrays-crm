@@ -452,6 +452,35 @@ input:-webkit-autofill:focus {
 }
 
 /*
+ * Montserrat 700 — SELF-HOSTED, and only for the auth brand heading (§7.62).
+ *
+ * Vendored as a single file (`assets/fonts/montserrat-700-latin.woff2`,
+ * 18.4 KB) rather than pulled from a CDN: no `@import` in this stylesheet,
+ * which would be render-blocking, and no third-party connection on the login
+ * page. One weight, one style, LATIN ONLY — the full family is ~18 files per
+ * weight across five subsets and none of the rest is used.
+ *
+ * `unicode-range` keeps the browser from reaching for this face for any glyph
+ * outside latin, so a character it does not contain falls to the stack below
+ * instead of triggering a pointless second lookup.
+ *
+ * `font-display: swap` is deliberate over `optional`: `optional` would leave
+ * first-time visitors on the fallback permanently, which defeats the point of
+ * specifying the face at all. The layout-shift cost of the swap was measured
+ * rather than assumed — see the heading rule below.
+ */
+@font-face {
+  font-family: "Montserrat";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("../assets/fonts/montserrat-700-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191,
+    U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/*
  * Brand-gradient heading on the auth brand panel (§7.61, 2026-08-13).
  *
  * FAILURE MODE THIS IS BUILT AROUND: the usual `background-clip: text` recipe
@@ -483,7 +512,14 @@ input:-webkit-autofill:focus {
  * assumed.
  */
 .auth-gradient-heading {
+  /* Fallback FIRST — see the note above. */
   color: #163b78;
+  /* Scoped to this heading only. The app's global stack is untouched; the tail
+     of this list IS that stack, so a font-load failure lands exactly where the
+     rest of the app already is. */
+  font-family: "Montserrat", ui-sans-serif, system-ui, sans-serif;
+  font-size: 36px;
+  line-height: 1.15;
 }
 
 @supports (background-clip: text) or (-webkit-background-clip: text) {
