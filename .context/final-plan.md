@@ -5417,6 +5417,110 @@ inert `background` prop). Full frontend suite 9 failed / 867 passed of 876 — a
 are the documented load flakes; `LeaveSection` passes 36/36 alone, and 8 of the 9 failures are
 literal 5000ms timeouts.
 
+## §7.62 — #ededed brand panel, Montserrat heading (2026-08-13)
+
+Third surface pass on the auth screens. Left panel to `#ededed` exactly, right stays white, and the
+heading takes Montserrat 700 at 36px.
+
+### The divider is now structural, not decorative
+
+`#ededed` against `#ffffff` is **1.17:1**, and `#ededed` is a NEUTRAL grey — so unlike §7.61's warm
+off-white there is no hue difference doing quiet work either. The hairline is the only thing
+separating the panels. It was therefore verified as actually painted at every width, scanning
+perpendicular to the seam rather than sampling one convenient point:
+
+| Width | Divider | vs left panel | vs right panel |
+|---|---|---|---|
+| 1920 | `#d1d1d1` | 1.30:1 | 1.53:1 |
+| 1280 | `#d1d1d1` | 1.30:1 | 1.53:1 |
+| 1024 | `#e0e0e0` | 1.13:1 | 1.32:1 |
+| 390 | `#c8c8c8` | 1.43:1 | 1.67:1 |
+
+**1024 is the weak case and is reported rather than averaged away.** A scrollbar makes the panel
+width fractional there, so the 1px border anti-aliases across two device pixels. The divider was
+`#d4d4d4` on the first attempt and washed out to `#e5e5e5`; darkened to `#c8c8c8` so it survives.
+
+### Contrast on #ededed — nothing needed darkening
+
+Painted-pixel, all three pages, all widths. `#ededed` is lighter than §7.61's `#f7f3ec`, so every
+ratio drops slightly — but none crossed a floor, so nothing was changed this pass:
+
+| Element | Colour | Contrast | Floor |
+|---|---|---|---|
+| heading, near end | `#153c78` | 9.19–9.30:1 | 3:1 (large) |
+| heading, far end | `#0e6668` | 5.70–5.75:1 | 3:1 (large) |
+| accent rule, near | `#153d76` | 9.15–9.25:1 | 3:1 |
+| accent rule, far | `#0f5f5c` | 6.38:1 | 3:1 |
+| sub-line | `#45556c` | 6.48:1 | 4.5:1 |
+| footer | `#45556c` | 6.48:1 | 4.5:1 |
+
+(For comparison, the same elements on §7.61's `#f7f3ec` were 9.74 / 6.03 / 9.71 / 6.75 / 6.86 /
+6.86 — the ~0.4 drop is the panel getting lighter.)
+
+### The font: self-hosted, one weight, 18.4 KB
+
+`assets/fonts/montserrat-700-latin.woff2`, extracted from `@fontsource/montserrat` with
+`npm i --no-save` and vendored. **`package.json` and the lockfile are untouched** — no runtime
+dependency, no CDN connection on the login page, and no font `@import` in `index.css` (the only
+`@import` there is Tailwind's own). Latin subset only, weight 700, normal only; `unicode-range` stops
+the browser reaching for the face for any glyph outside latin.
+
+`font-display: swap` was chosen over `optional` deliberately: `optional` would leave first-time
+visitors on the fallback permanently, which defeats specifying the face at all.
+
+**The swap's layout cost was measured, not assumed** — the same page loaded twice, once with the
+woff2 blocked at the network layer (`document.fonts.check` confirms false vs true):
+
+| | 1920 | 1280 |
+|---|---|---|
+| heading height delta | 0px | 0px |
+| heading line count | 2 → 2 | 2 → 2 |
+| accent rule top delta | 0px | 0px |
+| sub-line top delta | 0px | 0px |
+| footer top delta | 0px | 0px |
+
+Only the internal line-break position moves (Montserrat is wider, so the break falls at a different
+word). The heading's box and every element after it are identical, so **the swap costs nothing in
+layout**.
+
+Scope is this heading only. The global stack is untouched, and the tail of the fallback list IS that
+global stack, so a load failure lands where every other screen already is. Tests assert the
+stylesheet's shape: exactly one `@font-face`, weight 700, the vendored path, no remote font URL, and
+the fallback tail.
+
+### §7.59 DISPOSITION — asked a third time, measured a third time. KEPT.
+
+The brief again described the rule as written for "a translucent card over a photo". That surface has
+now been gone for two passes. Re-measured on this surface by removing the class from the live element
+mid-request:
+
+| | with rule | without |
+|---|---|---|
+| login @1280 | 9.33:1 | **1.07:1** |
+| login @390 | 9.17:1 | **1.07:1** |
+| forgot @1280 | 7.84:1 | **1.07:1** |
+| forgot @390 | 7.41:1 | **1.08:1** |
+| reset @1280 | 7.32:1 | **1.08:1** |
+| reset @390 | 7.24:1 | **1.08:1** |
+
+**It is not dead and it is not orphaned.** Four different surfaces have now been tried — glass over a
+photo, `#f6f7f9`, white-on-white, and `#ededed`/white — and removing the rule collapses the button to
+~1.07:1 on every one of them. The mechanism has never been translucency: `<Form disabled>` propagates
+a genuine `disabled`, and AntD paints `rgba(0,0,0,0.04)` on `rgba(0,0,0,0.25)` at `opacity: 0.65`,
+which is near-white on **any** light surface. Every surface this design has had is light. Deleting it
+re-breaks the button immediately.
+
+### Verification
+
+Real-browser screenshots at 1920/1280/1024/390 for all three pages, idle and mid-submit. Double-submit
+blocked **12/12**. Heading still selects as its full string and still reports `role=heading` with that
+name under `background-clip: text`. Auth tests 28 passed, including two new font-contract tests.
+
+Full frontend suite 12 failed / 866 passed of 878, five files — all the documented load flakes, eight
+of the failures literal 5000ms timeouts. `LeaveRequestModal` and `PayrollRunReview` also failed on one
+run taken while the preview server and Chrome were still up, and pass 26/26 alone; the flake count
+tracks machine load, not the change.
+
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a
