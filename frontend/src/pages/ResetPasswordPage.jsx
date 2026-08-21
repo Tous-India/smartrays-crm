@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { Form, Input, Button, Alert, Typography } from "antd";
+import { Form, Input, Button, Alert } from "antd";
 import { resetPasswordRequest } from "../modules/auth/api";
 import { ROUTE_PATHS } from "../constants/routePaths.constants";
 import AuthLayout from "../components/AuthLayout";
-import { FROSTED_INPUT_STYLE } from "../constants/authStyles.constants";
-
-const { Title, Text } = Typography;
+import {
+  AUTH_LABEL_CLASS,
+  AUTH_LINK_CLASS,
+  AUTH_SUBTITLE_CLASS,
+  AUTH_TITLE_CLASS,
+} from "../constants/authStyles.constants";
 
 function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
@@ -41,8 +44,8 @@ function ResetPasswordPage() {
           message="This password reset link is missing its token."
           data-testid="reset-password-missing-token"
         />
-        <div className="!mt-6 text-center">
-          <Link to={ROUTE_PATHS.FORGOT_PASSWORD} className="!text-sm !text-white/70 hover:!text-white">
+        <div className="mt-5 text-center">
+          <Link to={ROUTE_PATHS.FORGOT_PASSWORD} className={AUTH_LINK_CLASS}>
             Request a new reset link
           </Link>
         </div>
@@ -53,17 +56,15 @@ function ResetPasswordPage() {
   if (isDone) {
     return (
       <AuthLayout>
-        <Title level={3} className="!mb-1 !text-white !tracking-tight">
-          Password reset
-        </Title>
-        <Text className="!text-white/60" data-testid="reset-password-success">
+        <h1 className={AUTH_TITLE_CLASS}>Password reset</h1>
+        <p className={AUTH_SUBTITLE_CLASS} data-testid="reset-password-success">
           Your password has been reset successfully. You can now log in with your new password.
-        </Text>
+        </p>
         <Button
           type="primary"
           size="large"
           block
-          className="!mt-6"
+          className="auth-submit-button !mt-7"
           onClick={() => navigate(ROUTE_PATHS.LOGIN, { replace: true })}
         >
           Go to login
@@ -74,10 +75,8 @@ function ResetPasswordPage() {
 
   return (
     <AuthLayout>
-      <Title level={3} className="!mb-1 !text-white !tracking-tight">
-        Reset your password
-      </Title>
-      <Text className="!text-white/60">Choose a new password for your account.</Text>
+      <h1 className={AUTH_TITLE_CLASS}>Reset your password</h1>
+      <p className={AUTH_SUBTITLE_CLASS}>Choose a new password for your account.</p>
 
       {errorMessage && (
         <Alert
@@ -89,21 +88,22 @@ function ResetPasswordPage() {
         />
       )}
 
-      <Form layout="vertical" onFinish={handleSubmit} disabled={isSubmitting} className="!mt-6">
+      <Form
+        layout="vertical"
+        onFinish={handleSubmit}
+        disabled={isSubmitting}
+        requiredMark={false}
+        className="!mt-7"
+      >
         <Form.Item
-          label={<span className="!text-white/85">New password</span>}
+          label={<span className={AUTH_LABEL_CLASS}>New password</span>}
           name="newPassword"
           rules={[
             { required: true, message: "New password is required" },
             { min: 8, message: "Password must be at least 8 characters" },
           ]}
         >
-          <Input.Password
-            autoComplete="new-password"
-            size="large"
-            style={FROSTED_INPUT_STYLE}
-            className="auth-frosted-input"
-          />
+          <Input.Password autoComplete="new-password" size="large" placeholder="••••••••" />
         </Form.Item>
 
         <Form.Item className="!mb-0">
@@ -120,6 +120,12 @@ function ResetPasswordPage() {
           </Button>
         </Form.Item>
       </Form>
+
+      <div className="mt-5 text-center">
+        <Link to={ROUTE_PATHS.LOGIN} className={AUTH_LINK_CLASS}>
+          Back to login
+        </Link>
+      </div>
     </AuthLayout>
   );
 }

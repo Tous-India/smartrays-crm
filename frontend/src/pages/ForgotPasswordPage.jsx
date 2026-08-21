@@ -1,12 +1,15 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Form, Input, Button, Typography } from "antd";
+import { Form, Input, Button } from "antd";
 import { forgotPasswordRequest } from "../modules/auth/api";
 import { ROUTE_PATHS } from "../constants/routePaths.constants";
 import AuthLayout from "../components/AuthLayout";
-import { FROSTED_INPUT_STYLE } from "../constants/authStyles.constants";
-
-const { Title, Text } = Typography;
+import {
+  AUTH_LABEL_CLASS,
+  AUTH_LINK_CLASS,
+  AUTH_SUBTITLE_CLASS,
+  AUTH_TITLE_CLASS,
+} from "../constants/authStyles.constants";
 
 function ForgotPasswordPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -30,31 +33,29 @@ function ForgotPasswordPage() {
 
   return (
     <AuthLayout>
-      <Title level={3} className="!mb-1 !text-white !tracking-tight">
-        Forgot your password?
-      </Title>
-      <Text className="!text-white/60">
+      <h1 className={AUTH_TITLE_CLASS}>Forgot your password?</h1>
+      <p className={AUTH_SUBTITLE_CLASS}>
         Enter your account email and we&apos;ll send you a link to reset it.
-      </Text>
+      </p>
 
       {hasSubmitted ? (
-        <Text className="!mt-6 block !text-white/85" data-testid="forgot-password-success">
+        <p className="mt-6 text-sm leading-relaxed text-slate-700" data-testid="forgot-password-success">
           If an account with that email exists, a reset link has been sent. Please check your inbox.
-        </Text>
+        </p>
       ) : (
-        <Form layout="vertical" onFinish={handleSubmit} disabled={isSubmitting} className="!mt-6">
+        <Form
+          layout="vertical"
+          onFinish={handleSubmit}
+          disabled={isSubmitting}
+          requiredMark={false}
+          className="!mt-7"
+        >
           <Form.Item
-            label={<span className="!text-white/85">Email</span>}
+            label={<span className={AUTH_LABEL_CLASS}>Email</span>}
             name="email"
             rules={[{ required: true, message: "Email is required" }]}
           >
-            <Input
-              type="email"
-              autoComplete="email"
-              size="large"
-              style={FROSTED_INPUT_STYLE}
-              className="auth-frosted-input"
-            />
+            <Input type="email" autoComplete="email" size="large" placeholder="you@example.com" />
           </Form.Item>
 
           <Form.Item className="!mb-0">
@@ -73,8 +74,8 @@ function ForgotPasswordPage() {
         </Form>
       )}
 
-      <div className="!mt-6 text-center">
-        <Link to={ROUTE_PATHS.LOGIN} className="!text-sm !text-white/70 hover:!text-white">
+      <div className="mt-5 text-center">
+        <Link to={ROUTE_PATHS.LOGIN} className={AUTH_LINK_CLASS}>
           Back to login
         </Link>
       </div>

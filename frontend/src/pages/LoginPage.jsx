@@ -1,13 +1,16 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Form, Input, Button, Alert, Typography } from "antd";
+import { Form, Input, Button, Alert } from "antd";
 import useSessionStore from "../store/sessionStore";
 import { ROUTE_PATHS } from "../constants/routePaths.constants";
 import AuthLayout from "../components/AuthLayout";
 import TwoFactorChallenge from "../modules/auth/components/TwoFactorChallenge";
-import { FROSTED_INPUT_STYLE } from "../constants/authStyles.constants";
-
-const { Title, Text } = Typography;
+import {
+  AUTH_LABEL_CLASS,
+  AUTH_LINK_CLASS,
+  AUTH_SUBTITLE_CLASS,
+  AUTH_TITLE_CLASS,
+} from "../constants/authStyles.constants";
 
 function LoginPage() {
   const login = useSessionStore((state) => state.login);
@@ -53,73 +56,62 @@ function LoginPage() {
   // an admin/manager who had never enrolled — was removed 2026-08-08 with the
   // mandate. Nobody is forced into enrolment at login any more; 2FA is turned
   // on from Settings → Account by choice.
+  //
+  // No white card wrapper any more: the form panel is already opaque, so the
+  // challenge renders straight onto it like every other auth step.
   if (challenge) {
     return (
-      <AuthLayout background="photo">
-        <div className="rounded-lg bg-white p-6">
-          <TwoFactorChallenge
-            preAuthToken={challenge.preAuthToken}
-            onVerified={handleVerified}
-            onRestart={() => setChallenge(null)}
-          />
-        </div>
+      <AuthLayout>
+        <TwoFactorChallenge
+          preAuthToken={challenge.preAuthToken}
+          onVerified={handleVerified}
+          onRestart={() => setChallenge(null)}
+        />
       </AuthLayout>
     );
   }
 
   return (
-    <AuthLayout background="photo">
-      <Title level={3} className="!mb-1 !text-white !tracking-tight">
-        Welcome back
-      </Title>
-      <Text className="!text-white/60">Sign in to your account to continue</Text>
+    <AuthLayout>
+      <h1 className={AUTH_TITLE_CLASS}>Welcome back</h1>
+      <p className={AUTH_SUBTITLE_CLASS}>Sign in to your account to continue</p>
 
       {errorMessage && (
         <Alert type="error" message={errorMessage} showIcon className="!mt-6" data-testid="login-error" />
       )}
 
-      <Form layout="vertical" onFinish={handleSubmit} disabled={isSubmitting} className="!mt-6">
+      {/*
+        `disabled={isSubmitting}` stays. It is the double-submit guard, and it
+        is also what makes the button genuinely disabled during a request —
+        see the `auth-submit-button` note in index.css (§7.59).
+
+        `requiredMark={false}` drops AntD's red asterisks only; the `required`
+        rules below still validate.
+      */}
+      <Form
+        layout="vertical"
+        onFinish={handleSubmit}
+        disabled={isSubmitting}
+        requiredMark={false}
+        className="!mt-7"
+      >
         <Form.Item
-          label={<span className="!text-white/85">Email</span>}
+          label={<span className={AUTH_LABEL_CLASS}>Email</span>}
           name="email"
           rules={[{ required: true, message: "Email is required" }]}
         >
-          <Input
-            type="email"
-            autoComplete="email"
-            size="large"
-            style={FROSTED_INPUT_STYLE}
-            className="auth-frosted-input"
-          />
+          <Input type="email" autoComplete="email" size="large" placeholder="you@example.com" />
         </Form.Item>
 
         <Form.Item
-          label={<span className="!text-white/85">Password</span>}
+          label={<span className={AUTH_LABEL_CLASS}>Password</span>}
           name="password"
           rules={[{ required: true, message: "Password is required" }]}
         >
-          <Input.Password
-            autoComplete="current-password"
-            size="large"
-            style={FROSTED_INPUT_STYLE}
-            className="auth-frosted-input"
-          />
+          <Input.Password autoComplete="current-password" size="large" placeholder="••••••••" />
         </Form.Item>
 
-        <div className="!-mt-2 !mb-4 flex justify-end">
-          <Link to={ROUTE_PATHS.FORGOT_PASSWORD} className="!text-sm !text-white/70 hover:!text-white">
-            Forgot password?
-          </Link>
-        </div>
-
         <Form.Item className="!mb-0">
-          {/*
-            `auth-submit-button` (index.css) keeps this legible while the login
-            request is in flight. The Form's `disabled={isSubmitting}` above
-            makes this button genuinely disabled, and AntD's disabled tokens
-            composite into the frosted card until it is invisible. The disabled
-            state itself is kept — it is the double-submit guard.
-          */}
           <Button
             type="primary"
             htmlType="submit"
@@ -132,6 +124,13 @@ function LoginPage() {
           </Button>
         </Form.Item>
       </Form>
+
+      {/* Below the button, not floating above the field it belongs to. */}
+      <div className="mt-5 text-center">
+        <Link to={ROUTE_PATHS.FORGOT_PASSWORD} className={AUTH_LINK_CLASS}>
+          Forgot password?
+        </Link>
+      </div>
     </AuthLayout>
   );
 }
