@@ -18,9 +18,20 @@ vi.mock("../../location/hooks/useLocationHistory", () => ({
 vi.mock("react-leaflet", () => ({
   MapContainer: ({ children }) => <div data-testid="rl-map">{children}</div>,
   TileLayer: () => null,
-  Marker: () => <div data-testid="rl-marker" />,
+  Marker: ({ children }) => <div data-testid="rl-marker">{children}</div>,
   Polyline: () => <div data-testid="rl-polyline" />,
-  useMap: () => ({ fitBounds: vi.fn() }),
+  // Needed since §7.66: this record now yields check-in/check-out markers, so
+  // a Marker (and therefore its Popup) actually renders here for the first
+  // time. Previously nothing produced a marker in this test.
+  Popup: ({ children }) => <div data-testid="rl-popup">{children}</div>,
+  // `LeafletMapView` now also re-measures the container (§7.66,
+  // `KeepMapSized`), so the stub map needs those two methods as well —
+  // without them the component throws on mount.
+  useMap: () => ({
+    fitBounds: vi.fn(),
+    invalidateSize: vi.fn(),
+    getContainer: () => document.createElement("div"),
+  }),
 }));
 
 const useLocationHistory = (await import("../../location/hooks/useLocationHistory")).default;

@@ -26,7 +26,14 @@ vi.mock("react-leaflet", () => ({
     return <div data-testid="rl-polyline" />;
   },
   Popup: ({ children }) => children,
-  useMap: () => ({ fitBounds: vi.fn() }),
+  // `LeafletMapView` now also re-measures the container (§7.66,
+  // `KeepMapSized`), so the stub map needs those two methods as well —
+  // without them the component throws on mount.
+  useMap: () => ({
+    fitBounds: vi.fn(),
+    invalidateSize: vi.fn(),
+    getContainer: () => document.createElement("div"),
+  }),
 }));
 
 vi.mock("../hooks/useLocationHistory", () => ({

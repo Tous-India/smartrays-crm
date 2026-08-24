@@ -60,7 +60,14 @@ function HistoryMapView({ initialEmployeeId, initialDate, showControls = true, d
           message="Could not load this employee's location history"
           description={error.response?.status === 404 ? "That employee isn't visible to you." : "Please try again."}
         />
-      ) : !isLoading && pings.length === 0 ? (
+      ) : !isLoading && pings.length === 0 && extraMarkers.length === 0 ? (
+        /*
+         * Only short-circuit when there is genuinely NOTHING to plot. A caller
+         * can supply markers that do not come from the pings at all — the
+         * Attendance modal passes the shift's check-in/check-out positions
+         * (§7.66) — and a day with those but no trail is exactly the case
+         * worth showing a map for, not an empty state.
+         */
         <Empty description="No location pings recorded for this day" />
       ) : (
         <LeafletMapView path={path} markers={extraMarkers} />

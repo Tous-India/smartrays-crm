@@ -98,6 +98,32 @@ const SHAPES = {
     iconSize: [22, 22],
     iconAnchor: [11, 11],
   }),
+  // The two shift endpoints (§7.66). Both are FLAGS, so they read as a pair —
+  // "this shift started here, ended there" — while every ping shape stays a
+  // dot/teardrop/diamond. They differ from each other by which way the pennant
+  // points: in-flag points right (arriving), out-flag points left (leaving), so
+  // they are still distinguishable in greyscale or to anyone who cannot
+  // separate the two hues.
+  checkin: (hex) => ({
+    className: "smartrays-leaflet-checkin",
+    html: `<svg width="26" height="32" viewBox="0 0 26 32" xmlns="http://www.w3.org/2000/svg">
+      <path d="M5 31V1" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+      <path d="M5 31V1" stroke="${hex}" stroke-width="2.5" stroke-linecap="round"/>
+      <path d="M6.5 3h15l-4 5 4 5h-15z" fill="${hex}" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>
+    </svg>`,
+    iconSize: [26, 32],
+    iconAnchor: [5, 31],
+  }),
+  checkout: (hex) => ({
+    className: "smartrays-leaflet-checkout",
+    html: `<svg width="26" height="32" viewBox="0 0 26 32" xmlns="http://www.w3.org/2000/svg">
+      <path d="M21 31V1" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+      <path d="M21 31V1" stroke="${hex}" stroke-width="2.5" stroke-linecap="round"/>
+      <path d="M19.5 3h-15l4 5-4 5h15z" fill="${hex}" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>
+    </svg>`,
+    iconSize: [26, 32],
+    iconAnchor: [21, 31],
+  }),
 };
 
 /** Hands the coordinates to Google when someone wants to inspect the real place. */
@@ -130,6 +156,39 @@ function FitBounds({ points }) {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [map, JSON.stringify(points)]);
+
+  return null;
+}
+
+/**
+ * Keeps Leaflet's cached container size in step with the real element.
+ *
+ * Leaflet measures its container ONCE at init and never re-measures on its
+ * own. Inside an AntD `Modal` the map is created while the dialog is still
+ * animating open, so that measurement can land on a box far smaller than the
+ * final one — and the map then builds a tile grid for the wrong size. The
+ * visible symptom is a single tile in the corner and grey everywhere else,
+ * with the markers and polyline still drawing correctly because those are
+ * positioned from coordinates rather than from the tile grid.
+ *
+ * `invalidateSize()` on mount handles the modal-animation case; the
+ * `ResizeObserver` handles every later one — a tab becoming visible, the
+ * window resizing, the modal being reflowed — without needing each caller to
+ * know it must ask.
+ */
+function KeepMapSized() {
+  const map = useMap();
+
+  useEffect(() => {
+    const container = map.getContainer();
+
+    map.invalidateSize();
+
+    const observer = new ResizeObserver(() => map.invalidateSize());
+    observer.observe(container);
+
+    return () => observer.disconnect();
+  }, [map]);
 
   return null;
 }
@@ -197,6 +256,11 @@ function LeafletMapView({ markers = [], path = [], paths = [], height = 480 }) {
             <Popup>
               <div className="text-xs">
                 {marker.label && <div className="mb-1 font-medium">{marker.label}</div>}
+                {/* Optional second line — used by the shift endpoints to carry
+                    the timestamp, and any geofence note, without stuffing it
+                    into the label. */}
+                {marker.detail && <div className="mb-1 text-gray-600">{marker.detail}</div>}
+                {marker.note && <div className="mb-1 font-medium text-amber-600">{marker.note}</div>}
                 <div className="mb-1 text-gray-500">
                   {Number(marker.lat).toFixed(5)}, {Number(marker.lng).toFixed(5)}
                 </div>
@@ -222,6 +286,9 @@ function LeafletMapView({ markers = [], path = [], paths = [], height = 480 }) {
             pathOptions={{ color: entry.color || "#163b78", weight: 3 }}
           />
         ))}
+        {/* Before FitBounds: fitting to bounds against a stale container size
+            would compute the wrong zoom as well as the wrong tile grid. */}
+        <KeepMapSized />
         <FitBounds points={allPoints} />
       </MapContainer>
     </div>
