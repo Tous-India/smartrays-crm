@@ -22,11 +22,13 @@ export const live = asyncWrapper(async (req, res) => {
 });
 
 export const history = asyncWrapper(async (req, res) => {
-  const { employeeId, date } = req.query;
+  const { employeeId, employeeIds, date, from, to } = req.query;
 
-  const pings = await getLocationHistory({ employeeId, date }, req.user);
+  // `date` is the original single-day parameter and still works; `from`/`to`
+  // and `employeeIds` are the range/multi-employee additions (§7.67).
+  const history = await getLocationHistory({ employeeId, employeeIds, date, from, to }, req.user);
 
-  res.status(200).json(new ApiResponse(200, pings, "Location history fetched successfully"));
+  res.status(200).json(new ApiResponse(200, history, "Location history fetched successfully"));
 });
 
 export const config = asyncWrapper(async (req, res) => {

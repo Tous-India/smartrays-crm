@@ -5,9 +5,11 @@ import TeamAttendanceView from "../modules/attendance/components/TeamAttendanceV
 import AdminAttendanceView from "../modules/attendance/components/AdminAttendanceView";
 import LeaveSection from "../modules/leave/components/LeaveSection";
 import LiveTrackingMap from "../modules/location/components/LiveTrackingMap";
+import LocationHistoryMap from "../modules/location/components/LocationHistoryMap";
 import MonthlyReportSection from "../modules/attendance/components/MonthlyReportSection";
 import useSessionStore from "../store/sessionStore";
 import { can } from "../utils/permission.utils";
+import canViewLocationMaps from "../modules/location/locationAccess";
 
 /**
  * `/attendance` — the single home for attendance AND leave (§B, 2026-08-05).
@@ -38,10 +40,10 @@ function AttendancePage() {
   const user = useSessionStore((state) => state.user);
   const isAdmin = user?.role === "admin";
   const canViewTeamAttendance = can(user, "attendance", "view_team");
-  // §B6 — the live map shows other people's positions, so it's gated on the
-  // same `attendance.view_location` grant that already governs seeing
-  // coordinates at all. Admin passes via can()'s own admin bypass.
-  const canViewLiveMap = can(user, "attendance", "view_location");
+  // §7.67 — ONE gate, matching the API. This was `attendance.view_location`,
+  // which disagreed with the `location.*` gate the routes actually enforce and
+  // hid the tab from default managers the API would have served.
+  const canViewLiveMap = canViewLocationMaps(user);
   // §7.47 — mirrors the route's own gate exactly. Hiding the tab is the
   // courtesy; the 403 on GET /payroll/monthly-report is the guarantee.
   const canViewMonthlyReport = can(user, "payroll", "run");
@@ -60,7 +62,13 @@ function AttendancePage() {
         // filter, stat cards and history table; `hidePendingCards` stops the
         // cards appearing in both places.
         { key: "leave-requests", label: "Leave Requests", children: <LeaveSection hidePendingCards /> },
-        ...(canViewLiveMap ? [{ key: "live-map", label: "Live Map", children: <LiveTrackingMap /> }] : []),
+        ...(canViewLiveMap
+          ? [
+              { key: "live-map", label: "Live Map", children: <LiveTrackingMap /> },
+              // §7.67 — same gate as Live Map, matching the API.
+              { key: "location-history", label: "Location History", children: <LocationHistoryMap /> },
+            ]
+          : []),
         // §7.47 (2026-08-11) — the monthly leave-and-attendance report, last
         // because it summarises what the earlier tabs record. Gated on
         // `payroll.run`, the existing "see everyone's payroll" grant: this
@@ -78,7 +86,13 @@ function AttendancePage() {
         { key: "my-attendance", label: "My Attendance", children: <PersonalAttendanceView /> },
         { key: "team-attendance", label: "Team Attendance", children: <TeamAttendanceView /> },
         { key: "leave", label: "Leave", children: <LeaveSection view="all" /> },
-        ...(canViewLiveMap ? [{ key: "live-map", label: "Live Map", children: <LiveTrackingMap /> }] : []),
+        ...(canViewLiveMap
+          ? [
+              { key: "live-map", label: "Live Map", children: <LiveTrackingMap /> },
+              // §7.67 — same gate as Live Map, matching the API.
+              { key: "location-history", label: "Location History", children: <LocationHistoryMap /> },
+            ]
+          : []),
       ];
     }
 

@@ -92,32 +92,207 @@ async function buildLiveEntry(attendance) {
 }
 
 /**
- * One employee's full ping trail for a single calendar day, ordered oldest to
- * newest — shaped for a map polyline. employeeId defaults to the requester;
- * date defaults to today.
+ * The history window is capped at 45 DAYS, server-side, regardless of what the
+ * client asks for (§7.67).
+ *
+ * `LocationPing` already TTL-purges at 45 days, so a trail older than that does
+ * not exist. `Attendance.checkIn/checkOut.coords` have NO TTL and persist
+ * forever — so without this cap the two halves of the same view would disagree
+ * about how far back history goes, and an endpoint from a year ago would appear
+ * with no possible trail beside it. One rule, applied to both.
  */
-export async function getLocationHistory({ employeeId, date }, requestingUser) {
-  const targetEmployeeId = employeeId || requestingUser._id;
+export const HISTORY_MAX_DAYS = 45;
 
-  await ensureEmployeeIsVisible(targetEmployeeId, requestingUser);
+function resolveRange({ from, to }) {
+  const now = new Date();
+  const earliest = new Date(now.getTime() - HISTORY_MAX_DAYS * 24 * 60 * 60 * 1000);
 
-  const { startOfDay, startOfNextDay } = resolveDayRange(date);
+  const requestedFrom = from ? new Date(from) : earliest;
+  const requestedTo = to ? new Date(to) : now;
 
-  const pings = await LocationPing.find({
-    employeeId: targetEmployeeId,
-    capturedAt: { $gte: startOfDay, $lt: startOfNextDay },
-  }).sort({ capturedAt: 1 });
+  // The cap is a clamp, not a rejection: asking for a year returns 45 days
+  // rather than a 400, and the response says so.
+  const start = requestedFrom < earliest ? earliest : requestedFrom;
+  // Only the FLOOR is clamped. Clamping the end to `now` would silently drop
+  // the rest of today from a single-day query — asking for "25 August" must
+  // mean the whole of it, not "up to this moment".
+  const end = requestedTo;
 
-  return pings;
+  return {
+    start,
+    end,
+    capped: requestedFrom < earliest,
+  };
 }
 
-function resolveDayRange(dateInput) {
-  const targetDate = dateInput ? new Date(dateInput) : new Date();
-  const startOfDay = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
-  const startOfNextDay = new Date(startOfDay);
-  startOfNextDay.setDate(startOfNextDay.getDate() + 1);
+/**
+ * Location history for one or many employees over a date range (§7.67).
+ *
+ * Returns BOTH halves of the picture in one response, because they come from
+ * two collections but are one view: `endpoints` (check-in/check-out positions,
+ * from Attendance) and `pings` (the trail, from LocationPing). A parallel
+ * endpoint for the Attendance half would have needed its own scoping, and the
+ * two would have drifted.
+ *
+ * TRAILS ARE REFUSED FOR MULTI-EMPLOYEE REQUESTS, server-side. At the observed
+ * 2-minute cadence one employee generates ~240 pings per 8-hour day, so twenty
+ * employees over 45 days is ~216,000 documents — tens of megabytes, and
+ * unusable on a map. Endpoints for the same span are ~1,800 markers, which
+ * clusters fine. The client cannot opt out of this.
+ *
+ * Photos ride along on endpoints only when the viewer holds
+ * `attendance.view_photos`, matching what the Attendance module itself would
+ * release for the same record.
+ */
+export async function getLocationHistory({ employeeId, employeeIds, date, from, to }, requestingUser) {
+  // `date` (single day) is the original parameter and still works — the
+  // Attendance location modal passes it.
+  const singleDay = date ? { from: startOfDay(date), to: endOfDay(date) } : null;
+  const { start, end, capped } = resolveRange(singleDay || { from, to });
 
-  return { startOfDay, startOfNextDay };
+  const requested = normaliseRequestedEmployees({ employeeId, employeeIds });
+  const scopedIds = await resolveRequestedScope(requested, requestingUser);
+  const isSingleEmployee = scopedIds.length === 1;
+
+  const [endpoints, pings] = await Promise.all([
+    findEndpoints(scopedIds, start, end, requestingUser),
+    isSingleEmployee ? findPings(scopedIds, start, end) : Promise.resolve([]),
+  ]);
+
+  return {
+    from: start.toISOString(),
+    to: end.toISOString(),
+    maxDays: HISTORY_MAX_DAYS,
+    cappedToMaxDays: capped,
+    // Stated rather than implied: a caller asking for everyone gets no trails,
+    // and needs to know that is a rule and not an empty result.
+    trailsIncluded: isSingleEmployee,
+    employeeIds: scopedIds.map(String),
+    endpoints,
+    pings,
+  };
+}
+
+function startOfDay(value) {
+  const d = new Date(value);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function endOfDay(value) {
+  const d = startOfDay(value);
+  d.setDate(d.getDate() + 1);
+  return d;
+}
+
+/** `employeeIds=a,b` | `employeeIds=all` | legacy `employeeId=a` | nothing. */
+function normaliseRequestedEmployees({ employeeId, employeeIds }) {
+  if (employeeIds === "all") {
+    return "all";
+  }
+
+  if (typeof employeeIds === "string" && employeeIds.trim()) {
+    return employeeIds.split(",").map((one) => one.trim()).filter(Boolean);
+  }
+
+  if (Array.isArray(employeeIds) && employeeIds.length) {
+    return employeeIds.map(String);
+  }
+
+  return employeeId ? [String(employeeId)] : null;
+}
+
+/**
+ * Intersects what was ASKED for with what the requester may SEE, reusing
+ * `resolveVisibleEmployeeIds` rather than introducing a second scoping path.
+ *
+ * A named employee outside scope still 404s, matching the precedent this
+ * module already set — a user who cannot see someone's data also cannot learn
+ * whether that person exists.
+ */
+async function resolveRequestedScope(requested, requestingUser) {
+  const visible = await resolveVisibleEmployeeIds(requestingUser);
+
+  if (requested === "all" || requested === null) {
+    if (visible === null) {
+      const everyone = await User.find({}).select("_id");
+      return everyone.map((one) => String(one._id));
+    }
+
+    // No explicit ask: default to the requester alone, as before.
+    return requested === "all" ? visible : [String(requestingUser._id)];
+  }
+
+  if (visible !== null) {
+    const outOfScope = requested.find((one) => !visible.includes(String(one)));
+
+    if (outOfScope) {
+      throw new ApiError(404, "Employee not found");
+    }
+  }
+
+  return requested.map(String);
+}
+
+async function findPings(employeeIds, start, end) {
+  return LocationPing.find({
+    employeeId: { $in: employeeIds },
+    capturedAt: { $gte: start, $lt: end },
+  })
+    .sort({ capturedAt: 1 })
+    .select("employeeId attendanceId coords capturedAt");
+}
+
+/**
+ * Check-in/check-out positions inside the window, flattened to one entry per
+ * plotted point so the client never has to know the Attendance shape.
+ */
+async function findEndpoints(employeeIds, start, end, requestingUser) {
+  const canSeePhotos = can(requestingUser, "attendance", "view_photos");
+
+  const records = await Attendance.find({
+    employeeId: { $in: employeeIds },
+    date: { $gte: start, $lt: end },
+  }).select("employeeId date checkIn checkOut geofenceViolations");
+
+  const points = [];
+
+  records.forEach((record) => {
+    [
+      ["checkIn", record.checkIn],
+      ["checkOut", record.checkOut],
+    ].forEach(([kind, event]) => {
+      if (!event?.coords || typeof event.coords.lat !== "number") {
+        return;
+      }
+
+      const breach = (record.geofenceViolations || []).find((violation) => {
+        if (!event.time) {
+          return false;
+        }
+
+        const at = new Date(event.time).getTime();
+        const startsAt = new Date(violation.start).getTime();
+        const endsAt = violation.end ? new Date(violation.end).getTime() : Infinity;
+
+        return at >= startsAt && at <= endsAt;
+      });
+
+      points.push({
+        attendanceId: record._id,
+        employeeId: record.employeeId,
+        date: record.date,
+        kind,
+        time: event.time,
+        coords: { lat: event.coords.lat, lng: event.coords.lng },
+        // Same rule the Attendance module applies to its own responses — the
+        // photo is released only to a viewer holding `attendance.view_photos`.
+        photoUrl: canSeePhotos ? event.photoUrl || null : null,
+        geofenceBreachMeters: breach ? Math.round(breach.maxDistanceMeters) : null,
+      });
+    });
+  });
+
+  return points;
 }
 
 /**
@@ -157,25 +332,6 @@ function buildEmployeeFilter(visibleEmployeeIds) {
   }
 
   return { employeeId: { $in: visibleEmployeeIds } };
-}
-
-/**
- * 404 (not 403) for an out-of-scope employeeId — matching the precedent set
- * in the Leads module (§7.1): a user who can't see someone's data also can't
- * tell whether that person's data exists.
- */
-async function ensureEmployeeIsVisible(targetEmployeeId, requestingUser) {
-  const visibleEmployeeIds = await resolveVisibleEmployeeIds(requestingUser);
-
-  if (visibleEmployeeIds === null) {
-    return;
-  }
-
-  const isVisible = visibleEmployeeIds.some((id) => id === String(targetEmployeeId));
-
-  if (!isVisible) {
-    throw new ApiError(404, "Employee not found");
-  }
 }
 
 /**

@@ -27,3 +27,22 @@ export function submitLocationPing({ coords, capturedAt }) {
 export function fetchLocationConfig() {
   return apiClient.get("/location/config");
 }
+
+/**
+ * Ranged, multi-employee history (§7.67) — the SAME endpoint the single-day
+ * call uses, with the range/`employeeIds` parameters it gained rather than a
+ * parallel route.
+ *
+ * `employeeIds: "all"` asks for everyone the viewer may see. The server refuses
+ * trails for anything other than a single employee and says so via
+ * `trailsIncluded`, so the caller never has to guess why `pings` is empty.
+ */
+export function fetchLocationHistoryRange({ employeeIds, from, to }) {
+  return apiClient.get("/location/history", {
+    params: {
+      ...(employeeIds ? { employeeIds } : {}),
+      ...(from ? { from } : {}),
+      ...(to ? { to } : {}),
+    },
+  });
+}

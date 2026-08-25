@@ -414,12 +414,58 @@ describe("GET /location/history", () => {
       capturedAt: noon,
     });
 
+    // Explicit `date` — this test is about DAY scoping. With no parameters the
+    // endpoint now defaults to the whole 45-day window (§7.67), which would
+    // legitimately include yesterday's ping.
+    const today = new Date().toISOString().slice(0, 10);
+    const response = await sales1Agent.get(`/api/v1/location/history?date=${today}`);
+
+    expect(response.status).toBe(200);
+    // §7.67 — the response carries both halves now; the trail is `.pings`.
+    expect(response.body.data.pings).toHaveLength(2);
+    expect(response.body.data.pings[0].coords.lat).toBe(2); // morning, sorted first
+    expect(response.body.data.pings[1].coords.lat).toBe(1); // noon, sorted second
+  });
+
+  it("caps the window at 45 days however far back the client asks (§7.67)", async () => {
+    const response = await sales1Agent.get("/api/v1/location/history?from=2020-01-01");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.cappedToMaxDays).toBe(true);
+    expect(response.body.data.maxDays).toBe(45);
+
+    const from = new Date(response.body.data.from);
+    const ageInDays = (Date.now() - from.getTime()) / 86400000;
+    expect(ageInDays).toBeLessThanOrEqual(45.1);
+  });
+
+  it("REFUSES trails for a multi-employee request, and says so", async () => {
+    // Everyone x 45 days is ~216,000 pings at the observed cadence. The server
+    // decides this, not the client.
+    const response = await managerAgent.get("/api/v1/location/history?employeeIds=all");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.trailsIncluded).toBe(false);
+    expect(response.body.data.pings).toHaveLength(0);
+  });
+
+  it("returns check-in/check-out endpoints alongside the trail", async () => {
+    const withCoords = await Attendance.create({
+      employeeId: sales1._id,
+      date: new Date(),
+      // The model enforces check-out AFTER check-in, so these cannot share an
+      // instant.
+      checkIn: { time: new Date(Date.now() - 3600000), coords: { lat: 11, lng: 22 } },
+      checkOut: { time: new Date(), coords: { lat: 33, lng: 44 } },
+    });
+
     const response = await sales1Agent.get("/api/v1/location/history");
 
     expect(response.status).toBe(200);
-    expect(response.body.data).toHaveLength(2);
-    expect(response.body.data[0].coords.lat).toBe(2); // morning, sorted first
-    expect(response.body.data[1].coords.lat).toBe(1); // noon, sorted second
+    const kinds = response.body.data.endpoints
+      .filter((point) => String(point.attendanceId) === String(withCoords._id))
+      .map((point) => point.kind);
+    expect(kinds).toEqual(["checkIn", "checkOut"]);
   });
 
   it("lets a manager fetch a team member's history by employeeId", async () => {
@@ -434,7 +480,7 @@ describe("GET /location/history", () => {
     const response = await managerAgent.get(`/api/v1/location/history?employeeId=${sales1._id}`);
 
     expect(response.status).toBe(200);
-    expect(response.body.data).toHaveLength(1);
+    expect(response.body.data.pings).toHaveLength(1);
   });
 
   it("returns 404 when a sales_associate requests another sales_associate's history", async () => {

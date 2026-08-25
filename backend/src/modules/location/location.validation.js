@@ -29,11 +29,29 @@ export function validatePingInput(req, res, next) {
  * Validates the query string of GET /location/history before the controller runs.
  * Both employeeId and date are optional (default to self / today in the service).
  */
+/**
+ * `date` (single day, original) OR `from`/`to` (range, §7.67). Both are
+ * optional; the service defaults to the last 45 days and clamps anything wider.
+ *
+ * The 45-day maximum is NOT enforced here as a 400 — the service clamps it and
+ * reports `cappedToMaxDays` instead. Rejecting would make a bookmarked "last
+ * quarter" link fail rather than quietly return what actually exists.
+ */
 export function validateHistoryQuery(req, res, next) {
-  const { date } = req.query;
+  const { date, from, to } = req.query;
 
-  if (date && Number.isNaN(Date.parse(date))) {
-    throw new ApiError(400, "date must be a valid date string");
+  [
+    ["date", date],
+    ["from", from],
+    ["to", to],
+  ].forEach(([name, value]) => {
+    if (value && Number.isNaN(Date.parse(value))) {
+      throw new ApiError(400, `${name} must be a valid date string`);
+    }
+  });
+
+  if (from && to && new Date(from) > new Date(to)) {
+    throw new ApiError(400, "from must not be after to");
   }
 
   next();

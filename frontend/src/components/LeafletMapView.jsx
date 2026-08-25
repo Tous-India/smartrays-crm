@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import MarkerClusterLayer from "./MarkerClusterLayer";
 
 // India centroid — a reasonable default center when there's nothing to plot
 // yet (no live employees checked in, or no history for the selected day).
@@ -40,7 +41,12 @@ const iconCache = new Map();
  * separate "default icon" workaround needed.
  */
 function buildPinIcon(color, shape = "pin") {
-  const hex = MARKER_COLORS[color] || MARKER_COLORS.default;
+  // A named palette entry ("red") OR a raw hex. Employee colours (§7.67) are
+  // derived from an id and therefore cannot be names.
+  const hex =
+    typeof color === "string" && color.startsWith("#")
+      ? color
+      : MARKER_COLORS[color] || MARKER_COLORS.default;
   const key = `${shape}:${hex}`;
 
   if (!iconCache.has(key)) {
@@ -104,6 +110,16 @@ const SHAPES = {
   // points: in-flag points right (arriving), out-flag points left (leaving), so
   // they are still distinguishable in greyscale or to anyone who cannot
   // separate the two hues.
+  // A ping: the smallest possible mark. Deliberately not a pin - a ping is a
+  // breadcrumb, not a place someone chose to be.
+  dot: (hex) => ({
+    className: "smartrays-leaflet-dot",
+    html: `<svg width="10" height="10" viewBox="0 0 10 10" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="5" cy="5" r="3.5" fill="${hex}" stroke="#fff" stroke-width="1.5"/>
+    </svg>`,
+    iconSize: [10, 10],
+    iconAnchor: [5, 5],
+  }),
   checkin: (hex) => ({
     className: "smartrays-leaflet-checkin",
     html: `<svg width="26" height="32" viewBox="0 0 26 32" xmlns="http://www.w3.org/2000/svg">
@@ -231,8 +247,23 @@ function KeepMapSized() {
  * component was preferred over building a second map, which would have meant
  * a second `TileLayer` and a second place for the tile source to drift.
  */
-function LeafletMapView({ markers = [], path = [], paths = [], height = 480 }) {
-  const allPoints = [...markers, ...path, ...paths.flatMap((entry) => entry.points || [])];
+export { buildPinIcon };
+
+function LeafletMapView({
+  markers = [],
+  path = [],
+  paths = [],
+  height = 480,
+  clusteredMarkers = null,
+  renderClusterPopup,
+  onClusterMarkerClick,
+}) {
+  const allPoints = [
+    ...markers,
+    ...path,
+    ...paths.flatMap((entry) => entry.points || []),
+    ...(clusteredMarkers || []),
+  ];
 
   return (
     <div data-testid="leaflet-map-container" style={{ height, width: "100%" }}>
@@ -288,6 +319,17 @@ function LeafletMapView({ markers = [], path = [], paths = [], height = 480 }) {
         ))}
         {/* Before FitBounds: fitting to bounds against a stale container size
             would compute the wrong zoom as well as the wrong tile grid. */}
+        {/* Clustered markers bypass react-leaflet's <Marker> entirely — at
+            ~1,800 endpoints, individual components stutter on pan/zoom and
+            overlapping pins hide one another (§7.67). */}
+        {clusteredMarkers && clusteredMarkers.length > 0 && (
+          <MarkerClusterLayer
+            markers={clusteredMarkers}
+            buildIcon={(marker) => buildPinIcon(marker.color, marker.shape)}
+            renderPopup={renderClusterPopup}
+            onMarkerClick={onClusterMarkerClick}
+          />
+        )}
         <KeepMapSized />
         <FitBounds points={allPoints} />
       </MapContainer>
