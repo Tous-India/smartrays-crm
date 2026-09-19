@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { Alert, Empty, Segmented, Select, Space, Spin, Tag, Typography } from "antd";
+import { Alert, Empty, Segmented, Select, Spin, Tag, Typography } from "antd";
 import LeafletMapView from "../../../components/LeafletMapView";
 import useLocationHistoryRange from "../hooks/useLocationHistoryRange";
 import useUserDirectory from "../../../hooks/useUserDirectory";
@@ -188,7 +188,10 @@ function LocationHistoryMap() {
 
   return (
     <div className="flex flex-col gap-4">
-      <Space wrap>
+      {/* A plain flex-wrap row, not an AntD `Space`: a Space item is sized to
+          its content, so the Segmented's scroll wrapper could never shrink
+          inside one (measured 356px in a 310px column at 390). */}
+      <div className="flex flex-wrap items-center gap-2">
         <Select
           value={selectedEmployee}
           options={employeeOptions}
@@ -198,18 +201,20 @@ function LocationHistoryMap() {
           onChange={setSelectedEmployee}
           aria-label="Employee"
         />
-        <Segmented
-          value={rangeKey}
-          onChange={setRangeKey}
-          options={Object.entries(RANGES).map(([value, config]) => ({ value, label: config.label }))}
-        />
+        <div className="app-segmented-scroll">
+          <Segmented
+            value={rangeKey}
+            onChange={setRangeKey}
+            options={Object.entries(RANGES).map(([value, config]) => ({ value, label: config.label }))}
+          />
+        </div>
         {data?.cappedToMaxDays && <Tag color="warning">Capped to 45 days</Tag>}
         {isEveryone && (
           <Text type="secondary" className="text-xs">
             Endpoints only — trails are shown for one employee at a time.
           </Text>
         )}
-      </Space>
+      </div>
 
       {error ? (
         <Alert

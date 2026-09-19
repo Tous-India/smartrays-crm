@@ -606,10 +606,17 @@ function LeaveSection({ view = "all", pendingOnly = false, hidePendingCards = fa
           into the filter row instead, so filters and actions share one row. */}
       {!isAdmin && (
       <div className="flex flex-wrap items-center justify-between gap-3">
+        {/* Plain flex, not `Space`: a Space item is content-sized, which would
+            stop the Segmented's scroll wrapper shrinking at narrow widths. */}
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          {showScopeTabs && (
+            <div className="app-segmented-scroll">
+              <Segmented options={scopeOptions} value={scope} onChange={setScope} />
+            </div>
+          )}
+        </div>
+        {/* `wrap`: at 390 this pair pushed the page +99px sideways. */}
         <Space wrap>
-          {showScopeTabs && <Segmented options={scopeOptions} value={scope} onChange={setScope} />}
-        </Space>
-        <Space>
           <ReportDownloadButton module="leave" filters={{ scope: effectiveScope }} filenamePrefix="leave" />
           {/* Admin exemption (§7.5c, 2026-07-31): admin accounts don't
               request leave for themselves — the backend rejects it outright,

@@ -50,7 +50,8 @@ function CustomerHeaderSection({ customer, onEdit, onDelete, onChanged }) {
         )}
       </div>
 
-      <Space>
+      {/* `wrap`: Edit / Deactivate / Delete pushed the page +48px at 390. */}
+      <Space wrap>
         <PermissionGate module="customers" action="edit">
           <Button icon={<EditOutlined />} onClick={onEdit}>
             Edit

@@ -852,3 +852,23 @@ background-color: white !important;
 opacity: 1 !important;
 color:black !important;
 }
+/*
+ * Segmented controls are intrinsic-width (2026-09-19 responsive pass) — an
+ * AntD `Segmented` never shrinks below the sum of its option labels, so a
+ * five-option date filter is ~410px wherever it sits. At 390 that either
+ * pushes the page sideways (Payments, +217px, with Record Payment off-screen)
+ * or gets clipped by its card (Attendance → Report). Wrapping the control in
+ * this makes IT scroll inside its own box while the row around it wraps
+ * normally; `min-width: 0` is what lets a flex child shrink below its content
+ * at all. One class, every Segmented site, so the behaviour is identical.
+ */
+.app-segmented-scroll {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.app-segmented-scroll > .ant-segmented {
+  flex: none;
+}

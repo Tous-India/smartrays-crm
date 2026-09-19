@@ -101,12 +101,17 @@ function PaymentsListPage() {
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
-        <Segmented
-          value={activeFilter}
-          onChange={handleFilterChange}
-          options={PAYMENT_DATE_FILTER_OPTIONS.map((option) => ({ value: option.key, label: option.label }))}
-        />
+      {/* Wraps below the filter's width; the Segmented scrolls in its own box
+          (index.css#app-segmented-scroll). At 390 this row used to push the page
+          sideways with Record Payment off-screen. */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="app-segmented-scroll">
+          <Segmented
+            value={activeFilter}
+            onChange={handleFilterChange}
+            options={PAYMENT_DATE_FILTER_OPTIONS.map((option) => ({ value: option.key, label: option.label }))}
+          />
+        </div>
 
         <PermissionGate module="payments" action="create">
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsModalOpen(true)}>

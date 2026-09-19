@@ -358,12 +358,14 @@ function MonthlyReportSection() {
             {/* `value` is always passed — Segmented preselects its first option
                 when it is undefined, which would show "This month" selected
                 while a different month was actually loaded. */}
-            <Segmented
-              value={filter}
-              onChange={setFilter}
-              options={MONTH_FILTERS}
-              aria-label="Report month"
-            />
+            <div className="app-segmented-scroll">
+              <Segmented
+                value={filter}
+                onChange={setFilter}
+                options={MONTH_FILTERS}
+                aria-label="Report month"
+              />
+            </div>
             {filter === "custom" && (
               <DatePicker
                 picker="month"

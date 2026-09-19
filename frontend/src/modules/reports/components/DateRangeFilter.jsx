@@ -25,11 +25,13 @@ function DateRangeFilter({ activeFilter, onFilterChange, customRange, onCustomRa
 
   return (
     <div className="flex flex-wrap items-center gap-3">
-      <Segmented
-        value={activeFilter}
-        onChange={onFilterChange}
-        options={ANALYTICS_DATE_FILTER_OPTIONS.map((option) => ({ value: option.key, label: option.label }))}
-      />
+      <div className="app-segmented-scroll">
+        <Segmented
+          value={activeFilter}
+          onChange={onFilterChange}
+          options={ANALYTICS_DATE_FILTER_OPTIONS.map((option) => ({ value: option.key, label: option.label }))}
+        />
+      </div>
       {activeFilter === "custom" && <RangePicker value={customValue} onChange={handleCustomChange} allowClear />}
     </div>
   );
