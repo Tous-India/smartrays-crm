@@ -64,7 +64,9 @@ function TeamAttendanceView() {
       <AttendanceSummaryStats records={filteredRecords} month={month} />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Space>
+        {/* `wrap`: the three pickers are 439px together — the outer row wraps
+            but this Space did not, and pushed the page +90px at 390. */}
+        <Space wrap>
           <DatePicker picker="month" value={month} allowClear={false} onChange={(value) => setMonth(value || dayjs())} />
           <Select
             aria-label="Employee"

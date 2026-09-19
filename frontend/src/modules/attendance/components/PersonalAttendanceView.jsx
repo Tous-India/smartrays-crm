@@ -1,6 +1,6 @@
 import { useState } from "react";
 import dayjs from "dayjs";
-import { DatePicker, Space } from "antd";
+import { DatePicker } from "antd";
 import CheckInOutWidget from "./CheckInOutWidget";
 import AttendanceRecordsSection from "./AttendanceRecordsSection";
 import AttendanceSummaryStats from "./AttendanceSummaryStats";
@@ -43,11 +43,13 @@ function PersonalAttendanceView() {
           in the first place, not just a rejected attempt. */}
       {!isAdmin && <CheckInOutWidget />}
 
-      <div className="flex items-center justify-between">
+      {/* `flex-wrap`: at 390 this row needed 363px of 310 — the month picker
+          was squeezed to an icon stub and the export controls ran off the
+          page. Same fix as the other control rows (TeamAttendanceView,
+          PaymentsListPage): let it wrap. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <DatePicker picker="month" value={month} allowClear={false} onChange={(value) => setMonth(value || dayjs())} />
-        <Space>
-          <ReportDownloadButton module="attendance" filters={{ from, to }} filenamePrefix="my-attendance" />
-        </Space>
+        <ReportDownloadButton module="attendance" filters={{ from, to }} filenamePrefix="my-attendance" />
       </div>
 
       <AttendanceRecordsSection

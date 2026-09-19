@@ -41,7 +41,10 @@ function ReportDownloadButton({ module, filters, filenamePrefix }) {
   }
 
   return (
-    <Space>
+    // `wrap`: the pair is 320px wide, 10px more than a 390px phone's content
+    // column, so the button drops under the picker there instead of pushing
+    // the page sideways (the same `Space wrap` every host row already uses).
+    <Space wrap>
       <Select value={format} options={FORMAT_OPTIONS} style={{ width: 150 }} onChange={setFormat} />
       <Button icon={<DownloadOutlined />} loading={isDownloading} onClick={handleDownload}>
         Download Report
