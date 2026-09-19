@@ -98,11 +98,13 @@ function UserManagementPage() {
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
+      {/* Wraps below the heading's width (2026-09-19) — beside two controls
+          in a non-wrapping row the title broke across lines at 390. */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <Title level={4} className="!mb-0">
           User Management
         </Title>
-        <Space>
+        <Space wrap>
           <Link to={ROUTE_PATHS.SETTINGS_PERMISSIONS}>Permissions</Link>
           {isAdmin && (
             <Button type="primary" onClick={actions.openCreateForm}>

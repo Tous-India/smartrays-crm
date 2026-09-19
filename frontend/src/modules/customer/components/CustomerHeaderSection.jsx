@@ -27,9 +27,12 @@ function CustomerHeaderSection({ customer, onEdit, onDelete, onChanged }) {
   const ownerName = users.find((user) => user._id === customer.ownerId)?.name;
 
   return (
-    <div className="mb-6 flex items-start justify-between">
-      <div>
-        <div className="flex items-center gap-3">
+    <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+      {/* Wraps below `sm` so the name and subtitle sit above the actions, full
+          width — beside three buttons in a non-wrapping row the heading
+          squeezed to a few characters a line at 390 (2026-09-19). */}
+      <div className="w-full min-w-0 sm:w-auto sm:flex-1">
+        <div className="flex flex-wrap items-center gap-3">
           <Title level={3} className="!mb-0">
             {customer.companyName}
           </Title>

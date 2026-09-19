@@ -229,7 +229,13 @@ function PayrollYearView() {
     <div className="flex flex-col gap-4">
       <Card size="small">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-          <div className="min-w-0 flex-1">
+          {/* `w-full` below `sm`, `flex-1` above (2026-09-19). `min-w-0 flex-1`
+              alone collapsed this block to a character a line at 390: flex-1
+              is a flex-basis of 0, min-w-0 drops the content floor, so the
+              block claimed nothing when the row decided whether to wrap — the
+              Select and button kept their widths and the text got ~48px. A
+              full-width basis makes it take its own row instead. */}
+          <div className="w-full min-w-0 sm:w-auto sm:flex-1">
             <div className="font-semibold">Pay runs</div>
             <Text type="secondary" className="text-xs">
               One row per month. A month with no run is still listed, so a missed period is visible.

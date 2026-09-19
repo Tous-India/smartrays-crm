@@ -31,7 +31,10 @@ function CustomerSiteDetailsCard({ customer, onEdit }) {
         </PermissionGate>
       }
     >
-      <Descriptions bordered column={2} size="small">
+      {/* One column below `sm` (2026-09-19): two columns of bordered
+          label/value cells with labels like "Panel Warranty Expiry" cannot
+          shrink, and at 390 the grid ran 16px past the viewport. */}
+      <Descriptions bordered column={{ xs: 1, sm: 2 }} size="small">
         <Descriptions.Item label="Client Type">
           {customer.clientType ? CLIENT_TYPE_LABELS[customer.clientType] : "—"}
         </Descriptions.Item>

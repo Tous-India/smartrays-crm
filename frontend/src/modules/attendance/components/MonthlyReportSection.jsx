@@ -340,8 +340,11 @@ function MonthlyReportSection() {
           {/* `flex-1 min-w-0` lets the (now longer) subheading wrap INSIDE this
               block rather than widening it until the filter control is pushed
               onto a row of its own. min-w-0 is what actually permits a flex
-              child to shrink below its content width. */}
-          <div className="min-w-0 flex-1">
+              child to shrink below its content width — and, below `sm`, is
+              also what would let it collapse to a character a line beside a
+              fixed-width sibling (PayrollYearView, 2026-09-19), so there the
+              block takes the full row instead. */}
+          <div className="w-full min-w-0 sm:w-auto sm:flex-1">
             <div className="font-semibold">Monthly Report</div>
             <Text type="secondary" className="text-xs">
               {month.format("MMMM YYYY")} · <strong>Absent counts leave days</strong>, not

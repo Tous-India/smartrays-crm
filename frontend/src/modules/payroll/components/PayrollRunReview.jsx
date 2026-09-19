@@ -358,7 +358,8 @@ function PayrollRunReview({ month: monthProp, year: yearProp, onChanged }) {
     <div className="flex flex-col gap-4">
       <Card size="small">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
-          <div className="min-w-0 flex-1">
+          {/* Same shape as PayrollYearView's header — see the comment there. */}
+          <div className="w-full min-w-0 sm:w-auto sm:flex-1">
             <div className="flex items-center gap-2">
               <span className="font-semibold">Pay run</span>
               {tone && <Tag color={tone.color}>{status}</Tag>}

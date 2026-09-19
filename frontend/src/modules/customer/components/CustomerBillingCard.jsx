@@ -22,7 +22,8 @@ function CustomerBillingCard({ customer, onEdit }) {
         </PermissionGate>
       }
     >
-      <Descriptions bordered column={2} size="small">
+      {/* Same responsive grid as the Site & Installation card (2026-09-19). */}
+      <Descriptions bordered column={{ xs: 1, sm: 2 }} size="small">
         <Descriptions.Item label="Billing Type">
           {customer.billingType ? BILLING_TYPE_LABELS[customer.billingType] : "—"}
         </Descriptions.Item>
