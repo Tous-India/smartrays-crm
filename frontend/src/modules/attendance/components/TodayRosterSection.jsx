@@ -142,7 +142,10 @@ function TodayRosterSection({ employees, recordsByEmployeeId, isSaving, onSetSta
     {
       title: "Today",
       key: "state",
-      width: 300,
+      // No fixed width (was 300, 2026-09-19): at 390 it took most of the row
+      // and the Name column collapsed to a character a line. Auto layout now
+      // shares the width by content — the control's own min width comes from
+      // its unbreakable labels (index.css#roster-state-control).
       render: (_, row) => {
         const { record } = row;
 
@@ -187,7 +190,7 @@ function TodayRosterSection({ employees, recordsByEmployeeId, isSaving, onSetSta
         const locked = isMarked && !isUnlocked;
 
         return (
-          <span className="flex items-center gap-2" data-testid={`roster-state-${row.employeeId}`}>
+          <span className="flex flex-wrap items-center gap-2" data-testid={`roster-state-${row.employeeId}`}>
             <Tooltip title={locked ? "Already marked — use Edit to change it." : ""}>
               <Radio.Group
                 size="small"

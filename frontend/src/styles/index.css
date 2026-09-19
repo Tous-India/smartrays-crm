@@ -815,6 +815,16 @@ input:-webkit-autofill:focus {
   opacity: 1;
 }
 
+/*
+ * A label never breaks mid-word (2026-09-19). At 390 the Today column was
+ * squeezed and "Half Day" / "Full Day" split across lines inside their own
+ * buttons. With the labels unbreakable the group stacks its two buttons
+ * instead — the cell grows; the words stay whole.
+ */
+.roster-state-control .ant-radio-button-wrapper {
+  white-space: nowrap;
+}
+
 /* An UNchecked disabled option should recede, not compete with the chosen one. */
 .roster-state-control .ant-radio-button-wrapper-disabled:not(.ant-radio-button-wrapper-checked) {
   background: #fafafa;
