@@ -222,7 +222,16 @@ function TeamManagementPage() {
         )}
       </div>
 
-      <Table rowKey="_id" className="app-data-table" loading={isLoading} dataSource={teams} columns={columns} />
+      {/* Seven columns; +311px of page overflow at 390 without this. Same
+          scroll-in-own-container pattern as every other list table. */}
+      <Table
+        rowKey="_id"
+        className="app-data-table"
+        loading={isLoading}
+        dataSource={teams}
+        columns={columns}
+        scroll={{ x: "max-content" }}
+      />
 
       <TeamFormModal
         open={isFormOpen}

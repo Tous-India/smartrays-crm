@@ -166,6 +166,11 @@ function ExpiringAmcPanel() {
                 columns={columns}
                 dataSource={records}
                 pagination={false}
+                // 449px wide at four columns; this panel was the one thing
+                // pushing the Customers page sideways at 390 (+117px). It
+                // scrolls in its own container now, like the customers table
+                // beneath it already did.
+                scroll={{ x: "max-content" }}
               />
             ),
           },

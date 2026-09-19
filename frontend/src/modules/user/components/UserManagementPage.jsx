@@ -148,6 +148,12 @@ function UserManagementPage() {
         dataSource={users}
         columns={columns}
         pagination={{ pageSize: 20 }}
+        // Six columns cannot fit 390px. Without this the whole PAGE scrolled
+        // sideways (measured +281px) and the name column squeezed to a
+        // character a line — the same pattern every other list table uses
+        // (`LeadsTable`, `PaymentsTable`, `CustomersTable`): the table that is
+        // too wide scrolls inside its own container; the page does not.
+        scroll={{ x: "max-content" }}
         onRow={(user) => ({
           onClick: (event) => {
             // AntD portals dropdown/picker popups to <body>, outside the
