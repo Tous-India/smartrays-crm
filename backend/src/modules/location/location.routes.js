@@ -1,8 +1,8 @@
 import { Router } from "express";
 import authenticate from "../../middlewares/authenticate.middleware.js";
 import { authorizeAny } from "../../middlewares/authorize.middleware.js";
-import { create, live, history, config } from "./location.controller.js";
-import { validatePingInput, validateHistoryQuery } from "./location.validation.js";
+import { create, live, history, config, recordConsent, myConsent, consentList } from "./location.controller.js";
+import { validatePingInput, validateHistoryQuery, validateConsentInput } from "./location.validation.js";
 
 const locationRouter = Router();
 
@@ -22,5 +22,13 @@ locationRouter.get(
 );
 
 locationRouter.get("/config", authenticate, config);
+
+// --- Location consent (final-plan.md §7.73) ---
+// Recording and reading your OWN decision needs only a session — like a ping,
+// it is a fact about you. Seeing others' decisions follows the live map's
+// view grants exactly, and is scoped by the same helper.
+locationRouter.post("/consent", authenticate, validateConsentInput, recordConsent);
+locationRouter.get("/consent/me", authenticate, myConsent);
+locationRouter.get("/consent", authenticate, authorizeAny("location", VIEW_ACTIONS), consentList);
 
 export default locationRouter;

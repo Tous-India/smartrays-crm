@@ -7,6 +7,7 @@ import {
   getLocationHistory,
   getPingIntervalConfig,
 } from "./location.service.js";
+import { recordLocationConsent, getMyLatestConsent, listLatestConsents } from "./locationConsent.service.js";
 
 export const create = asyncWrapper(async (req, res) => {
   // The batch form (mobile-backend-plan.md §3.2): a 200 with a per-ping
@@ -45,4 +46,24 @@ export const config = asyncWrapper(async (req, res) => {
   const pingConfig = getPingIntervalConfig();
 
   res.status(200).json(new ApiResponse(200, pingConfig, "Location config fetched successfully"));
+});
+
+// --- Location consent (final-plan.md §7.73) ---
+
+export const recordConsent = asyncWrapper(async (req, res) => {
+  const record = await recordLocationConsent(req.user, req.body);
+
+  res.status(201).json(new ApiResponse(201, record, "Location consent recorded"));
+});
+
+export const myConsent = asyncWrapper(async (req, res) => {
+  const record = await getMyLatestConsent(req.user);
+
+  res.status(200).json(new ApiResponse(200, record, "Location consent fetched successfully"));
+});
+
+export const consentList = asyncWrapper(async (req, res) => {
+  const rows = await listLatestConsents(req.user);
+
+  res.status(200).json(new ApiResponse(200, rows, "Location consents fetched successfully"));
 });

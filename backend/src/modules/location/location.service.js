@@ -578,7 +578,7 @@ async function findEndpoints(employeeIds, start, end, requestingUser) {
  * everyone" (admin or view_all). Throws 403 if the user holds none of the
  * three permissions at all.
  */
-async function resolveVisibleEmployeeIds(requestingUser) {
+export async function resolveVisibleEmployeeIds(requestingUser) {
   if (can(requestingUser, "location", "view_all")) {
     return null;
   }

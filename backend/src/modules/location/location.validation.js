@@ -1,4 +1,5 @@
 import ApiError from "../../utils/ApiError.js";
+import { CONSENT_DECISIONS } from "./locationConsent.model.js";
 
 /**
  * The most pings one batch may carry (mobile-backend-plan.md §3.2). At the
@@ -117,6 +118,34 @@ export function validateHistoryQuery(req, res, next) {
   if (from && to && new Date(from) > new Date(to)) {
     throw new ApiError(400, "from must not be after to");
   }
+
+  next();
+}
+
+/**
+ * Validates the body of POST /location/consent (final-plan.md §7.73): the
+ * decision and the disclosure version it answers are required; the app
+ * version and device id are optional strings.
+ */
+export function validateConsentInput(req, res, next) {
+  const { decision, disclosureVersion, appVersion, deviceId } = req.body || {};
+
+  if (!CONSENT_DECISIONS.includes(decision)) {
+    throw new ApiError(400, `decision must be one of: ${CONSENT_DECISIONS.join(", ")}`);
+  }
+
+  if (typeof disclosureVersion !== "string" || !disclosureVersion.trim()) {
+    throw new ApiError(400, "disclosureVersion is required");
+  }
+
+  [
+    ["appVersion", appVersion],
+    ["deviceId", deviceId],
+  ].forEach(([name, value]) => {
+    if (value !== undefined && value !== null && typeof value !== "string") {
+      throw new ApiError(400, `${name} must be a string`);
+    }
+  });
 
   next();
 }
