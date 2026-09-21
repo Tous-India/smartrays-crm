@@ -8,6 +8,15 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- Shift tracking (app-plan.md §1.3): a location-type foreground service
+         while checked in. Background location is requested only after the
+         prominent disclosure screen, never at launch. WAKE_LOCK is what the
+         headless flush task holds while it uploads. -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <application
       android:name=".MainApplication"
@@ -30,5 +39,16 @@
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
       </activity>
+      <!-- The tracking service outlives the activity on purpose: swiping the
+           app away must not end a shift's tracking (stopWithTask=false). -->
+      <service
+        android:name=".tracking.TrackingService"
+        android:exported="false"
+        android:foregroundServiceType="location"
+        android:stopWithTask="false" />
+      <!-- Headless JS task the service starts to upload queued fixes. -->
+      <service
+        android:name=".tracking.FlushTaskService"
+        android:exported="false" />
     </application>
 </manifest>

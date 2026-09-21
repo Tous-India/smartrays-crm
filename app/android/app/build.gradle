@@ -113,6 +113,9 @@ android {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+    // Shift tracking (app-plan.md §1.3): the foreground service in
+    // src/main/java/com/smartrays/crm/tracking reads fixes from Play services.
+    implementation("com.google.android.gms:play-services-location:21.3.0")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
