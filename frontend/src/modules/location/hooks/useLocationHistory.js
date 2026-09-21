@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchLocationHistory } from "../api/locationApi";
+import { pingsFromHistoryPayload } from "../historyPayload";
 
 /**
  * `GET /location/history?employeeId=&date=` (§7.4b) — fetched on demand
@@ -17,14 +18,7 @@ export function useLocationHistory({ employeeId, date }) {
 
     try {
       const response = await fetchLocationHistory({ employeeId, date });
-      const payload = response.data.data;
-
-      // §7.67 changed this endpoint's shape from a flat ping array to
-      // `{ endpoints, pings, ... }`. The array form is still accepted because
-      // frontend and backend do not deploy atomically here — a browser holding
-      // the new bundle can briefly talk to the old server, and a map that
-      // throws is worse than one that shows the trail without endpoints.
-      setPings(Array.isArray(payload) ? payload : payload?.pings || []);
+      setPings(pingsFromHistoryPayload(response.data.data));
     } catch (fetchError) {
       setError(fetchError);
     } finally {

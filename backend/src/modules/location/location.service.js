@@ -52,8 +52,28 @@ async function findOpenAttendance(employeeId) {
 }
 
 /**
- * Latest ping per employee, restricted to employees who currently have an open
- * Attendance record — a ping from someone who's since checked out isn't "live."
+ * Who is on shift right now, split into the two states that used to be one
+ * (§7.69).
+ *
+ * `entries` are employees with at least one ping — the map layer, unchanged.
+ * `unlocatable` are employees with an OPEN shift and ZERO pings for it: on the
+ * clock and not reporting a position at all.
+ *
+ * Those two were previously indistinguishable. `buildLiveEntry` returns null
+ * for a pingless shift and the caller filtered nulls away, so the response was
+ * `[]` both when nobody was working and when somebody was working and could not
+ * be located. The frontend then rendered one calm message for both. The server
+ * knew the difference at the moment it discarded it.
+ *
+ * `unlocatable` deliberately carries NO coordinates and NO photo — only who and
+ * for how long. The employee's check-in position is on the Attendance record
+ * and could have been included, but releasing it here would route location data
+ * around `applyVisibilityRules` and the `attendance.view_location` grant that
+ * governs it. A warning list does not need a position; it needs a name and a
+ * duration.
+ *
+ * Naming is already scoped: `resolveVisibleEmployeeIds` decides whose shifts
+ * are considered at all, so a manager can only ever name their own team.
  */
 export async function getLiveLocations(requestingUser) {
   const visibleEmployeeIds = await resolveVisibleEmployeeIds(requestingUser);
@@ -65,11 +85,56 @@ export async function getLiveLocations(requestingUser) {
     "checkOut.time": null,
   });
 
-  const liveLocations = await Promise.all(
-    openAttendanceRecords.map((attendance) => buildLiveEntry(attendance))
+  const built = await Promise.all(
+    openAttendanceRecords.map(async (attendance) => ({
+      attendance,
+      entry: await buildLiveEntry(attendance),
+    }))
   );
 
-  return liveLocations.filter((entry) => entry !== null);
+  const entries = built.filter((one) => one.entry !== null).map((one) => one.entry);
+  const silent = built.filter((one) => one.entry === null).map((one) => one.attendance);
+
+  return {
+    entries,
+    unlocatable: await describeUnlocatable(silent),
+    // The denominator behind both numbers, so a reader can tell "nobody is
+    // working" from "everybody working is reporting".
+    openShiftCount: openAttendanceRecords.length,
+  };
+}
+
+/**
+ * Names the silent shifts and says how long each has been silent.
+ *
+ * "2 employees have no location data" tells an admin something is wrong.
+ * "Ramesh, silent 3h 07m" tells them who to call and how worried to be — a
+ * shift that started ninety seconds ago has simply not reached its first ping
+ * yet, which is normal, while three hours of silence is not.
+ */
+async function describeUnlocatable(attendances) {
+  if (attendances.length === 0) {
+    return [];
+  }
+
+  const employees = await User.find({
+    _id: { $in: attendances.map((attendance) => attendance.employeeId) },
+  }).select("_id name");
+
+  const nameById = new Map(employees.map((employee) => [String(employee._id), employee.name]));
+  const now = Date.now();
+
+  return attendances
+    .map((attendance) => ({
+      employeeId: attendance.employeeId,
+      attendanceId: attendance._id,
+      // A visible employee whose User record is missing is still reported —
+      // omitting them would hide the very thing this list exists to surface.
+      name: nameById.get(String(attendance.employeeId)) || "Unknown employee",
+      checkInAt: attendance.checkIn.time,
+      silentForMinutes: Math.max(0, Math.round((now - new Date(attendance.checkIn.time).getTime()) / 60000)),
+    }))
+    .sort((a, b) => b.silentForMinutes - a.silentForMinutes);
 }
 
 async function buildLiveEntry(attendance) {

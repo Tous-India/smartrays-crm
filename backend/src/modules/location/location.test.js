@@ -333,7 +333,7 @@ describe("GET /location/live", () => {
     const response = await adminAgent.get("/api/v1/location/live");
 
     expect(response.status).toBe(200);
-    const employeeIds = response.body.data.map((entry) => entry.employeeId).sort();
+    const employeeIds = response.body.data.entries.map((entry) => entry.employeeId).sort();
     expect(employeeIds).toEqual([String(sales1._id), String(sales2._id), String(sales3._id)].sort());
   });
 
@@ -345,7 +345,7 @@ describe("GET /location/live", () => {
     const response = await managerAgent.get("/api/v1/location/live");
 
     expect(response.status).toBe(200);
-    const employeeIds = response.body.data.map((entry) => entry.employeeId).sort();
+    const employeeIds = response.body.data.entries.map((entry) => entry.employeeId).sort();
     expect(employeeIds).toEqual([String(sales1._id), String(sales2._id)].sort());
   });
 
@@ -356,7 +356,76 @@ describe("GET /location/live", () => {
     const response = await sales1Agent.get("/api/v1/location/live");
 
     expect(response.status).toBe(200);
-    expect(response.body.data.map((entry) => entry.employeeId)).toEqual([String(sales1._id)]);
+    expect(response.body.data.entries.map((entry) => entry.employeeId)).toEqual([String(sales1._id)]);
+  });
+
+  it("NAMES the employees who are checked in but reporting no location (§7.69)", async () => {
+    // Silent: an open shift with no ping at all. Previously indistinguishable
+    // from nobody being checked in — both produced an empty response.
+    await createOpenAttendance(sales1._id);
+    await checkInAndPing(sales2Agent, sales2._id);
+
+    const response = await adminAgent.get("/api/v1/location/live");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.entries.map((entry) => entry.employeeId)).toEqual([String(sales2._id)]);
+    expect(response.body.data.unlocatable).toHaveLength(1);
+    expect(response.body.data.unlocatable[0]).toMatchObject({
+      employeeId: String(sales1._id),
+      name: sales1.name,
+    });
+    expect(response.body.data.unlocatable[0].silentForMinutes).toBeGreaterThanOrEqual(0);
+    expect(response.body.data.openShiftCount).toBe(2);
+  });
+
+  it("distinguishes 'nobody checked in' from 'checked in but silent'", async () => {
+    const quiet = await adminAgent.get("/api/v1/location/live");
+    expect(quiet.body.data.entries).toHaveLength(0);
+    expect(quiet.body.data.unlocatable).toHaveLength(0);
+    expect(quiet.body.data.openShiftCount).toBe(0);
+
+    await createOpenAttendance(sales1._id);
+
+    const silent = await adminAgent.get("/api/v1/location/live");
+    expect(silent.body.data.entries).toHaveLength(0);
+    // Same empty `entries`, entirely different meaning.
+    expect(silent.body.data.unlocatable).toHaveLength(1);
+    expect(silent.body.data.openShiftCount).toBe(1);
+  });
+
+  it("names ONLY the manager's own team — the warning list obeys the same scoping", async () => {
+    await createOpenAttendance(sales1._id); // direct report, silent
+    await createOpenAttendance(sales3._id); // NOT their report, also silent
+
+    const response = await managerAgent.get("/api/v1/location/live");
+
+    expect(response.status).toBe(200);
+    const named = response.body.data.unlocatable.map((one) => one.employeeId);
+    expect(named).toEqual([String(sales1._id)]);
+    expect(response.body.data.openShiftCount).toBe(1);
+  });
+
+  it("carries NO coordinates for a silent employee — that needs its own grant", async () => {
+    await createOpenAttendance(sales1._id);
+
+    const response = await adminAgent.get("/api/v1/location/live");
+
+    const [silent] = response.body.data.unlocatable;
+    expect(silent.coords).toBeUndefined();
+    expect(silent.photoUrl).toBeUndefined();
+  });
+
+  it("orders the silent list longest-silent first — that is the one to chase", async () => {
+    const older = await createOpenAttendance(sales1._id);
+    older.checkIn.time = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    await older.save();
+    await createOpenAttendance(sales2._id);
+
+    const response = await adminAgent.get("/api/v1/location/live");
+
+    const names = response.body.data.unlocatable.map((one) => one.employeeId);
+    expect(names[0]).toBe(String(sales1._id));
+    expect(response.body.data.unlocatable[0].silentForMinutes).toBeGreaterThanOrEqual(179);
   });
 
   it("excludes an employee who has already checked out", async () => {
@@ -365,7 +434,7 @@ describe("GET /location/live", () => {
 
     const response = await adminAgent.get("/api/v1/location/live");
 
-    expect(response.body.data.map((entry) => entry.employeeId)).toEqual([String(sales1._id)]);
+    expect(response.body.data.entries.map((entry) => entry.employeeId)).toEqual([String(sales1._id)]);
   });
 
   it("denies a user with no location permission granted at all", async () => {

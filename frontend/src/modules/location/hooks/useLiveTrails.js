@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchLiveLocations, fetchLocationHistory } from "../api/locationApi";
+import { livePayload, pingsFromHistoryPayload } from "../historyPayload";
 import { getTeamAttendance } from "../../attendance/api/attendanceApi";
 import { toLocalDateKey, toLocalMonthKey } from "../../../utils/date.utils";
 
@@ -42,6 +43,10 @@ const POLL_INTERVAL_MS = 45000;
  */
 export function useLiveTrails({ enabled = true } = {}) {
   const [entries, setEntries] = useState([]);
+  // §7.69 — open shifts with no ping at all. Kept separate from `entries`
+  // because they are a warning, not a map layer: they have no position to plot.
+  const [unlocatable, setUnlocatable] = useState([]);
+  const [openShiftCount, setOpenShiftCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const inFlightRef = useRef(false);
@@ -55,7 +60,12 @@ export function useLiveTrails({ enabled = true } = {}) {
 
     try {
       const liveResponse = await fetchLiveLocations();
-      const live = liveResponse.data.data;
+      const { entries: live, unlocatable: silent, openShiftCount: openShifts } = livePayload(
+        liveResponse.data.data
+      );
+
+      setUnlocatable(silent);
+      setOpenShiftCount(openShifts);
 
       if (live.length === 0) {
         setEntries([]);
@@ -77,7 +87,9 @@ export function useLiveTrails({ enabled = true } = {}) {
         Promise.all(
           live.map((entry) =>
             fetchLocationHistory({ employeeId: String(entry.employeeId), date: today })
-              .then((response) => response.data.data)
+              // Through the shared reader, NOT `response.data.data` directly —
+              // that assumed a flat array and threw once §7.67 wrapped it.
+              .then((response) => pingsFromHistoryPayload(response.data.data))
               .catch(() => [])
           )
         ),
@@ -130,7 +142,7 @@ export function useLiveTrails({ enabled = true } = {}) {
     };
   }, [enabled, refetch]);
 
-  return { entries, isLoading, error, refetch };
+  return { entries, unlocatable, openShiftCount, isLoading, error, refetch };
 }
 
 function isInsideAnyViolation(capturedAt, violations) {

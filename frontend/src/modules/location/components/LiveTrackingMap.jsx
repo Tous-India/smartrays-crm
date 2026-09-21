@@ -32,8 +32,57 @@ const STALE_AFTER_MINUTES = 10;
  * Checked-out employees disappear on their own: `GET /location/live` only
  * returns open attendance records. Their trail stays in the History view.
  */
+/** "3h 07m", not "187 minutes" — the reader is judging urgency, not doing arithmetic. */
+function formatSilence(minutes) {
+  if (minutes < 1) {
+    return "just now";
+  }
+
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+
+  return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m`;
+}
+
+/**
+ * On shift, no position at all (§7.69).
+ *
+ * Named, and ordered longest-silent first, because that is the one to chase.
+ * Deliberately an `Alert type="warning"` and not an `Empty`: an empty state
+ * reads as "nothing here, carry on", which is the opposite of what this means.
+ *
+ * A minute or two of silence is normal — the first ping is one interval after
+ * check-in — so the duration is shown per person rather than the whole list
+ * being framed as an incident.
+ */
+function UnlocatableWarning({ people }) {
+  return (
+    <Alert
+      type="warning"
+      showIcon
+      data-testid="unlocatable-warning"
+      message={`${people.length} checked in with no location data`}
+      description={
+        <div className="flex flex-col gap-1">
+          {people.map((person) => (
+            <div key={person.attendanceId} className="text-xs">
+              <span className="font-medium">{person.name}</span>
+              <span className="text-gray-600">
+                {" — silent "}
+                {formatSilence(person.silentForMinutes)}
+                {person.checkInAt && `, checked in ${dayjs(person.checkInAt).format("h:mm A")}`}
+              </span>
+            </div>
+          ))}
+        </div>
+      }
+    />
+  );
+}
+
 function LiveTrackingMap() {
-  const { entries, isLoading, error } = useLiveTrails();
+  const { entries, unlocatable, isLoading, error } = useLiveTrails();
   const { users } = useUserDirectory();
 
   const employeeNameById = useMemo(() => new Map(users.map((user) => [String(user._id), user.name])), [users]);
@@ -118,12 +167,33 @@ function LiveTrackingMap() {
     );
   }
 
+  /**
+   * §7.69 — THREE states, not two.
+   *
+   * The old code had one empty state for two opposite situations: nobody on
+   * shift (fine) and somebody on shift who cannot be located (not fine). Both
+   * rendered the same reassuring sentence.
+   */
+  if (entries.length === 0 && unlocatable.length === 0) {
+    // (a) Genuinely nobody working. Calm, neutral — nothing is wrong.
+    return <Empty description="No one is currently checked in" />;
+  }
+
   if (entries.length === 0) {
-    return <Empty description="No one is currently checked in and visible to you" />;
+    // (b) People ARE on shift and none of them is reporting a position. This is
+    // the failure this feature exists to surface, so it is a warning with
+    // names, not an empty state — "2 employees" tells an admin something is
+    // wrong; "Ramesh, silent 3h 07m" tells them who to call and how worried to
+    // be.
+    return <UnlocatableWarning people={unlocatable} />;
   }
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Someone unlocatable while others report is still the warning case —
+          it must not be hidden just because the map has something to draw. */}
+      {unlocatable.length > 0 && <UnlocatableWarning people={unlocatable} />}
+
       <LeafletMapView markers={markers} paths={paths} />
 
       {/* Doubles as a legend and stays useful before tiles load. Staleness is
