@@ -10,7 +10,7 @@ import {
   editUserPerms,
   resetUserPerms,
 } from "./permission.controller.js";
-import { validateRoleParam, validatePermissionsBody } from "./permission.validation.js";
+import { validateRoleParam, validatePermissionsBody, validateCompletePermissionsBody } from "./permission.validation.js";
 
 // Gated by permissions.manage (can()-backed) rather than requireAdmin — even
 // though only an admin will ever hold this grant today, using the same
@@ -40,11 +40,12 @@ export default permissionRouter;
 const userPermissionRouter = Router();
 
 userPermissionRouter.get("/:id/permissions", authenticate, manage, getUserPerms);
+// Complete bodies only (§7.12c) — see validateCompletePermissionsBody.
 userPermissionRouter.patch(
   "/:id/permissions",
   authenticate,
   manage,
-  validatePermissionsBody,
+  validateCompletePermissionsBody,
   editUserPerms
 );
 userPermissionRouter.post("/:id/permissions/reset", authenticate, manage, resetUserPerms);

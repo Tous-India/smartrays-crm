@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest
 import { startTestDatabase, stopTestDatabase } from "../../../tests/helpers/testDb.js";
 import { getTestApp } from "../../../tests/helpers/testApp.js";
 import { createUserDirectly, loginAsAgent } from "../../../tests/helpers/authHelpers.js";
+import { completePermissions } from "../../../tests/helpers/permissionBody.js";
 import { bufferParser } from "../../../tests/helpers/binaryResponse.js";
 import Attendance from "./attendance.model.js";
 import User from "../user/user.model.js";
@@ -9,11 +10,11 @@ import Notification from "../notification/notification.model.js";
 
 const FAKE_PHOTO_URL = "https://fake.cloudinary.test/photo.jpg";
 const FAKE_PHOTO_PUBLIC_ID = "fake-public-id";
-// A photo is mandatory server-side on every check-in/check-out (see
 // What a permitted viewer must now receive: signed from the publicId at read
 // time (§7.69), NOT the stored URL. Asserting the stored URL here would pass
 // even if signing were removed entirely.
 const FAKE_SIGNED_PHOTO_URL = "https://signed.test/fake-public-id";
+// A photo is mandatory server-side on every check-in/check-out (see
 // attendance.validation.js) — this is the throwaway base64 payload nearly
 // every test in this file needs, since the goal of most tests here is
 // something other than photo handling itself.
@@ -33,11 +34,11 @@ const TEST_PHOTO = "data:image/jpeg;base64,ZmFrZWltYWdlZGF0YQ==";
 // /attendance/report, streams its buffer directly now instead of uploading
 // to Cloudinary first).
 vi.mock("../../services/cloudinary.service.js", () => ({
-  uploadAttendancePhoto: vi.fn(async () => ({ secureUrl: FAKE_PHOTO_URL, publicId: FAKE_PHOTO_PUBLIC_ID })),
   // §7.69 — a permitted viewer now receives a URL SIGNED from the publicId at
   // read time, never the stored one. Deriving the stub from the publicId is
   // what lets a test assert that the signing actually happened.
   signedAttendancePhotoUrl: vi.fn((publicId) => (publicId ? "https://signed.test/" + publicId : null)),
+  uploadAttendancePhoto: vi.fn(async () => ({ secureUrl: FAKE_PHOTO_URL, publicId: FAKE_PHOTO_PUBLIC_ID })),
   deleteCloudinaryAsset: vi.fn(async () => ({ result: "ok" })),
 }));
 
@@ -436,7 +437,7 @@ describe("GET /attendance/me", () => {
     // Grant manager1 BOTH view_photos and view_location for OTHER people's
     // records — the hard rule must still strip their OWN, unaffected by this.
     await adminAgent.patch(`/api/v1/users/${manager1Id}/permissions`).send({
-      permissions: { attendance: { view_team: true, view_photos: true, view_location: true } },
+      permissions: completePermissions({ attendance: { view_team: true, view_photos: true, view_location: true } }),
     });
 
     await managerAgent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
@@ -627,7 +628,7 @@ describe("GET /attendance/team", () => {
   it("shows photoUrl (but still hides coords) once a manager is granted attendance.view_photos", async () => {
     await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
     await adminAgent.patch(`/api/v1/users/${manager1Id}/permissions`).send({
-      permissions: { attendance: { view_team: true, view_photos: true } },
+      permissions: completePermissions({ attendance: { view_team: true, view_photos: true } }),
     });
 
     const response = await managerAgent.get("/api/v1/attendance/team");
@@ -639,7 +640,7 @@ describe("GET /attendance/team", () => {
   it("shows coords (but still hides photoUrl) once a manager is granted attendance.view_location", async () => {
     await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
     await adminAgent.patch(`/api/v1/users/${manager1Id}/permissions`).send({
-      permissions: { attendance: { view_team: true, view_location: true } },
+      permissions: completePermissions({ attendance: { view_team: true, view_location: true } }),
     });
 
     const response = await managerAgent.get("/api/v1/attendance/team");
@@ -651,7 +652,7 @@ describe("GET /attendance/team", () => {
   it("shows both once a manager is granted both view_photos and view_location", async () => {
     await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
     await adminAgent.patch(`/api/v1/users/${manager1Id}/permissions`).send({
-      permissions: { attendance: { view_team: true, view_photos: true, view_location: true } },
+      permissions: completePermissions({ attendance: { view_team: true, view_photos: true, view_location: true } }),
     });
 
     const response = await managerAgent.get("/api/v1/attendance/team");
@@ -668,7 +669,6 @@ describe("GET /attendance/team", () => {
     expect(response.body.data[0].checkIn.photoUrl).toBe(FAKE_SIGNED_PHOTO_URL);
     expect(response.body.data[0].checkIn.coords).toEqual(buildCoords());
   });
-});
 
   /**
    * §7.69. `getTeamAttendance` has to load `photoPublicId` now — it is what a
@@ -702,6 +702,7 @@ describe("GET /attendance/team", () => {
     expect(response.body.data[0].checkIn.photoUrl).not.toBe(FAKE_PHOTO_URL);
     expect(response.body.data[0].checkIn.photoUrl).toContain(FAKE_PHOTO_PUBLIC_ID);
   });
+});
 
 describe("GET /attendance/report", () => {
   // Migrated onto the unified §7.11 report dispatcher (Phase 8); as of

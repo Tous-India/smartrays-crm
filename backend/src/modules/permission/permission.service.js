@@ -262,6 +262,74 @@ export async function reconcileAllRoleTemplates() {
   return results;
 }
 
+/**
+ * PHASE 2 (§7.12c, 2026-09-19) — the same idea as `reconcileRoleTemplate`,
+ * applied to USERS. A template edit was never retroactive (§7.12, still
+ * true and still deliberate for per-user settings), which meant a brand-new
+ * module reached the templates at boot and stopped there: every account
+ * created before the module existed held nothing for it and saw neither its
+ * nav item nor its dashboard widget until an admin granted it by hand.
+ *
+ * THE RULE, EXACTLY: for each user, for each module key ABSENT on
+ * `User.permissions` but PRESENT on their role's stored template, copy the
+ * template's value. NEVER modify a key that is present, whatever its value —
+ * `{}`, all-false, or a grant wider than the template all stay exactly as
+ * they are. Additive only, idempotent.
+ *
+ * WHY ABSENCE IS A SAFE SIGNAL: the Permissions UI
+ * (`permissionModel.js#selectionsToPermissions`) writes every registry module
+ * with an explicit boolean per action on every save, so a module an admin set
+ * to "none" is stored as `{ view: false, … }` and is never absent. Absent
+ * therefore means "nobody has ever decided about this module for this user";
+ * present means "someone did". `validateCompletePermissionsBody` closes the
+ * one way a present key could become absent (a raw partial PATCH).
+ *
+ * Written with `$set` on dotted paths, so the database write itself touches
+ * only the keys being added — nothing present is even re-sent.
+ */
+export async function reconcileUserPermissions() {
+  const changes = [];
+
+  for (const role of RECONCILABLE_ROLES) {
+    const template = await getOrCreateTemplate(role);
+    const templatePermissions = template.permissions || {};
+    const users = await User.find({ role }).select("_id name email permissions");
+
+    for (const user of users) {
+      const current = user.permissions || {};
+      const additions = {};
+      const added = [];
+
+      for (const [moduleName, actions] of Object.entries(templatePermissions)) {
+        if (moduleName in current) {
+          continue;
+        }
+
+        additions[`permissions.${moduleName}`] = structuredClone(actions);
+        added.push(moduleName);
+      }
+
+      if (added.length === 0) {
+        continue;
+      }
+
+      await User.updateOne({ _id: user._id }, { $set: additions });
+      changes.push({ userId: user._id, name: user.name, email: user.email, role, added });
+    }
+  }
+
+  if (changes.length === 0) {
+    console.log("[permission] User permission backfill: every user already carries every module their template grants.");
+  } else {
+    console.log(`[permission] User permission backfill: ${changes.length} user(s) changed.`);
+    changes.forEach((change) => {
+      console.log(`[permission] User permission backfill — "${change.name}" (${change.role}): added [${change.added.join(", ")}]`);
+    });
+  }
+
+  return changes;
+}
+
 let reconciliationPromise = null;
 
 /**
@@ -278,14 +346,19 @@ let reconciliationPromise = null;
  */
 export function reconcileRoleTemplatesOnBoot() {
   if (!reconciliationPromise) {
-    reconciliationPromise = reconcileAllRoleTemplates().catch((error) => {
+    // Templates first, then users: phase 2 reads the templates phase 1 has
+    // just brought up to date, so a module added to the code defaults reaches
+    // existing users in the same boot.
+    reconciliationPromise = reconcileAllRoleTemplates()
+      .then(() => reconcileUserPermissions())
+      .catch((error) => {
       // Never let a reconciliation failure crash the server over what's
       // fundamentally a hygiene pass, not a request in the critical path.
       // Reset the cache so the next call can retry rather than permanently
       // caching a rejection, matching connectDatabase's own behavior.
-      reconciliationPromise = null;
-      console.error("[permission] Role template reconciliation failed:", error.message);
-    });
+        reconciliationPromise = null;
+        console.error("[permission] Permission reconciliation failed:", error.message);
+      });
   }
 
   return reconciliationPromise;

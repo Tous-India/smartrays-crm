@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
 import { startTestDatabase, stopTestDatabase } from "../../../tests/helpers/testDb.js";
 import { getTestApp } from "../../../tests/helpers/testApp.js";
 import { createUserDirectly, loginAsAgent } from "../../../tests/helpers/authHelpers.js";
+import { completePermissions } from "../../../tests/helpers/permissionBody.js";
 import Customer from "./customer.model.js";
 import Contact from "./contact.model.js";
 import Contract from "./contract.model.js";
@@ -320,7 +321,7 @@ describe("Bulk actions", () => {
     });
     await adminAgent
       .patch(`/api/v1/users/${noDeleteResponse.body.data._id}/permissions`)
-      .send({ permissions: { customers: { view: true, edit: true } } });
+      .send({ permissions: completePermissions({ customers: { view: true, edit: true } }) });
     const noDeleteAgent = await loginAsAgent(app, "nodelete@test.local", "Password123");
 
     const deleteResponse = await noDeleteAgent

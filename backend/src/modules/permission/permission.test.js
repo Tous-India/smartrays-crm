@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from "vitest";
 import { startTestDatabase, stopTestDatabase, clearAllCollections } from "../../../tests/helpers/testDb.js";
 import { getTestApp } from "../../../tests/helpers/testApp.js";
 import { createUserDirectly, loginAsAgent } from "../../../tests/helpers/authHelpers.js";
+import { completePermissions } from "../../../tests/helpers/permissionBody.js";
 import { PERMISSION_REGISTRY } from "../../constants/permissionRegistry.constants.js";
 import { reconcileRoleTemplate, reconcileAllRoleTemplates, RECONCILABLE_ROLES } from "./permission.service.js";
 import RolePermissionTemplate from "./permission.model.js";
@@ -86,9 +87,9 @@ describe("Template CRUD", () => {
       travelLogs: { view_team: true },
       tickets: { create: true, assign: true, view_all: true },
       amc: { view: true, edit: true },
-      // Read-only org-structure visibility (2026-08-05) — scoped to the
       // Services (§7.72) — create/assign for their own team.
       services: { view: true, create: true, edit: true, delete: true },
+      // Read-only org-structure visibility (2026-08-05) — scoped to the
       // team(s) this manager heads. Deliberately not `manage`.
       teams: { view_team: true },
     });
@@ -165,13 +166,14 @@ describe("Per-user permission overrides are isolated", () => {
 
     const editResponse = await adminAgent
       .patch(`/api/v1/users/${userAResponse.body.data._id}/permissions`)
-      .send({ permissions: { leads: { delete: true } } });
+      // Complete body (§7.12c) — the shape the UI sends; partials are rejected.
+      .send({ permissions: completePermissions({ leads: { delete: true } }) });
 
     const templateAfter = await adminAgent.get("/api/v1/permissions/templates/employee");
     const userBAfter = await adminAgent.get(`/api/v1/users/${userBResponse.body.data._id}/permissions`);
 
     expect(editResponse.status).toBe(200);
-    expect(editResponse.body.data.permissions).toEqual({ leads: { delete: true } });
+    expect(editResponse.body.data.permissions).toEqual(completePermissions({ leads: { delete: true } }));
     expect(templateAfter.body.data.permissions).toEqual(templateBefore.body.data.permissions);
     expect(userBAfter.body.data).toEqual(userBResponse.body.data.permissions);
   });
@@ -190,7 +192,7 @@ describe("POST /users/:id/permissions/reset", () => {
 
     // 2. Customize this one user's permissions to something unique.
     await adminAgent.patch(`/api/v1/users/${userId}/permissions`).send({
-      permissions: { location: { view: true, view_team: true }, leads: { view: true } },
+      permissions: completePermissions({ location: { view: true, view_team: true }, leads: { view: true } }),
     });
 
     // 3. Change the employee TEMPLATE to something different again, AFTER

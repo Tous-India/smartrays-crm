@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest
 import { startTestDatabase, stopTestDatabase } from "../../../tests/helpers/testDb.js";
 import { getTestApp } from "../../../tests/helpers/testApp.js";
 import { createUserDirectly, loginAsAgent } from "../../../tests/helpers/authHelpers.js";
+import { completePermissions } from "../../../tests/helpers/permissionBody.js";
 import LocationPing, { LOCATION_PING_TTL_SECONDS } from "./location.model.js";
 import Attendance from "../attendance/attendance.model.js";
 
@@ -10,11 +11,11 @@ import Attendance from "../attendance/attendance.model.js";
 // below) needs to supply one — mocked the same way attendance.test.js does,
 // so this file never makes a real Cloudinary network call either.
 vi.mock("../../services/cloudinary.service.js", () => ({
-  uploadAttendancePhoto: vi.fn(async () => ({ secureUrl: "https://fake.cloudinary.test/photo.jpg", publicId: "fake-public-id" })),
   // §7.69 — a permitted viewer now receives a URL SIGNED from the publicId at
   // read time, never the stored one. Deriving the stub from the publicId is
   // what lets a test assert that the signing actually happened.
   signedAttendancePhotoUrl: vi.fn((publicId) => (publicId ? "https://signed.test/" + publicId : null)),
+  uploadAttendancePhoto: vi.fn(async () => ({ secureUrl: "https://fake.cloudinary.test/photo.jpg", publicId: "fake-public-id" })),
 }));
 
 // The same real check-out also now triggers travelLog.service.js's auto
@@ -143,7 +144,8 @@ beforeAll(async () => {
   });
   await adminAgent
     .patch(`/api/v1/users/${noPermResponse.body.data._id}/permissions`)
-    .send({ permissions: { location: {} } });
+    // Complete body (§7.12c): every module explicit, location all-false.
+    .send({ permissions: completePermissions() });
   noPermAgent = await loginAsAgent(app, "noperm@test.local", "Password123");
 });
 
@@ -175,7 +177,9 @@ describe("Role-based permission defaults (createUser, §7.4b)", () => {
   it("respects an explicit permissions override instead of applying the default", async () => {
     const response = await noPermAgent.get("/api/v1/auth/me");
 
-    expect(response.body.data.permissions.location).toEqual({});
+    // The override was sent in the UI's complete shape (§7.12c), so "no
+    // location grants" is stored as explicit falses, not an empty object.
+    expect(response.body.data.permissions.location).toEqual({ view: false, view_team: false, view_all: false });
   });
 });
 
@@ -363,10 +367,6 @@ describe("GET /location/live", () => {
     expect(response.body.data.entries.map((entry) => entry.employeeId)).toEqual([String(sales1._id)]);
   });
 
-  it("NAMES the employees who are checked in but reporting no location (§7.69)", async () => {
-    // Silent: an open shift with no ping at all. Previously indistinguishable
-    // from nobody being checked in — both produced an empty response.
-    await createOpenAttendance(sales1._id);
   it("excludes an employee who has already checked out", async () => {
     await checkInAndPing(sales1Agent, sales1._id);
     await createClosedAttendance(sales2._id);
@@ -376,6 +376,10 @@ describe("GET /location/live", () => {
     expect(response.body.data.entries.map((entry) => entry.employeeId)).toEqual([String(sales1._id)]);
   });
 
+  it("NAMES the employees who are checked in but reporting no location (§7.69)", async () => {
+    // Silent: an open shift with no ping at all. Previously indistinguishable
+    // from nobody being checked in — both produced an empty response.
+    await createOpenAttendance(sales1._id);
     await checkInAndPing(sales2Agent, sales2._id);
 
     const response = await adminAgent.get("/api/v1/location/live");

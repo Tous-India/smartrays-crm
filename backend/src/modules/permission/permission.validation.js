@@ -55,6 +55,33 @@ export function validatePermissionsBody(req, res, next) {
   next();
 }
 
+/**
+ * `PATCH /users/:id/permissions` ONLY (§7.12c): on top of `validatePermissionsBody`,
+ * the body must carry EVERY registry module. A partial body would make an
+ * absent module indistinguishable from a deliberate "none" — and absence is
+ * exactly what the boot-time backfill (`reconcileUserPermissions`) treats as
+ * "never decided". The UI already sends every module with explicit booleans
+ * (`selectionsToPermissions`); this makes a raw client do the same.
+ *
+ * Deliberately NOT applied to the template PATCH: templates are partial by
+ * construction (code defaults list only the modules a role is granted) and
+ * are the thing the backfill copies FROM, not a target of it.
+ */
+export function validateCompletePermissionsBody(req, res, next) {
+  validatePermissionsBody(req, res, () => {
+    const missing = Object.keys(PERMISSION_REGISTRY).filter((moduleName) => !(moduleName in req.body.permissions));
+
+    if (missing.length > 0) {
+      throw new ApiError(
+        400,
+        `permissions must carry every registry module — an omitted module cannot be told apart from a deliberate "none". Missing: ${missing.join(", ")}`
+      );
+    }
+
+    next();
+  });
+}
+
 function isPlainObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -347,8 +347,9 @@ reworked to guided reassignment" section for the UI side (`DeactivationReassignM
 - **API surface:** `/permissions/registry`, `/permissions/templates(/:role)`,
   `/users/:id/permissions(/reset)` — full list at §7.12.
 - **Permission requirements:** every endpoint gated by `permissions.manage`.
-- **Key invariants:** editing a template is **never retroactive**; a per-user override is fully
-  independent of the template after creation; `PATCH` is a full replace, not a deep merge, on
+- **Key invariants:** editing a template is **never retroactive for a present key** (since
+  §7.12c, a module a user has NO key for is backfilled from the template at boot); a per-user
+  override is fully independent of the template after creation; `PATCH` is a full replace, not a deep merge, on
   both templates and per-user overrides; template seed values are generated from §5's matrix
   (a deliberate broadening for Manager/Sales Associate's Leads defaults, not a silent one).
 - **Known deviations:** this module's own existence *is* the resolution of a deviation —
@@ -2714,7 +2715,8 @@ no token reissue required.
   typo or a stale permission for a since-removed action can't silently do nothing) and so a
   future frontend can render toggles without hardcoding the list twice.
 - **`RolePermissionTemplate`** (§6.1, DB, admin-editable) — what's **granted by default** to a
-  role. Editing a template **only affects users created after the edit** — never retroactive.
+  role. Editing a template **only affects users created after the edit** — never retroactive for
+  a key the user already holds (§7.12c backfills a module the user has no key for at all).
   This mirrors how the original `getDefaultPermissionsForRole()` worked, just moved from a code
   constant into the database so an admin can change it without a deploy.
 - **`User.permissions`** (§6.1, DB, per-user) — what's **actually granted** to one specific
@@ -2881,6 +2883,43 @@ server boot against the shared database (same `MONGODB_URI` as production — al
 too).
 
 9 new tests. Full backend suite: 667/667 passing, no regressions.
+
+### 7.12c User.permissions backfill — non-retroactivity resolved for NEW modules (2026-09-19)
+
+§7.12b brought the *templates* up to date at boot and stopped there. A module added to the code
+defaults therefore reached every template on the next boot and reached **no existing user**:
+every account created before the module existed held nothing for it and saw neither its nav item
+nor its dashboard widget until an admin granted it by hand (§7.72 found both existing non-admin
+accounts in that state for `services`, and the same phase later found the manager missing
+`teams`, which the manager template had gained on 2026-08-05).
+
+**Phase 2 — `reconcileUserPermissions`**, run by `reconcileRoleTemplatesOnBoot` after the template
+phase. The rule, exactly: *for each user, for each module key ABSENT on `User.permissions` but
+PRESENT on their role's stored template, copy the template's value. NEVER modify a key that is
+present, whatever its value.* `{}`, all-false, and grants wider than the template all survive
+untouched; the write is a `$set` on the added dotted paths only, so nothing present is even
+re-sent. Additive, idempotent, and follows `RECONCILABLE_ROLES` exactly — admin is excluded
+(its template is `{}` and it bypasses `can()`); **customer is not**, so a portal account created
+before the customer template gained its ticket grants receives them, as the template phase already
+treats that role. Every boot logs what changed: user count and, per user, the module keys added —
+or a single line saying nothing needed changing.
+
+**Why absence is a safe signal.** The Permissions UI (`permissionModel.js#selectionsToPermissions`)
+writes every registry module with an explicit boolean per action on every save, so a module an
+admin set to "none" is stored as `{ view: false, … }` and is never absent. Absent means "nobody
+has ever decided about this module for this user"; present means "someone did". That invariant is
+asserted in `permissionModel.test.js`, and enforced server-side by
+**`validateCompletePermissionsBody`** on `PATCH /users/:id/permissions`: a body that omits any
+registry module is rejected with a 400 naming the missing modules — the one way a present key
+could have become absent (a raw partial PATCH) is closed. The template PATCH keeps accepting
+partial bodies: templates are partial by construction and are what the backfill copies *from*.
+The test suite's existing partial-body PATCHes were moved onto a `completePermissions()` helper
+that builds the UI's shape.
+
+**What is and is not retroactive now.** A NEW module reaches existing users at the next boot.
+A deliberate per-user setting — anything present, including "none" — remains non-retroactive by
+design: neither a template edit nor this phase ever overwrites it. §7.12's "editing a template is
+never retroactive" should be read as "never overwrites a present key".
 
 ### 7.13 Dashboards
 One dashboard shell (`/dashboard`) that composes widgets by role + permissions, rather than

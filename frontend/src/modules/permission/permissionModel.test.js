@@ -403,3 +403,46 @@ describe("self-lockout guard", () => {
     ).toBe(false);
   });
 });
+
+/**
+ * §7.12c — THE INVARIANT THE BOOT-TIME BACKFILL RELIES ON.
+ *
+ * `reconcileUserPermissions` treats a module that is ABSENT on a user as
+ * "never decided" and copies the role template's value in; a module that is
+ * PRESENT — even `{ view: false, … }` — is a deliberate setting and is never
+ * touched. That is only safe because every save from this UI writes EVERY
+ * registry module with an explicit boolean per action, so an admin choosing
+ * "none" produces explicit falses, never an absence. If this test ever has
+ * to change, the backfill's safety argument changes with it.
+ */
+describe("selectionsToPermissions writes every registry module, every action, explicit boolean (§7.12c)", () => {
+  it("with no selections at all: every module present, every action exactly false", () => {
+    const permissions = selectionsToPermissions(REGISTRY, {});
+
+    expect(Object.keys(permissions).sort()).toEqual(Object.keys(REGISTRY).sort());
+
+    Object.entries(REGISTRY).forEach(([moduleName, actions]) => {
+      expect(Object.keys(permissions[moduleName]).sort()).toEqual([...actions].sort());
+      actions.forEach((action) => expect(permissions[moduleName][action]).toBe(false));
+    });
+  });
+
+  it("a module set to 'none' is stored as explicit falses — never omitted", () => {
+    // Start from a full grant on one module, then drop it to none.
+    const full = buildSelections(REGISTRY, { leads: { view: true, create: true, edit: true, delete: true } });
+    const noneOnLeads = { ...full, leads: { ladderKeys: {}, scopeKeys: {}, capabilities: {} } };
+
+    const permissions = selectionsToPermissions(REGISTRY, noneOnLeads);
+
+    expect("leads" in permissions).toBe(true);
+    expect(Object.values(permissions.leads).every((value) => value === false)).toBe(true);
+  });
+
+  it("never emits a non-boolean value", () => {
+    const permissions = selectionsToPermissions(REGISTRY, buildSelections(REGISTRY, { leads: { view: true } }));
+
+    Object.values(permissions).forEach((actions) => {
+      Object.values(actions).forEach((value) => expect(typeof value).toBe("boolean"));
+    });
+  });
+});
