@@ -27,7 +27,24 @@ const HEARTBEAT_INTERVAL_MS = 3 * 60 * 1000;
 // LOCATION_PING_INTERVAL_MINUTES default (env.js), never invented fresh.
 const FALLBACK_PING_INTERVAL_MINUTES = 2;
 
-function logAndSwallow(label) {
+/**
+ * Two server answers mean "there is nothing to track any more" and must end
+ * the loop rather than be retried every interval (§7.71):
+ *   401 — the session is gone. The app's 401 interceptor only redirects on a
+ *         SESSION_EXPIRED body; any other 401 (account disabled, cookie
+ *         cleared) would otherwise leave this loop firing dead requests until
+ *         the next navigation.
+ *   409 — the server says there is no open shift (checked out from another
+ *         device, or by an admin). The server is authoritative; local state
+ *         catches up on its own next refetch.
+ */
+const TERMINAL_STATUSES = new Set([401, 409]);
+
+function isTerminal(error) {
+  return TERMINAL_STATUSES.has(error?.response?.status);
+}
+
+function logAndSwallow(label, onTerminal) {
   return (error) => {
     // A single failed heartbeat/ping must never crash the app or block
     // check-out — the exact "never block the primary action" principle
@@ -36,6 +53,10 @@ function logAndSwallow(label) {
     // visible in devtools, not silently invisible either.
     // eslint-disable-next-line no-console
     console.error(`${label} failed:`, error);
+
+    if (isTerminal(error)) {
+      onTerminal();
+    }
   };
 }
 
@@ -64,6 +85,20 @@ async function sendPing() {
  * detection needs periodic "still alive" proof) and the Location ping loop
  * (§7.4b — the live map has nothing to show without pings) for as long as
  * `isActive` is true, and only then.
+ *
+ * MOUNTED AT APP LEVEL (§7.71, 2026-09-19) — in `HeaderAttendanceControl`,
+ * which the shell renders on every in-app page for every non-admin. It used
+ * to live in `CheckInOutWidget`, which only exists on `/attendance`: the
+ * moment an employee navigated anywhere else the effect cleanup below ran
+ * and tracking stopped. A production shift showed the result exactly —
+ * `lastHeartbeatAt` equal to `checkIn.time` to the millisecond and zero
+ * pings for the whole day. The header control is the right host because it
+ * is the component that displays "Tracking active": the loop and the label
+ * now read the same `openRecord`, so they cannot disagree.
+ *
+ * SENDS ONE TICK IMMEDIATELY on start (and on resume from a hidden tab), not
+ * after a full interval — a freshly checked-in employee should appear on the
+ * live map at once, not two minutes later.
  *
  * Driven by the caller's own derived "am I checked in" boolean rather than
  * an imperative start()/stop() pair tied to the check-in button's onClick —
@@ -94,14 +129,21 @@ export function useCheckedInHeartbeatLoop(isActive) {
     let pingIntervalId = null;
     let isCancelled = false;
 
-    function startIntervals(pingIntervalMinutes) {
-      heartbeatIntervalId = setInterval(() => {
-        heartbeat().catch(logAndSwallow("Attendance heartbeat"));
-      }, HEARTBEAT_INTERVAL_MS);
+    function tickHeartbeat() {
+      heartbeat().catch(logAndSwallow("Attendance heartbeat", stopIntervals));
+    }
 
-      pingIntervalId = setInterval(() => {
-        sendPing().catch(logAndSwallow("Location ping"));
-      }, pingIntervalMinutes * 60 * 1000);
+    function tickPing() {
+      sendPing().catch(logAndSwallow("Location ping", stopIntervals));
+    }
+
+    function startIntervals(pingIntervalMinutes) {
+      // First tick now — the intervals below only fire after a full period.
+      tickHeartbeat();
+      tickPing();
+
+      heartbeatIntervalId = setInterval(tickHeartbeat, HEARTBEAT_INTERVAL_MS);
+      pingIntervalId = setInterval(tickPing, pingIntervalMinutes * 60 * 1000);
     }
 
     function stopIntervals() {

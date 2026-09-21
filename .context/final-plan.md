@@ -5981,3 +5981,89 @@ Backend 1008/1008 → **1019/1019** (payment tests 39 → 50). Frontend 899 → 
 documented load-flake files (CustomersListPage, UserManagementPage, LeadDetailPage), 5000ms
 timeouts, none in anything this task touched.
 
+## §7.71 — Live Map zero markers: the ping loop now survives navigation (2026-09-19)
+
+An employee checked in and the Live Map showed nothing but a "silent" warning for the entire
+shift. The record told the whole story before any code was read: `lastHeartbeatAt` **equal to
+`checkIn.time` to the millisecond**, and **0** `LocationPing` documents. The loop had not run a
+single tick after check-in. That is not a map failure — the map was correctly reporting that no
+position had ever arrived.
+
+Whether the session stayed on `/attendance` is **not determinable** from the server: nothing logs
+page views. What can be said is that not even one 3-minute heartbeat landed, so within three
+minutes of checking in the loop had already been unmounted, paused, or the tab closed.
+
+### The two known bugs, as found
+
+- **(a) loop mounted in `CheckInOutWidget` — PRESENT.** The only mount was
+  `CheckInOutWidget.jsx:55`; that component exists on `/attendance` only, so the effect cleanup
+  ran on every navigation away and tracking stopped. Fixed here.
+- **(b) `useLiveTrails` reading the history response as a flat array — ALREADY FIXED** on
+  2026-08-26 (§7.68), uncommitted in the working tree. Re-demonstrated rather than assumed: with
+  `useLiveTrails.js` swapped for `HEAD`'s version, 2 of its 4 tests fail with
+  `TypeError: trails[index].map is not a function`; with the fix, 4/4. The fix reads `.pings`
+  through `historyPayload.js` and still accepts the legacy array. It was required before (a):
+  fixing the loop alone would have turned an empty map into "Could not load live locations".
+
+### Fix — the loop lives in `HeaderAttendanceControl`
+
+`useCheckedInHeartbeatLoop` is now called from `layouts/HeaderAttendanceControl.jsx`, which the
+shell renders on **every** in-app page for every non-admin, and whose hooks run even while it
+renders `null` during its initial load. It is the right host for a reason beyond "it is on every
+page": it is the component that displays **"Tracking active"**, so the loop and that label now
+read the same `openRecord` and cannot disagree. Admin never mounts the control, so admin never
+runs the loop; an admin has no open shift to track anyway (`checkIn` rejects the role).
+
+Three more changes in the hook itself:
+
+- **One tick immediately** on start and on resume from a hidden tab, then the intervals. A
+  freshly checked-in employee appears on the map at once — previously the first ping came a full
+  `LOCATION_PING_INTERVAL` later.
+- **Stops itself on 401 or 409.** The app's 401 interceptor only redirects on a `SESSION_EXPIRED`
+  body; any other 401 (cookie cleared, account disabled) would have left the loop firing dead
+  requests until the next navigation. A 409 is the server saying there is no open shift (checked
+  out from another device or by an admin) — the server is authoritative. A 500 or a network blip is
+  NOT terminal and is retried next interval.
+- `visibilitychange` pause/resume is unchanged.
+
+**Logout:** `logout()` clears the session → `ProtectedRoute` redirects → `MainLayout` unmounts →
+the effect cleanup clears both intervals. **Session expiry:** the interceptor does
+`window.location.href = "/login"` — a full page load that terminates the JS engine, intervals
+included. **Check-out:** `openRecord` becomes null via the existing `attendanceEvents` bus →
+`isActive` false → cleanup. All three stop the loop; the 401/409 guard covers whatever falls
+between them.
+
+### Verified — real browser, emulated geolocation, fake camera
+
+- **Before:** admin Live Map → `entries: 0`, warning **"Testing User 2 — silent 19h 41m"**. That is
+  also the KNOWN LIMIT case: a closed mobile browser stops tracking, no web API prevents it, and
+  the warning is the correct representation of it.
+- **Employee session** (the same open shift), landing on `/dashboard`, never visiting
+  `/attendance`, moving by real SPA route changes: ping at **5.3s** (immediate), then from
+  `/leads` at **125s**, `/customers` at **245s**, `/dashboard` at **365s** — one every 120s, all
+  `201`; heartbeats every 180s. The employee role has no Leads/Customers nav, so those routes were
+  driven through the router directly; they render inside the shell regardless.
+- **After:** admin Live Map → `entries: 1`, no warning, **no error alert**, Leaflet with the live
+  marker, check-in flag and ping trail, at 1280 and 390. This is the first time the
+  employee-with-pings path has rendered.
+- **Fresh check-in** (a manager, via the header's Play → capture → Confirm): first ping POSTed at
+  **22.4s, before the modal had closed** at 23.1s; the header timer started the same instant;
+  admin Live Map at 390 → `entries: 2`, "testing manager — last updated just now".
+
+Everything created was removed: the manager's check-in record, its Cloudinary photo, its ping and
+two notifications; and the 14 emulated pings plus the geofence violation they put on Testing
+User 2's shift — which stays open, with its real 19-hour connectivity gap intact.
+
+Two things seen and NOT touched: the CARTO basemap tiles now render an **"API KEY REQUIRED"**
+watermark (a provider policy change since August; tiles still draw); and the August closed
+shifts that show heartbeats advancing for hours with zero pings are a *different* signature from
+this one — most plausibly geolocation denied on the device, which the loop swallows and logs — and
+were not diagnosed here.
+
+One harness fault worth recording because it nearly became a false finding: the first capture
+filtered on `location/ping` when the endpoint is `location/pings`, so a run showed heartbeats and
+"zero pings" and I briefly suspected a second root cause. The database, which does not care about
+my regex, showed the pings had been arriving all along.
+
+Frontend hook tests 10 → 17; `HeaderAttendanceControl` +1. See suite totals in the report.
+

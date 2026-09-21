@@ -9,6 +9,7 @@ import {
   CoffeeOutlined,
 } from "@ant-design/icons";
 import useMyAttendance from "../modules/attendance/hooks/useMyAttendance";
+import useCheckedInHeartbeatLoop from "../modules/attendance/hooks/useCheckedInHeartbeatLoop";
 import { requestGeolocationOnce } from "../modules/attendance/hooks/useGeolocation";
 import AttendanceCaptureFlow from "../modules/attendance/components/AttendanceCaptureFlow";
 import { breakIn, breakOut } from "../modules/attendance/api/attendanceApi";
@@ -58,6 +59,12 @@ function HeaderAttendanceControl() {
   const [now, setNow] = useState(() => dayjs());
 
   const isCheckedIn = Boolean(openRecord);
+
+  // The heartbeat + location-ping loop runs from HERE (§7.71): this control
+  // is on every in-app page for every non-admin, and it is the thing that
+  // says "Tracking active" — so the loop and the label read one `openRecord`.
+  // Admin never mounts this component, so admin never runs the loop.
+  useCheckedInHeartbeatLoop(isCheckedIn);
   const isOnBreak = Boolean(openRecord?.breakIn?.time) && !openRecord?.breakOut?.time;
   const hasUsedBreak = Boolean(openRecord?.breakIn?.time) && Boolean(openRecord?.breakOut?.time);
 

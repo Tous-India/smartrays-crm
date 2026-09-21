@@ -20,6 +20,14 @@ vi.mock("../modules/attendance/api/attendanceApi", () => ({
   checkOut: vi.fn(),
 }));
 
+// §7.71 — the heartbeat/ping loop is mounted HERE, on every page, not in
+// CheckInOutWidget. Mocked so no test fires a real GET /location/config; the
+// interval mechanics are covered in useCheckedInHeartbeatLoop.test.js. What
+// these tests pin is that this control drives it with the checked-in state.
+vi.mock("../modules/attendance/hooks/useCheckedInHeartbeatLoop", () => ({
+  default: vi.fn(),
+}));
+
 vi.mock("../modules/attendance/hooks/useGeolocation", async (importOriginal) => {
   const actual = await importOriginal();
   return { ...actual, requestGeolocationOnce: vi.fn(async () => ({ lat: 1, lng: 2 })) };
@@ -90,6 +98,33 @@ describe("HeaderAttendanceControl — state machine", () => {
     expect(screen.getByRole("button", { name: "Pause" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Check out" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Check in" })).not.toBeInTheDocument();
+  });
+
+  /**
+   * §7.71. The loop used to be mounted in CheckInOutWidget and therefore died
+   * on every navigation away from /attendance. A production shift showed the
+   * result: lastHeartbeatAt equal to checkIn.time, zero pings all day. It now
+   * runs from this control, which the shell renders on every page — and it is
+   * driven by the same `openRecord` that renders the timer.
+   */
+  it("drives the heartbeat/ping loop from the checked-in state — on, then off after check-out", async () => {
+    const { default: useCheckedInHeartbeatLoop } = await import(
+      "../modules/attendance/hooks/useCheckedInHeartbeatLoop"
+    );
+
+    mockRecords([CHECKED_IN]);
+    render(<HeaderAttendanceControl />);
+    await screen.findByTestId("header-elapsed-timer");
+
+    expect(useCheckedInHeartbeatLoop).toHaveBeenLastCalledWith(true);
+
+    // Not checked in: the loop must be told to stop.
+    useCheckedInHeartbeatLoop.mockClear();
+    mockRecords([]);
+    render(<HeaderAttendanceControl />);
+    await screen.findByRole("button", { name: "Check in" });
+
+    expect(useCheckedInHeartbeatLoop).toHaveBeenLastCalledWith(false);
   });
 
   it("ON BREAK: shows Play (resume) and DISABLES Stop, because checkout is rejected during a break", async () => {

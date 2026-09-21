@@ -3,7 +3,6 @@ import dayjs from "dayjs";
 import { Button, Card, Space, Spin, Tag, Tooltip, App } from "antd";
 import useMyAttendance from "../hooks/useMyAttendance";
 import { requestGeolocationOnce } from "../hooks/useGeolocation";
-import useCheckedInHeartbeatLoop from "../hooks/useCheckedInHeartbeatLoop";
 import AttendanceCaptureFlow from "./AttendanceCaptureFlow";
 import { breakIn, breakOut } from "../api/attendanceApi";
 
@@ -47,12 +46,10 @@ function CheckInOutWidget() {
     return () => clearInterval(interval);
   }, [isCheckedIn]);
 
-  // Driven by the same `isCheckedIn` boolean as the elapsed-time ticker
-  // above — starts on a fresh check-in AND resumes correctly if the page
-  // loads mid-shift (isCheckedIn is already true on first render), with no
-  // separate code path for either case. See the hook itself for the
-  // interval values and the visibilitychange pause/resume behavior.
-  useCheckedInHeartbeatLoop(isCheckedIn);
+  // The heartbeat/ping loop is NOT mounted here any more (§7.71). This widget
+  // only exists on /attendance, so mounting it here stopped tracking the
+  // moment the employee navigated anywhere else. It lives in
+  // `layouts/HeaderAttendanceControl.jsx` now, which is on every page.
 
   function handleStartCapture() {
     setIsCapturing(true);
