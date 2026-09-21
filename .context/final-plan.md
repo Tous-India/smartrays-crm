@@ -5777,3 +5777,121 @@ flakes, seven literal 5000ms timeouts.
 structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a
 UX/data-model reference for Leads & Customers — its actual tech stack (Next.js/Supabase) is
 not part of this project.*
+## §7.69 — Attendance photos: authenticated delivery (2026-08-26)
+
+Attendance check-in/check-out photos were uploaded to Cloudinary with default **public** delivery.
+A production photo was fetched with no cookies, no auth and no referrer: **200, image/jpeg, 35,084
+bytes**. The in-app permission layer (`applyVisibilityRules`, `SELF_VIEW_VISIBILITY`) correctly
+decided *who was handed the link* — the link then worked for anyone who ever saw it, forever.
+
+The fix sits **underneath** that permission layer. `applyVisibilityRules` and
+`SELF_VIEW_VISIBILITY` are unchanged in what they decide; what changed is that the URL they release
+is now worthless to anyone else.
+
+### `type: authenticated`, because `access_mode` is not available on this account
+
+`access_mode: "authenticated"` was the intended mechanism and would have been the smaller change —
+delivery stays on `/image/upload/`, there is a bulk prefix API, and no stored URL needs rewriting.
+The account rejects it outright:
+
+> Cannot update access_mode because this feature is not enabled.
+
+So delivery **type** changes instead, via an in-place rename (`to_type: "authenticated"`), which
+preserves `public_id` exactly — asserted in the migration before anything is written to the
+database, because every future read signs from that id.
+
+### What is stored, and what is served
+
+- **Stored**: `photoPublicId` (the durable reference, already existed) and `photoUrl` rewritten to
+  the asset's **unsigned** authenticated address. That address returns **401** on its own.
+- **Served**: a signed URL minted per read by `signedAttendancePhotoUrl`, only for a viewer who has
+  already passed the existing permission checks.
+- A signed URL is **never** persisted — it expires, so a stored one becomes a dead link within
+  minutes.
+
+**Expiry: 300 seconds.** Long enough to render a page and open a modal or map popup off the back of
+it; short enough that a URL lifted from a network log or a screenshot is dead on arrival. Signing is
+`private_download_url` — a local HMAC, no network call — so it is safe to run once per record in a
+list response, and the API secret never leaves the server.
+
+Token-based delivery (`auth_token`) was the other route to a real expiry and is **not available**:
+it needs a separate auth-token key this account does not have. `sign_url: true` was the alternative
+but carries **no expiry at all**, which the brief required.
+
+### Two read paths, both signed
+
+`getTeamAttendance` and `location.service.js#findEndpoints` are the only paths that release someone
+else's photo. Both now sign from the publicId, and both had to start selecting `photoPublicId`
+(`select: false` on the schema). Two consequences worth recording:
+
+- `applyVisibilityRules` now **deletes `photoPublicId`** from every response. Loading it put an
+  internal reference one careless spread away from every team payload.
+- `findEndpoints` lists sub-paths individually. MongoDB refuses a projection naming both a field and
+  its own subfield — *"Path collision at checkIn.photoPublicId"* — which the location tests caught as
+  five 500s.
+
+A missing publicId yields **null**, never the stored URL. Failing closed is right, and it is also
+the honest signal that a query forgot the select.
+
+### The retention cron would have silently stopped deleting
+
+`cloudinary.uploader.destroy` defaults to `type: "upload"` and scopes strictly by type. Against a
+migrated asset it returns `{ result: "not found" }` — success-shaped, nothing deleted. The cron would
+have reported clean runs forever while every photo stayed in Cloudinary. `deleteCloudinaryAsset` now
+tries `authenticated` first and falls back to `upload`.
+
+**That cron does not run in production regardless.** `node-cron` needs a long-lived process; this
+backend runs as a Vercel serverless function. It is the third scheduled job that silently never
+fires — a pre-existing limitation already recorded against `attendancePhotoCleanupCron.js`, not
+introduced here.
+
+### Migration — `backend/src/scripts/migrateAttendancePhotosToAuthenticated.js`
+
+`npm run migrate:attendance-photos` (dry run) / `-- --apply`. **Dry run by default**, since it
+touches production assets. Re-runnable: each phase is keyed on the state it fixes.
+
+| | |
+|---|---|
+| Cloudinary assets migrated | **19** (16 referenced + 3 orphans with no attendance record) |
+| publicIds backfilled | **1** (pre-dated the field) |
+| URLs rewritten | **16** across **8** documents |
+| Failures | 0 |
+| Re-run | 0 assets, 0 URLs, 0 documents — idempotent |
+
+`invalidate: true` matters: Cloudinary's CDN keeps serving a previously-delivered public URL from
+the edge after the asset moves. Without it the old link stays 200 for the life of the cached copy.
+Propagation is not instant — during this work an old URL still returned 200 for several minutes
+after the rename, then 404. A verification run immediately after a migration can see the cache, not
+a failure.
+
+### Verified
+
+`curl`-equivalent fetches, no cookies, no auth, no referrer:
+
+| | |
+|---|---|
+| Migrated photo, original public URL | **404** (also 404 cache-busted) |
+| Migrated photo, stored authenticated URL unsigned | **401** |
+| **New** upload, stored URL unsigned | **401** |
+| **New** upload, guessed `/image/upload/` path | **404** |
+| Server-signed URL | **200 image/jpeg** |
+| Signature past its expiry | **401** |
+
+Real browser at **1280** and **390** — `naturalWidth > 0`, so the pixels actually decoded, not just
+an `<img>` with a `src`:
+
+- **Admin** — attendance modal, both photos 480×640. 14 records, 8 with photos.
+- **Manager with `view_photos`** — own team only (10 records vs the admin's 14), 6 with photos,
+  rendered at both widths.
+- **Manager without `view_photos`** — **0 photo URLs, 0 images**. Nothing released, signed or
+  otherwise.
+- **History map popup** — signed photo rendered, 480px, at both widths. All 16 endpoints carried a
+  signed URL.
+- `photoPublicId` absent from every response body checked.
+
+No new environment variable. `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET`
+already exist and are set in Vercel production.
+
+Backend 1008 passed of 1008 (was 999) — 9 new, including a `cloudinary.service.test.js` pinning the
+fail-closed null and the two-type delete fallback.
+

@@ -2,6 +2,7 @@ import ApiError from "../../utils/ApiError.js";
 import { can } from "../../helpers/permission.helper.js";
 import { env } from "../../config/env.js";
 import { applyGeofenceCheck } from "../attendance/attendance.service.js";
+import { signedAttendancePhotoUrl } from "../../services/cloudinary.service.js";
 import LocationPing from "./location.model.js";
 import Attendance from "../attendance/attendance.model.js";
 import User from "../user/user.model.js";
@@ -314,10 +315,19 @@ async function findPings(employeeIds, start, end) {
 async function findEndpoints(employeeIds, start, end, requestingUser) {
   const canSeePhotos = can(requestingUser, "attendance", "view_photos");
 
+  // Sub-paths are listed individually rather than projecting `checkIn`/
+  // `checkOut` wholesale: MongoDB refuses a projection that names both a field
+  // and one of its own subfields ("Path collision at checkIn.photoPublicId"),
+  // and `photoPublicId` has to be named explicitly because it is `select:
+  // false` on the schema. `photoUrl` is deliberately NOT loaded — since §7.69
+  // the URL served is signed from the publicId, so the stored one is not
+  // something this path should be able to hand out by accident.
   const records = await Attendance.find({
     employeeId: { $in: employeeIds },
     date: { $gte: start, $lt: end },
-  }).select("employeeId date checkIn checkOut geofenceViolations");
+  }).select(
+    "employeeId date geofenceViolations checkIn.time checkIn.coords +checkIn.photoPublicId checkOut.time checkOut.coords +checkOut.photoPublicId"
+  );
 
   const points = [];
 
@@ -351,7 +361,9 @@ async function findEndpoints(employeeIds, start, end, requestingUser) {
         coords: { lat: event.coords.lat, lng: event.coords.lng },
         // Same rule the Attendance module applies to its own responses — the
         // photo is released only to a viewer holding `attendance.view_photos`.
-        photoUrl: canSeePhotos ? event.photoUrl || null : null,
+        // Signed at read time from the publicId (§7.69): the stored URL is the
+        // unsigned authenticated address and returns 401 by itself.
+        photoUrl: canSeePhotos ? signedAttendancePhotoUrl(event.photoPublicId) : null,
         geofenceBreachMeters: breach ? Math.round(breach.maxDistanceMeters) : null,
       });
     });

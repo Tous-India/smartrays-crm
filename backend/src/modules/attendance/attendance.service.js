@@ -1,7 +1,7 @@
 import ApiError from "../../utils/ApiError.js";
 import { can } from "../../helpers/permission.helper.js";
 import { env } from "../../config/env.js";
-import { uploadAttendancePhoto, deleteCloudinaryAsset } from "../../services/cloudinary.service.js";
+import { uploadAttendancePhoto, deleteCloudinaryAsset, signedAttendancePhotoUrl } from "../../services/cloudinary.service.js";
 import { generateExcelReport, generatePdfReport, excludeInactiveOrDeletedRefs } from "../../services/report.service.js";
 import { haversineDistanceMeters } from "../../services/geo.service.js";
 import { generateAutoTravelLog } from "../transport/travelLog.service.js";
@@ -383,7 +383,13 @@ export async function getTeamAttendance(month, requestingUser) {
     filter.date = { $gte: start, $lt: end };
   }
 
-  const records = await Attendance.find(filter).sort({ date: -1 });
+  // `photoPublicId` is `select: false`, and since §7.69 it is what a photo URL
+  // is signed FROM — without it a permitted viewer would correctly, and
+  // invisibly, get no photo at all. This is the one read path that releases
+  // other people's photos, so it is the one that has to ask for it.
+  const records = await Attendance.find(filter)
+    .sort({ date: -1 })
+    .select("+checkIn.photoPublicId +checkOut.photoPublicId");
   const visibility = viewerVisibility(requestingUser);
 
   return records.map((record) => applyVisibilityRules(record, visibility));
@@ -778,16 +784,40 @@ const SELF_VIEW_VISIBILITY = { canSeePhotos: false, canSeeLocation: false };
  * breakIn/breakOut) from a record per the given visibility — never mutates
  * the original Mongoose document, works on a plain object copy so a caller
  * that still holds the original (e.g. `checkOut` re-using `openRecord` after
- * this runs) isn't affected. `photoPublicId` never reaches this at all
- * (schema `select: false`), so there's nothing to strip for it here.
+ * this runs) isn't affected.
+ *
+ * SIGNS THE PHOTO FOR A PERMITTED VIEWER (§7.69). The stored `photoUrl` is
+ * the asset's unsigned authenticated address and returns 401 on its own, so
+ * this replaces it with a short-lived signed URL minted from
+ * `photoPublicId`. This function is still the ONLY place that decides
+ * whether a photo is released at all — authenticated delivery sits
+ * underneath that decision, it does not replace it.
+ *
+ * A permitted viewer whose record carries no `photoPublicId` gets null
+ * rather than the stored URL: failing closed is right, and it is also the
+ * honest signal that a caller forgot `.select("+checkIn.photoPublicId
+ * +checkOut.photoPublicId")` — the field is `select: false`, so it has to be
+ * asked for explicitly.
+ *
+ * `photoPublicId` is deleted from the output unconditionally. It is now
+ * loaded by the queries that feed this, and it is an internal reference, not
+ * something any response should carry.
  */
 function applyVisibilityRules(record, { canSeePhotos, canSeeLocation }) {
   const obj = typeof record.toObject === "function" ? record.toObject() : { ...record };
 
-  if (!canSeePhotos) {
-    if (obj.checkIn) obj.checkIn = { ...obj.checkIn, photoUrl: null };
-    if (obj.checkOut) obj.checkOut = { ...obj.checkOut, photoUrl: null };
-  }
+  ["checkIn", "checkOut"].forEach((kind) => {
+    if (!obj[kind]) {
+      return;
+    }
+
+    obj[kind] = {
+      ...obj[kind],
+      photoUrl: canSeePhotos ? signedAttendancePhotoUrl(obj[kind].photoPublicId) : null,
+    };
+
+    delete obj[kind].photoPublicId;
+  });
 
   if (!canSeeLocation) {
     if (obj.checkIn) obj.checkIn = { ...obj.checkIn, coords: null };

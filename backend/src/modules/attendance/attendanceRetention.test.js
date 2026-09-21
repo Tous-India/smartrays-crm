@@ -9,6 +9,10 @@ import { runAttendanceRetention } from "./attendance.service.js";
 import { deleteCloudinaryAsset } from "../../services/cloudinary.service.js";
 
 vi.mock("../../services/cloudinary.service.js", () => ({
+  // §7.69 — a permitted viewer now receives a URL SIGNED from the publicId at
+  // read time, never the stored one. Deriving the stub from the publicId is
+  // what lets a test assert that the signing actually happened.
+  signedAttendancePhotoUrl: vi.fn((publicId) => (publicId ? "https://signed.test/" + publicId : null)),
   uploadAttendancePhoto: vi.fn(async () => ({ secureUrl: "https://fake/x.jpg", publicId: "fake-id" })),
   deleteCloudinaryAsset: vi.fn(async () => ({ result: "ok" })),
 }));

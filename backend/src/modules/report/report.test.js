@@ -25,6 +25,10 @@ const REPORT_CONTENT_TYPES = {
 // what actually proves the removal, not just the absence of a
 // `{ downloadUrl }` in the response.
 vi.mock("../../services/cloudinary.service.js", () => ({
+  // §7.69 — a permitted viewer now receives a URL SIGNED from the publicId at
+  // read time, never the stored one. Deriving the stub from the publicId is
+  // what lets a test assert that the signing actually happened.
+  signedAttendancePhotoUrl: vi.fn((publicId) => (publicId ? "https://signed.test/" + publicId : null)),
   uploadAttendancePhoto: vi.fn(),
   deleteCloudinaryAsset: vi.fn(),
   uploadTicketAttachment: vi.fn(),

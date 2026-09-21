@@ -12,6 +12,10 @@ const FAKE_ATTACHMENT_URL = "https://fake.cloudinary.test/attachment.pdf";
 // No test ever makes a real Cloudinary API call — mocked at the module
 // boundary, same pattern attendance.test.js/travelLog.test.js established.
 vi.mock("../../services/cloudinary.service.js", () => ({
+  // §7.69 — a permitted viewer now receives a URL SIGNED from the publicId at
+  // read time, never the stored one. Deriving the stub from the publicId is
+  // what lets a test assert that the signing actually happened.
+  signedAttendancePhotoUrl: vi.fn((publicId) => (publicId ? "https://signed.test/" + publicId : null)),
   uploadTicketAttachment: vi.fn(async () => FAKE_ATTACHMENT_URL),
 }));
 

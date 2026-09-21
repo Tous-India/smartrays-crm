@@ -10,6 +10,7 @@
     "seed:admin": "node src/scripts/seedAdmin.js",
     "seed:permission-templates": "node src/scripts/seedPermissionTemplates.js",
     "backfill:lead-client-type": "node src/scripts/backfillLeadClientType.js",
+    "migrate:attendance-photos": "node src/scripts/migrateAttendancePhotosToAuthenticated.js",
     "test": "vitest run",
     "test:watch": "vitest"
   },

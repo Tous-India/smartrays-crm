@@ -19,6 +19,10 @@ vi.mock("../../services/googleMaps.service.js", () => ({
   getDistanceKm: vi.fn(async () => FAKE_DISTANCE_KM),
 }));
 vi.mock("../../services/cloudinary.service.js", () => ({
+  // §7.69 — a permitted viewer now receives a URL SIGNED from the publicId at
+  // read time, never the stored one. Deriving the stub from the publicId is
+  // what lets a test assert that the signing actually happened.
+  signedAttendancePhotoUrl: vi.fn((publicId) => (publicId ? "https://signed.test/" + publicId : null)),
   uploadAttendancePhoto: vi.fn(async () => ({ secureUrl: "https://fake.cloudinary.test/photo.jpg", publicId: "fake-public-id" })),
 }));
 

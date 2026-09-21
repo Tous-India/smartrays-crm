@@ -10,6 +10,10 @@ import Notification from "../notification/notification.model.js";
 const FAKE_PHOTO_URL = "https://fake.cloudinary.test/photo.jpg";
 const FAKE_PHOTO_PUBLIC_ID = "fake-public-id";
 // A photo is mandatory server-side on every check-in/check-out (see
+// What a permitted viewer must now receive: signed from the publicId at read
+// time (§7.69), NOT the stored URL. Asserting the stored URL here would pass
+// even if signing were removed entirely.
+const FAKE_SIGNED_PHOTO_URL = "https://signed.test/fake-public-id";
 // attendance.validation.js) — this is the throwaway base64 payload nearly
 // every test in this file needs, since the goal of most tests here is
 // something other than photo handling itself.
@@ -30,6 +34,10 @@ const TEST_PHOTO = "data:image/jpeg;base64,ZmFrZWltYWdlZGF0YQ==";
 // to Cloudinary first).
 vi.mock("../../services/cloudinary.service.js", () => ({
   uploadAttendancePhoto: vi.fn(async () => ({ secureUrl: FAKE_PHOTO_URL, publicId: FAKE_PHOTO_PUBLIC_ID })),
+  // §7.69 — a permitted viewer now receives a URL SIGNED from the publicId at
+  // read time, never the stored one. Deriving the stub from the publicId is
+  // what lets a test assert that the signing actually happened.
+  signedAttendancePhotoUrl: vi.fn((publicId) => (publicId ? "https://signed.test/" + publicId : null)),
   deleteCloudinaryAsset: vi.fn(async () => ({ result: "ok" })),
 }));
 
@@ -624,7 +632,7 @@ describe("GET /attendance/team", () => {
 
     const response = await managerAgent.get("/api/v1/attendance/team");
 
-    expect(response.body.data[0].checkIn.photoUrl).toBe(FAKE_PHOTO_URL);
+    expect(response.body.data[0].checkIn.photoUrl).toBe(FAKE_SIGNED_PHOTO_URL);
     expect(response.body.data[0].checkIn.coords).toBeNull();
   });
 
@@ -648,7 +656,7 @@ describe("GET /attendance/team", () => {
 
     const response = await managerAgent.get("/api/v1/attendance/team");
 
-    expect(response.body.data[0].checkIn.photoUrl).toBe(FAKE_PHOTO_URL);
+    expect(response.body.data[0].checkIn.photoUrl).toBe(FAKE_SIGNED_PHOTO_URL);
     expect(response.body.data[0].checkIn.coords).toEqual(buildCoords());
   });
 
@@ -657,10 +665,43 @@ describe("GET /attendance/team", () => {
 
     const response = await adminAgent.get("/api/v1/attendance/team");
 
-    expect(response.body.data[0].checkIn.photoUrl).toBe(FAKE_PHOTO_URL);
+    expect(response.body.data[0].checkIn.photoUrl).toBe(FAKE_SIGNED_PHOTO_URL);
     expect(response.body.data[0].checkIn.coords).toEqual(buildCoords());
   });
 });
+
+  /**
+   * §7.69. `getTeamAttendance` has to load `photoPublicId` now — it is what a
+   * URL is signed from — and loading it put an internal reference one careless
+   * spread away from every team response. `applyVisibilityRules` deletes it
+   * unconditionally; this is what proves it.
+   */
+  it("never leaks photoPublicId, even to an admin who can see everything", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const response = await adminAgent.get("/api/v1/attendance/team");
+
+    expect(response.body.data[0].checkIn).not.toHaveProperty("photoPublicId");
+    expect(response.body.data[0].checkOut).not.toHaveProperty("photoPublicId");
+    // The field, not the value: a signed Cloudinary URL carries the publicId
+    // in its own query string by design. The publicId was never the secret —
+    // the signature is.
+    expect(JSON.stringify(response.body)).not.toContain("photoPublicId");
+  });
+
+  /**
+   * The stored URL is the asset's unsigned authenticated address and answers
+   * 401 by itself. Handing it out instead of a signed one would look correct
+   * in every test that only checks "a photo came back", and render nothing.
+   */
+  it("serves a signed URL, never the URL stored on the record", async () => {
+    await sales1Agent.post("/api/v1/attendance/check-in").send({ coords: buildCoords(), photo: TEST_PHOTO });
+
+    const response = await adminAgent.get("/api/v1/attendance/team");
+
+    expect(response.body.data[0].checkIn.photoUrl).not.toBe(FAKE_PHOTO_URL);
+    expect(response.body.data[0].checkIn.photoUrl).toContain(FAKE_PHOTO_PUBLIC_ID);
+  });
 
 describe("GET /attendance/report", () => {
   // Migrated onto the unified §7.11 report dispatcher (Phase 8); as of

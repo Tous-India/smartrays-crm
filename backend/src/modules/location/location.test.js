@@ -11,6 +11,10 @@ import Attendance from "../attendance/attendance.model.js";
 // so this file never makes a real Cloudinary network call either.
 vi.mock("../../services/cloudinary.service.js", () => ({
   uploadAttendancePhoto: vi.fn(async () => ({ secureUrl: "https://fake.cloudinary.test/photo.jpg", publicId: "fake-public-id" })),
+  // §7.69 — a permitted viewer now receives a URL SIGNED from the publicId at
+  // read time, never the stored one. Deriving the stub from the publicId is
+  // what lets a test assert that the signing actually happened.
+  signedAttendancePhotoUrl: vi.fn((publicId) => (publicId ? "https://signed.test/" + publicId : null)),
 }));
 
 // The same real check-out also now triggers travelLog.service.js's auto
@@ -363,6 +367,15 @@ describe("GET /location/live", () => {
     // Silent: an open shift with no ping at all. Previously indistinguishable
     // from nobody being checked in — both produced an empty response.
     await createOpenAttendance(sales1._id);
+  it("excludes an employee who has already checked out", async () => {
+    await checkInAndPing(sales1Agent, sales1._id);
+    await createClosedAttendance(sales2._id);
+
+    const response = await adminAgent.get("/api/v1/location/live");
+
+    expect(response.body.data.entries.map((entry) => entry.employeeId)).toEqual([String(sales1._id)]);
+  });
+
     await checkInAndPing(sales2Agent, sales2._id);
 
     const response = await adminAgent.get("/api/v1/location/live");
@@ -426,15 +439,6 @@ describe("GET /location/live", () => {
     const names = response.body.data.unlocatable.map((one) => one.employeeId);
     expect(names[0]).toBe(String(sales1._id));
     expect(response.body.data.unlocatable[0].silentForMinutes).toBeGreaterThanOrEqual(179);
-  });
-
-  it("excludes an employee who has already checked out", async () => {
-    await checkInAndPing(sales1Agent, sales1._id);
-    await createClosedAttendance(sales2._id);
-
-    const response = await adminAgent.get("/api/v1/location/live");
-
-    expect(response.body.data.entries.map((entry) => entry.employeeId)).toEqual([String(sales1._id)]);
   });
 
   it("denies a user with no location permission granted at all", async () => {
