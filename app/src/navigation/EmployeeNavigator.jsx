@@ -1,6 +1,7 @@
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { SCREENS } from "../constants/screens.constants";
 import HomeScreen from "../modules/home/screens/HomeScreen";
+import CaptureScreen from "../modules/attendance/screens/CaptureScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -12,6 +13,7 @@ function EmployeeNavigator() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name={SCREENS.HOME} component={HomeScreen} />
+      <Stack.Screen name={SCREENS.CAPTURE} component={CaptureScreen} />
     </Stack.Navigator>
   );
 }
