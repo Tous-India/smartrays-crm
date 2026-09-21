@@ -46,3 +46,12 @@ export function fetchLocationHistoryRange({ employeeIds, from, to }) {
     },
   });
 }
+
+/**
+ * Latest location-consent decision per employee in the caller's scope
+ * (§7.73) — the same scoping as the live map; those who never answered are
+ * included with `decision: null`.
+ */
+export function fetchLocationConsents() {
+  return apiClient.get("/location/consent");
+}

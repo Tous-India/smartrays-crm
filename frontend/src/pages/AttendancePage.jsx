@@ -5,6 +5,7 @@ import TeamAttendanceView from "../modules/attendance/components/TeamAttendanceV
 import AdminAttendanceView from "../modules/attendance/components/AdminAttendanceView";
 import LeaveSection from "../modules/leave/components/LeaveSection";
 import LiveTrackingMap from "../modules/location/components/LiveTrackingMap";
+import LocationConsentPanel from "../modules/location/components/LocationConsentPanel";
 import LocationHistoryMap from "../modules/location/components/LocationHistoryMap";
 import MonthlyReportSection from "../modules/attendance/components/MonthlyReportSection";
 import useSessionStore from "../store/sessionStore";
@@ -36,6 +37,16 @@ import canViewLocationMaps from "../modules/location/locationAccess";
  * §7.5c/§7.5d; every gate still comes from the same `leave.*` grants, and
  * the backend is untouched.
  */
+/** The Live Map tab: the map, then the consent panel (§7.73) beneath it. */
+function LiveMapTab() {
+  return (
+    <div className="flex flex-col gap-4">
+      <LiveTrackingMap />
+      <LocationConsentPanel />
+    </div>
+  );
+}
+
 function AttendancePage() {
   const user = useSessionStore((state) => state.user);
   const isAdmin = user?.role === "admin";
@@ -64,7 +75,8 @@ function AttendancePage() {
         { key: "leave-requests", label: "Leave Requests", children: <LeaveSection hidePendingCards /> },
         ...(canViewLiveMap
           ? [
-              { key: "live-map", label: "Live Map", children: <LiveTrackingMap /> },
+              // §7.73 — who has agreed to tracking sits under the map it governs.
+              { key: "live-map", label: "Live Map", children: <LiveMapTab /> },
               // §7.67 — same gate as Live Map, matching the API.
               { key: "location-history", label: "Location History", children: <LocationHistoryMap /> },
             ]
@@ -88,7 +100,7 @@ function AttendancePage() {
         { key: "leave", label: "Leave", children: <LeaveSection view="all" /> },
         ...(canViewLiveMap
           ? [
-              { key: "live-map", label: "Live Map", children: <LiveTrackingMap /> },
+              { key: "live-map", label: "Live Map", children: <LiveMapTab /> },
               // §7.67 — same gate as Live Map, matching the API.
               { key: "location-history", label: "Location History", children: <LocationHistoryMap /> },
             ]
