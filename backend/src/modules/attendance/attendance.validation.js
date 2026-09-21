@@ -37,6 +37,12 @@ function validateCoords(coords) {
   if (coords.lng < -180 || coords.lng > 180) {
     throw new ApiError(400, "coords.lng must be between -180 and 180");
   }
+
+  // Optional (mobile-backend-plan.md §3.6): the app sends the fix's accuracy
+  // in metres; the web sends nothing and that stays valid.
+  if (coords.accuracy !== undefined && (typeof coords.accuracy !== "number" || Number.isNaN(coords.accuracy) || coords.accuracy < 0)) {
+    throw new ApiError(400, "coords.accuracy must be a non-negative number of metres");
+  }
 }
 
 /**

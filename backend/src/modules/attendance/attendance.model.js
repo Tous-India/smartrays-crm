@@ -51,6 +51,10 @@ const attendanceSchema = new mongoose.Schema(
       coords: {
         lat: Number,
         lng: Number,
+        // Metres, when the client reported one (mobile-backend-plan.md §3.6,
+        // 2026-09-21). Optional; the web sends none and existing records
+        // have none. Read alongside lat/lng, never required.
+        accuracy: { type: Number, min: 0 },
       },
       photoUrl: String,
       // Cloudinary's own asset identifier (2026-07-31, §7.4c) — needed by
@@ -69,6 +73,7 @@ const attendanceSchema = new mongoose.Schema(
       coords: {
         lat: Number,
         lng: Number,
+        accuracy: { type: Number, min: 0 },
       },
       photoUrl: String,
       photoPublicId: { type: String, select: false },

@@ -2,12 +2,22 @@ import asyncWrapper from "../../utils/asyncWrapper.js";
 import ApiResponse from "../../utils/ApiResponse.js";
 import {
   submitPing,
+  submitPingBatch,
   getLiveLocations,
   getLocationHistory,
   getPingIntervalConfig,
 } from "./location.service.js";
 
 export const create = asyncWrapper(async (req, res) => {
+  // The batch form (mobile-backend-plan.md §3.2): a 200 with a per-ping
+  // report, because a partial result is the normal outcome, not an error.
+  if (Array.isArray(req.body.pings)) {
+    const report = await submitPingBatch(req.body.pings, req.user);
+
+    res.status(200).json(new ApiResponse(200, report, "Location pings processed"));
+    return;
+  }
+
   const { coords, capturedAt } = req.body;
 
   const ping = await submitPing({ coords, capturedAt }, req.user);

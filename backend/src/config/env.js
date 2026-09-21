@@ -118,6 +118,12 @@ export const env = {
   // a location ping may drift from the shift's check-in point before it's
   // recorded as a geofence violation. See attendance.service.js#applyGeofenceCheck.
   geofenceRadiusMeters: process.env.GEOFENCE_RADIUS_METERS || "500",
+  // Not required at boot — a fix less precise than this many metres is not
+  // evaluated against the geofence at all (mobile-backend-plan.md §3.6,
+  // 2026-09-21): it cannot say where the person is. Only consulted when a
+  // ping carries `coords.accuracy`; every web ping has none and is
+  // evaluated exactly as before. Defaults to 100.
+  geofenceMaxAccuracyMeters: process.env.GEOFENCE_MAX_ACCURACY_METERS || "100",
   // Not required at boot — how long Attendance records (and their Cloudinary
   // photos) are kept before the retention job deletes them (§6.5, 2026-08-05).
   // Defaults to 45 days if unset. See attendance.service.js#runAttendanceRetention

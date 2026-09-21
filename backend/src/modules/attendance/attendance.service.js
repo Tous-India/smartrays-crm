@@ -278,11 +278,24 @@ export async function applyGeofenceCheck(attendance, coords, now) {
       return;
     }
 
+    // Accuracy (mobile-backend-plan.md §3.6, 2026-09-21). Both branches are
+    // no-ops when the fix carries no `accuracy`, which is every web ping:
+    // 1. a fix less precise than GEOFENCE_MAX_ACCURACY_METERS cannot say
+    //    where the person is, so it is not evaluated at all;
+    // 2. the breach test becomes `distance − accuracy > radius` — the
+    //    NEAREST position consistent with the fix must itself be outside.
+    const hasAccuracy = typeof coords.accuracy === "number";
+
+    if (hasAccuracy && coords.accuracy > Number(env.geofenceMaxAccuracyMeters)) {
+      return;
+    }
+
     const distance = haversineDistanceMeters(checkInCoords, coords);
+    const effectiveDistance = hasAccuracy ? distance - coords.accuracy : distance;
     const radiusMeters = Number(env.geofenceRadiusMeters);
     const openViolation = attendance.geofenceViolations.find((violation) => !violation.end);
 
-    if (distance > radiusMeters) {
+    if (effectiveDistance > radiusMeters) {
       if (openViolation) {
         openViolation.maxDistanceMeters = Math.max(openViolation.maxDistanceMeters, distance);
       } else {
@@ -306,7 +319,7 @@ export async function applyGeofenceCheck(attendance, coords, now) {
  * `applyConnectivityGapIfNeeded`. Wrapped in try/catch for the same
  * never-block-checkout guarantee.
  */
-function closeOpenGeofenceViolation(attendance, now) {
+export function closeOpenGeofenceViolation(attendance, now) {
   try {
     const openViolation = attendance.geofenceViolations.find((violation) => !violation.end);
 

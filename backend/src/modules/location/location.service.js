@@ -1,9 +1,9 @@
 import ApiError from "../../utils/ApiError.js";
 import { can } from "../../helpers/permission.helper.js";
 import { env } from "../../config/env.js";
-import { applyGeofenceCheck } from "../attendance/attendance.service.js";
+import { applyGeofenceCheck, closeOpenGeofenceViolation } from "../attendance/attendance.service.js";
 import { signedAttendancePhotoUrl } from "../../services/cloudinary.service.js";
-import LocationPing from "./location.model.js";
+import LocationPing, { LOCATION_PING_TTL_SECONDS } from "./location.model.js";
 import Attendance from "../attendance/attendance.model.js";
 import User from "../user/user.model.js";
 
@@ -50,6 +50,199 @@ async function findOpenAttendance(employeeId) {
     "checkIn.time": { $ne: null },
     "checkOut.time": null,
   });
+}
+
+// A fix may be timestamped slightly ahead of the server's clock; beyond this
+// it is a broken clock, not a fix.
+const FUTURE_TOLERANCE_MS = 60 * 1000;
+const DUPLICATE_KEY_CODE = 11000;
+
+const REASONS = {
+  FUTURE: "capturedAt is in the future",
+  TOO_OLD: "capturedAt is older than the retention window",
+  NO_SHIFT: "no shift at capturedAt",
+  WRITE_FAILED: "could not be stored",
+};
+
+/**
+ * Records a BATCH of pings the app captured while it could not reach us
+ * (mobile-backend-plan.md §3.2–§3.4). Beside `submitPing`, not instead of it:
+ * the single form above keeps its literal "open shift at upload time" rule.
+ *
+ * The §3.4 faithful reading, decided: each ping is accepted when its
+ * `capturedAt` falls inside a shift of THIS user — `checkIn.time ≤ capturedAt
+ * ≤ checkOut.time`, or an open shift — and is attached to that shift. A shift
+ * that has since closed still takes the pings captured during it; that is
+ * the whole point of batching. A ping that matches no shift is rejected by
+ * index with a reason, never silently dropped and never the whole batch's
+ * failure: "3 of 200 rejected" is normal for a phone that was offline across
+ * a check-out, and a 4xx would make the app re-send everything.
+ *
+ * Idempotent through `clientPingId` (§3.3): `insertMany(…, { ordered: false })`
+ * stores what is new and reports the E11000s as duplicates, so a batch
+ * retried after a timeout inserts nothing and reports it all as delivered.
+ *
+ * Geofence: the accepted pings are evaluated in `capturedAt` order against
+ * their own shift, with the capture time as the violation timestamp, so the
+ * windows land where the employee actually was. A shift that is already
+ * closed is left with no open window — it is closed at that shift's own
+ * check-out, as check-out itself would have done. `lastHeartbeatAt` is NOT
+ * bumped: it means "the device reached us", and it did not, then.
+ */
+export async function submitPingBatch(pings, requestingUser) {
+  const employeeId = requestingUser._id;
+  const now = Date.now();
+  const oldestAccepted = now - LOCATION_PING_TTL_SECONDS * 1000;
+
+  const results = pings.map((ping, index) => ({ index, clientPingId: ping.clientPingId, status: "accepted" }));
+  const reject = (index, reason) => {
+    results[index].status = "rejected";
+    results[index].reason = reason;
+  };
+
+  // Bounds first: a ping outside the storable window matches no shift anyway.
+  pings.forEach((ping, index) => {
+    const capturedAt = new Date(ping.capturedAt).getTime();
+
+    if (capturedAt > now + FUTURE_TOLERANCE_MS) {
+      reject(index, REASONS.FUTURE);
+    } else if (capturedAt < oldestAccepted) {
+      reject(index, REASONS.TOO_OLD);
+    }
+  });
+
+  const shifts = await findShiftsCovering(employeeId, pings, results);
+  const documents = [];
+
+  pings.forEach((ping, index) => {
+    if (results[index].status !== "accepted") {
+      return;
+    }
+
+    const capturedAt = new Date(ping.capturedAt);
+    const shift = shifts.find((one) => coversInstant(one, capturedAt));
+
+    if (!shift) {
+      reject(index, REASONS.NO_SHIFT);
+      return;
+    }
+
+    documents.push({
+      index,
+      shift,
+      doc: {
+        employeeId,
+        attendanceId: shift._id,
+        coords: ping.coords,
+        capturedAt,
+        clientPingId: ping.clientPingId,
+      },
+    });
+  });
+
+  const failed = await insertUnordered(documents.map((entry) => entry.doc));
+
+  failed.forEach((code, position) => {
+    const { index } = documents[position];
+
+    if (code === DUPLICATE_KEY_CODE) {
+      results[index].status = "duplicate";
+    } else {
+      reject(index, REASONS.WRITE_FAILED);
+    }
+  });
+
+  await applyGeofenceToBatch(documents.filter((entry) => results[entry.index].status === "accepted"));
+
+  return {
+    accepted: results.filter((one) => one.status === "accepted").length,
+    duplicates: results.filter((one) => one.status === "duplicate").length,
+    rejected: results
+      .filter((one) => one.status === "rejected")
+      .map(({ index, clientPingId, reason }) => ({ index, clientPingId, reason })),
+    results,
+  };
+}
+
+/**
+ * The user's shifts that could contain any still-candidate ping: checked in
+ * no later than the newest capture, and either still open or checked out no
+ * earlier than the oldest capture. One query for the whole batch.
+ */
+async function findShiftsCovering(employeeId, pings, results) {
+  const candidates = pings
+    .filter((ping, index) => results[index].status === "accepted")
+    .map((ping) => new Date(ping.capturedAt).getTime());
+
+  if (candidates.length === 0) {
+    return [];
+  }
+
+  const earliest = new Date(Math.min(...candidates));
+  const latest = new Date(Math.max(...candidates));
+
+  return Attendance.find({
+    employeeId,
+    "checkIn.time": { $ne: null, $lte: latest },
+    $or: [{ "checkOut.time": null }, { "checkOut.time": { $gte: earliest } }],
+  }).sort({ "checkIn.time": 1 });
+}
+
+function coversInstant(shift, instant) {
+  const start = new Date(shift.checkIn.time).getTime();
+  const end = shift.checkOut?.time ? new Date(shift.checkOut.time).getTime() : Infinity;
+  const at = instant.getTime();
+
+  return at >= start && at <= end;
+}
+
+/**
+ * Inserts what it can and reports what it could not, as a map of position →
+ * MongoDB error code. `ordered: false` keeps going past a duplicate key, and
+ * the thrown bulk-write error carries the position of each failure.
+ */
+async function insertUnordered(docs) {
+  const failed = new Map();
+
+  if (docs.length === 0) {
+    return failed;
+  }
+
+  try {
+    await LocationPing.insertMany(docs, { ordered: false });
+  } catch (error) {
+    if (!Array.isArray(error.writeErrors)) {
+      throw error;
+    }
+
+    // The driver's WriteError keeps the code on `.err`; older shapes had it
+    // on the entry itself. Read both.
+    error.writeErrors.forEach((writeError) => {
+      failed.set(writeError.index, writeError.err?.code ?? writeError.code);
+    });
+  }
+
+  return failed;
+}
+
+async function applyGeofenceToBatch(entries) {
+  const ordered = [...entries].sort((a, b) => a.doc.capturedAt - b.doc.capturedAt);
+  const touched = new Map();
+
+  for (const entry of ordered) {
+    // Sequential on purpose: each check reads the window the previous one left.
+    // eslint-disable-next-line no-await-in-loop
+    await applyGeofenceCheck(entry.shift, entry.doc.coords, entry.doc.capturedAt);
+    touched.set(String(entry.shift._id), entry.shift);
+  }
+
+  for (const shift of touched.values()) {
+    if (shift.checkOut?.time) {
+      closeOpenGeofenceViolation(shift, shift.checkOut.time);
+      // eslint-disable-next-line no-await-in-loop
+      await shift.save();
+    }
+  }
 }
 
 /**
@@ -358,7 +551,12 @@ async function findEndpoints(employeeIds, start, end, requestingUser) {
         date: record.date,
         kind,
         time: event.time,
-        coords: { lat: event.coords.lat, lng: event.coords.lng },
+        coords: {
+          lat: event.coords.lat,
+          lng: event.coords.lng,
+          // Optional (§3.6) — rides inside coords only when it was stored.
+          ...(typeof event.coords.accuracy === "number" ? { accuracy: event.coords.accuracy } : {}),
+        },
         // Same rule the Attendance module applies to its own responses — the
         // photo is released only to a viewer holding `attendance.view_photos`.
         // Signed at read time from the publicId (§7.69): the stored URL is the
