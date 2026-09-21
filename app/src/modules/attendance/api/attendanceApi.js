@@ -35,6 +35,15 @@ export function checkIn({ coords, photoUri }) {
   return apiClient.post(API_PATHS.CHECK_IN, buildCaptureForm({ coords, photoUri, fileName: "check-in.jpg" }), MULTIPART);
 }
 
+/**
+ * `POST /attendance/heartbeat` — "the device reached the server", the signal
+ * the server's connectivity-gap detection listens for (final-plan.md §6.5).
+ * The web sends it on a timer; the app sends it each time a ping batch lands.
+ */
+export function heartbeat() {
+  return apiClient.post(API_PATHS.HEARTBEAT);
+}
+
 export function checkOut({ coords, photoUri }) {
   return apiClient.post(API_PATHS.CHECK_OUT, buildCaptureForm({ coords, photoUri, fileName: "check-out.jpg" }), MULTIPART);
 }

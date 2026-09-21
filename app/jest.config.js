@@ -8,6 +8,9 @@
  */
 module.exports = {
   preset: "@react-native/jest-preset",
+  // This is an Android app: Platform.OS must say so under Jest, or every
+  // Android-only branch (API-level permission checks) is skipped.
+  haste: { defaultPlatform: "android", platforms: ["android", "native"] },
   transform: {
     "^.+\\.(js|jsx|ts|tsx)$": "babel-jest",
     "^.+\\.(bmp|gif|jpg|jpeg|mp4|png|psd|svg|webp)$": require.resolve(

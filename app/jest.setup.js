@@ -70,3 +70,54 @@ jest.mock("@bam.tech/react-native-image-resizer", () => ({
     createResizedImage: jest.fn(async () => ({ uri: "file:///tmp/photo-small.jpg", size: 188416, width: 1280, height: 960 })),
   },
 }));
+
+// The tracking engine's native module (TrackingModule.kt), as an in-memory
+// twin: a queue array and a flags map, plus the service's start/stop state.
+const mockTracking = { running: false, intervalMs: null, queue: [], flags: {}, lastCapturedAt: null };
+global.mockTrackingNative = mockTracking;
+jest.mock("react-native", () => {
+  const actual = jest.requireActual("react-native");
+  // The Android platform constants the preset leaves empty: API level (the
+  // permission branches key on it) and the brand/model the device label uses.
+  Object.defineProperty(actual.Platform, "constants", {
+    configurable: true,
+    value: { ...actual.Platform.constants, Version: 34, Release: "14", Brand: "google", Manufacturer: "Google", Model: "sdk_gphone" },
+  });
+  Object.defineProperty(actual.Platform, "Version", { configurable: true, get: () => 34 });
+  actual.NativeModules.SmartraysTracking = {
+    start: jest.fn(async (intervalMs) => {
+      mockTracking.running = true;
+      mockTracking.intervalMs = intervalMs;
+    }),
+    stop: jest.fn(async () => {
+      mockTracking.running = false;
+    }),
+    getStatus: jest.fn(async () => ({
+      isRunning: mockTracking.running,
+      queuedCount: mockTracking.queue.length,
+      lastCapturedAt: mockTracking.lastCapturedAt,
+      intervalMs: mockTracking.intervalMs,
+    })),
+    takeQueued: jest.fn(async (limit) =>
+      JSON.stringify([...mockTracking.queue].sort((a, b) => a.capturedAt - b.capturedAt).slice(0, limit))
+    ),
+    deleteQueued: jest.fn(async (ids) => {
+      const before = mockTracking.queue.length;
+      mockTracking.queue = mockTracking.queue.filter((row) => !ids.includes(row.id));
+      return before - mockTracking.queue.length;
+    }),
+    pruneCapturedBefore: jest.fn(async (cutoff) => {
+      const before = mockTracking.queue.length;
+      mockTracking.queue = mockTracking.queue.filter((row) => row.capturedAt >= cutoff);
+      return before - mockTracking.queue.length;
+    }),
+    setFlag: jest.fn(async (key, value) => {
+      if (value === null) delete mockTracking.flags[key];
+      else mockTracking.flags[key] = value;
+    }),
+    getFlag: jest.fn(async (key) => mockTracking.flags[key] ?? null),
+    addListener: jest.fn(),
+    removeListeners: jest.fn(),
+  };
+  return actual;
+});

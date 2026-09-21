@@ -8,6 +8,9 @@ export const API_PATHS = {
   MY_ATTENDANCE: "/attendance/me",
   CHECK_IN: "/attendance/check-in",
   CHECK_OUT: "/attendance/check-out",
+  HEARTBEAT: "/attendance/heartbeat",
+  LOCATION_CONFIG: "/location/config",
+  LOCATION_PINGS: "/location/pings",
 };
 
 /** The header the trusted-device token travels in (the web uses a cookie). */
