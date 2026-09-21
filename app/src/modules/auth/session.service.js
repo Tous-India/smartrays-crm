@@ -1,5 +1,14 @@
-import { fetchCurrentUser, logoutMobile } from "../../api/authApi";
-import { loadTokens, getRefreshToken, clearTokens } from "../../store/tokenStorage";
+import { fetchCurrentUser, loginMobile, logoutMobile, verifyTwoFactorMobile } from "../../api/authApi";
+import {
+  loadTokens,
+  saveTokens,
+  getRefreshToken,
+  clearTokens,
+  getTrustedDeviceToken,
+  saveTrustedDeviceToken,
+  getDeviceId,
+  getDeviceLabel,
+} from "../../store/tokenStorage";
 import useSessionStore from "../../store/sessionStore";
 import { hasServerResponse } from "../../utils/apiError.utils";
 
@@ -39,6 +48,75 @@ export async function restoreSession() {
 
     setUnreachable();
   }
+}
+
+/**
+ * What every successful authentication ends with: keep the pair, keep the
+ * trusted-device token when one was granted, then load the user through
+ * the ordinary Bearer path and hand the store a signed-in session. If the
+ * user cannot be loaded the tokens are dropped again — a half-session is
+ * worse than none.
+ */
+async function establishSession(payload) {
+  await saveTokens({ accessToken: payload.accessToken, refreshToken: payload.refreshToken });
+
+  if (payload.trustedDeviceToken) {
+    await saveTrustedDeviceToken(payload.trustedDeviceToken);
+  }
+
+  try {
+    const response = await fetchCurrentUser();
+    useSessionStore.getState().setSignedIn(response.data.data);
+  } catch (error) {
+    await clearTokens();
+    throw error;
+  }
+}
+
+async function describeThisDevice() {
+  return { deviceId: await getDeviceId(), deviceLabel: getDeviceLabel() };
+}
+
+/**
+ * Email + password. Resolves to `{ requiresTwoFactor: true, preAuthToken,
+ * email, name }` when the account has a second factor outstanding — the
+ * screen then moves to the code step — or to `{ requiresTwoFactor: false }`
+ * once the session is established. Errors (401 wrong password, 403
+ * deactivated, 400 validation, network) are the caller's to show.
+ */
+export async function signIn(email, password) {
+  const device = await describeThisDevice();
+  const trustedDeviceToken = await getTrustedDeviceToken();
+
+  const response = await loginMobile({ email: email.trim(), password, ...device }, trustedDeviceToken);
+  const payload = response.data.data;
+
+  if (payload.requiresTwoFactor) {
+    return {
+      requiresTwoFactor: true,
+      preAuthToken: payload.preAuthToken,
+      email: payload.email,
+      name: payload.name,
+    };
+  }
+
+  await establishSession(payload);
+
+  return { requiresTwoFactor: false };
+}
+
+/**
+ * The second factor: a TOTP code or a recovery code, plus whether to
+ * remember this device. The server returns a trusted-device token only for
+ * a TOTP verification with `rememberDevice` — a recovery code means the
+ * authenticator is gone, and no new trust is minted in that breath (§7.40).
+ */
+export async function completeTwoFactor(preAuthToken, token, rememberDevice) {
+  const device = await describeThisDevice();
+
+  const response = await verifyTwoFactorMobile(preAuthToken, { token: token.trim(), rememberDevice, ...device });
+
+  await establishSession(response.data.data);
 }
 
 /**

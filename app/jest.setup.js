@@ -18,7 +18,7 @@ jest.mock("react-native-keychain", () => ({
   __entries: mockKeychainEntries,
 }));
 
-jest.mock("react-native-config", () => ({ API_BASE_URL: "http://test.local/api/v1" }));
+jest.mock("react-native-config", () => ({ API_BASE_URL: "http://test.local/api/v1", WEB_APP_URL: "https://web.test" }));
 
 // The native safe-area provider renders nothing until the platform reports
 // insets; the package's own Jest mock supplies them.

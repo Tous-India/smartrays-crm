@@ -5,12 +5,15 @@ import { colors, radius, spacing, typography } from "../theme";
  * A labelled input in the auth pages' style — uppercase label above, the
  * field, and the error line beneath it when there is one. `error` is shown
  * verbatim: a backend validation message belongs to the user, not the log.
+ * `ref` reaches the TextInput (React 19 passes it as an ordinary prop), so a
+ * form can move focus from one field to the next.
  */
-function TextField({ label, error, containerStyle, ...inputProps }) {
+function TextField({ label, error, containerStyle, ref, ...inputProps }) {
   return (
     <View style={[styles.container, containerStyle]}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
       <TextInput
+        ref={ref}
         style={[styles.input, error && styles.inputError, inputProps.editable === false && styles.inputDisabled]}
         placeholderTextColor={colors.disabled}
         autoCapitalize="none"
