@@ -1,6 +1,6 @@
 # Mobile backend plan — serving a React Native Android app (2026-09-19)
 
-**Status: PLAN ONLY. Nothing here is built.** Written against the codebase as of 2026-09-19 (working
+**Status: §1 built (2026-09-21); §2 and §3 remain plan only.** Written against the codebase as of 2026-09-19 (working
 tree, including the uncommitted §7.68–§7.71 work). Kept separate from `final-plan.md` on purpose;
 that file carries one cross-reference line to here and nothing else.
 The app that consumes this backend is planned in `.context/app-plan.md`.
@@ -37,6 +37,12 @@ Checked before planning. Each of these is a real piece of the mobile path that a
 ---
 
 ## 1. Bearer token auth, alongside cookie auth
+
+**Status: BUILT — commit `8a98b8c` (2026-09-21).** Four sibling routes under `/auth/mobile`
+(login, 2fa/verify, refresh, logout) call the same service functions the web uses; `authenticate`
+reads a Bearer access token only when there is no session cookie; refresh tokens live in a new
+`RefreshToken` collection (SHA-256, rotated on use, reuse revokes the device, revoked on logout /
+deactivation / password change); 28 tests, the existing 100 auth tests untouched.
 
 ### 1.1 What the code does today
 
