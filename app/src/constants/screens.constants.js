@@ -4,6 +4,8 @@ export const SCREENS = {
   TWO_FACTOR: "TwoFactor",
   HOME: "Home",
   CAPTURE: "Capture",
+  TRACKING_DISCLOSURE: "TrackingDisclosure",
+  BATTERY_GUIDANCE: "BatteryGuidance",
   UNSUPPORTED_ROLE: "UnsupportedRole",
 };
 

@@ -30,7 +30,58 @@ function useMinuteTick() {
   return now;
 }
 
-function TodayShiftCard({ openRecord, todayRecord, isLoading, error, isOnline, onCheckIn, onCheckOut }) {
+/**
+ * What the card says about tracking (app-plan.md §1.1): active with the last
+ * fix, paused with why and a way to fix it, or off. The queue size shows
+ * whenever fixes are waiting — offline is the usual reason.
+ */
+function TrackingLine({ trackingState, isOnline, onFixTracking, now }) {
+  if (!trackingState || trackingState.status === "off") {
+    return null;
+  }
+
+  const queued =
+    trackingState.queuedCount > 0 ? ` · ${trackingState.queuedCount} queued${isOnline ? "" : " (offline)"}` : "";
+
+  if (trackingState.status === "tracking") {
+    const last = trackingState.lastCapturedAt
+      ? `last fix ${formatElapsed(trackingState.lastCapturedAt, now)} ago`
+      : "waiting for the first fix";
+
+    return (
+      <Text style={[typography.small, styles.trackingOk]} testID="shift-tracking-active">
+        Tracking active · {last}
+        {queued}
+      </Text>
+    );
+  }
+
+  const why = trackingState.reason === "declined" ? "you chose not to share your location" : "location permission needed";
+
+  return (
+    <View style={styles.trackingRow} testID="shift-tracking-paused">
+      <Text style={[typography.small, styles.trackingWarn]}>
+        Tracking paused — {why}
+        {queued}
+      </Text>
+      <Text style={styles.trackingFix} onPress={onFixTracking} accessibilityRole="button" testID="shift-tracking-fix">
+        Turn on
+      </Text>
+    </View>
+  );
+}
+
+function TodayShiftCard({
+  openRecord,
+  todayRecord,
+  isLoading,
+  error,
+  isOnline,
+  onCheckIn,
+  onCheckOut,
+  trackingState,
+  onFixTracking,
+}) {
   const now = useMinuteTick();
 
   if (isLoading) {
@@ -59,6 +110,7 @@ function TodayShiftCard({ openRecord, todayRecord, isLoading, error, isOnline, o
         </View>
         <Text style={[typography.title, styles.elapsed]}>{formatElapsed(openRecord.checkIn.time, now)}</Text>
         <Text style={[typography.subtitle, styles.line]}>Since {formatClockTime(openRecord.checkIn.time)}</Text>
+        <TrackingLine trackingState={trackingState} isOnline={isOnline} onFixTracking={onFixTracking} now={now} />
         <PrimaryButton title="Check out" onPress={onCheckOut} disabled={!isOnline} testID="shift-check-out" style={styles.button} />
         {!isOnline && <Text style={styles.offline}>No connection — check-out needs the server.</Text>}
       </View>
@@ -121,6 +173,10 @@ const styles = StyleSheet.create({
   line: { marginTop: spacing.xs },
   button: { marginTop: spacing.lg },
   offline: { ...typography.small, color: colors.danger, marginTop: spacing.sm },
+  trackingOk: { color: colors.brandGreen, marginTop: spacing.sm },
+  trackingRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.sm, marginTop: spacing.sm },
+  trackingWarn: { color: colors.danger },
+  trackingFix: { ...typography.small, color: colors.brandNavy, fontWeight: "600", textDecorationLine: "underline" },
 });
 
 export default TodayShiftCard;

@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { StyleSheet, Text } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import Screen from "../../../components/Screen";
@@ -8,7 +8,12 @@ import useMyAttendance from "../../attendance/hooks/useMyAttendance";
 import useIsOnline from "../../../hooks/useIsOnline";
 import useSessionStore from "../../../store/sessionStore";
 import { signOut } from "../../auth/session.service";
+import useTrackingLifecycle from "../../tracking/hooks/useTrackingLifecycle";
+import { getDisclosureAnswer } from "../../tracking/tracking.service";
+import { getOemGuidance } from "../../tracking/oem.utils";
+import * as tracking from "../../tracking/trackingAdapter";
 import { CAPTURE_MODES, SCREENS } from "../../../constants/screens.constants";
+import { TRACKING_FLAGS } from "../../../constants/tracking.constants";
 import { spacing, typography } from "../../../theme";
 
 /**
@@ -22,13 +27,41 @@ function HomeScreen({ navigation }) {
   const user = useSessionStore((state) => state.user);
   const isOnline = useIsOnline();
   const attendance = useMyAttendance();
-  const { refetch } = attendance;
+  const { refetch, openRecord, isLoading } = attendance;
+  const { trackingState } = useTrackingLifecycle({ openRecord, isOnline, attendanceLoaded: !isLoading });
 
   useFocusEffect(
     useCallback(() => {
       refetch();
     }, [refetch])
   );
+
+  // The prominent disclosure (app-plan.md §4.1) comes before the first
+  // check-in, once; after that the check-in goes straight to the camera.
+  async function handleCheckIn() {
+    const disclosure = await getDisclosureAnswer();
+
+    if (!disclosure) {
+      navigation.navigate(SCREENS.TRACKING_DISCLOSURE);
+      return;
+    }
+
+    navigation.navigate(SCREENS.CAPTURE, { mode: CAPTURE_MODES.CHECK_IN });
+  }
+
+  // OEM guidance (app-plan.md §1.4): once, after the first successful check-in
+  // on a phone whose battery manager is known to kill background services.
+  useEffect(() => {
+    if (!openRecord || !getOemGuidance()) {
+      return;
+    }
+
+    tracking.getFlag(TRACKING_FLAGS.BATTERY_GUIDANCE).then((flag) => {
+      if (!flag) {
+        navigation.navigate(SCREENS.BATTERY_GUIDANCE);
+      }
+    });
+  }, [openRecord, navigation]);
 
   return (
     <Screen testID="home-screen">
@@ -41,8 +74,10 @@ function HomeScreen({ navigation }) {
         isLoading={attendance.isLoading}
         error={attendance.error}
         isOnline={isOnline}
-        onCheckIn={() => navigation.navigate(SCREENS.CAPTURE, { mode: CAPTURE_MODES.CHECK_IN })}
+        onCheckIn={handleCheckIn}
         onCheckOut={() => navigation.navigate(SCREENS.CAPTURE, { mode: CAPTURE_MODES.CHECK_OUT })}
+        trackingState={trackingState}
+        onFixTracking={() => navigation.navigate(SCREENS.TRACKING_DISCLOSURE)}
       />
 
       <PrimaryButton title="Sign out" onPress={signOut} testID="home-sign-out" />
