@@ -84,6 +84,12 @@ export const env = {
   jwtSecret: process.env.JWT_SECRET,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN,
   cookieName: process.env.COOKIE_NAME,
+  // Not required at boot — the mobile app's token lifetimes (mobile-backend-
+  // plan.md §1.3c). The access token is a short-lived JWT the app refreshes
+  // silently; the refresh token is a server-side record that rotates on use.
+  // Neither affects the web session, which JWT_EXPIRES_IN still governs.
+  mobileAccessTokenTtl: process.env.MOBILE_ACCESS_TOKEN_TTL || "15m",
+  mobileRefreshTokenTtlDays: Number(process.env.MOBILE_REFRESH_TOKEN_TTL_DAYS) || 30,
   // The single, canonical origin — used wherever exactly one URL is needed
   // (e.g. auth.service.js's password-reset email link, which can only ever
   // point at one place). Always the FIRST entry in CLIENT_ORIGIN's list.

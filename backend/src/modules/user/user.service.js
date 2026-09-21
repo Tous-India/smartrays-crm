@@ -8,6 +8,7 @@ import User from "./user.model.js";
 import Team from "../team/team.model.js";
 import Lead from "../lead/lead.model.js";
 import DeletedUserAuditLog from "./deletedUserAuditLog.model.js";
+import { revokeAllRefreshTokens } from "../auth/mobileSession.service.js";
 
 // Leads in either of these statuses are historically closed — they don't
 // need reassignment before their owner can be deactivated, only leads still
@@ -464,6 +465,13 @@ export async function setUserActiveStatus(targetId, isActive, reassignments = {}
   user.isActive = isActive;
   await user.save();
 
+  // A deactivated account's mobile sessions end with it (mobile-backend-
+  // plan.md §1.3c). Reactivation does not bring them back — signing in again
+  // does. A no-op for a user who has never signed in on the app.
+  if (!isActive) {
+    await revokeAllRefreshTokens(user._id);
+  }
+
   return user;
 }
 
@@ -560,6 +568,10 @@ export async function adminResetPassword(targetId, newPassword) {
   user.passwordResetToken = null;
   user.passwordResetExpiresAt = null;
   await user.save();
+
+  // Same rule as changeOwnPassword: mobile sessions issued against the old
+  // password end here (mobile-backend-plan.md §1.3c).
+  await revokeAllRefreshTokens(user._id);
 
   return { user, tempPassword: newPassword ? null : tempPassword };
 }

@@ -32,12 +32,24 @@ function sessionExpired(message) {
 }
 
 /**
+ * The mobile app's access token (mobile-backend-plan.md §1.3a) — read ONLY
+ * when the request carries no session cookie. A browser always has the
+ * cookie, so the web app never reaches this line; a request that has both
+ * is decided by the cookie, exactly as before.
+ */
+function bearerSessionToken(req) {
+  const header = req.headers.authorization || "";
+
+  return header.startsWith("Bearer ") ? header.slice("Bearer ".length) : undefined;
+}
+
+/**
  * Verifies the JWT stored in the httpOnly auth cookie and attaches the
  * matching user document to req.user. Must run before authorize() or any
  * route that reads req.user.
  */
 const authenticate = asyncWrapper(async (req, res, next) => {
-  const token = req.cookies[env.cookieName];
+  const token = req.cookies[env.cookieName] ?? bearerSessionToken(req);
 
   if (!token) {
     throw sessionExpired("Authentication required. Please log in.");

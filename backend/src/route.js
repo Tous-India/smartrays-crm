@@ -1,5 +1,6 @@
 import { Router } from "express";
 import authRouter from "./modules/auth/auth.routes.js";
+import mobileAuthRouter from "./modules/auth/mobileAuth.routes.js";
 import leadRouter, { leadSourceRouter } from "./modules/lead/lead.routes.js";
 import locationRouter from "./modules/location/location.routes.js";
 import permissionRouter, { userPermissionRouter } from "./modules/permission/permission.routes.js";
@@ -20,6 +21,9 @@ import serviceRouter from "./modules/service/service.routes.js";
 
 const router = Router();
 
+// The mobile app's auth transport (mobile-backend-plan.md §1) — a sibling
+// router, mounted first so `/auth/mobile/*` never enters the web router.
+router.use("/auth/mobile", mobileAuthRouter);
 router.use("/auth", authRouter);
 router.use("/leads", leadRouter);
 router.use("/lead-sources", leadSourceRouter);

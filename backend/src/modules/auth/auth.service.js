@@ -7,6 +7,7 @@ import { sendPasswordResetEmail } from "../../services/email.service.js";
 import User from "../user/user.model.js";
 import { verifySecondFactor } from "./twoFactor.service.js";
 import { isDeviceTrusted, revokeAllTrustedDevices } from "./trustedDevice.service.js";
+import { revokeAllRefreshTokens } from "./mobileSession.service.js";
 
 const SALT_ROUNDS = 10;
 const PASSWORD_RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour, per §7.17
@@ -230,6 +231,10 @@ export async function changeOwnPassword(userId, currentPassword, newPassword) {
   // (often prompted by a suspected compromise) that assumption no longer
   // holds.
   await revokeAllTrustedDevices(user._id);
+  // Mobile sessions go the same way (mobile-backend-plan.md §1.3c): the
+  // refresh tokens were issued against the old password. A no-op for a user
+  // who has never signed in on the app.
+  await revokeAllRefreshTokens(user._id);
 }
 
 /**
