@@ -38,6 +38,18 @@ export function bulkUpdateCustomers({ ids, action }) {
   return apiClient.post("/customers/bulk", { ids, action });
 }
 
+// --- Payments (this customer's own, read-only) -------------------------
+
+/**
+ * `GET /customers/:id/payments` (§7.70) — gated on `customers.view`, not
+ * `payments.view`, so the customer page can show it to anyone who can see
+ * the customer. Same `{ items, total, page, limit }` envelope as
+ * `paymentApi.listPayments`. Recording still goes through `POST /payments`.
+ */
+export function listCustomerPayments(customerId) {
+  return apiClient.get(`/customers/${customerId}/payments`);
+}
+
 // --- Contacts ---------------------------------------------------------
 
 export function listContacts(customerId) {

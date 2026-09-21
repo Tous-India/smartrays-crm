@@ -15,6 +15,28 @@ const paymentSchema = new mongoose.Schema(
       trim: true,
       default: null,
     },
+    // Who the money was collected FROM (§7.70) — a person at the customer,
+    // not the customer itself. Optional: a customer with no contacts yet must
+    // still be payable. Only ever set alongside `customerId` — a contact is
+    // strictly a child of a Customer, so a manual-only entry has nothing it
+    // could point at (payment.validation.js). Validated on write to belong
+    // to that customer, the same way `invoiceId` is.
+    contactId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Contact",
+      default: null,
+    },
+    // The contact's name at the moment the payment was recorded. Contact
+    // deletion is a HARD delete (customer.service.js#deleteContact), so
+    // without this a payment would silently lose who it was collected from
+    // the day that person leaves the customer's roster. Both are stored; the
+    // ref is for anyone who wants the live record, the snapshot is what a
+    // money record actually needs to keep.
+    contactName: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     date: {
       type: Date,
       required: true,

@@ -9,6 +9,7 @@ import {
   remove,
   bulkUpdate,
   getContacts,
+  getPayments,
   addContact,
   editContact,
   removeContact,
@@ -54,6 +55,10 @@ customerRouter.post("/bulk", authenticate, validateBulkActionInput, bulkUpdate);
 customerRouter.get("/:id", authenticate, requireCustomersView, getOne);
 customerRouter.patch("/:id", authenticate, requireCustomersEdit, validateUpdateCustomerInput, update);
 customerRouter.delete("/:id", authenticate, authorize("customers", "delete"), remove);
+
+// A customer's own payments (§7.70) — customers.view, deliberately not
+// payments.view; see customer.service.js#listCustomerPayments.
+customerRouter.get("/:id/payments", authenticate, requireCustomersView, getPayments);
 
 customerRouter.get("/:id/contacts", authenticate, requireCustomersView, getContacts);
 customerRouter.post("/:id/contacts", authenticate, requireCustomersEdit, validateContactInput, addContact);

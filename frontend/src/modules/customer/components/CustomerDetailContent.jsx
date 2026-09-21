@@ -6,6 +6,7 @@ import CustomerBillingCard from "./CustomerBillingCard";
 import CustomerSiteDetailsCard from "./CustomerSiteDetailsCard";
 import CustomerContractsSection from "./CustomerContractsSection";
 import CustomerContactsSection from "./CustomerContactsSection";
+import CustomerPaymentsSection from "./CustomerPaymentsSection";
 import CustomerActivityLog from "./CustomerActivityLog";
 import CustomerAmcSection from "../../amc/components/CustomerAmcSection";
 import { updateCustomer, deleteCustomer } from "../api/customerApi";
@@ -31,6 +32,9 @@ import { usePermission } from "../../../hooks/usePermission";
  *   vertical space where there's width to spare, not to force two columns
  *   everywhere. No fixed widths anywhere, so nothing can overflow
  *   horizontally.
+ * - **Payments section added (§7.70, 2026-09-18)** — this customer's own
+ *   cash log with its own Record Payment entry point, between Contacts/
+ *   Contracts and the Activity Log. See `CustomerPaymentsSection.jsx`.
  * - **Invoice History removed entirely** (component deleted, not hidden).
  *   Invoicing is descoped: `Invoice` is a deliberate backend placeholder
  *   model with no service or controller, and `GET /customers/:id/invoices`
@@ -109,6 +113,11 @@ function CustomerDetailContent({ customer, contacts, contracts, activity, onChan
           />
         </Col>
       </Row>
+
+      {/* Payments (§7.70) — its own section, after the people and contracts
+          the money relates to and before the activity log. Fetches its own
+          list and its own user directory; see the component's comment. */}
+      <CustomerPaymentsSection customer={customer} contacts={contacts} />
 
       <CustomerActivityLog activity={activity} />
 

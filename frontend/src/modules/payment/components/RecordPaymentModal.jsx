@@ -1,37 +1,63 @@
-import { useRef, useState } from "react";
-import { Modal, Form, Select, InputNumber, DatePicker, Input } from "antd";
+import { useEffect, useRef, useState } from "react";
+import { Modal, Form, Select, InputNumber, DatePicker, Input, Typography } from "antd";
 import dayjs from "dayjs";
-import { listCustomers } from "../../customer/api/customerApi";
+import { listCustomers, listContacts } from "../../customer/api/customerApi";
+import useSessionStore from "../../../store/sessionStore";
 
 const SEARCH_DEBOUNCE_MS = 300;
 
 /**
- * Customer picker is a debounced search-as-you-type `Select` against the
- * existing `GET /customers?search=` endpoint (`listCustomers`) — no new
- * backend endpoint, per this task's own instruction to reuse what already
- * exists. Every other searchable picker in this codebase (`LeadFormModal`'s
- * Owner, `ConvertToCustomerModal`'s Project Manager) filters a fully-
- * fetched-once list client-side instead; that pattern doesn't fit here
- * since the whole point is not fetching every Customer up front.
+ * Record Payment — the ONE form behind both entry points (§7.70). Whether it
+ * opens from the Payments page or from a customer's own page, it submits the
+ * same `POST /payments`, so a payment recorded in either place is one record
+ * that shows in both.
  *
- * Scope note (explicit, per this task): system customers only —
- * `manualClientName` (non-system/cash entries) and invoice-linking
- * (reconciling against an outstanding Invoice) are backend-supported but
- * deliberately left out of this first version.
+ * TWO MODES for the customer field:
  *
- * "Collected By" — the employee who physically collected the payment
- * (e.g. a field sales rep taking cash), distinct from "Recorded By" (set
- * server-side to whoever is actually submitting this form, possibly an
- * admin entering it later). Optional, since not every payment has a
- * separate collector worth naming. `users` is passed down from
- * `PaymentsListPage` (already fetched there via `useUserDirectory` for the
- * table's own "Recorded By" column) rather than fetched again here.
+ * - SEARCH (Payments page, no `fixedCustomer`): a debounced search-as-you-type
+ *   `Select` against `GET /customers?search=`. Its options exist only once
+ *   the user has typed something.
+ * - FIXED (customer page, `fixedCustomer` given): the customer is rendered as
+ *   a plain label, never as the search `Select` with a pre-set value. That
+ *   `Select`'s options are empty until a search is typed, so a pre-set
+ *   `customerId` can never match an option — the guaranteed version of the
+ *   blank-value bug already seen once on Collected By. The customer is fixed
+ *   here because the page it opened from IS that customer.
+ *
+ * CONTACT is optional — who the money was collected from. In fixed mode the
+ * options are the customer page's already-loaded contacts; in search mode
+ * they are fetched once a customer is picked. A customer with no contacts
+ * shows an empty picker and is still recordable.
+ *
+ * COLLECTED BY defaults to the person recording, but the value is set ONLY
+ * AFTER `users` has resolved and only if they are in it. Setting a `Select`'s
+ * value before its options exist gives a control with a value and no label —
+ * the exact bug from the reverted first attempt, and the same failure the
+ * fixed-customer mode above exists to avoid.
  */
-function RecordPaymentModal({ open, onCancel, onSubmit, isSubmitting, users }) {
+function RecordPaymentModal({ open, onCancel, onSubmit, isSubmitting, users, fixedCustomer, fixedCustomerContacts }) {
   const [form] = Form.useForm();
+  const currentUser = useSessionStore((state) => state.user);
   const [customerOptions, setCustomerOptions] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [contacts, setContacts] = useState([]);
+  const [isLoadingContacts, setIsLoadingContacts] = useState(false);
   const debounceRef = useRef(null);
+
+  const isFixed = Boolean(fixedCustomer);
+  const contactSource = isFixed ? fixedCustomerContacts || [] : contacts;
+
+  useEffect(() => {
+    if (!open || users.length === 0 || form.getFieldValue("collectedBy")) {
+      return;
+    }
+
+    const me = users.find((user) => user._id === currentUser?._id);
+
+    if (me) {
+      form.setFieldValue("collectedBy", me._id);
+    }
+  }, [open, users, currentUser, form]);
 
   function handleCustomerSearch(value) {
     clearTimeout(debounceRef.current);
@@ -54,6 +80,31 @@ function RecordPaymentModal({ open, onCancel, onSubmit, isSubmitting, users }) {
     }, SEARCH_DEBOUNCE_MS);
   }
 
+  // Search mode only: a new customer means a new contact list, and whatever
+  // contact was picked belonged to the previous customer.
+  async function handleCustomerChange(customerId) {
+    form.setFieldValue("contactId", undefined);
+    setContacts([]);
+
+    if (!customerId) {
+      return;
+    }
+
+    setIsLoadingContacts(true);
+    try {
+      const response = await listContacts(customerId);
+      setContacts(response.data.data);
+    } finally {
+      setIsLoadingContacts(false);
+    }
+  }
+
+  function resetAll() {
+    form.resetFields();
+    setCustomerOptions([]);
+    setContacts([]);
+  }
+
   async function handleOk() {
     let values;
 
@@ -65,24 +116,24 @@ function RecordPaymentModal({ open, onCancel, onSubmit, isSubmitting, users }) {
     }
 
     await onSubmit({
-      customerId: values.customerId,
+      customerId: isFixed ? fixedCustomer._id : values.customerId,
+      contactId: values.contactId || null,
       amount: values.amount,
       date: values.date.toISOString(),
       notes: values.notes,
       collectedBy: values.collectedBy,
     });
 
-    form.resetFields();
-    setCustomerOptions([]);
+    resetAll();
   }
 
   function handleCancel() {
-    form.resetFields();
-    setCustomerOptions([]);
+    resetAll();
     onCancel();
   }
 
   const userOptions = users.map((user) => ({ value: user._id, label: user.name }));
+  const contactOptions = contactSource.map((contact) => ({ value: contact._id, label: contact.name }));
 
   return (
     <Modal
@@ -95,15 +146,38 @@ function RecordPaymentModal({ open, onCancel, onSubmit, isSubmitting, users }) {
       destroyOnHidden
     >
       <Form form={form} layout="vertical" initialValues={{ date: dayjs() }}>
-        <Form.Item label="Customer" name="customerId" rules={[{ required: true, message: "Select a customer" }]}>
+        {isFixed ? (
+          <Form.Item label="Customer">
+            <Typography.Text strong data-testid="fixed-customer">
+              {fixedCustomer.companyName}
+            </Typography.Text>
+          </Form.Item>
+        ) : (
+          <Form.Item label="Customer" name="customerId" rules={[{ required: true, message: "Select a customer" }]}>
+            <Select
+              showSearch
+              filterOption={false}
+              onSearch={handleCustomerSearch}
+              onChange={handleCustomerChange}
+              loading={isSearching}
+              options={customerOptions}
+              placeholder="Search customer by company name…"
+              notFoundContent={isSearching ? "Searching…" : "Type to search"}
+            />
+          </Form.Item>
+        )}
+
+        <Form.Item label="Contact" name="contactId">
           <Select
+            allowClear
             showSearch
-            filterOption={false}
-            onSearch={handleCustomerSearch}
-            loading={isSearching}
-            options={customerOptions}
-            placeholder="Search customer by company name…"
-            notFoundContent={isSearching ? "Searching…" : "Type to search"}
+            optionFilterProp="label"
+            loading={isLoadingContacts}
+            options={contactOptions}
+            placeholder={
+              contactOptions.length === 0 ? "No contacts for this customer (optional)" : "Who paid? (optional)"
+            }
+            notFoundContent={isLoadingContacts ? "Loading…" : "No contacts"}
           />
         </Form.Item>
 

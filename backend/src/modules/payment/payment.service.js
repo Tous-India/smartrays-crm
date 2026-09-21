@@ -2,27 +2,40 @@ import ApiError from "../../utils/ApiError.js";
 import Payment from "./payment.model.js";
 import PaymentAuditLog from "./paymentAuditLog.model.js";
 import Invoice from "../customer/invoice.model.js";
+import Contact from "../customer/contact.model.js";
 
 /**
- * §7.9/§11.3 (resolved): Payments use PARTIAL RECONCILIATION, not a fully
- * standalone log and not full invoicing. If `customerId` + `invoiceId` are
- * both given, the linked Invoice's `balance`/`status` are updated; a
- * manual-only entry (`manualClientName`, no `customerId`) — or a
- * `customerId` with no `invoiceId` — is just logged, nothing to reconcile
- * against, which is expected, not a gap.
+ * Payments are a CASH LOG (§7.70, decided 2026-09-18) — they record money
+ * received and do not touch invoices.
+ *
+ * The `invoiceId` branch below is the earlier "partial reconciliation"
+ * design (§7.9/§11.3) and is deliberately left in place, untouched and
+ * unreachable: no UI ever sends `invoiceId`, no endpoint returns invoices,
+ * and the customer page's Invoice History was removed. It is out of scope
+ * to extend or remove. A payment with `customerId` and no `invoiceId` — which
+ * is every payment the app can actually produce — is a plain log entry.
  */
 export async function createPayment(payload, requestingUser) {
-  const { customerId, manualClientName, invoiceId } = payload;
+  const { customerId, manualClientName, invoiceId, contactId } = payload;
 
   let invoice = null;
+  let contact = null;
 
   if (customerId && invoiceId) {
     invoice = await resolveInvoiceForReconciliation(customerId, invoiceId);
   }
 
+  if (customerId && contactId) {
+    contact = await resolveContactForPayment(customerId, contactId);
+  }
+
   const payment = await Payment.create({
     customerId: customerId || null,
     manualClientName: manualClientName || null,
+    contactId: contact ? contact._id : null,
+    // Snapshotted here, at write time (§7.70) — see payment.model.js for why
+    // the name is kept separately from the ref.
+    contactName: contact ? contact.name : null,
     date: new Date(payload.date),
     amount: payload.amount,
     notes: payload.notes,
@@ -36,6 +49,36 @@ export async function createPayment(payload, requestingUser) {
   }
 
   return payment;
+}
+
+/**
+ * The contact must belong to the customer the payment is for — never allows
+ * attributing a payment to a person at a different customer. Same shape as
+ * `resolveInvoiceForReconciliation` below, on purpose.
+ */
+async function resolveContactForPayment(customerId, contactId) {
+  const contact = await Contact.findOne({ _id: contactId, customerId });
+
+  if (!contact) {
+    throw new ApiError(400, "contactId does not match an existing contact for this customer");
+  }
+
+  return contact;
+}
+
+/**
+ * One customer's own payments (§7.70) — what the customer detail page's
+ * Payments section lists. The caller (customer.service.js) has already
+ * resolved that the requesting user may see this customer; this function
+ * only knows how to list payments, including which ones count as deleted.
+ * Returns the same `{ items, total, page, limit }` envelope as `listPayments`
+ * so the frontend handles both responses identically.
+ */
+export async function listPaymentsForCustomer(customerId) {
+  const filter = { customerId, isDeleted: { $ne: true } };
+  const items = await Payment.find(filter).sort({ date: -1 });
+
+  return { items, total: items.length, page: 1, limit: null };
 }
 
 /**
@@ -153,6 +196,8 @@ function snapshotPayment(payment) {
   return {
     customerId: payment.customerId,
     manualClientName: payment.manualClientName,
+    contactId: payment.contactId,
+    contactName: payment.contactName,
     date: payment.date,
     amount: payment.amount,
     notes: payment.notes,

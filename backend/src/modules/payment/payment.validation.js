@@ -1,7 +1,7 @@
 import ApiError from "../../utils/ApiError.js";
 
 export function validateCreatePaymentInput(req, res, next) {
-  const { customerId, manualClientName, invoiceId, date, amount } = req.body;
+  const { customerId, manualClientName, invoiceId, contactId, date, amount } = req.body;
 
   const hasCustomerId = Boolean(customerId);
   const hasManualClientName = Boolean(manualClientName && manualClientName.trim());
@@ -12,6 +12,12 @@ export function validateCreatePaymentInput(req, res, next) {
 
   if (invoiceId && !hasCustomerId) {
     throw new ApiError(400, "invoiceId can only be provided alongside a customerId");
+  }
+
+  // Same rule as invoiceId (§7.70): a contact belongs to a Customer, so a
+  // manual-only entry has no customer it could belong to.
+  if (contactId && !hasCustomerId) {
+    throw new ApiError(400, "contactId can only be provided alongside a customerId");
   }
 
   if (!date || Number.isNaN(Date.parse(date))) {

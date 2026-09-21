@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, afterEach } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, afterEach } from "vitest";
 import { startTestDatabase, stopTestDatabase } from "../../../tests/helpers/testDb.js";
 import { getTestApp } from "../../../tests/helpers/testApp.js";
 import { loginAsAgent } from "../../../tests/helpers/authHelpers.js";
@@ -625,5 +625,193 @@ describe("GET /payments/:id/audit-log", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.data).toEqual([]);
+  });
+});
+
+/**
+ * §7.70 — contact link + the customer page's own read.
+ *
+ * A payment can name the person it was collected FROM. Because contact
+ * deletion is a hard delete, the name is snapshotted at write time; the tests
+ * below are ordered to prove the snapshot survives the contact's removal.
+ */
+describe("POST /payments — contactId (§7.70)", () => {
+  let Contact;
+  let ramesh;
+  let sunitaAtOtherCustomer;
+
+  beforeAll(async () => {
+    ({ default: Contact } = await import("../customer/contact.model.js"));
+  });
+
+  beforeEach(async () => {
+    ramesh = await Contact.create({ customerId: customer1._id, name: "Ramesh", isPrimary: true });
+    sunitaAtOtherCustomer = await Contact.create({ customerId: customer2._id, name: "Sunita" });
+  });
+
+  afterEach(async () => {
+    await Contact.deleteMany({});
+  });
+
+  it("stores the ref AND snapshots the contact's name at write time", async () => {
+    const response = await adminAgent.post("/api/v1/payments").send({
+      customerId: String(customer1._id),
+      contactId: String(ramesh._id),
+      date: "2026-09-18",
+      amount: 750,
+    });
+
+    expect(response.status).toBe(201);
+    expect(String(response.body.data.contactId)).toBe(String(ramesh._id));
+    expect(response.body.data.contactName).toBe("Ramesh");
+  });
+
+  it("rejects a contact that belongs to a DIFFERENT customer", async () => {
+    // The exact shape of the invoiceId rule: never attribute money to a
+    // person at someone else's company.
+    const response = await adminAgent.post("/api/v1/payments").send({
+      customerId: String(customer1._id),
+      contactId: String(sunitaAtOtherCustomer._id),
+      date: "2026-09-18",
+      amount: 750,
+    });
+
+    expect(response.status).toBe(400);
+    expect(await Payment.countDocuments({})).toBe(0);
+  });
+
+  it("rejects a contactId alongside manualClientName", async () => {
+    const response = await adminAgent.post("/api/v1/payments").send({
+      manualClientName: "Walk-in",
+      contactId: String(ramesh._id),
+      date: "2026-09-18",
+      amount: 750,
+    });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("is optional — a customer with no contacts is still payable", async () => {
+    await Contact.deleteMany({ customerId: customer1._id });
+
+    const response = await adminAgent.post("/api/v1/payments").send({
+      customerId: String(customer1._id),
+      date: "2026-09-18",
+      amount: 750,
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.contactId).toBeNull();
+    expect(response.body.data.contactName).toBeNull();
+  });
+
+  it("keeps the snapshot name after the contact is hard-deleted", async () => {
+    const created = await adminAgent.post("/api/v1/payments").send({
+      customerId: String(customer1._id),
+      contactId: String(ramesh._id),
+      date: "2026-09-18",
+      amount: 750,
+    });
+
+    // Through the real endpoint — this is the deleteOne() the snapshot exists
+    // to survive.
+    const removed = await adminAgent.delete(`/api/v1/customers/${customer1._id}/contacts/${ramesh._id}`);
+    expect(removed.status).toBe(200);
+    expect(await Contact.findById(ramesh._id)).toBeNull();
+
+    const listed = await adminAgent.get("/api/v1/payments");
+    const payment = listed.body.data.items.find((one) => one._id === created.body.data._id);
+
+    expect(payment.contactName).toBe("Ramesh");
+    expect(String(payment.contactId)).toBe(String(ramesh._id));
+  });
+
+  it("carries contactId/contactName into the audit-log snapshot", async () => {
+    const created = await adminAgent.post("/api/v1/payments").send({
+      customerId: String(customer1._id),
+      contactId: String(ramesh._id),
+      date: "2026-09-18",
+      amount: 750,
+    });
+
+    await adminAgent
+      .patch(`/api/v1/payments/${created.body.data._id}`)
+      .send({ amount: 800, reason: "Typo in amount" });
+
+    const log = await adminAgent.get(`/api/v1/payments/${created.body.data._id}/audit-log`);
+
+    expect(log.body.data).toHaveLength(1);
+    expect(String(log.body.data[0].previousValues.contactId)).toBe(String(ramesh._id));
+    expect(log.body.data[0].previousValues.contactName).toBe("Ramesh");
+  });
+});
+
+describe("GET /customers/:id/payments (§7.70)", () => {
+  async function recordFor(customer, amount, date = "2026-09-18") {
+    const response = await adminAgent.post("/api/v1/payments").send({
+      customerId: String(customer._id),
+      date,
+      amount,
+    });
+
+    return response.body.data;
+  }
+
+  it("returns only that customer's payments, newest first, in the Payments table's envelope", async () => {
+    await recordFor(customer1, 100, "2026-09-10");
+    await recordFor(customer2, 999, "2026-09-12");
+    await recordFor(customer1, 200, "2026-09-15");
+
+    const response = await adminAgent.get(`/api/v1/customers/${customer1._id}/payments`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data).toMatchObject({ total: 2, page: 1, limit: null });
+    expect(response.body.data.items.map((one) => one.amount)).toEqual([200, 100]);
+    expect(response.body.data.items.every((one) => String(one.customerId) === String(customer1._id))).toBe(true);
+  });
+
+  it("excludes soft-deleted payments, the same as the global list", async () => {
+    const kept = await recordFor(customer1, 100);
+    const gone = await recordFor(customer1, 200);
+    await adminAgent.delete(`/api/v1/payments/${gone._id}`).send({ reason: "Duplicate" });
+
+    const response = await adminAgent.get(`/api/v1/customers/${customer1._id}/payments`);
+
+    expect(response.body.data.items.map((one) => one._id)).toEqual([kept._id]);
+  });
+
+  it("is gated on customers.view, NOT payments.view — a sales associate can read their own customer's", async () => {
+    // sales_associate holds customers.view by template and no payments.*
+    // at all. The customer must be theirs for the ownership scope to pass.
+    const { default: User } = await import("../user/user.model.js");
+    const sales = await User.findOne({ email: "sales1@test.local" });
+    const own = await Customer.create({ companyName: "Own Co", ownerId: sales._id, projectManagerId: sales._id });
+    await recordFor(own, 300);
+
+    // Sanity: the global list is still closed to them.
+    expect((await sales1Agent.get("/api/v1/payments")).status).toBe(403);
+
+    const response = await sales1Agent.get(`/api/v1/customers/${own._id}/payments`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.items).toHaveLength(1);
+    expect(response.body.data.items[0].amount).toBe(300);
+
+    await Customer.deleteOne({ _id: own._id });
+  });
+
+  it("404s (not 403) for a customer outside the viewer's ownership scope", async () => {
+    await recordFor(customer1, 100);
+
+    // customer1 is admin-owned; sales1 cannot see it at all.
+    const response = await sales1Agent.get(`/api/v1/customers/${customer1._id}/payments`);
+
+    expect(response.status).toBe(404);
+  });
+
+  it("is closed to a role with no customers.view at all", async () => {
+    const response = await employee1Agent.get(`/api/v1/customers/${customer1._id}/payments`);
+
+    expect(response.status).toBe(403);
   });
 });

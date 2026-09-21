@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import dayjs from "dayjs";
 import { MemoryRouter } from "react-router-dom";
@@ -28,6 +28,10 @@ vi.mock("../api/paymentApi", () => ({
 
 vi.mock("../../customer/api/customerApi", () => ({
   listCustomers: vi.fn(),
+  // §7.70 — picking a customer in the modal now loads that customer's
+  // contacts for the Contact picker.
+  listContacts: vi.fn(),
+  listCustomerPayments: vi.fn(),
 }));
 
 vi.mock("../../../services/userDirectoryApi", () => ({
@@ -77,6 +81,7 @@ describe("PaymentsListPage", () => {
     customerApi.listCustomers.mockResolvedValue({
       data: { data: [{ _id: "cust-1", companyName: "Acme Corp" }] },
     });
+    customerApi.listContacts.mockResolvedValue({ data: { data: [] } });
     fetchUserDropdown.mockResolvedValue({
       data: { data: [{ _id: "user-1", name: "Vinay" }, { _id: "user-2", name: "Sam Sales" }] },
     });
@@ -443,6 +448,123 @@ describe("PaymentsListPage", () => {
       await userEvent.click(screen.getAllByRole("button", { name: "View History" })[0]);
 
       expect(await screen.findByText("No edits or deletions yet")).toBeInTheDocument();
+    });
+  });
+});
+
+/**
+ * §7.70 — contact link, and the two Select-value bugs this build exists to
+ * avoid. Each of these fails if the fix is removed:
+ *   - the Contact column reads the write-time snapshot;
+ *   - picking a customer loads THAT customer's contacts into the picker;
+ *   - Collected By shows the current user's NAME, which means the value was
+ *     set only after the user list resolved.
+ */
+describe("PaymentsListPage — contact link (§7.70)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    paymentApi.listPayments.mockResolvedValue({
+      data: {
+        data: {
+          items: [
+            { ...SAMPLE_PAYMENTS[0], contactId: "contact-1", contactName: "Ramesh Kumar" },
+            { ...SAMPLE_PAYMENTS[1], contactId: null, contactName: null },
+          ],
+          total: 2,
+          page: 1,
+          limit: 20,
+        },
+      },
+    });
+    customerApi.listCustomers.mockResolvedValue({
+      data: { data: [{ _id: "cust-1", companyName: "Acme Corp" }] },
+    });
+    customerApi.listContacts.mockResolvedValue({
+      data: { data: [{ _id: "contact-1", name: "Ramesh Kumar" }, { _id: "contact-2", name: "Sunita Rao" }] },
+    });
+    fetchUserDropdown.mockResolvedValue({
+      data: { data: [{ _id: "user-1", name: "Vinay" }, { _id: "user-2", name: "Sam Sales" }] },
+    });
+    paymentApi.getPaymentAuditLog.mockResolvedValue({ data: { data: [] } });
+    paymentApi.createPayment.mockResolvedValue({ data: { data: { _id: "new-payment" } } });
+    // The recording user IS in the directory this time — that is the case
+    // where Collected By must default to them, by name.
+    useSessionStore.setState({
+      user: { _id: "user-1", name: "Vinay", role: "admin", permissions: {} },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+  });
+
+  it("shows the snapshotted contact name in a Contact column, and a dash when there is none", async () => {
+    renderPage();
+
+    expect(await screen.findByRole("columnheader", { name: "Contact" })).toBeInTheDocument();
+    expect(screen.getByText("Ramesh Kumar")).toBeInTheDocument();
+
+    const walkIn = screen.getByText("Walk-in Client").closest("tr");
+    expect(within(walkIn).getAllByText("—").length).toBeGreaterThan(0);
+  });
+
+  it("loads the picked customer's contacts into the Contact picker and sends contactId", async () => {
+    renderPage();
+    await screen.findByText("Acme Corp");
+
+    await userEvent.click(screen.getByRole("button", { name: /Record Payment/ }));
+    await userEvent.type(await screen.findByLabelText("Customer"), "Acme");
+    await userEvent.click(await screen.findByTitle("Acme Corp"));
+
+    await waitFor(() => expect(customerApi.listContacts).toHaveBeenCalledWith("cust-1"));
+
+    await userEvent.click(screen.getByLabelText("Contact"));
+    await userEvent.click(await screen.findByTitle("Sunita Rao"));
+    await userEvent.type(screen.getByLabelText("Amount"), "900");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(paymentApi.createPayment).toHaveBeenCalledWith(
+        expect.objectContaining({ customerId: "cust-1", contactId: "contact-2", amount: 900 })
+      );
+    });
+  });
+
+  it("is recordable for a customer with zero contacts — contactId is null", async () => {
+    customerApi.listContacts.mockResolvedValue({ data: { data: [] } });
+
+    renderPage();
+    await screen.findByText("Acme Corp");
+
+    await userEvent.click(screen.getByRole("button", { name: /Record Payment/ }));
+    await userEvent.type(await screen.findByLabelText("Customer"), "Acme");
+    await userEvent.click(await screen.findByTitle("Acme Corp"));
+    await userEvent.type(screen.getByLabelText("Amount"), "900");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(paymentApi.createPayment).toHaveBeenCalledWith(expect.objectContaining({ contactId: null }));
+    });
+  });
+
+  it("defaults Collected By to the recording user BY NAME — set after the user list resolved", async () => {
+    renderPage();
+    await screen.findByText("Acme Corp");
+
+    await userEvent.click(screen.getByRole("button", { name: /Record Payment/ }));
+
+    // The rendered label, not a raw id and not blank: the reverted first
+    // attempt set the id before the options existed and showed nothing.
+    const collectedBy = await screen.findByLabelText("Collected By");
+    await waitFor(() => {
+      expect(collectedBy.closest(".ant-select")).toHaveTextContent("Vinay");
+    });
+
+    await userEvent.type(await screen.findByLabelText("Customer"), "Acme");
+    await userEvent.click(await screen.findByTitle("Acme Corp"));
+    await userEvent.type(screen.getByLabelText("Amount"), "900");
+    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(paymentApi.createPayment).toHaveBeenCalledWith(expect.objectContaining({ collectedBy: "user-1" }));
     });
   });
 });

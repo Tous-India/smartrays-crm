@@ -9,6 +9,7 @@ import Invoice from "./invoice.model.js";
 import CustomerActivity from "./customerActivity.model.js";
 import Project from "../project/project.model.js";
 import User from "../user/user.model.js";
+import { listPaymentsForCustomer } from "../payment/payment.service.js";
 
 /**
  * Builds the Mongo filter fragment that restricts which customers a user can
@@ -330,6 +331,21 @@ export async function bulkUpdateCustomers({ ids, action }, requestingUser) {
   }
 
   return results;
+}
+
+// --- Payments (read-only, this customer's own) ------------------------
+
+/**
+ * `GET /customers/:id/payments` (§7.70). Gated on `customers.view` and the
+ * ordinary customer ownership scope — NOT on `payments.view`, which is
+ * admin-tier by template. Seeing the money a customer you are allowed to see
+ * has paid is part of seeing that customer; the global Payments page, which
+ * lists everyone's, stays behind `payments.*` as before.
+ */
+export async function listCustomerPayments(customerId, requestingUser) {
+  await getCustomerInScope(customerId, requestingUser);
+
+  return listPaymentsForCustomer(customerId);
 }
 
 // --- Contacts ---------------------------------------------------------

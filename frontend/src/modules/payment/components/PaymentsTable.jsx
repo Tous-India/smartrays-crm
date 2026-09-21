@@ -1,7 +1,7 @@
 import { Table, Space, Tooltip, Button } from "antd";
 import { EditOutlined, DeleteOutlined, HistoryOutlined } from "@ant-design/icons";
-import dayjs from "dayjs";
 import PermissionGate from "../../../routes/PermissionGate";
+import { formatPaymentDate, formatPaymentAmount } from "../utils/paymentFormat";
 
 /**
  * `GET /payments` returns bare Payment documents (no populate) — `customerId`
@@ -31,14 +31,7 @@ function PaymentsTable({
     {
       title: "Date",
       dataIndex: "date",
-      // Date + time, matching the "DD MMM YYYY" token convention
-      // `AttendanceTimeline.jsx`/`LeaveListPage.jsx` already use for dates,
-      // extended with hours:minutes (12-hour, no seconds) — `Payment.date`
-      // is a full `Date`, not a date-only value, and the Record Payment
-      // modal now captures a real time via its own `showTime` picker below,
-      // so the table should actually show it instead of silently dropping
-      // it the way a plain `toLocaleDateString()` would.
-      render: (value) => dayjs(value).format("DD MMM YYYY, h:mm A"),
+      render: formatPaymentDate,
     },
     {
       title: "Customer",
@@ -47,9 +40,17 @@ function PaymentsTable({
         payment.customerId ? customerNameById.get(payment.customerId) || "—" : payment.manualClientName || "—",
     },
     {
+      title: "Contact",
+      dataIndex: "contactName",
+      // The name snapshotted at write time (§7.70), not a lookup: contact
+      // deletion is a hard delete, and this page has no contact directory
+      // to look one up in anyway. A payment with no contact shows a dash.
+      render: (value) => value || "—",
+    },
+    {
       title: "Amount",
       dataIndex: "amount",
-      render: (value) => `₹${value.toLocaleString()}`,
+      render: formatPaymentAmount,
     },
     {
       title: "Notes",

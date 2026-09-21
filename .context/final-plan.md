@@ -121,7 +121,7 @@ Source of Truth rule made concrete, and to mark what's real vs. planned in the d
 | `leave` | ✅ Built (§7.5, Phase 3, 2026-07-13) | Leave requests/approval, one-paid-leave-per-month quota (§11.7), the 2x unapproved-absence rule |
 | `payroll` | ✅ Built (§7.7, Phase 4, 2026-07-13) | Monthly gross/net computation from Attendance + Leave + approved TravelLog data, mileage reimbursement, PDF payslips, monthly `node-cron` job |
 | `ticket` | ✅ Built (§7.8, Phase 5) | Internal + Customer Portal support ticket lifecycle — raise/list/assign/status/comments/attachments. Customer Portal self-signup (§7.0) is a companion piece, built the same task |
-| `payment` | ✅ Built (§7.9, Phase 7) | Admin-only manual payment log, with optional partial reconciliation against an existing `Invoice` (§11.3, resolved) |
+| `payment` | ✅ Built (§7.9, Phase 7; contact link + customer-page entry point §7.70) | Admin-only **cash log** (§11.3, decided 2026-09-18). Optionally names the contact it was collected from, with the name snapshotted at write time. The backend's `invoiceId` reconciliation branch exists but is unreachable from any UI — see §11.3 |
 | `amc` | ✅ Built (§7.10, Phase 7) | Annual maintenance contract tracking per customer, "own team"/"own" scoped via the underlying Customer's ownership |
 | `report` | ✅ Built (§7.11, Phase 8; analytics endpoints added §7.23) | Unified `POST /reports/generate` dispatcher (attendance/leave/payroll/**payrollRun**/transport/leads/customers) — **streams the file directly**; the Cloudinary upload/download-URL shape was removed 2026-08-04, see the Cloudinary row below. `GET /attendance/report`/`GET /travel-logs/report` now internally reuse it (breaking response-shape change). §7.23 adds 11 `GET /reports/analytics/*` MongoDB-aggregation endpoints (the first aggregation pipelines in this backend) in a new sibling `analytics.service.js`/`analytics.controller.js`, reusing each target module's own scoping logic |
 | `notification` | ✅ **Built (§6.7/§7.11-Platform, Phase 9, 2026-07-16)** | `Notification`/`PushSubscription` models, Web Push (VAPID) delivery via `web-push`, self-scoped subscribe/list/mark-read endpoints. Wired into Leads (assignment + a 24h/15m follow-up-reminder cron) and Ticket assignment (a deliberate small addition beyond the Leads-only spec) — see §7.16 |
@@ -588,7 +588,9 @@ reworked to guided reassignment" section for the UI side (`DeactivationReassignM
   list exactly (`invoiceId` added to the create body, per the resolved reconciliation design).
 - **Permission requirements:** `payments.view`/`create` (admin only — §5's matrix marks every
   other role "–", so unlike every other feature module there's no ownership scoping at all).
-- **Key invariants:** **§11.3 resolved — partial reconciliation, not a standalone log and not
+- **Key invariants:** *(the reconciliation invariant below is SUPERSEDED — §11.3 was corrected
+  on 2026-09-18 to a plain cash log, see §7.70; the `invoiceId` code it describes still exists but
+  is unreachable)* **§11.3 resolved — partial reconciliation, not a standalone log and not
   full invoicing.** A `Payment` linked to both a `customerId` and an `invoiceId` reduces that
   `Invoice`'s `balance` and updates its `status` (`"paid"` at 0, `"partially_paid"` otherwise,
   clamped rather than going negative on an overpayment); a manual-only or
@@ -2480,6 +2482,9 @@ codebase; a plain route-level `authorize()` gate is sufficient.
 
 **§11.3 resolved (Payments use PARTIAL RECONCILIATION, not a fully standalone log and not full
 invoicing):**
+*(SUPERSEDED 2026-09-18 — see §11.3 and §7.70. Kept as the record of what was built in Phase 7;
+the reconciliation path below was never wired to any UI and payments are a cash log.)*
+
 - When a `Payment` has a real `customerId` **and** an `invoiceId`, the linked `Invoice`
   (validated to actually belong to that `customerId` — 400 if it belongs to a different
   customer) has its `balance` reduced by the payment amount. Reaching exactly 0 →
@@ -4429,15 +4434,21 @@ a checkmark still block on client input and remain flagged as open — do not si
    exact category enum needs to grow beyond those three values — confirm with client if/when
    a new category is needed; the shape decision itself is no longer in question.
 3. **Payments tab vs. Customer Invoice History** — same ledger or a separate manual cash log?
-   ✅ **Resolved (§7.9, Phase 7, built): neither extreme — PARTIAL RECONCILIATION.** `Payment`
-   is not a fully standalone cash log (it can optionally attach to a real `Invoice` and update
-   its balance/status), but it's also not full invoicing/ledger duplication (no auto-numbering,
-   no recurring generation, no ledger views — `Invoice` stays the same Phase 2 placeholder
-   model). When a `Payment` has both a `customerId` and an `invoiceId`, applying it reduces that
-   `Invoice.balance` by the payment amount and updates `Invoice.status` — `"paid"` if the
-   balance reaches 0, otherwise the newly-added `"partially_paid"` value (§6.6). A manual-only
-   payment, or a `customerId` with no `invoiceId`, is just logged — expected, not a gap, since
-   not every payment is tied to a specific invoice.
+   ✅ **Decided 2026-09-18 (§7.70): a CASH LOG.** Payments record money received and do not
+   touch invoices.
+
+   This CORRECTS an earlier entry here that recorded "partial reconciliation" as resolved
+   (§7.9, Phase 7). That design was only ever half-built and the half that existed was
+   invisible: the backend could reduce an `Invoice.balance` when given an `invoiceId`, but no UI
+   ever sent one, no endpoint ever returned an invoice, and the customer page's Invoice History
+   was removed on 2026-08-05 as a placeholder that could never show data. From any user's seat
+   the Payments tab has always been a cash log — the doc said otherwise, the product did not.
+
+   What that means in code now: `Payment.invoiceId` and `payment.service.js`'s reconciliation
+   branch are **left in place, untouched and unreachable** — deliberately not extended and not
+   removed (out of scope). `Invoice` remains the Phase 2 placeholder model. No invoice screen
+   exists and none is planned under this decision. A payment names a **customer** (or a
+   free-text client) and, optionally, the **contact** it was collected from.
 4. **Transport/Travel distance** — ✅ **Resolved 2026-07-13** (as a Payroll prerequisite,
    §7.7 STEP 0b): it feeds payroll. `TravelLog` was retrofitted with a `status`
    (`pending`/`approved`/`rejected`) approval workflow — see §6.5/§7.6 — and
@@ -5894,4 +5905,79 @@ already exist and are set in Vercel production.
 
 Backend 1008 passed of 1008 (was 999) — 9 new, including a `cloudinary.service.test.js` pinning the
 fail-closed null and the two-type delete fallback.
+
+## §7.70 — Payments: contact link, and two entry points to one record (2026-09-18)
+
+**Decided, not re-opened: payments are a CASH LOG.** They do not touch invoices. §11.3 is
+corrected accordingly — it had recorded "partial reconciliation" as resolved when nothing user-
+facing ever implemented it. The backend's `invoiceId` branch is left exactly as it was:
+unreachable, out of scope.
+
+### The contact link
+
+A payment can now name the person it was collected **from** — `Payment.contactId` (ref
+`Contact`, optional) — alongside the customer it was collected **for**.
+
+- **Validated to belong to the customer** — `resolveContactForPayment` is the same shape as the
+  existing `invoiceId` ownership check: 400 if the contact is at a different customer.
+- **Forbidden with `manualClientName`** — a contact is strictly a child of a Customer, so a
+  manual-only entry has nothing it could point at.
+- **Optional.** A customer with zero contacts is still payable; the picker shows "No contacts for
+  this customer (optional)" and the record carries `contactId: null`.
+- **`contactName` is snapshotted at write time.** Contact deletion is a hard `deleteOne()`
+  (customer.service.js#deleteContact), so without a snapshot the payment would lose who it was
+  collected from the day that person left the roster. Both are stored; the customer page shows
+  the live name while the contact exists and the snapshot once it is gone, the global table
+  shows the snapshot (it has no contact directory to look one up in).
+- Both fields ride along in the `PaymentAuditLog.previousValues` snapshot. `contactId` is not
+  editable through `PATCH /payments/:id` — same rule as `customerId`, it is the record's
+  identity, not a correctable field.
+
+### Two entry points, one record
+
+`GET /customers/:id/payments` — a customer's own payments, gated on **`customers.view`** and the
+ordinary ownership scope, deliberately *not* on `payments.view`. `payments.*` is admin-tier by
+template; the customer page must not require it. Seeing the money a customer you can see has
+paid is part of seeing that customer. A sales associate reading their own customer's list is
+tested; an out-of-scope customer 404s, not 403s, as everywhere else. `GET /payments` is untouched.
+
+Recording from either place is the same `POST /payments`, which stays behind `payments.create` —
+so on the customer page the list is visible to anyone who can open the page and the **Record
+Payment** button only to someone who can record money.
+
+### `RecordPaymentModal` — fixed-customer mode, and the Select-value bug, twice
+
+The modal is the one form behind both doors. From the Payments page the customer is the debounced
+search `Select` as before, and picking one now loads that customer's contacts into a Contact
+picker. From the customer page the customer is rendered as a **label** — never the search
+`Select` with a pre-set value. That picker's options are empty until a search is typed, so a
+pre-set `customerId` can never match an option: the guaranteed form of the blank-value bug seen
+once already.
+
+That earlier bug was **Collected By** in a reverted first attempt: the id was set from
+`sessionStore` before the users list had resolved, giving a `Select` with a value and no label
+to show. Now the default is applied in an effect that runs only once `users` is non-empty and
+only if the current user is in it, and the customer page — which fetched no users before — now
+fetches them via `useUserDirectory`. Both entry points render the collector's **name**.
+
+### Verified
+
+Real browser, admin, **1280 and 390**, each case checked by reading the rendered table rows:
+
+| case | result |
+|---|---|
+| Record from customer page → Payments page | same row on both: customer, contact, ₹, Collected By "Vinay" |
+| Record from Payments page → customer page | same row on both |
+| Customer with zero contacts | picker empty, saved, Contact shows "—" on both pages |
+| Delete a contact that has a payment (through the UI) | contact gone from the Contacts list; the payment still names "Temp Deletable" on both pages after reload |
+| Collected By | shows "Vinay", not blank, in both modals at both widths |
+| Fixed-customer mode | label rendered, no search input in the modal |
+
+Six verification payments and one fixture contact were created against the shared production
+database and removed afterwards; the payment count is back to what it was.
+
+Backend 1008/1008 → **1019/1019** (payment tests 39 → 50). Frontend 899 → **907** tests
+(Payments page +4, Customer Detail +4): 902 passed / 5 failed, the failures all in three of the
+documented load-flake files (CustomersListPage, UserManagementPage, LeadDetailPage), 5000ms
+timeouts, none in anything this task touched.
 

@@ -8,6 +8,7 @@ import {
   deleteCustomer,
   bulkUpdateCustomers,
   listContacts,
+  listCustomerPayments,
   createContact,
   updateContact,
   deleteContact,
@@ -57,6 +58,12 @@ export const bulkUpdate = asyncWrapper(async (req, res) => {
   const results = await bulkUpdateCustomers(req.body, req.user);
 
   res.status(200).json(new ApiResponse(200, results, "Bulk action completed"));
+});
+
+export const getPayments = asyncWrapper(async (req, res) => {
+  const result = await listCustomerPayments(req.params.id, req.user);
+
+  res.status(200).json(new ApiResponse(200, result, "Customer payments fetched successfully"));
 });
 
 export const getContacts = asyncWrapper(async (req, res) => {
