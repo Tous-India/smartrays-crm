@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug-only (android/app/src/debug). Cleartext is off by default and switched
+  on for exactly the hosts a developer's backend runs on: 10.0.2.2 is the
+  emulator's alias for the host machine, localhost covers `adb reverse`.
+  A physical device needs the machine's LAN address added here.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

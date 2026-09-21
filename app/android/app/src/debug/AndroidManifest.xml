@@ -1,0 +1,11 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      DEBUG BUILDS ONLY. Merged into the main manifest for the debug variant:
+      points the app at a network-security config that permits cleartext HTTP
+      to the development host alone. A network-security config takes
+      precedence over usesCleartextTraffic, so nothing else is reachable over
+      plain HTTP even in debug. Release builds have no such file and stay
+      HTTPS only.
+    -->
+    <application android:networkSecurityConfig="@xml/network_security_config" />
+</manifest>

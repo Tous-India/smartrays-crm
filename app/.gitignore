@@ -38,6 +38,11 @@ local.properties
 # node.js
 #
 node_modules/
+
+# Environment (react-native-config) — .env.example is the committed template
+.env
+.env.*
+!.env.example
 npm-debug.log
 yarn-error.log
 

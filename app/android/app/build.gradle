@@ -1,6 +1,9 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
+// react-native-config — reads app/.env (never committed) into BuildConfig so
+// the API base URL is build-time configuration, not a string in the source.
+apply from: project(':react-native-config').projectDir.getPath() + "/dotenv.gradle"
 
 /**
  * This is the configuration block to customize your React Native Android app.
