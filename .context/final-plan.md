@@ -2482,11 +2482,11 @@ Both admin-only (`payments.view`/`create`) — §5's matrix marks every other ro
 module, so there's no ownership scoping at all, unlike every other feature module in this
 codebase; a plain route-level `authorize()` gate is sufficient.
 
-**§11.3 resolved (Payments use PARTIAL RECONCILIATION, not a fully standalone log and not full
-invoicing):**
 *(SUPERSEDED 2026-09-18 — see §11.3 and §7.70. Kept as the record of what was built in Phase 7;
 the reconciliation path below was never wired to any UI and payments are a cash log.)*
 
+**§11.3 resolved (Payments use PARTIAL RECONCILIATION, not a fully standalone log and not full
+invoicing):**
 - When a `Payment` has a real `customerId` **and** an `invoiceId`, the linked `Invoice`
   (validated to actually belong to that `customerId` — 400 if it belongs to a different
   customer) has its `balance` reduced by the payment amount. Reaching exactly 0 →
@@ -5823,11 +5823,6 @@ shell's nav and not an auth surface. A test now pins that nothing auth-scoped ma
 Auth tests 30 passed. Full suite 9 failed / 871 passed of 880 — four files, all documented load
 flakes, seven literal 5000ms timeouts.
 
-*Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
-`.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
-structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a
-UX/data-model reference for Leads & Customers — its actual tech stack (Next.js/Supabase) is
-not part of this project.*
 ## §7.69 — Attendance photos: authenticated delivery (2026-08-26)
 
 Attendance check-in/check-out photos were uploaded to Cloudinary with default **public** delivery.
@@ -6307,3 +6302,12 @@ controls and own-only completion, the manager's picker rendering exactly what th
 create with subtasks, edit with the assignee pre-selected by name, the server's refusal message
 surfaced, and the 403 result.
 
+*Mobile (React Native Android) backend preparation — bearer auth, FCM, batched pings + accuracy — is planned separately in `.context/mobile-backend-plan.md` (2026-09-19, plan only, nothing built).*
+
+*The React Native Android app (employee + manager only; screens and app-specific concerns) is planned in `.context/app-plan.md` (2026-09-19, plan only, nothing built).*
+
+*Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
+`.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder
+structure (unchanged here). `.context/leads-customer-functional-spec.md` was used only as a
+UX/data-model reference for Leads & Customers — its actual tech stack (Next.js/Supabase) is
+not part of this project.*
