@@ -1,6 +1,6 @@
 # Mobile backend plan — serving a React Native Android app (2026-09-19)
 
-**Status: §1 built (2026-09-21); §2 and §3 remain plan only.** Written against the codebase as of 2026-09-19 (working
+**Status: §1 and §3 built (2026-09-21); §2 remains plan only.** Written against the codebase as of 2026-09-19 (working
 tree, including the uncommitted §7.68–§7.71 work). Kept separate from `final-plan.md` on purpose;
 that file carries one cross-reference line to here and nothing else.
 The app that consumes this backend is planned in `.context/app-plan.md`.
@@ -236,6 +236,16 @@ project setup, which is outside the repo.
 ---
 
 ## 3. Batched location pings + accuracy
+
+**Status: BUILT — commit `c949c71` (2026-09-21).** `POST /location/pings` accepts `{ pings: [...] }`
+(cap 500) beside the unchanged single form; §3.4's faithful reading is the one built (a ping is
+accepted into any of that user's shifts covering its `capturedAt`, closed shifts included; the
+single form keeps its literal rule); `clientPingId` is unique per employee through a **partial**
+unique index (a sparse compound index would still collide web pings on `null`); `coords.accuracy`
+persists on pings and on `checkIn`/`checkOut`; the geofence skips fixes worse than
+`GEOFENCE_MAX_ACCURACY_METERS` (default 100) and tests `distance − accuracy > radius`; TTL stays
+on `createdAt` (§3.5, up to 47 days after capture for a late batch). 19 tests; the existing 34
+location tests untouched.
 
 ### 3.1 What the code does today
 
