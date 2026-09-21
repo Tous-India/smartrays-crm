@@ -1,25 +1,50 @@
-import { StyleSheet, Text, View } from "react-native";
+import { useCallback } from "react";
+import { StyleSheet, Text } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
 import Screen from "../../../components/Screen";
 import PrimaryButton from "../../../components/PrimaryButton";
+import TodayShiftCard from "../../attendance/components/TodayShiftCard";
+import useMyAttendance from "../../attendance/hooks/useMyAttendance";
+import useIsOnline from "../../../hooks/useIsOnline";
 import useSessionStore from "../../../store/sessionStore";
 import { signOut } from "../../auth/session.service";
-import { colors, radius, spacing, typography } from "../../../theme";
+import { CAPTURE_MODES, SCREENS } from "../../../constants/screens.constants";
+import { spacing, typography } from "../../../theme";
 
 /**
- * The signed-in landing screen. The shift card (app-plan.md §1.1) lands in a
- * later phase; for now this proves the session and the role that reached it.
+ * The signed-in landing screen — the shift card first (app-plan.md §1.1),
+ * for employee and manager alike (a manager checks in too, §2). The card
+ * re-reads the server every time this screen regains focus, which is how a
+ * check-in made on the capture screen shows up here without the two
+ * screens sharing state.
  */
-function HomeScreen() {
+function HomeScreen({ navigation }) {
   const user = useSessionStore((state) => state.user);
+  const isOnline = useIsOnline();
+  const attendance = useMyAttendance();
+  const { refetch } = attendance;
+
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+    }, [refetch])
+  );
 
   return (
     <Screen testID="home-screen">
       <Text style={typography.title}>Hello, {user?.name}</Text>
       <Text style={[typography.subtitle, styles.subtitle]}>Signed in as {user?.role}</Text>
-      <View style={styles.card}>
-        <Text style={typography.label}>Today&apos;s shift</Text>
-        <Text style={[typography.body, styles.cardBody]}>Check-in and tracking arrive in the next phase.</Text>
-      </View>
+
+      <TodayShiftCard
+        openRecord={attendance.openRecord}
+        todayRecord={attendance.todayRecord}
+        isLoading={attendance.isLoading}
+        error={attendance.error}
+        isOnline={isOnline}
+        onCheckIn={() => navigation.navigate(SCREENS.CAPTURE, { mode: CAPTURE_MODES.CHECK_IN })}
+        onCheckOut={() => navigation.navigate(SCREENS.CAPTURE, { mode: CAPTURE_MODES.CHECK_OUT })}
+      />
+
       <PrimaryButton title="Sign out" onPress={signOut} testID="home-sign-out" />
     </Screen>
   );
@@ -27,15 +52,6 @@ function HomeScreen() {
 
 const styles = StyleSheet.create({
   subtitle: { marginTop: spacing.xs, marginBottom: spacing.xl },
-  card: {
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.lg,
-    padding: spacing.lg,
-    marginBottom: spacing.xl,
-  },
-  cardBody: { marginTop: spacing.sm },
 });
 
 export default HomeScreen;

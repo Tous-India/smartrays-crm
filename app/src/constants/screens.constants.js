@@ -3,5 +3,12 @@ export const SCREENS = {
   LOGIN: "Login",
   TWO_FACTOR: "TwoFactor",
   HOME: "Home",
+  CAPTURE: "Capture",
   UNSUPPORTED_ROLE: "UnsupportedRole",
+};
+
+/** What the capture screen is for — its `mode` route param. */
+export const CAPTURE_MODES = {
+  CHECK_IN: "check-in",
+  CHECK_OUT: "check-out",
 };

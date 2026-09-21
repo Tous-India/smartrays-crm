@@ -5,6 +5,9 @@ export const API_PATHS = {
   MOBILE_REFRESH: "/auth/mobile/refresh",
   MOBILE_LOGOUT: "/auth/mobile/logout",
   CURRENT_USER: "/auth/me",
+  MY_ATTENDANCE: "/attendance/me",
+  CHECK_IN: "/attendance/check-in",
+  CHECK_OUT: "/attendance/check-out",
 };
 
 /** The header the trusted-device token travels in (the web uses a cookie). */
