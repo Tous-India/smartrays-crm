@@ -50,6 +50,13 @@ vi.mock("../services/userDirectoryApi", () => ({
   fetchUserDropdown: vi.fn(),
 }));
 
+// Services (§7.72) — the two dashboard widgets fetch through this.
+vi.mock("../modules/service/api/serviceApi", () => ({
+  listServices: vi.fn().mockResolvedValue({ data: { data: [] } }),
+  changeServiceStatus: vi.fn(),
+  toggleSubtask: vi.fn(),
+}));
+
 function renderPage() {
   return render(
     <MemoryRouter>
@@ -149,9 +156,12 @@ describe("DashboardPage — role-based widget composition", () => {
     expect(screen.queryByText("Open Tickets")).not.toBeInTheDocument();
   });
 
-  it("shows the 'no widgets' message for a role with an empty candidate list (employee)", () => {
+  it("shows the 'no widgets' message for a role with an empty candidate list (customer)", () => {
+    // Employee stopped being the empty-list example in §7.72 — it now has
+    // MyServicesWidget as a candidate. Customer never renders this page in
+    // practice (PortalLayout), but it is the one role whose list is still [].
     useSessionStore.setState({
-      user: { _id: "employee-1", role: "employee", permissions: {} },
+      user: { _id: "customer-1", role: "customer", permissions: {} },
       isAuthenticated: true,
       isLoading: false,
     });
@@ -164,6 +174,58 @@ describe("DashboardPage — role-based widget composition", () => {
 });
 
 describe("DashboardPage — permission-gating overrides role defaults", () => {
+  it("renders My Services for an employee holding services.view, and nothing at all for one without (§7.72)", async () => {
+    useSessionStore.setState({
+      user: { _id: "employee-1", role: "employee", permissions: { services: { view: true } } },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    const { unmount } = renderPage();
+
+    expect(await screen.findByText(/My Services/)).toBeInTheDocument();
+    unmount();
+
+    // No grant: the candidate renders null. The candidate list is non-empty,
+    // so the old `widgets.length === 0` check would not fire — the page now
+    // measures what the grid painted and falls back to the same message
+    // rather than a blank page (§7.72). Not an error state.
+    useSessionStore.setState({
+      user: { _id: "employee-2", role: "employee", permissions: {} },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    renderPage();
+
+    expect(screen.queryByText(/My Services/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Couldn't load this widget")).not.toBeInTheDocument();
+    expect(screen.getByText("No dashboard widgets are available for your role yet.")).toBeInTheDocument();
+  });
+
+  it("falls back to the message for ANY role whose whole candidate set renders nothing — not a Services special case", () => {
+    // A manager with every grant overridden away: 9 candidates, all null.
+    useSessionStore.setState({
+      user: { _id: "manager-2", role: "manager", permissions: {} },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    renderPage();
+
+    expect(screen.getByText("No dashboard widgets are available for your role yet.")).toBeInTheDocument();
+    expect(screen.queryByText("Leads Pipeline")).not.toBeInTheDocument();
+  });
+
+  it("shows NO message once any candidate paints — the message and the grid are never both meaningful", async () => {
+    useSessionStore.setState({
+      user: { _id: "employee-3", role: "employee", permissions: { services: { view: true } } },
+      isAuthenticated: true,
+      isLoading: false,
+    });
+    renderPage();
+
+    expect(await screen.findByText(/My Services/)).toBeInTheDocument();
+    expect(screen.queryByText("No dashboard widgets are available for your role yet.")).not.toBeInTheDocument();
+  });
+
   it("hides every widget for a manager whose permissions were overridden to grant nothing, even though manager's role config includes 8 widgets", async () => {
     vi.clearAllMocks();
     leadApi.listLeads.mockResolvedValue(EMPTY_LEADS);
@@ -178,8 +240,9 @@ describe("DashboardPage — permission-gating overrides role defaults", () => {
 
     renderPage();
 
-    // The role-level candidate list is non-empty, so this isn't the "no
-    // widgets for this role" message — each widget itself renders nothing.
+    // Each widget itself renders nothing. The candidate list is non-empty,
+    // so until §7.72 this was a blank page; the page now measures the grid
+    // and shows the same "no widgets" message (asserted in the test below).
     await screen.findByRole("heading", { name: "Dashboard" });
     expect(screen.queryByText("Leads Pipeline")).not.toBeInTheDocument();
     expect(screen.queryByText("Follow-ups Due")).not.toBeInTheDocument();

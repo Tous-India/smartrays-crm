@@ -16,6 +16,7 @@ import amcRouter from "./modules/amc/amc.routes.js";
 import reportRouter from "./modules/report/report.routes.js";
 import notificationRouter from "./modules/notification/notification.routes.js";
 import teamRouter, { teamTypeRouter } from "./modules/team/team.routes.js";
+import serviceRouter from "./modules/service/service.routes.js";
 
 const router = Router();
 
@@ -30,6 +31,8 @@ router.use("/projects", projectRouter);
 router.use("/leave", leaveRouter);
 router.use("/travel-logs", travelLogRouter);
 router.use("/payroll", payrollRouter);
+// Services (§7.72) — internal work items; supersedes the `/tasks` routes removed 2026-07-29.
+router.use("/services", serviceRouter);
 router.use("/tickets", ticketRouter);
 router.use("/payments", paymentRouter);
 router.use("/amc", amcRouter);

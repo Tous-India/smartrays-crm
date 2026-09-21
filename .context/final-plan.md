@@ -123,6 +123,7 @@ Source of Truth rule made concrete, and to mark what's real vs. planned in the d
 | `ticket` | ✅ Built (§7.8, Phase 5) | Internal + Customer Portal support ticket lifecycle — raise/list/assign/status/comments/attachments. Customer Portal self-signup (§7.0) is a companion piece, built the same task |
 | `payment` | ✅ Built (§7.9, Phase 7; contact link + customer-page entry point §7.70) | Admin-only **cash log** (§11.3, decided 2026-09-18). Optionally names the contact it was collected from, with the name snapshotted at write time. The backend's `invoiceId` reconciliation branch exists but is unreachable from any UI — see §11.3 |
 | `amc` | ✅ Built (§7.10, Phase 7) | Annual maintenance contract tracking per customer, "own team"/"own" scoped via the underlying Customer's ownership |
+| `service` | ✅ Built (§7.72, 2026-09-19) | Internal work items assigned to one employee — To Do / Completed. Scoped by assignee (admin: all; manager: own team + self; others: own). **Supersedes the Task sub-feature removed 2026-07-29** |
 | `report` | ✅ Built (§7.11, Phase 8; analytics endpoints added §7.23) | Unified `POST /reports/generate` dispatcher (attendance/leave/payroll/**payrollRun**/transport/leads/customers) — **streams the file directly**; the Cloudinary upload/download-URL shape was removed 2026-08-04, see the Cloudinary row below. `GET /attendance/report`/`GET /travel-logs/report` now internally reuse it (breaking response-shape change). §7.23 adds 11 `GET /reports/analytics/*` MongoDB-aggregation endpoints (the first aggregation pipelines in this backend) in a new sibling `analytics.service.js`/`analytics.controller.js`, reusing each target module's own scoping logic |
 | `notification` | ✅ **Built (§6.7/§7.11-Platform, Phase 9, 2026-07-16)** | `Notification`/`PushSubscription` models, Web Push (VAPID) delivery via `web-push`, self-scoped subscribe/list/mark-read endpoints. Wired into Leads (assignment + a 24h/15m follow-up-reminder cron) and Ticket assignment (a deliberate small addition beyond the Leads-only spec) — see §7.16 |
 | `transport` | ✅ Built (§7.6, Phase 6, 2026-07-13) | Distance-per-shift (auto from Attendance checkout, or manual entry) via Google Maps, separate from `location`'s raw GPS stream. Approval workflow (`pending`/`approved`/`rejected`) added 2026-07-13; only `approved` entries feed Payroll mileage reimbursement (§11.4, resolved) |
@@ -6066,4 +6067,204 @@ filtered on `location/ping` when the endpoint is `location/pings`, so a run show
 my regex, showed the pings had been arriving all along.
 
 Frontend hook tests 10 → 17; `HeaderAttendanceControl` +1. See suite totals in the report.
+
+## §7.72 — Services: internal work assignment (2026-09-19)
+
+Admin and manager create work items — "services" — and assign each to **one** employee. Two
+states, To Do and Completed, nothing in between. Purely internal: no customer, no project, no AMC,
+no ticket.
+
+**This supersedes the Task sub-feature removed on 2026-07-29 (§6.4/§7.3).** Nothing of it remained
+in code to reuse — the removal was total, and the record gives "at the user's request" as the whole
+reason. What the old model assumed is deliberately absent here: a required `projectId` that drove
+both assignment and visibility, an `in_progress` state with a start/stop timer, and a
+one-in-progress-per-employee constraint. What carried over is one idea: the assignee may change
+their own item's status without a separate grant.
+
+### Model
+
+`Service` — `title` (required), `description`, `status: todo | completed`, `assignedToId` (ref
+User, required — one assignee), `createdById`, `dueDate`, `subtasks: [{ title, isDone }]`,
+`completedAt`, `completedById`, timestamps. Index on `{ assignedToId, status }`, which is every
+list query. `completedAt`/`completedById` are set and cleared in exactly one place.
+
+### Permissions and scope
+
+`services: ["view", "create", "edit", "delete"]` in the registry — the same ladder as Leads and
+Customers, and like them the SCOPE is who you are, not a tier key: `view` alone is the grant.
+Templates: manager gets all four; employee and sales associate get `view` (an admin may assign a
+service to anyone, so every role that can be an assignee must be able to see its own). The
+Permissions UI lists it under the ownership-scoped modules with the standard inert scope control.
+
+The scope is resolved once, in `service.service.js#resolveVisibleAssigneeIds`, and applied to
+**every** query in the file — MongoDB has no row-level security, so it is either in every filter or
+it is not enforced:
+
+| role | sees / may assign to |
+|---|---|
+| admin | everyone |
+| manager | their direct reports **and themselves** — an admin can assign a service to a manager, who must then be able to see it |
+| anyone else | only what is assigned to them |
+
+The manager's team comes from the existing `resolveDirectReportIds` (attendance.service.js), not
+a ninth copy of `User.find({ managerId })`. Out-of-scope fetch, edit, status change or delete is a
+**404**, never a 403 — the convention every scoped module follows. `?assignedTo` can narrow the
+scope, never widen it.
+
+### Endpoints
+
+`GET /services?status=&assignedTo=` · `GET /services/assignees` (the scoped picker source, gated
+on `create`) · `POST /services` · `GET /services/:id` · `PATCH /services/:id` (fields and
+reassignment; status is refused here) · `PATCH /services/:id/status` (gated on `view`, then the
+assignee-or-`edit` rule in the service) · `DELETE /services/:id`. Assigning or reassigning
+notifies the new assignee through the existing `createNotification` fan-out (new type
+`service_assigned`); assigning to yourself notifies nobody.
+
+### Frontend
+
+`/services` — one page for every role. Two columns, To Do and Completed, each with a count; the
+columns are a CSS grid that is two-up from `lg` and stacks below. What differs per role is what
+the server returns and which controls render (`PermissionGate` on New / Edit / Delete; Mark
+complete on the assignee's own items or for anyone holding `edit`). The page never filters for
+visibility. Cards show the assignee, the creator, due date (red when overdue), subtask progress,
+and who completed it. Create/edit modal: title, description, **assignee picker fed only by
+`GET /services/assignees`** — a manager's list is their team and themselves, an admin's everyone —
+due date, and subtasks. The picker's options load before the form's values are set, so an edit's
+pre-selected assignee always has a label (the §7.70 rule).
+
+No table on the page, so no `scroll.x` to forget. Measured with the audit method
+(`documentElement.scrollWidth === clientWidth`) at **1280, 1024, 768 and 390**: no overflow at any
+width; two columns at 1280/1024, one at 768/390; the modal fits the viewport at 1280 and 390.
+
+### Verified — real browser, three roles
+
+- **Admin** (1280 and 390): created three services (to an employee, to a manager, to themselves);
+  all three visible; picker offers everyone.
+- **Manager** (1280 and 390): sees the two assigned to their team member and themselves, **not**
+  the admin's own; picker — via API and in the rendered dropdown — is exactly `[Testing User 2,
+  testing manager]`; created for a team member → 201.
+- **Employee** (1280 and 390): sees only their own two; `POST /services` → **403**;
+  `GET /services/assignees` → **403**; `GET /services/<the manager's>` → **404**;
+  `PATCH /services/<the manager's>/status` → **404**; no New / Edit / Delete controls; Mark
+  complete on their own item moves it to Completed.
+
+Everything created was removed afterwards (5 services, 4 notifications; the collection is back to
+empty), and the two accounts' `permissions` objects restored to exactly what they were.
+
+### Dashboard widgets (2026-09-19, same day)
+
+Two widgets, slotted into the existing catalog (`dashboardConfig.js` — role → candidate list,
+each widget self-gating on `usePermission("services", "view")`; no grant → `null`, not an error):
+
+- **My Services** — `employee` and `sales_associate`. `GET /services?status=todo` (the server
+  scopes it to "assigned to me"), ordered overdue → due soonest → undated by one shared
+  `sortByUrgency`; title, due date (red when overdue), subtask progress; count in the header;
+  **inline Mark complete** through `PATCH /services/:id/status`, which already lets the assignee
+  complete without an edit grant; click-through to `/services`; empty state. It is the employee
+  dashboard's first widget — until now that role rendered "No dashboard widgets are available".
+- **Team Services** — `manager`, and **the same component for `admin`**: the server returns a
+  manager's team + own items and an admin's everyone, and the widget only groups what it is given
+  by assignee (most urgent group first, the viewer's own labelled "You", overdue flagged and
+  counted). A third bespoke admin widget would have added nothing; only the title changes ("All
+  Services").
+
+No new endpoint; no new scoping; no table.
+
+Verified in a real browser as **admin, manager, employee and a sales associate**, at 1280 and 390,
+`scrollWidth === clientWidth` on every dashboard (Vite restarted first — its dev scan had missed a
+new file's utility once already). The manager's widget showed **Testing User 2 · 4** and **You · 1**
+and not the admin's own item nor the sales associate's; the employee's showed four items in
+urgency order and a Mark complete with only `services.view` — `completedById` was the employee;
+the sales associate, a **new** account, held `services.view` straight from the template with no
+admin action; and the existing employee, checked **before** any grant, got a dashboard with no
+widget, no error — and, worth knowing, no "no widgets" message either, since the role's candidate
+list is no longer empty. Fixtures (6 services, 5 notifications, the sales-associate account via
+the product's deactivate → delete path) were removed; a service someone else had created that
+morning was left alone.
+
+Frontend +9 tests (`MyServicesWidget` 4, `TeamServicesWidget` 4, `DashboardPage` +1 for the
+employee-with/without-grant case); the page test's "empty candidate list" example moved from
+`employee` to `customer`.
+
+**Follow-up, same day — the blank page is gone.** `DashboardPage` now also notices when every
+candidate self-gated to `null`: a `useLayoutEffect` counts the grid's `Col`s that actually painted
+anything, and if none did, the existing "No dashboard widgets are available for your role yet."
+message renders — before paint, so there is no blank frame first. The catalog mechanism is
+untouched and widgets keep self-gating; the page measures the DOM rather than duplicating any
+widget's permission logic, and it is not a Services special case — a manager with every grant
+overridden away gets the same message (tested). Verified in a real browser at 1280 and 390: the
+ungranted employee sees the message; the granted employee sees the widget and no message; admin
+and manager unchanged. `DashboardPage` +2 tests.
+
+### Subtasks the assignee can work through (2026-09-19, same day)
+
+A card said "0/2 subtasks" and gave the assignee no way to see or tick them. The count is now a
+button: click it and the checklist unfolds **inline** — no modal, it is a quick working action —
+with a checkbox per subtask; a service with no subtasks renders no affordance and no empty panel.
+The checkboxes are live for the **assignee** and for anyone holding `services.edit`, the same rule
+as Mark complete. It works on `/services` and inside the **My Services** widget, which already
+showed the count; both update the row in place from the server's response (a refetch would show
+the grid's loading spinner, unmounting every card and collapsing the list on each tick — found
+in verification and fixed before it shipped).
+
+**Endpoint** — `PATCH /services/:id/subtasks/:subtaskId` `{ isDone }`, gated exactly like the
+status endpoint: `services.view` at the route, then service scope (an employee gets **404**, not
+403, for a subtask on someone else's service), then assignee-or-edit inside (`ensureAssigneeOrEditor`,
+now shared by both). Unknown subtask → 404; non-boolean → 400.
+
+**Ticking every subtask does NOT complete the service.** Subtasks are the assignee's working
+notes; completing is the deliberate, separate act that stamps `completedAt`/`completedById`, and
+a checklist finishing a job nobody has signed off would conflate the two. Tested. (I agree with
+the brief on this and did not decide otherwise.)
+
+Verified in a real browser at 1280 and 390: an employee holding only `services.view` expands,
+ticks, sees 0/2 → 1/2 live, and the tick survives a reload; the same employee gets 404 on a
+direct call against the admin's own service; manager and admin toggle on services they can see;
+the widget goes 1/2 → 2/2 in place; no horizontal overflow with a long subtask title wrapped
+inside the card at 390. Backend +8 tests (6 fail on pre-change code; the two 404 cases pass
+vacuously without the route, which is why their siblings assert the 200s); frontend +5.
+
+### Existing accounts — backfilled (2026-09-19); the manual deployment step is withdrawn
+
+Adding `services` to the role templates reached only accounts created afterwards — §7.12's
+documented rule ("editing a template is never retroactive"), which is why the manager account
+answered 403 on the first verification run and both existing non-admin accounts saw neither the
+nav item nor the widget. That is the wrong outcome for this module: Services is core work
+assignment and every role needs it without administrative action.
+
+**Backfill, done.** Both affected accounts (2 of 2 non-admin users) now hold exactly what their
+role template specifies — employee `{ view }`, manager `{ view, create, edit, delete }` — applied
+through the product's own per-user grant (`PATCH /users/:id/permissions`, as the admin, via the
+API; no raw database write). Per-user grant rather than reset-to-template on purpose: the employee
+account holds a `leads` override the template does not grant, and a reset would have silently
+discarded it. Only the `services` key was added; every other module was asserted byte-identical
+before and after, and `services` asserted equal to the template. A second run changes nothing.
+Verified live afterwards: the employee sees Services in the nav and "My Services" on the dashboard
+and completes inline with no admin action; the manager's "Team Services" shows their team member's
+item and not an open item assigned to the admin.
+
+**Stored templates, confirmed:** employee and sales associate `{ view }`; manager all four; admin
+`null` — deliberately, because admin bypasses `can()` entirely and `RECONCILABLE_ROLES` excludes
+it; customer `null`. Nothing to fix.
+
+**Now structural — §7.12c (same day).** The recommendation above was implemented as a second
+boot phase, `reconcileUserPermissions`: absent module keys are copied from the role's stored
+template, present keys are never touched, and `PATCH /users/:id/permissions` now rejects partial
+bodies so a present key cannot quietly become absent. On its first run against production it also
+added `teams: { view_team: true }` to the manager — a second, older gap the same mechanism had
+left behind on 2026-08-05. Full write-up in §7.12c.
+
+### Tests
+
+Backend `service.test.js`: **31 tests** — creation rules for every role (including 400 for an
+out-of-team assignee and a deactivated one), list scoping for admin / manager / manager-with-no-
+team / employee, `?assignedTo` narrowing, the 404s, the scoped picker, edit and reassign with the
+notification, status by assignee and reopen, delete, and self-assignment not notifying. Run
+before the router was registered: **30 of 31 fail** (every route 404s; the one that "passes" is an
+out-of-scope-is-404 assertion, which is why its sibling asserts the in-scope 200). The manager
+template snapshot in `permission.test.js` gained the new module. Frontend `ServicesPage.test.jsx`:
+**9 tests** — columns and counts, assignee and creator on the card, the employee's missing
+controls and own-only completion, the manager's picker rendering exactly what the server sent,
+create with subtasks, edit with the assignee pre-selected by name, the server's refusal message
+surfaced, and the 403 result.
 

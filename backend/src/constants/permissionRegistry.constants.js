@@ -105,6 +105,14 @@ export const PERMISSION_REGISTRY = {
   // rather than duplicating the ownership-scoping logic. Employee/customer
   // get neither — matrix marks both "–".
   amc: ["view", "edit"],
+  // Services (§7.72, 2026-09-19) — internal work items assigned to one
+  // employee. Same four-action ladder as leads/customers, with the SCOPE
+  // resolved by role inside service.service.js (admin: everyone; manager:
+  // their direct reports and themselves; anyone else: only what is assigned
+  // to them) rather than by view_team/view_all tiers — `view` alone is the
+  // grant, the scope is who you are. Supersedes the `tasks` entry removed
+  // 2026-07-29.
+  services: ["view", "create", "edit", "delete"],
   // Team is an org-structure entity (like Permissions' own templates) —
   // `manage` is the admin-only combined create/edit/delete/reassign-head
   // tier, matching `permissions.manage`'s exact shape rather than inventing

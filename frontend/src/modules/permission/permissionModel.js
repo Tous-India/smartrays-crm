@@ -52,7 +52,7 @@ const CAPABILITY_ONLY_MODULES = new Set(["permissions", "teams", "tickets"]);
  * renders inert on these rows with this explanation, rather than offering a
  * choice that has nowhere to be saved.
  */
-const OWNERSHIP_SCOPED_MODULES = new Set(["leads", "customers", "payments", "amc"]);
+const OWNERSHIP_SCOPED_MODULES = new Set(["leads", "customers", "payments", "amc", "services"]);
 
 const OWNERSHIP_SCOPE_REASON =
   "Scope for this module follows record ownership and is set by role, not by permission.";
@@ -68,6 +68,7 @@ export const MODULE_LABELS = {
   credentials: "Credentials Vault",
   projects: "Projects",
   attendance: "Attendance",
+  services: "Services",
   leave: "Leave",
   travelLogs: "Travel Logs",
   payroll: "Payroll",
@@ -94,6 +95,11 @@ export const CAPABILITY_LABELS = {
   "tickets.view_own": "See own tickets",
   "tickets.view_assigned": "See assigned tickets",
   "tickets.view_all": "See all tickets",
+  // Services (§7.72) — the standard ladder; scope is by role (own / own team / all).
+  "services.view": "See services",
+  "services.create": "Create and assign services",
+  "services.edit": "Edit and reassign services",
+  "services.delete": "Delete services",
 };
 
 export function labelForCapability(moduleName, action) {

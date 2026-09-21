@@ -65,6 +65,10 @@ const INITIAL_TEMPLATE_DEFAULTS = {
     // AMC itself. No `payments` grant at all — that matrix row is "–" for
     // every role except admin.
     amc: { view: true, edit: true },
+    // Services (§7.72) — a manager creates work items and assigns them to
+    // their own direct reports; the team scope is resolved in
+    // service.service.js, not by a separate tier here.
+    services: { view: true, create: true, edit: true, delete: true },
     // Added 2026-08-05 — read-only visibility into the team(s) this manager
     // personally heads, so "who is on my team" is answerable in the UI
     // without granting the admin-only `teams.manage` tier. See the registry's
@@ -94,6 +98,10 @@ const INITIAL_TEMPLATE_DEFAULTS = {
     // resolved the same way manager's "own team" tier is (via the
     // underlying Customer's ownership, not a separate AMC ownerId).
     amc: { view: true, edit: true },
+    // Services (§7.72) — an admin may assign a service to anyone, so every
+    // non-manager role that can be an assignee needs `view` to see its own.
+    // No create/edit/delete: only admin and manager hand work out.
+    services: { view: true },
   },
   employee: {
     location: { view: true },
@@ -117,6 +125,9 @@ const INITIAL_TEMPLATE_DEFAULTS = {
     // employees don't raise tickets themselves in this design, only
     // admin/manager (internally) or a customer (via the portal) do.
     tickets: { view_assigned: true },
+    // Services (§7.72) — see and complete what is assigned to me; the scope
+    // (own items only) is resolved server-side from `assignedToId`.
+    services: { view: true },
   },
   // Added (§7.8, Phase 5) — a Customer Portal account's entire default grant:
   // raise their own tickets and see only their own company's ticket history.

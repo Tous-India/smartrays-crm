@@ -9,6 +9,8 @@ import TicketsOpenWidget from "./widgets/TicketsOpenWidget";
 import AmcRenewalsDueWidget from "./widgets/AmcRenewalsDueWidget";
 import PaymentsThisMonthWidget from "./widgets/PaymentsThisMonthWidget";
 import PayrollStatusWidget from "./widgets/PayrollStatusWidget";
+import MyServicesWidget from "./widgets/MyServicesWidget";
+import TeamServicesWidget from "./widgets/TeamServicesWidget";
 
 /**
  * Declarative widget catalog — a role → ordered widget-component list, not a
@@ -54,6 +56,10 @@ export const DASHBOARD_WIDGETS_BY_ROLE = {
     AmcRenewalsDueWidget,
     PaymentsThisMonthWidget,
     PayrollStatusWidget,
+    // Services (§7.72) — the SAME component as the manager's, at admin scope:
+    // the server returns everyone's open items and the widget only groups
+    // what it is given, so a third bespoke widget would add nothing.
+    TeamServicesWidget,
   ],
   // Manager gets the 3 operational widgets that match their narrower grants
   // (attendance.view_team, tickets.view_all, amc.view "own team") — NOT
@@ -69,6 +75,8 @@ export const DASHBOARD_WIDGETS_BY_ROLE = {
     AttendancePresentTodayWidget,
     TicketsOpenWidget,
     AmcRenewalsDueWidget,
+    // Services (§7.72) — team + own open work, grouped by assignee.
+    TeamServicesWidget,
   ],
   // Sales Associates hold full "own" CRUD on both Leads and Customers by
   // default (§5's permission matrix) — their dashboard candidate list
@@ -82,6 +90,8 @@ export const DASHBOARD_WIDGETS_BY_ROLE = {
     LeadsHotWidget,
     CustomersOverviewWidget,
     CustomersRecentWidget,
+    // Services (§7.72) — a sales associate can be an assignee.
+    MyServicesWidget,
   ],
   // Employee has no `leads`/`customers` grant at all by default (§5: "–" for
   // both), and the 6 operational widgets above are all admin/manager-level
@@ -89,7 +99,9 @@ export const DASHBOARD_WIDGETS_BY_ROLE = {
   // widgets show) — no candidates for Employee yet. An own-scoped widget
   // (e.g. "my hours this month") is a future incremental addition using the
   // same pattern, not a gap — see `.context/final-plan.md` §7.13/§7.20/§7.21.
-  employee: [],
+  // Services (§7.72) — the employee dashboard's first widget: open work
+  // assigned to me, most urgent first, with inline completion.
+  employee: [MyServicesWidget],
   // The Customer Portal role never renders this page at all (`PortalLayout`
   // + `PortalHomePage` instead, see `RootRedirect`) — kept here for
   // completeness/documentation, not because it's reachable today.

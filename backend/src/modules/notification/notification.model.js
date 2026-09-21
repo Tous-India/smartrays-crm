@@ -28,6 +28,8 @@ const NOTIFICATION_TYPES = [
   "attendance_break_in",
   "attendance_break_out",
   "attendance_check_out",
+  // §7.72 — a service (internal work item) was assigned or reassigned to you.
+  "service_assigned",
 ];
 
 const notificationSchema = new mongoose.Schema(
