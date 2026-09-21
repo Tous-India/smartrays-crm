@@ -33,6 +33,7 @@ export const ROUTE_PATHS = {
   // uncommitted work from a concurrent session. Its "View all AMC records"
   // link needs repointing at /customers as a follow-up; see frontend/README.
   PAYMENTS: "/payments",
+  SERVICES: "/services",
   REPORTS: "/reports",
   // Bare `/settings` redirects to `SETTINGS_USERS` — the sidebar's single
   // flat "Settings" nav item links here; the two concrete routes below are

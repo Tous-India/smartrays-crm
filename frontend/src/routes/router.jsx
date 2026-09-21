@@ -19,6 +19,7 @@ import PayrollPage from "../pages/PayrollPage";
 import PayslipDetailPage from "../pages/PayslipDetailPage";
 // Tickets is DEFERRED from the UI, 2026-08-07 — see the routes below.
 import PaymentsPage from "../pages/PaymentsPage";
+import ServicesPage from "../modules/service/components/ServicesPage";
 import ReportsPage from "../pages/ReportsPage";
 import SettingsPage from "../pages/SettingsPage";
 import EmployeeLeavePage from "../pages/EmployeeLeavePage";
@@ -69,6 +70,7 @@ export const router = createBrowserRouter(
               two 7-line files, re-adding their imports above, and
               uncommenting the nav block in `MainLayout.jsx`. */}
           <Route path="payments" element={<PaymentsPage />} />
+          <Route path="services" element={<ServicesPage />} />
           <Route path="reports" element={<ReportsPage />} />
           {/* Bare /settings redirects to the Users tab — the sidebar's one
               flat "Settings" nav item links here. Both concrete routes

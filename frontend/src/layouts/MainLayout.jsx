@@ -12,6 +12,7 @@ import {
   CreditCardOutlined,
   BarChartOutlined,
   IdcardOutlined,
+  CheckSquareOutlined,
 } from "@ant-design/icons";
 import useSessionStore from "../store/sessionStore";
 import { can } from "../utils/permission.utils";
@@ -157,6 +158,14 @@ function MainLayout() {
         label: "Customers",
         icon: <TeamOutlined />,
         show: can(user, "customers", "view"),
+      },
+      // Services (§7.72) — every role that can be an assignee holds
+      // `services.view` by template; the page scopes itself server-side.
+      {
+        key: ROUTE_PATHS.SERVICES,
+        label: "Services",
+        icon: <CheckSquareOutlined />,
+        show: can(user, "services", "view"),
       },
       {
         key: ROUTE_PATHS.PAYMENTS,
