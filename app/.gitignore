@@ -83,3 +83,6 @@ yarn-error.log
 # never committed — it goes at android/app/google-services.json on each
 # machine that builds the app.
 android/app/google-services.json
+# …and wherever else a copy of it lands.
+google-services.json
+**/google-services.json

@@ -1,4 +1,5 @@
-import admin from "firebase-admin";
+import { cert, initializeApp } from "firebase-admin/app";
+import { getMessaging } from "firebase-admin/messaging";
 import { env } from "../config/env.js";
 
 /**
@@ -24,8 +25,9 @@ export function isFcmEnabled() {
 
 function getApp() {
   if (!app) {
-    app = admin.initializeApp({
-      credential: admin.credential.cert({
+    // firebase-admin 14 is modular: initializeApp/cert from "firebase-admin/app".
+    app = initializeApp({
+      credential: cert({
         projectId: env.firebaseProjectId,
         clientEmail: env.firebaseClientEmail,
         privateKey: env.firebasePrivateKey,
@@ -43,7 +45,7 @@ function getApp() {
  * Resolves to FCM's message id.
  */
 export function sendFcm({ token, title, body, data, channelId }) {
-  return admin.messaging(getApp()).send({
+  return getMessaging(getApp()).send({
     token,
     notification: { title, body },
     data,
