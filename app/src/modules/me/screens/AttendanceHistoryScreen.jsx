@@ -9,7 +9,7 @@ import ListState from "../../../components/ListState";
 import useServerData from "../../../hooks/useServerData";
 import { getMyAttendance } from "../../attendance/api/attendanceApi";
 import { formatClockTime, monthKey } from "../../attendance/attendance.utils";
-import { formatDate, formatMonth } from "../../../utils/date.utils";
+import { formatDate, formatMonth, formatShortDate, startOfDay } from "../../../utils/date.utils";
 import { colors, spacing, typography } from "../../../theme";
 
 /**
@@ -20,6 +20,18 @@ import { colors, spacing, typography } from "../../../theme";
  */
 function shiftMonth(date, delta) {
   return new Date(date.getFullYear(), date.getMonth() + delta, 1);
+}
+
+/**
+ * "Out 12:35", or "Out 12:35 · 19 Sep" when the check-out fell on a later
+ * calendar day than the check-in — the time alone would read as earlier
+ * than the check-in. Display only; the record is the server's.
+ */
+export function formatCheckOut(record) {
+  const outTime = formatClockTime(record.checkOut.time);
+  const sameDay = startOfDay(record.checkOut.time).getTime() === startOfDay(record.checkIn?.time || record.date).getTime();
+
+  return sameDay ? `Out ${outTime}` : `Out ${outTime} · ${formatShortDate(record.checkOut.time)}`;
 }
 
 function statusTone(status) {
@@ -89,7 +101,7 @@ function AttendanceHistoryScreen({ navigation }) {
               </View>
               <Text style={[typography.small, styles.line]}>
                 {record.checkIn?.time ? `In ${formatClockTime(record.checkIn.time)}` : "No check-in"}
-                {record.checkOut?.time ? ` · Out ${formatClockTime(record.checkOut.time)}` : record.checkIn?.time ? " · still open" : ""}
+                {record.checkOut?.time ? ` · ${formatCheckOut(record)}` : record.checkIn?.time ? " · still open" : ""}
                 {typeof record.workingHours === "number" ? ` · ${record.workingHours.toFixed(2)} h` : ""}
               </Text>
             </Card>

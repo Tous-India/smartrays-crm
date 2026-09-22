@@ -7,7 +7,7 @@ import { getMyTeam, listMyPayroll, openPayslip } from "../api/meApi";
 import { getMyAttendance } from "../../attendance/api/attendanceApi";
 import { signOut } from "../../auth/session.service";
 import { monthKey } from "../../attendance/attendance.utils";
-import { formatMonth } from "../../../utils/date.utils";
+import { formatMonth, formatShortDate } from "../../../utils/date.utils";
 
 jest.mock("../api/meApi", () => {
   const actual = jest.requireActual("../api/meApi");
@@ -103,6 +103,19 @@ describe("AttendanceHistoryScreen", () => {
     await waitFor(() => expect(getMyAttendance).toHaveBeenCalledWith(monthKey(previous)));
     await waitFor(() => expect(screen.getByTestId("history-list-empty")).toBeTruthy());
     expect(screen.getByText(`No attendance recorded in ${formatMonth(previous)}.`)).toBeTruthy();
+  });
+
+  test("a check-out on a later day than its check-in shows that day beside the time", async () => {
+    const now = new Date();
+    const inAt = new Date(now.getFullYear(), now.getMonth(), 3, 14, 44);
+    const outAt = new Date(now.getFullYear(), now.getMonth(), 4, 12, 35);
+    getMyAttendance.mockReturnValue(
+      ok([{ _id: "a9", date: inAt.toISOString(), checkIn: { time: inAt.toISOString() }, checkOut: { time: outAt.toISOString() }, workingHours: 0.76, status: "present" }])
+    );
+    const screen = await render(<AttendanceHistoryScreen navigation={navigation} />);
+
+    await waitFor(() => expect(screen.getByTestId("history-row-a9")).toBeTruthy());
+    expect(screen.getByText(new RegExp(`Out 12:35 · ${formatShortDate(outAt)}`))).toBeTruthy();
   });
 
   test("a failed month shows the server's message", async () => {
