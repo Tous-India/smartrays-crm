@@ -1111,6 +1111,12 @@ Distance Matrix, §7.6); `LocationPing` is the raw ~2-minute GPS stream during a
 powers a live "who's where right now" view and a day's map trail. `TravelLog` could later be
 computed *from* `LocationPing` data (Phase 6+ enhancement), but the two collections aren't
 merged and serve different purposes today.
+**`LocationConsent`** — added 2026-09-21 (§7.73). userId (ref `User`), decision
+(`granted`/`declined`), disclosureVersion (the version of the disclosure text answered),
+appVersion, deviceId, createdAt. **Append-only** — a change of mind is a new document; the
+history of what each person was shown and what they answered is never edited. Index
+`{ userId: 1, createdAt: -1 }` ("latest per person" is the only query). No TTL: consent is kept
+for as long as the account is.
 
 ### 6.6 Support, Payments, AMC
 
@@ -6301,6 +6307,136 @@ template snapshot in `permission.test.js` gained the new module. Frontend `Servi
 controls and own-only completion, the manager's picker rendering exactly what the server sent,
 create with subtasks, edit with the assignee pre-selected by name, the server's refusal message
 surfaced, and the 403 result.
+
+## §7.73 — Location-tracking consent: recorded, versioned, visible (2026-09-21)
+
+Closes the gap `app-plan.md` §4.4 named a launch blocker: the app's prominent disclosure (its
+§4.1) was a screen with nothing behind it — the answer lived in the phone's SharedPreferences and
+nowhere else. Now each answer is a **server record**, the phone only caches it, and the admin can
+see who has agreed. Also in this section, because it is the other half of "tracking runs only
+while a shift is open": the reboot receiver, and the rule that the engine re-checks the server
+whenever it runs without the app.
+
+### The record
+
+`LocationConsent` — §6.5. **Append-only**: a change of mind is a new document, never an edit, so
+the history of what each person was shown and what they said is kept intact. Fields: `userId`
+(from the session, never the body), `decision` (`granted` | `declined`), `disclosureVersion`,
+`appVersion`, `deviceId`, `createdAt`. Index `{ userId, createdAt: -1 }` — "latest per person" is
+the only query.
+
+**The disclosure text is versioned** (`DISCLOSURE_VERSION` in the app, `"2026-09-21.1"` today).
+A decision is a decision on particular words: when the wording changes the constant is bumped,
+every stored decision carries the old version, and the app asks everyone again. Until they answer
+the current version, tracking stays off — a *paused* shift card, "please review the tracking
+notice" — exactly as if they had never been asked. There is no "grandfathering" of an older yes.
+
+### Endpoints — additive, `location.routes.js`
+
+- `POST /location/consent` `{ decision, disclosureVersion, appVersion?, deviceId? }` → 201 with
+  the record. Any authenticated user, about themselves only. Validation: decision in the enum,
+  version a non-empty string, the optional two strings when present.
+- `GET /location/consent/me` → the caller's latest record, or `null` when there is none.
+- `GET /location/consent` → one row per **active field employee** the caller may see (the
+  `location` `view` / `view_team` / `view_all` ladder, resolved by the same
+  `resolveVisibleEmployeeIds` the Live Map uses — now exported rather than copied), each with
+  their latest decision **or `decision: null`** when they have never answered. The people who
+  have not answered are the reason the list exists.
+
+### The app's side
+
+- **Continue** on the disclosure → `POST /location/consent` with `granted` → then, and only then,
+  the permission sequence. **Not now** → `declined`. Either way the app caches
+  `decision|disclosureVersion|recordedAt` in the tracking flags. If the POST fails (offline, the
+  server down) the answer is **not** kept locally as if it counted — the screen says so and offers
+  to try again. The disclosure only appears before a check-in, which needs the server anyway.
+- **On sign-in and on every launch** the app reads `GET /location/consent/me` and replaces the
+  cache with the server's answer. A reinstall, a new phone, a cleared app — none of them re-ask
+  someone who already answered the current version; and a decision recorded on the server with an
+  older version *does* re-ask. No record on the server clears a stale cache (another account on
+  the same phone).
+- The cache is the fallback only when the sync fails; `getTrackingReadiness()` reads it and
+  reports `unanswered` (never asked, or older version) separately from `declined`.
+
+### The web
+
+The Live Map tab (admin and manager) gained a panel beneath the map: **Location tracking
+consent** — Employee · Tracking consent (Granted / Declined / **Not answered**) · Recorded ·
+Disclosure version · App. Same scope as the map, read-only, `scroll.x` on the table so the tab
+stays inside the viewport at 390.
+
+### The reboot receiver, and re-checking the server
+
+A reboot ends the foreground service and Android will not restart it by itself. `BootReceiver`
+(`BOOT_COMPLETED`, plus the `QUICKBOOT_POWERON` a few OEMs send instead) reads one flag —
+TrackingState's "running", set by the service and cleared at check-out — and, only when it is
+set, starts `TrackingService` again with the saved interval. Whether the shift is *still* open is
+not the phone's to decide: the restarted service kicks the headless flush on its first fix (with a
+network), and the flush now **asks the server first** — `GET /attendance/me` → the open record, or
+none → `syncTrackingWithShift`, which stops the engine when the shift was closed from the web or
+auto-closed while the phone was off — and only then uploads the queue. The same re-check runs on
+every headless flush, so a shift closed elsewhere stops tracking within one flush interval even
+when nobody opens the app.
+
+Android 12+ refuses most foreground-service starts from the background; `BOOT_COMPLETED` is an
+exemption, and Android 14/15's stricter boot rules name dataSync, camera, media and microphone
+types — not `location`. Should the OS refuse anyway (an OEM, a later release), the receiver
+catches it and posts a notification, *Open Smartrays to resume tracking*; opening the app runs the
+ordinary shift sync. `RECEIVE_BOOT_COMPLETED` is declared; the receiver is `exported` because the
+broadcast is a protected system one.
+
+### Tests
+
+Backend `locationConsent.test.js`: **8** — record and read back, the two decisions, validation
+400s, `null` before any answer, latest-wins across two records, the list's scope for admin and
+manager (with the never-answered row), and the employee's 403 on the list. Run before the routes
+existed: **8 of 8 fail** (404). Suite **1115 → 1123**. Frontend `LocationConsentPanel.test.jsx`:
+**2** — the three states rendered, the error state. App: **13 fail before / pass after** across
+`tracking.service.test.js` (the POST body, a failed POST kept nowhere, the reinstall restore, the
+older-version re-ask, the cleared cache, reconcile open/closed), `session.service.test.js` (sync
+on restore and on sign-in, a failed sync changing nothing) and the new `flushTask.test.js`
+(nobody signed in → no server call; closed on the server → stopped before the flush; open →
+running and flushed). App suite **68 → 81**.
+
+### Verified on the emulator (Pixel 8, Android 17) and the real browser
+
+Headless emulator (`-no-window`; the windowed one would not stay up in this session), Android 17
+(API 37), local backend against the shared database, test employee only:
+
+- **Consent recorded.** First check-in → the disclosure → Continue → one `LocationConsent`
+  (`granted`, `2026-09-21.1`, app `0.0.1`, the install's device id) and the same three fields in
+  the phone's flag; permissions already held, so straight to the camera. Checked in 10:18.
+- **Reboot.** `adb reboot` at 10:22 with the shift open, the app never opened afterwards:
+  `ActivityManager: Background started FGS: Allowed … code:BOOT_COMPLETED`, then
+  `SmartraysTracking: Boot: tracking service restarted (interval 120000ms)`; the service's own
+  notification back up; the next fix recorded at 10:26 and uploaded by the headless task with
+  `headless reconcile: shift open` → `uploaded: 1 … heartbeat: true`. The server's pings for the
+  shift: one before the reboot (10:21), one after (10:26). Zero `MainActivity` records the whole
+  time. One warning worth knowing: `Foreground service started from background can not have
+  location/camera/microphone access` is logged at the restart and is **not** what happens — the
+  ACCESS_BACKGROUND_LOCATION grant is the exemption, and the fixes prove it.
+- **Reinstall.** Checked out 10:27; `adb uninstall` (prefs and keychain gone) → install → sign in:
+  the prefs file is recreated holding only `granted|2026-09-21.1|…` from
+  `GET /location/consent/me`; "Check in again" opens the camera directly — no second
+  disclosure.
+- **Version bump.** `DISCLOSURE_VERSION` → `2026-09-22.1` (Metro reload, no rebuild): "Check in
+  again" shows the disclosure once more; Not now → a second record (`declined`, `2026-09-22.1`)
+  and the cache follows; check-in still offered. Constant restored.
+- **Web** (real Chrome, admin and manager, 1280 and 390): the panel under the Live Map lists
+  Testing User 2 · **Declined** · 22 Sep 2026, 10:39 · 2026-09-22.1 · 0.0.1 and, for the admin
+  only, testing manager · **Not answered**; the manager's list is their team alone.
+  `documentElement.scrollWidth === clientWidth` at both widths.
+
+Everything the run created was deleted by id afterwards: 2 `LocationConsent`, 1 `Attendance`
+with its 2 check-in/out photos on Cloudinary, 2 `LocationPing`, 6 notifications (3 check-in, 3
+check-out fan-out), 3 `RefreshToken` (sign-in, the rotation during the post-reboot flush, the
+sign-in after reinstall). The employee is back to 11 attendance records and 5 pings.
+
+Two things the run surfaced that are not this section's: the debug manifest of
+`react-android:0.87.1` adds `ACCESS_LOCAL_NETWORK`, which Android 17 prompts for at first launch
+("find, connect to … nearby devices") — a dev-server permission absent from release builds; and
+react-native-screens transitions never complete on a windowless emulator until the three
+animation scales are set to 0.
 
 *Mobile (React Native Android) backend preparation — bearer auth, FCM, batched pings + accuracy — is planned separately in `.context/mobile-backend-plan.md` (2026-09-19, plan only, nothing built).*
 
