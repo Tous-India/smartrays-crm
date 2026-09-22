@@ -596,6 +596,13 @@ describe("GET /location/config", () => {
     expect(response.status).toBe(200);
     expect(response.body.data.pingIntervalMinutes).toBe(2);
   });
+
+  it("returns the stale threshold, which is the connectivity-gap threshold", async () => {
+    const response = await sales1Agent.get("/api/v1/location/config");
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.staleAfterMinutes).toBe(10);
+  });
 });
 
 // The tests above all seed an "open shift" directly via createOpenAttendance()

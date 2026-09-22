@@ -614,5 +614,13 @@ function buildEmployeeFilter(visibleEmployeeIds) {
  * changing the cadence never requires a client redeploy (§7.4b).
  */
 export function getPingIntervalConfig() {
-  return { pingIntervalMinutes: Number(env.locationPingIntervalMinutes) };
+  return {
+    pingIntervalMinutes: Number(env.locationPingIntervalMinutes),
+    // How long without a ping before a live position counts as STALE — the
+    // same threshold the connectivity-gap rule uses (§6.5,
+    // ATTENDANCE_GAP_THRESHOLD_MINUTES), so a client showing "stale" and the
+    // server recording a gap agree on the moment silence begins. Read by the
+    // app's team map (app-plan.md §2); the web still carries its own copy.
+    staleAfterMinutes: Number(env.attendanceGapThresholdMinutes),
+  };
 }
