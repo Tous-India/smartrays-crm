@@ -1,0 +1,96 @@
+import { StyleSheet, Text, View } from "react-native";
+import { Camera, Map as MapLibreMap, ViewAnnotation } from "@maplibre/maplibre-react-native";
+import { colors, radius, spacing, typography } from "../../../theme";
+
+/**
+ * The team on one map (app-plan.md §2): last-known positions from
+ * `GET /location/live`, a stale one — older than the server's threshold —
+ * drawn grey. Tiles are OpenStreetMap raster through MapLibre (free, no key;
+ * OSM's tile policy allows light use like this and asks heavier apps to use
+ * a tile provider). No Google Maps SDK, no CARTO.
+ *
+ * `markers` is `[{ id, name, coords: { lat, lng }, capturedAt, stale }]`;
+ * `selectedId` is drawn larger; tapping one calls `onSelect(marker)`.
+ */
+const OSM_STYLE = {
+  version: 8,
+  sources: {
+    osm: {
+      type: "raster",
+      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+      tileSize: 256,
+      attribution: "© OpenStreetMap contributors",
+    },
+  },
+  layers: [{ id: "osm", type: "raster", source: "osm" }],
+};
+
+/** A camera that shows every marker, with room around them; one marker gets a city-level zoom. */
+export function initialViewFor(markers) {
+  if (markers.length === 0) {
+    // Nothing to show: India, wide.
+    return { center: [78.9629, 20.5937], zoom: 3.5 };
+  }
+
+  if (markers.length === 1) {
+    return { center: [markers[0].coords.lng, markers[0].coords.lat], zoom: 13 };
+  }
+
+  const lngs = markers.map((marker) => marker.coords.lng);
+  const lats = markers.map((marker) => marker.coords.lat);
+
+  return {
+    bounds: [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)],
+    padding: { top: 60, right: 60, bottom: 60, left: 60 },
+  };
+}
+
+function TeamMap({ markers, selectedId, onSelect, style }) {
+  return (
+    <View style={[styles.wrap, style]} testID="team-map">
+      <MapLibreMap style={styles.map} mapStyle={OSM_STYLE} attribution logo={false} compass={false}>
+        <Camera initialViewState={initialViewFor(markers)} />
+        {markers.map((marker) => (
+          <ViewAnnotation
+            key={marker.id}
+            id={marker.id}
+            lngLat={[marker.coords.lng, marker.coords.lat]}
+            anchor="bottom"
+            onPress={() => onSelect(marker)}
+          >
+            <View style={styles.pin} testID={`team-map-marker-${marker.id}`} accessibilityLabel={`${marker.name}${marker.stale ? ", stale" : ""}`}>
+              <Text style={[styles.pinLabel, marker.stale && styles.pinLabelStale]} numberOfLines={1}>
+                {marker.name}
+              </Text>
+              <View style={[styles.dot, marker.stale && styles.dotStale, marker.id === selectedId && styles.dotSelected]} />
+            </View>
+          </ViewAnnotation>
+        ))}
+      </MapLibreMap>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  wrap: { flex: 1, borderRadius: radius.lg, overflow: "hidden", borderWidth: 1, borderColor: colors.border },
+  map: { flex: 1 },
+  pin: { alignItems: "center" },
+  pinLabel: {
+    ...typography.small,
+    color: colors.textPrimary,
+    fontWeight: "600",
+    backgroundColor: colors.card,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radius.sm,
+    marginBottom: 2,
+    overflow: "hidden",
+    maxWidth: 140,
+  },
+  pinLabelStale: { color: colors.textSecondary },
+  dot: { width: 18, height: 18, borderRadius: 9, backgroundColor: colors.brandNavy, borderWidth: 3, borderColor: colors.card },
+  dotStale: { backgroundColor: colors.disabled },
+  dotSelected: { width: 24, height: 24, borderRadius: 12 },
+});
+
+export default TeamMap;
