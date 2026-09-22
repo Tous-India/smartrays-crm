@@ -1,6 +1,6 @@
 # Mobile backend plan — serving a React Native Android app (2026-09-19)
 
-**Status: §1 and §3 built (2026-09-21); §2 remains plan only.** Written against the codebase as of 2026-09-19 (working
+**Status: §1, §2 and §3 all built and verified (2026-09-21/22).** Written against the codebase as of 2026-09-19 (working
 tree, including the uncommitted §7.68–§7.71 work). Kept separate from `final-plan.md` on purpose;
 that file carries one cross-reference line to here and nothing else.
 The app that consumes this backend is planned in `.context/app-plan.md`.
@@ -158,6 +158,33 @@ all; web login/logout/2FA tests unchanged and green).
 
 ## 2. FCM push, alongside Web Push (VAPID)
 
+**Status: BUILT AND VERIFIED — commits `1ede246` (backend), `936c638` (app), `7b17cee` (fix),
+2026-09-22.** Built as planned below, with three notes worth carrying:
+
+- **`firebase-admin` v14 is modular-only.** `fcm.service.js` first used the namespace form this
+  plan's §2.3 implies (`admin.credential.cert`, `admin.messaging()`), which does not exist at
+  runtime in v14 — `initializeApp`/`cert` come from `firebase-admin/app` and `getMessaging` from
+  `firebase-admin/messaging` (`7b17cee`). **The unit tests could not catch this**: they mock
+  `fcm.service.js` at the module boundary, exactly as the Cloudinary and web-push tests do, so
+  nothing in the suite ever loaded the real SDK. It surfaced on the first live initialisation.
+  The lesson for the next integration: one end-to-end call against the real dependency, even a
+  deliberately failing one, is worth more than any number of mocked tests for "does this API
+  exist". (The check that proves it now: send to a bogus token and require the answer to be
+  FCM's own `messaging/invalid-argument` — an authentication failure fails differently.)
+- **Verified end to end on the emulator** with a real Firebase project (2026-09-22): a service
+  assigned on the web arrived with the app in the foreground (in-app banner), in the background
+  and fully quit (system notification, channel `smartrays_work`), and a tap opened that service
+  in all three states; a leave decision arrived on `smartrays_leave` and opened the Leave tab;
+  the forgotten-check-out reminder arrived once on `smartrays_reminders`; after sign-out the
+  `DeviceToken` was deactivated and a further assignment produced no notification at all. Web
+  push behaviour unchanged — `notification.test.js` untouched and passing.
+- **A quit-state tap only works from a real quit** (the task swiped out of recents). After
+  `adb shell am kill`/force-stop, Android has already dropped the pending intent and the tap
+  starts the app with a bare LAUNCHER intent — `getInitialNotification()` then correctly
+  answers `null`. Worth knowing before someone reports it as a bug.
+
+The plan as written follows, unchanged.
+
 ### 2.1 What the code does today
 
 - `PushSubscription` is a Web Push record: `userId`, `endpoint` (**required, unique**), `keys.p256dh`
@@ -232,6 +259,14 @@ this plan's scope; it does not affect the FCM path.
 validators, env gating, ~12 tests (dispatch calls both transports; FCM invalid token deactivates;
 web-push behaviour unchanged with `FCM_ENABLED` off; register is idempotent). Plus Firebase
 project setup, which is outside the repo.
+
+**As built:** `DeviceToken` and the dispatcher exactly as above; 9 tests in
+`src/modules/notification/fcm.test.js` (8 of them failing against the pre-change code). Two
+additions the plan did not foresee: each notification type carries a **title and an Android
+channel id** (`push.service.js#presentationFor`), so the app can offer mutable categories apart
+from the tracking notification; and the app's `google-services.json` is gitignored with the
+Google-services Gradle plugin applied **only when the file is present**, so a checkout without
+Firebase still builds and runs with push silently off.
 
 ---
 
