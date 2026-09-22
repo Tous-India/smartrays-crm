@@ -31,7 +31,13 @@ function HomeScreen({ navigation }) {
   const attendance = useMyAttendance();
   const { refetch, openRecord, isLoading } = attendance;
   const { trackingState } = useTrackingLifecycle({ openRecord, isOnline, attendanceLoaded: !isLoading });
-  const servicesDue = useServerData(async () => (await listServices(SERVICE_STATUS.TODO)).data.data, { initialData: [] });
+  // "My" services: the ones assigned to me. The server's list for a manager
+  // is the team's and their own (the Team tab shows the team's); the card
+  // under the shift is about the person holding the phone.
+  const servicesDue = useServerData(
+    async () => (await listServices(SERVICE_STATUS.TODO)).data.data.filter((service) => String(service.assignedToId) === String(user?._id)),
+    { initialData: [], deps: [user?._id] }
+  );
 
   useFocusEffect(
     useCallback(() => {
