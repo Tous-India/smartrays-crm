@@ -2,12 +2,14 @@ import { useCallback, useEffect } from "react";
 import { StyleSheet, Text } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import Screen from "../../../components/Screen";
-import PrimaryButton from "../../../components/PrimaryButton";
 import TodayShiftCard from "../../attendance/components/TodayShiftCard";
+import ServicesDueCard from "../components/ServicesDueCard";
 import useMyAttendance from "../../attendance/hooks/useMyAttendance";
 import useIsOnline from "../../../hooks/useIsOnline";
+import useServerData from "../../../hooks/useServerData";
 import useSessionStore from "../../../store/sessionStore";
-import { signOut } from "../../auth/session.service";
+import { listServices } from "../../services/api/serviceApi";
+import { SERVICE_STATUS } from "../../services/services.utils";
 import useTrackingLifecycle from "../../tracking/hooks/useTrackingLifecycle";
 import { getDisclosureAnswer } from "../../tracking/tracking.service";
 import { getOemGuidance } from "../../tracking/oem.utils";
@@ -18,10 +20,10 @@ import { spacing, typography } from "../../../theme";
 
 /**
  * The signed-in landing screen — the shift card first (app-plan.md §1.1),
- * for employee and manager alike (a manager checks in too, §2). The card
- * re-reads the server every time this screen regains focus, which is how a
- * check-in made on the capture screen shows up here without the two
- * screens sharing state.
+ * for employee and manager alike (a manager checks in too, §2), then the
+ * services due. The card re-reads the server every time this screen regains
+ * focus, which is how a check-in made on the capture screen shows up here
+ * without the two screens sharing state.
  */
 function HomeScreen({ navigation }) {
   const user = useSessionStore((state) => state.user);
@@ -29,12 +31,18 @@ function HomeScreen({ navigation }) {
   const attendance = useMyAttendance();
   const { refetch, openRecord, isLoading } = attendance;
   const { trackingState } = useTrackingLifecycle({ openRecord, isOnline, attendanceLoaded: !isLoading });
+  const servicesDue = useServerData(async () => (await listServices(SERVICE_STATUS.TODO)).data.data, { initialData: [] });
 
   useFocusEffect(
     useCallback(() => {
       refetch();
     }, [refetch])
   );
+
+  function refreshAll() {
+    refetch();
+    servicesDue.refetch();
+  }
 
   // The prominent disclosure (app-plan.md §4.1) comes before the first
   // check-in, once; after that the check-in goes straight to the camera.
@@ -64,7 +72,7 @@ function HomeScreen({ navigation }) {
   }, [openRecord, navigation]);
 
   return (
-    <Screen testID="home-screen">
+    <Screen onRefresh={refreshAll} refreshing={servicesDue.isRefreshing} testID="home-screen">
       <Text style={typography.title}>Hello, {user?.name}</Text>
       <Text style={[typography.subtitle, styles.subtitle]}>Signed in as {user?.role}</Text>
 
@@ -80,7 +88,12 @@ function HomeScreen({ navigation }) {
         onFixTracking={() => navigation.navigate(SCREENS.TRACKING_DISCLOSURE)}
       />
 
-      <PrimaryButton title="Sign out" onPress={signOut} testID="home-sign-out" />
+      <ServicesDueCard
+        services={servicesDue.data}
+        isLoading={servicesDue.isLoading}
+        error={servicesDue.error}
+        onOpen={() => navigation.navigate(SCREENS.SERVICES_TAB)}
+      />
     </Screen>
   );
 }
