@@ -10,13 +10,13 @@ import { colors, radius, spacing, typography } from "../theme";
  *
  * `trailing` is an element laid over the right end of the field (the
  * password field's show/hide button); the text is padded so it never runs
- * underneath.
+ * underneath. `style` is added to the input's own (a taller multiline box).
  */
 
 /** The width reserved at the right end of the field for `trailing`. */
 export const TRAILING_WIDTH = 44;
 
-function TextField({ label, error, containerStyle, trailing, ref, ...inputProps }) {
+function TextField({ label, error, containerStyle, trailing, ref, style, ...inputProps }) {
   return (
     <View style={[styles.container, containerStyle]}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
@@ -28,6 +28,7 @@ function TextField({ label, error, containerStyle, trailing, ref, ...inputProps 
             error && styles.inputError,
             inputProps.editable === false && styles.inputDisabled,
             trailing && styles.inputWithTrailing,
+            style,
           ]}
           placeholderTextColor={colors.disabled}
           autoCapitalize="none"

@@ -13,6 +13,13 @@ export const API_PATHS = {
   LOCATION_PINGS: "/location/pings",
   LOCATION_CONSENT: "/location/consent",
   LOCATION_CONSENT_ME: "/location/consent/me",
+  SERVICES: "/services",
+  LEAVE: "/leave",
+  LEAVE_REQUEST: "/leave/request",
+  LEAVE_BALANCE: "/leave/balance",
+  MY_TEAM: "/teams/mine",
+  USER_DIRECTORY: "/users/dropdown",
+  PAYROLL: "/payroll",
 };
 
 /** The header the trusted-device token travels in (the web uses a cookie). */

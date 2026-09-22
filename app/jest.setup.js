@@ -64,6 +64,30 @@ jest.mock("react-native-vision-camera", () => {
   return { Camera, useCameraDevice: jest.fn(() => ({ id: "front", position: "front" })) };
 });
 
+// The date dialog: a stand-in view carrying the real props, so a test picks a
+// day by calling the rendered element's `onChange({ type: "set" }, date)`.
+jest.mock("@react-native-community/datetimepicker", () => {
+  const React = require("react");
+  const { View } = require("react-native");
+  const MockDateTimePicker = (props) => React.createElement(View, { testID: "mock-date-picker", ...props });
+  return { __esModule: true, default: MockDateTimePicker };
+});
+
+// The payslip download and the "open with" intent: nothing to fetch in Jest.
+const mockBlobUtil = {
+  fetches: [],
+  config: jest.fn(() => ({
+    fetch: jest.fn(async (method, url, headers) => {
+      mockBlobUtil.fetches.push({ method, url, headers });
+      return { info: () => ({ status: 200 }), path: () => "/cache/payslip.pdf", text: async () => "" };
+    }),
+  })),
+  fs: { dirs: { CacheDir: "/cache" } },
+  android: { actionViewIntent: jest.fn(async () => {}) },
+};
+global.mockBlobUtil = mockBlobUtil;
+jest.mock("react-native-blob-util", () => ({ __esModule: true, default: mockBlobUtil }));
+
 jest.mock("@bam.tech/react-native-image-resizer", () => ({
   __esModule: true,
   default: {

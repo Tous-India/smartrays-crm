@@ -2,11 +2,24 @@
 export const SCREENS = {
   LOGIN: "Login",
   TWO_FACTOR: "TwoFactor",
-  HOME: "Home",
+  // The signed-in root: the tab bar, and the full-screen flows above it.
+  MAIN_TABS: "MainTabs",
   CAPTURE: "Capture",
   TRACKING_DISCLOSURE: "TrackingDisclosure",
   BATTERY_GUIDANCE: "BatteryGuidance",
   UNSUPPORTED_ROLE: "UnsupportedRole",
+  // The tabs, and the screens inside each tab's own stack.
+  HOME: "Home",
+  SERVICES_TAB: "ServicesTab",
+  SERVICES: "Services",
+  SERVICE_DETAIL: "ServiceDetail",
+  LEAVE_TAB: "LeaveTab",
+  LEAVE: "Leave",
+  APPLY_LEAVE: "ApplyLeave",
+  ME_TAB: "MeTab",
+  ME: "Me",
+  ATTENDANCE_HISTORY: "AttendanceHistory",
+  PAYSLIPS: "Payslips",
 };
 
 /** What the capture screen is for — its `mode` route param. */
