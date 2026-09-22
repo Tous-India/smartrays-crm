@@ -1,6 +1,14 @@
 import asyncWrapper from "../../utils/asyncWrapper.js";
 import ApiResponse from "../../utils/ApiResponse.js";
-import { subscribe, unsubscribe, listNotifications, markRead, markAllRead } from "./notification.service.js";
+import {
+  subscribe,
+  unsubscribe,
+  registerDevice,
+  unregisterDevice,
+  listNotifications,
+  markRead,
+  markAllRead,
+} from "./notification.service.js";
 
 export const subscribeToPush = asyncWrapper(async (req, res) => {
   const subscription = await subscribe(req.user._id, req.body);
@@ -12,6 +20,18 @@ export const unsubscribeFromPush = asyncWrapper(async (req, res) => {
   await unsubscribe(req.user._id, req.body.endpoint);
 
   res.status(200).json(new ApiResponse(200, null, "Unsubscribed from push notifications"));
+});
+
+export const registerPushDevice = asyncWrapper(async (req, res) => {
+  const device = await registerDevice(req.user._id, req.body);
+
+  res.status(201).json(new ApiResponse(201, device, "Device registered for push notifications"));
+});
+
+export const unregisterPushDevice = asyncWrapper(async (req, res) => {
+  await unregisterDevice(req.user._id, req.params.token);
+
+  res.status(200).json(new ApiResponse(200, null, "Device unregistered from push notifications"));
 });
 
 // Shared by `list`/`markEveryRead` below — `?type=lead_created` or the

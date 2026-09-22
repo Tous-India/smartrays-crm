@@ -62,6 +62,14 @@ function validateEnvVars() {
   }
 }
 
+// FCM (mobile-backend-plan.md §2.4): the three service-account values are
+// required ONLY when FCM_ENABLED=true, so a deployment without Firebase
+// boots exactly as before. Checked here, beside the rest, for the same
+// fail-at-boot reason.
+if (process.env.FCM_ENABLED === "true") {
+  requiredEnvVars.push("FIREBASE_PROJECT_ID", "FIREBASE_CLIENT_EMAIL", "FIREBASE_PRIVATE_KEY");
+}
+
 validateEnvVars();
 
 // `CLIENT_ORIGIN` accepts a comma-separated list (2026-08-04) — production
@@ -141,6 +149,20 @@ export const env = {
   // per-role/per-project (a documented v1 simplification, not an oversight) — see
   // payroll.service.js#runPayroll. PLACEHOLDER: the client must set the real rate.
   mileageRatePerKm: Number(process.env.MILEAGE_RATE_PER_KM) || 10,
+  // Firebase Cloud Messaging for the app (mobile-backend-plan.md §2.4) — see
+  // src/services/fcm.service.js. Off unless FCM_ENABLED=true; the private
+  // key arrives with literal "\n" from a platform env editor and is
+  // unescaped here, once. Never logged.
+  fcmEnabled: process.env.FCM_ENABLED === "true",
+  firebaseProjectId: process.env.FIREBASE_PROJECT_ID,
+  firebaseClientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+  firebasePrivateKey: (process.env.FIREBASE_PRIVATE_KEY || "").replace(/\\n/g, "\n"),
+  // The forgotten-check-out rule (§7.74): a shift open longer than the first
+  // is reminded about, once, by push; open longer than the second, the APP
+  // stops tracking — the shift itself is never touched. Hours, not minutes:
+  // these describe a working day, not a heartbeat.
+  shiftReminderAfterHours: Number(process.env.SHIFT_REMINDER_AFTER_HOURS) || 10,
+  trackingStopAfterHours: Number(process.env.TRACKING_STOP_AFTER_HOURS) || 12,
   // VAPID keypair for Web Push (§6.7/§3) — see src/services/webPush.service.js.
   vapidPublicKey: process.env.VAPID_PUBLIC_KEY,
   vapidPrivateKey: process.env.VAPID_PRIVATE_KEY,

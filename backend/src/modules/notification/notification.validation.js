@@ -21,3 +21,29 @@ export function validateUnsubscribeInput(req, res, next) {
 
   next();
 }
+
+import { DEVICE_PLATFORMS } from "./deviceToken.model.js";
+
+/** POST /notifications/devices — `{ token, platform?, deviceId?, appVersion? }`. */
+export function validateRegisterDeviceInput(req, res, next) {
+  const { token, platform, deviceId, appVersion } = req.body || {};
+
+  if (!token || typeof token !== "string" || !token.trim()) {
+    throw new ApiError(400, "token is required");
+  }
+
+  if (platform !== undefined && !DEVICE_PLATFORMS.includes(platform)) {
+    throw new ApiError(400, `platform must be one of: ${DEVICE_PLATFORMS.join(", ")}`);
+  }
+
+  [
+    ["deviceId", deviceId],
+    ["appVersion", appVersion],
+  ].forEach(([name, value]) => {
+    if (value !== undefined && value !== null && typeof value !== "string") {
+      throw new ApiError(400, `${name} must be a string`);
+    }
+  });
+
+  next();
+}

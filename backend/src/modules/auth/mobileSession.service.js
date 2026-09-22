@@ -5,6 +5,7 @@ import { env } from "../../config/env.js";
 import { SESSION_EXPIRED_CODE } from "../../middlewares/authenticate.middleware.js";
 import RefreshToken from "./refreshToken.model.js";
 import User from "../user/user.model.js";
+import { deactivateDeviceTokens } from "../notification/notification.service.js";
 
 /**
  * Mobile sessions (mobile-backend-plan.md §1.3c): a short-lived access token
@@ -154,10 +155,18 @@ export async function rotateRefreshToken(rawRefreshToken) {
  * logout cannot be used to probe for other users' tokens.
  */
 export async function revokeRefreshToken(userId, rawRefreshToken) {
-  await RefreshToken.updateOne(
+  const record = await RefreshToken.findOneAndUpdate(
     { userId, tokenHash: hashRefreshToken(rawRefreshToken), revokedAt: null },
     { $set: { revokedAt: new Date() } }
   );
+
+  // A signed-out install must get no further pushes (mobile-backend-plan.md
+  // §2.3): its FCM registrations carry the same deviceId as its refresh
+  // token, so the logout can find them even when the app never got to
+  // unregister itself.
+  if (record?.deviceId) {
+    await deactivateDeviceTokens(userId, record.deviceId);
+  }
 }
 
 /**

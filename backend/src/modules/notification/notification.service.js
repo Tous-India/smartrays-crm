@@ -1,23 +1,25 @@
 import ApiError from "../../utils/ApiError.js";
-import { sendPush } from "../../services/webPush.service.js";
+import { dispatchPush } from "../../services/push.service.js";
 import Notification from "./notification.model.js";
 import PushSubscription from "./pushSubscription.model.js";
+import DeviceToken from "./deviceToken.model.js";
 import User from "../user/user.model.js";
 
 /**
  * Creates the notification record AND attempts a push to every active
- * subscription this user has, per §6.7/the Leads push requirements ("push
- * notification when a lead is assigned," "push for upcoming follow-ups").
- * `relatedEntity` is `{ module, id }` or omitted/null — see
- * notification.model.js.
+ * subscription and app device this user has, per §6.7/the Leads push
+ * requirements ("push notification when a lead is assigned," "push for
+ * upcoming follow-ups"). `relatedEntity` is `{ module, id }` or omitted/null
+ * — see notification.model.js.
  *
  * The DB record is the source of truth (it's what `GET /notifications`
  * returns, real-time delivery or not); a push attempt failing — expired
  * subscription, the user has no subscriptions at all, a network error —
  * must never throw out of this function or block the record from being
- * created. Every subscription is attempted independently and failures are
- * caught per-subscription, not as a group, so one bad subscription can't
- * suppress a push to the user's other devices.
+ * created. Delivery is `push.service.js#dispatchPush`'s (mobile-backend-
+ * plan.md §2.3): the Web Push branch that used to live here, moved
+ * unchanged, plus FCM for app devices when it is enabled. Callers never
+ * touch push directly, and did not change when FCM arrived.
  */
 export async function createNotification(userId, type, message, relatedEntity = null) {
   const notification = await Notification.create({
@@ -27,38 +29,9 @@ export async function createNotification(userId, type, message, relatedEntity = 
     relatedEntity,
   });
 
-  const subscriptions = await PushSubscription.find({ userId, isActive: true });
-
-  await Promise.all(subscriptions.map((subscription) => attemptPush(subscription, notification)));
+  await dispatchPush(userId, notification);
 
   return notification;
-}
-
-/**
- * Never throws — a push failure is logged and swallowed here, exactly once
- * per subscription. A 404/410 response means the push service considers the
- * subscription gone (the user uninstalled the PWA, cleared site data,
- * etc.) — deactivated rather than deleted outright, so there's still a
- * record of what used to be subscribed and a later re-subscribe of the same
- * endpoint (see `subscribe` below) can simply re-activate this same row.
- */
-async function attemptPush(subscription, notification) {
-  try {
-    await sendPush(
-      { endpoint: subscription.endpoint, keys: subscription.keys },
-      { type: notification.type, message: notification.message, relatedEntity: notification.relatedEntity }
-    );
-  } catch (error) {
-    console.error(
-      `[notification] Push failed for subscription ${subscription._id} (user ${subscription.userId}):`,
-      error.message
-    );
-
-    if (error.statusCode === 404 || error.statusCode === 410) {
-      subscription.isActive = false;
-      await subscription.save();
-    }
-  }
 }
 
 /**
@@ -164,4 +137,50 @@ export async function markAllRead(userId, types = null) {
   }
 
   await Notification.updateMany(filter, { isRead: true });
+}
+
+/**
+ * An app install's FCM token (mobile-backend-plan.md §2.3). Upserts by
+ * `token` — the same idempotent shape `subscribe` has for an endpoint: a
+ * token seen before is re-activated and re-associated (a shared phone that
+ * signed in as someone else) rather than duplicated; `lastSeenAt` records
+ * the re-registration the app performs on every sign-in and token refresh.
+ */
+export async function registerDevice(userId, { token, platform, deviceId, appVersion }) {
+  return DeviceToken.findOneAndUpdate(
+    { token },
+    {
+      userId,
+      transport: "fcm",
+      platform: platform || "android",
+      deviceId: deviceId || null,
+      appVersion: appVersion || null,
+      isActive: true,
+      lastSeenAt: new Date(),
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+}
+
+/**
+ * Scoped to the caller, and a silent no-op for a token that is not theirs
+ * or does not exist — "make sure this device gets nothing more" is the
+ * intent either way, the same reasoning as `unsubscribe`.
+ */
+export async function unregisterDevice(userId, token) {
+  await DeviceToken.updateOne({ token, userId }, { $set: { isActive: false } });
+}
+
+/**
+ * Every live device registration of one install — what a mobile logout
+ * deactivates alongside the refresh tokens of the same `deviceId`, so a
+ * signed-out phone gets no further pushes even if the app never got to
+ * call `unregisterDevice` itself (a dead connection at sign-out).
+ */
+export async function deactivateDeviceTokens(userId, deviceId) {
+  if (!deviceId) {
+    return;
+  }
+
+  await DeviceToken.updateMany({ userId, deviceId, isActive: true }, { $set: { isActive: false } });
 }
