@@ -10,18 +10,24 @@ import ApplyLeaveScreen from "../modules/leave/screens/ApplyLeaveScreen";
 import MeScreen from "../modules/me/screens/MeScreen";
 import AttendanceHistoryScreen from "../modules/me/screens/AttendanceHistoryScreen";
 import PayslipsScreen from "../modules/me/screens/PayslipsScreen";
+import TeamScreen from "../modules/team/screens/TeamScreen";
+import TeamMemberDayScreen from "../modules/team/screens/TeamMemberDayScreen";
+import ServiceFormScreen from "../modules/team/screens/ServiceFormScreen";
 import { colors } from "../theme";
 
 /**
- * The signed-in app's bottom tabs — Home · Services · Leave · Me — for the
- * employee and the manager alike (app-plan.md §3.1; a manager checks in,
- * has services and takes leave exactly as an employee does). Each tab that
- * drills down owns a small stack, so Back inside a tab never leaves it.
- * Full-screen flows that must hide the bar (the camera, the disclosure)
- * live in the role navigator above this one.
+ * The signed-in app's bottom tabs — Home · Services · Leave · Me for the
+ * employee, with Team between Services and Leave for the manager
+ * (app-plan.md §3.1; a manager checks in, has services and takes leave
+ * exactly as an employee does). Each tab that drills down owns a small
+ * stack, so Back inside a tab never leaves it. Full-screen flows that must
+ * hide the bar (the camera, the disclosure) live in the role navigator
+ * above this one. The Team tab and its screens are registered ONLY in the
+ * manager's tabs: an employee has no route to them at all.
  */
 const Tab = createBottomTabNavigator();
 const ServicesStack = createNativeStackNavigator();
+const TeamStack = createNativeStackNavigator();
 const LeaveStack = createNativeStackNavigator();
 const MeStack = createNativeStackNavigator();
 
@@ -33,6 +39,17 @@ function ServicesTab() {
       <ServicesStack.Screen name={SCREENS.SERVICES} component={ServicesScreen} />
       <ServicesStack.Screen name={SCREENS.SERVICE_DETAIL} component={ServiceDetailScreen} />
     </ServicesStack.Navigator>
+  );
+}
+
+function TeamTab() {
+  return (
+    <TeamStack.Navigator screenOptions={NO_HEADER}>
+      <TeamStack.Screen name={SCREENS.TEAM} component={TeamScreen} />
+      <TeamStack.Screen name={SCREENS.TEAM_MEMBER_DAY} component={TeamMemberDayScreen} />
+      <TeamStack.Screen name={SCREENS.TEAM_SERVICE_DETAIL} component={ServiceDetailScreen} />
+      <TeamStack.Screen name={SCREENS.SERVICE_FORM} component={ServiceFormScreen} />
+    </TeamStack.Navigator>
   );
 }
 
@@ -58,6 +75,7 @@ function MeTab() {
 const TAB_ICONS = {
   [SCREENS.HOME]: ["home", "home-outline"],
   [SCREENS.SERVICES_TAB]: ["briefcase", "briefcase-outline"],
+  [SCREENS.TEAM_TAB]: ["people", "people-outline"],
   [SCREENS.LEAVE_TAB]: ["calendar", "calendar-outline"],
   [SCREENS.ME_TAB]: ["person", "person-outline"],
 };
@@ -70,7 +88,7 @@ function tabIcon(routeName) {
   };
 }
 
-function MainTabs() {
+function MainTabs({ withTeam = false }) {
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -86,10 +104,21 @@ function MainTabs() {
     >
       <Tab.Screen name={SCREENS.HOME} component={HomeScreen} options={{ title: "Home", tabBarTestID: "tab-home" }} />
       <Tab.Screen name={SCREENS.SERVICES_TAB} component={ServicesTab} options={{ title: "Services", tabBarTestID: "tab-services" }} />
+      {withTeam ? <Tab.Screen name={SCREENS.TEAM_TAB} component={TeamTab} options={{ title: "Team", tabBarTestID: "tab-team" }} /> : null}
       <Tab.Screen name={SCREENS.LEAVE_TAB} component={LeaveTab} options={{ title: "Leave", tabBarTestID: "tab-leave" }} />
       <Tab.Screen name={SCREENS.ME_TAB} component={MeTab} options={{ title: "Me", tabBarTestID: "tab-me" }} />
     </Tab.Navigator>
   );
+}
+
+/** The employee's tabs. */
+export function EmployeeTabs() {
+  return <MainTabs />;
+}
+
+/** The manager's tabs: the same, plus Team. */
+export function ManagerTabs() {
+  return <MainTabs withTeam />;
 }
 
 export default MainTabs;
