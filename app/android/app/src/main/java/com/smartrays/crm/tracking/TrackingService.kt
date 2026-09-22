@@ -197,7 +197,7 @@ class TrackingService : Service() {
     const val EXTRA_INTERVAL_MS = "intervalMs"
     private const val CHANNEL_ID = "smartrays_tracking"
     private const val NOTIFICATION_ID = 4101
-    private const val DEFAULT_INTERVAL_MS = 2 * 60 * 1000L
+    const val DEFAULT_INTERVAL_MS = 2 * 60 * 1000L
     private const val FLUSH_EVERY_MS = 60 * 1000L
 
     fun start(context: Context, intervalMs: Long) {

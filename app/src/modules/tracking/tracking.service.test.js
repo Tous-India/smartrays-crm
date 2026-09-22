@@ -4,6 +4,7 @@ import {
   getDisclosureAnswer,
   getTrackingState,
   recordDisclosureAnswer,
+  reconcileWithServer,
   requestTrackingPermissions,
   syncConsentFromServer,
   syncTrackingWithShift,
@@ -207,5 +208,29 @@ describe("the consent record (final-plan.md §7.73)", () => {
 
     expect(global.mockTrackingNative.flags[TRACKING_FLAGS.DISCLOSURE]).toBeUndefined();
     expect(await getDisclosureAnswer()).toBeNull();
+  });
+});
+
+describe("reconcileWithServer — the engine follows the server's word on the shift", () => {
+  test("shift open on the server → the engine (re)starts", async () => {
+    await recordDisclosureAnswer(DISCLOSURE_ANSWERS.GRANTED);
+    server.attendance = [OPEN_SHIFT];
+
+    const openRecord = await reconcileWithServer();
+
+    expect(openRecord).toBe(server.attendance[0]);
+    expect(native.start).toHaveBeenCalledWith(2 * 60 * 1000);
+  });
+
+  test("shift closed on the server while the engine still runs from a saved flag → stopped", async () => {
+    await recordDisclosureAnswer(DISCLOSURE_ANSWERS.GRANTED);
+    global.mockTrackingNative.running = true;
+    server.attendance = [{ checkIn: { time: new Date().toISOString() }, checkOut: { time: new Date().toISOString() } }];
+
+    const openRecord = await reconcileWithServer();
+
+    expect(openRecord).toBeNull();
+    expect(native.stop).toHaveBeenCalled();
+    expect(native.start).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,8 @@
 import * as tracking from "./trackingAdapter";
 import { getLocationConfig, getMyConsent, recordConsent } from "./locationApi";
 import { flushQueue } from "./pingQueue.service";
+import { getMyAttendance } from "../attendance/api/attendanceApi";
+import { findOpenRecord, monthKey } from "../attendance/attendance.utils";
 import { getDeviceId } from "../../store/tokenStorage";
 import { DISCLOSURE_ANSWERS, DISCLOSURE_VERSION, TRACKING_FLAGS } from "../../constants/tracking.constants";
 import { PERMISSION_STATUS } from "../../utils/permissions.utils";
@@ -169,6 +171,22 @@ export async function syncTrackingWithShift(openRecord) {
   if (!status.isRunning) {
     await tracking.start({ intervalMs: await resolveIntervalMs() });
   }
+}
+
+/**
+ * The server's word on the shift, then the engine brought in line with it.
+ * Used where local state alone must not be trusted: the headless flush after
+ * a reboot (the boot receiver restarted the engine from a saved flag), and
+ * any run while the app is closed — a shift closed from the web, or
+ * auto-closed, stops tracking within a flush interval.
+ */
+export async function reconcileWithServer() {
+  const response = await getMyAttendance(monthKey());
+  const openRecord = findOpenRecord(response.data.data);
+
+  await syncTrackingWithShift(openRecord);
+
+  return openRecord;
 }
 
 /** What the shift card shows. */
