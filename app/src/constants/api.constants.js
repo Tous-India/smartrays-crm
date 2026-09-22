@@ -19,7 +19,12 @@ export const API_PATHS = {
   LEAVE_BALANCE: "/leave/balance",
   MY_TEAM: "/teams/mine",
   USER_DIRECTORY: "/users/dropdown",
+  USERS: "/users",
+  MY_PERMISSIONS: "/users/me/permissions",
   PAYROLL: "/payroll",
+  TEAM_ATTENDANCE: "/attendance/team",
+  LOCATION_LIVE: "/location/live",
+  SERVICE_ASSIGNEES: "/services/assignees",
 };
 
 /** The header the trusted-device token travels in (the web uses a cookie). */

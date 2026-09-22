@@ -20,6 +20,12 @@ export const SCREENS = {
   ME: "Me",
   ATTENDANCE_HISTORY: "AttendanceHistory",
   PAYSLIPS: "Payslips",
+  // The manager's Team tab (app-plan.md §2) and the screens inside it.
+  TEAM_TAB: "TeamTab",
+  TEAM: "Team",
+  TEAM_MEMBER_DAY: "TeamMemberDay",
+  TEAM_SERVICE_DETAIL: "TeamServiceDetail",
+  SERVICE_FORM: "ServiceForm",
 };
 
 /** What the capture screen is for — its `mode` route param. */

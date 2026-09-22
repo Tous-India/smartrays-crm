@@ -73,6 +73,19 @@ jest.mock("@react-native-community/datetimepicker", () => {
   return { __esModule: true, default: MockDateTimePicker };
 });
 
+// The map (MapLibre): plain views carrying the real props, so a test can
+// count markers and press one through its `onPress`.
+jest.mock("@maplibre/maplibre-react-native", () => {
+  const React = require("react");
+  const { View } = require("react-native");
+  const stub = (name) => {
+    const Component = ({ children, ...props }) => React.createElement(View, { testID: `mock-${name}`, ...props }, children);
+    Component.displayName = name;
+    return Component;
+  };
+  return { __esModule: true, Map: stub("map"), Camera: stub("camera"), ViewAnnotation: stub("view-annotation") };
+});
+
 // The payslip download and the "open with" intent: nothing to fetch in Jest.
 const mockBlobUtil = {
   fetches: [],
