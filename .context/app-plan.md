@@ -302,13 +302,25 @@ state what is collected (location during shifts, check-in/out photos, device pus
 retention (pointing at the same figures as §6.5 addendum and §7.4c), and how to request deletion.
 Writing it is a prerequisite (§5), not an app task.
 
-### 4.4 The consent flow is unbuilt — launch blocker
+### 4.4 The consent flow — BUILT (2026-09-21/22, `final-plan.md` §7.73)
 
 Raised in the 2026-08 location/photo audit and carried as out-of-scope through every location
-task since. **It is not recorded in `final-plan.md`** — the only trace is conversation history —
-which is itself a gap to close. Without a recorded, per-employee consent to location tracking and
-photo capture, the disclosure in §4.1 is a screen with nothing behind it and the privacy policy
-promises something the system does not track. The app **cannot ship** ahead of it.
+task since; until 2026-09-21 the only trace was conversation history. Now recorded and built —
+the rule and the design live in `final-plan.md` §7.73, this is only the pointer:
+
+- backend `1c05581` — `LocationConsent` (append-only; decision, disclosure version, app version,
+  device id), `POST /location/consent`, `GET /location/consent/me`, `GET /location/consent`;
+- web `852a7ff` — the latest decision per employee under Attendance → Live Map;
+- app `8a316f7` — Continue / Not now on the §4.1 disclosure record the decision on the server
+  and cache it; the server's answer is re-read on every sign-in and launch; the disclosure text
+  is versioned, and a new version asks everyone again;
+- app `2bbfb86` — the reboot receiver from §1.3's table, plus the headless flush re-checking the
+  server before it uploads.
+
+What §4.1's disclosure covers is location tracking. **Photo capture at check-in/out has no
+consent record of its own** — the audit named both; the privacy policy (§4.3) is where the
+photo is disclosed, and whether it also needs a recorded answer is an open question for
+whoever owns the policy wording, not something this plan decides.
 
 ---
 
@@ -317,7 +329,7 @@ promises something the system does not track. The app **cannot ship** ahead of i
 | # | Prerequisite | State | Why it blocks |
 |---|---|---|---|
 | 1 | **Dev/prod database split** | not done — the local backend points at the production Atlas cluster; every verification this year has had to delete its own records afterwards | the app's development sessions would check in, ping and upload photos against live records daily. Non-negotiable before a single device build |
-| 2 | **Consent flow** (§4.4) | unbuilt, untracked in `final-plan.md` | Play Store review and the honesty of §4.1 |
+| 2 | **Consent flow** (§4.4) | **built** — `1c05581`, `852a7ff`, `8a316f7`, `2bbfb86`; `final-plan.md` §7.73 | Play Store review and the honesty of §4.1 |
 | 3 | **Bearer auth + refresh** | planned, `mobile-backend-plan.md` §1 | nothing in the app can call the API without it |
 | 4 | **FCM push** | planned, `mobile-backend-plan.md` §2 | §3.4; also the launch-time reason to open the app |
 | 5 | **Batched pings + accuracy** | planned, `mobile-backend-plan.md` §3 | §1.5 has nothing to flush to without it; §1.2 sends accuracy for nothing |

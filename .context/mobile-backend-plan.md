@@ -388,8 +388,11 @@ device is only testable end-to-end once the device can authenticate.
 
 - **The React Native app itself** — every screen, the local ping queue, `google-services.json`,
   secure token storage on the device.
-- **The consent flow** for location and photo capture — still outstanding, still ahead of any
-  further location work, unchanged by this plan.
+- **The consent flow** for location tracking — was outstanding when this was written; built
+  2026-09-21 as an additive location sub-resource (`LocationConsent`, `POST /location/consent`,
+  `GET /location/consent/me`, `GET /location/consent` — backend `1c05581`, web `852a7ff`, app
+  `8a316f7`), recorded in `final-plan.md` §7.73. Photo capture still has no consent record of
+  its own (`app-plan.md` §4.4).
 - **The dev/prod database split** — the local backend still points at the production Atlas
   cluster; every verification in this repo's recent history has had to clean up after itself for
   that reason.
