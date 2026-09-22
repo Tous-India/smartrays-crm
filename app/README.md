@@ -82,6 +82,40 @@ You've successfully run and modified your React Native App. :partying_face:
 - If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
 - If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
 
+# Smartrays app — things this project pins
+
+## The Metro port is 8081, in one place
+
+`android/gradle.properties` sets `reactNativeDevServerPort=8081`, and `npm start` /
+`npm run android` pass `--port 8081`. Keep them in step; if you ever need a different
+port, change all three.
+
+**Why it is pinned:** the React Native Gradle plugin bakes whatever port the build was
+launched with into the APK, as the `react_native_dev_server_port` resource. A debug build
+started from an IDE that had picked 8082 produces an app that talks *only* to 8082, and a
+Metro running on 8081 then answers with a red box — "The development server returned
+response error code: 500", or simply no bundle. Nothing in the app is wrong at that point;
+the two sides are just on different ports.
+
+If you meet that red box anyway, check which port the installed APK expects:
+
+```sh
+"$ANDROID_HOME/build-tools/<version>/aapt2" dump resources android/app/build/outputs/apk/debug/app-debug.apk | grep -A1 react_native_dev_server_port
+```
+
+and make sure exactly one Metro is listening on it (`npx react-native start --port <that>`;
+on Windows a stale Metro keeps the port and the new one exits with `EADDRINUSE`). On an
+emulator, `adb reverse tcp:<port> tcp:<port>` after every reboot.
+
+## Firebase (push notifications)
+
+`android/app/google-services.json` is **not** committed — it is per Firebase project and
+gitignored. The Google-services Gradle plugin is applied only when that file exists, so a
+checkout without it still builds and runs; push notifications simply stay off (the app logs
+nothing and registers no device token). Drop the file in and rebuild to turn them on. The
+backend's side needs `FCM_ENABLED=true` and the three `FIREBASE_*` values — see
+`backend/.env.example`.
+
 # Troubleshooting
 
 If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
