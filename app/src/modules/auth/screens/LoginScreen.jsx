@@ -1,9 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Linking, StyleSheet, Text, View } from "react-native";
 import Config from "react-native-config";
 import Screen from "../../../components/Screen";
 import BrandHeader from "../../../components/BrandHeader";
 import TextField from "../../../components/TextField";
+import PasswordField from "../../../components/PasswordField";
 import PrimaryButton from "../../../components/PrimaryButton";
 import ErrorBanner from "../../../components/ErrorBanner";
 import LinkText from "../../../components/LinkText";
@@ -22,14 +23,23 @@ import { spacing, typography } from "../../../theme";
  *
  * Forgot password stays on the web (app-plan.md §1.0): the link opens the
  * web app's reset page in the browser when WEB_APP_URL is configured.
+ *
+ * The password starts hidden and goes back to hidden whenever the screen is
+ * left (the code step is pushed on top of it), so returning never finds it
+ * showing.
  */
 function LoginScreen({ navigation }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [isPasswordHidden, setIsPasswordHidden] = useState(true);
   const [fieldErrors, setFieldErrors] = useState({});
   const [errorMessage, setErrorMessage] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const passwordRef = useRef(null);
+
+  // Leaving the screen puts the password back out of sight. `addListener`
+  // returns the unsubscribe, which is exactly the effect's cleanup.
+  useEffect(() => navigation.addListener("blur", () => setIsPasswordHidden(true)), [navigation]);
 
   async function handleSubmit() {
     // The double-submit guard: the button is disabled while a request is in
@@ -93,14 +103,15 @@ function LoginScreen({ navigation }) {
         editable={!isSubmitting}
         testID="login-email"
       />
-      <TextField
+      <PasswordField
         ref={passwordRef}
         label="Password"
         value={password}
         onChangeText={setPassword}
         error={fieldErrors.password}
         placeholder="••••••••"
-        secureTextEntry
+        hidden={isPasswordHidden}
+        onToggleHidden={() => setIsPasswordHidden((hidden) => !hidden)}
         autoComplete="current-password"
         textContentType="password"
         returnKeyType="done"

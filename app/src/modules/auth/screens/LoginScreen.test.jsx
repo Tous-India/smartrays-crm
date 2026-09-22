@@ -1,4 +1,4 @@
-import { fireEvent, render, waitFor } from "@testing-library/react-native";
+import { act, fireEvent, render, waitFor } from "@testing-library/react-native";
 import LoginScreen from "./LoginScreen";
 import { signIn } from "../session.service";
 
@@ -26,7 +26,7 @@ function serverError(status, message) {
   return error;
 }
 
-const navigation = { navigate: jest.fn() };
+const navigation = { navigate: jest.fn(), addListener: jest.fn(() => jest.fn()) };
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -110,4 +110,41 @@ test("a two-factor challenge moves to the code step with the pre-auth token", as
   await waitFor(() =>
     expect(navigation.navigate).toHaveBeenCalledWith("TwoFactor", { preAuthToken: "pre-auth", email: "employee@test.local" })
   );
+});
+
+describe("the show/hide password toggle", () => {
+  test("starts hidden, with a labelled 44-point button that shows and hides without touching the value", async () => {
+    const screen = await render(<LoginScreen navigation={navigation} />);
+    const input = screen.getByTestId("login-password");
+    await fireEvent.changeText(input, "s3cret");
+
+    expect(input.props.secureTextEntry).toBe(true);
+    const show = screen.getByRole("button", { name: "Show password" });
+    expect(show.props.testID).toBe("login-password-toggle");
+
+    await fireEvent.press(show);
+
+    expect(screen.getByTestId("login-password").props.secureTextEntry).toBe(false);
+    expect(screen.getByTestId("login-password").props.value).toBe("s3cret");
+    expect(screen.queryByRole("button", { name: "Show password" })).toBeNull();
+
+    await fireEvent.press(screen.getByRole("button", { name: "Hide password" }));
+
+    expect(screen.getByTestId("login-password").props.secureTextEntry).toBe(true);
+    expect(screen.getByTestId("login-password").props.value).toBe("s3cret");
+  });
+
+  test("goes back to hidden when the screen is left", async () => {
+    let onBlur;
+    const nav = { navigate: jest.fn(), addListener: jest.fn((event, listener) => { onBlur = listener; return jest.fn(); }) };
+    const screen = await render(<LoginScreen navigation={nav} />);
+
+    await fireEvent.press(screen.getByRole("button", { name: "Show password" }));
+    expect(screen.getByTestId("login-password").props.secureTextEntry).toBe(false);
+    expect(nav.addListener).toHaveBeenCalledWith("blur", expect.any(Function));
+
+    await act(async () => onBlur());
+
+    expect(screen.getByTestId("login-password").props.secureTextEntry).toBe(true);
+  });
 });
