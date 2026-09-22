@@ -12,6 +12,7 @@ import {
 import useSessionStore from "../../store/sessionStore";
 import { hasServerResponse } from "../../utils/apiError.utils";
 import { syncConsentFromServer } from "../tracking/tracking.service";
+import { registerForPush, unregisterForPush } from "../push/push.service";
 
 /**
  * The server's consent record is the source (final-plan.md §7.73); the
@@ -20,6 +21,14 @@ import { syncConsentFromServer } from "../tracking/tracking.service";
  */
 function refreshConsentCache() {
   syncConsentFromServer().catch(() => {});
+}
+
+/**
+ * The install's push token goes to the server after every sign-in and
+ * launch restore (STEP 4), in the background: push never delays a session.
+ */
+function registerPushInBackground() {
+  registerForPush().catch(() => {});
 }
 
 /**
@@ -50,6 +59,7 @@ export async function restoreSession() {
     const response = await fetchCurrentUser();
     setSignedIn(response.data.data);
     refreshConsentCache();
+    registerPushInBackground();
   } catch (error) {
     if (hasServerResponse(error)) {
       await clearTokens();
@@ -79,6 +89,7 @@ async function establishSession(payload) {
     const response = await fetchCurrentUser();
     useSessionStore.getState().setSignedIn(response.data.data);
     refreshConsentCache();
+    registerPushInBackground();
   } catch (error) {
     await clearTokens();
     throw error;
@@ -139,6 +150,11 @@ export async function completeTwoFactor(preAuthToken, token, rememberDevice) {
  */
 export async function signOut() {
   const refreshToken = await getRefreshToken();
+
+  // Push first, while the session can still authorise the unregister: a
+  // signed-out phone must get nothing more (STEP 4). The server's logout
+  // deactivates the device by id as well, in case this never lands.
+  await unregisterForPush();
 
   try {
     if (refreshToken) {

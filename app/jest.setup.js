@@ -86,6 +86,34 @@ jest.mock("@maplibre/maplibre-react-native", () => {
   return { __esModule: true, Map: stub("map"), Camera: stub("camera"), ViewAnnotation: stub("view-annotation") };
 });
 
+// Firebase (STEP 4): an in-memory twin of the messaging SDK. `apps` says
+// whether the build "has" google-services.json; listeners are kept so a
+// test can deliver a message or a token refresh.
+const mockFirebase = { apps: [{ name: "[DEFAULT]" }], token: "fcm-token-1", listeners: { message: [], opened: [], refresh: [] }, initialNotification: null, deleted: 0 };
+global.mockFirebase = mockFirebase;
+jest.mock("@react-native-firebase/app", () => ({ getApps: jest.fn(() => mockFirebase.apps) }));
+jest.mock("@react-native-firebase/messaging", () => ({
+  getMessaging: jest.fn(() => ({})),
+  getToken: jest.fn(async () => mockFirebase.token),
+  deleteToken: jest.fn(async () => {
+    mockFirebase.deleted += 1;
+  }),
+  onTokenRefresh: jest.fn((instance, listener) => {
+    mockFirebase.listeners.refresh.push(listener);
+    return () => mockFirebase.listeners.refresh.splice(mockFirebase.listeners.refresh.indexOf(listener), 1);
+  }),
+  onMessage: jest.fn((instance, listener) => {
+    mockFirebase.listeners.message.push(listener);
+    return () => mockFirebase.listeners.message.splice(mockFirebase.listeners.message.indexOf(listener), 1);
+  }),
+  onNotificationOpenedApp: jest.fn((instance, listener) => {
+    mockFirebase.listeners.opened.push(listener);
+    return () => mockFirebase.listeners.opened.splice(mockFirebase.listeners.opened.indexOf(listener), 1);
+  }),
+  getInitialNotification: jest.fn(async () => mockFirebase.initialNotification),
+  setBackgroundMessageHandler: jest.fn(),
+}));
+
 // The payslip download and the "open with" intent: nothing to fetch in Jest.
 const mockBlobUtil = {
   fetches: [],

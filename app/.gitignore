@@ -78,3 +78,8 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# Firebase (STEP 4): the Android app's Firebase config is per project and
+# never committed — it goes at android/app/google-services.json on each
+# machine that builds the app.
+android/app/google-services.json

@@ -15,6 +15,8 @@ buildscript {
         classpath("com.android.tools.build:gradle")
         classpath("com.facebook.react:react-native-gradle-plugin")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+        // Firebase (STEP 4): reads app/google-services.json into the build.
+        classpath("com.google.gms:google-services:4.4.3")
     }
 }
 

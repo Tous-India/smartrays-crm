@@ -25,6 +25,7 @@ export const API_PATHS = {
   TEAM_ATTENDANCE: "/attendance/team",
   LOCATION_LIVE: "/location/live",
   SERVICE_ASSIGNEES: "/services/assignees",
+  PUSH_DEVICES: "/notifications/devices",
 };
 
 /** The header the trusted-device token travels in (the web uses a cookie). */

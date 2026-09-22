@@ -20,3 +20,8 @@ coverage
 Thumbs.db
 .vercel
 .env*
+
+# Firebase service-account keys (STEP 4) are never committed; the three
+# values FCM needs travel as environment variables (see .env.example).
+*firebase*service*account*.json
+*-firebase-adminsdk-*.json
