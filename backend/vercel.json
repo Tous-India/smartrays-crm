@@ -6,6 +6,10 @@
     {
       "path": "/api/v1/attendance/cleanup",
       "schedule": "30 2 * * *"
+    },
+    {
+      "path": "/api/v1/attendance/open-shift-reminders",
+      "schedule": "0 * * * *"
     }
   ]
 }

@@ -30,6 +30,9 @@ const NOTIFICATION_TYPES = [
   "attendance_check_out",
   // §7.72 — a service (internal work item) was assigned or reassigned to you.
   "service_assigned",
+  // §7.74 — a shift still open well past a normal length: "did you forget
+  // to check out?" Sent once per shift, to the employee.
+  "shift_open_reminder",
 ];
 
 const notificationSchema = new mongoose.Schema(

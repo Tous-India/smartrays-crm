@@ -10,6 +10,7 @@ import Attendance from "./attendance.model.js";
 import User from "../user/user.model.js";
 import Payroll from "../payroll/payroll.model.js";
 import AttendanceRetentionLog from "./attendanceRetentionLog.model.js";
+import ShiftReminder from "./shiftReminder.model.js";
 
 /**
  * Opens a new attendance record for "now". Rejects (403) if the requesting
@@ -238,6 +239,13 @@ export async function recordHeartbeat(employeeId) {
 
   applyConnectivityGapIfNeeded(openRecord, new Date());
   await openRecord.save();
+
+  // §7.74 — a heartbeat is the moment we know a shift is still running: if
+  // it has run well past a working day, this is where the one reminder goes
+  // out. Never fails the heartbeat.
+  await remindOpenShiftIfDue(openRecord).catch((error) => {
+    console.error(`[attendance] Open-shift reminder failed for ${openRecord._id}:`, error.message);
+  });
 
   return openRecord;
 }
@@ -1087,4 +1095,91 @@ async function deleteRecordPhotoAssets(record) {
   for (const publicId of publicIds) {
     await deleteCloudinaryAsset(publicId);
   }
+}
+
+/**
+ * The forgotten check-out (§7.74). A shift open longer than
+ * SHIFT_REMINDER_AFTER_HOURS gets ONE push — "still checked in?" — to the
+ * employee, recorded in ShiftReminder so a second heartbeat, or the cron,
+ * never repeats it. That is all the server does about it: the shift stays
+ * open, the attendance record is not written to, and closing it remains the
+ * employee's or an admin's act. The app's own response — stopping location
+ * tracking after TRACKING_STOP_AFTER_HOURS — reads the same two figures
+ * from GET /location/config.
+ *
+ * Returns the reminder when one was sent, null when nothing was due.
+ */
+export async function remindOpenShiftIfDue(openRecord, now = new Date()) {
+  if (!openRecord?.checkIn?.time || openRecord.checkOut?.time) {
+    return null;
+  }
+
+  const openForHours = (now.getTime() - new Date(openRecord.checkIn.time).getTime()) / 3600000;
+
+  if (openForHours < env.shiftReminderAfterHours) {
+    return null;
+  }
+
+  const alreadySent = await ShiftReminder.exists({ attendanceId: openRecord._id });
+
+  if (alreadySent) {
+    return null;
+  }
+
+  let reminder;
+
+  try {
+    reminder = await ShiftReminder.create({
+      attendanceId: openRecord._id,
+      employeeId: openRecord.employeeId,
+      openForHours: Math.round(openForHours * 10) / 10,
+    });
+  } catch (error) {
+    // A racing heartbeat got there first: the unique index says so.
+    if (error.code === 11000) {
+      return null;
+    }
+
+    throw error;
+  }
+
+  const hours = Math.floor(openForHours);
+  await createNotification(
+    openRecord.employeeId,
+    "shift_open_reminder",
+    `Your shift has been open for ${hours} hours. Forgot to check out?`,
+    { module: "attendance", id: openRecord._id }
+  );
+
+  return reminder;
+}
+
+/**
+ * The backstop for phones that stopped sending heartbeats (§7.74): every
+ * open shift older than the threshold that has not been reminded about.
+ * Called by the cron endpoint; idempotent through ShiftReminder. Returns
+ * how many reminders went out.
+ */
+export async function remindAllOverdueOpenShifts(now = new Date()) {
+  const cutoff = new Date(now.getTime() - env.shiftReminderAfterHours * 3600000);
+  const openRecords = await Attendance.find({
+    "checkIn.time": { $ne: null, $lte: cutoff },
+    "checkOut.time": null,
+  });
+
+  let sent = 0;
+
+  for (const record of openRecords) {
+    // eslint-disable-next-line no-await-in-loop
+    const reminder = await remindOpenShiftIfDue(record, now).catch((error) => {
+      console.error(`[attendance] Open-shift reminder failed for ${record._id}:`, error.message);
+      return null;
+    });
+
+    if (reminder) {
+      sent += 1;
+    }
+  }
+
+  return { scanned: openRecords.length, sent };
 }

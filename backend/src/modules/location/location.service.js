@@ -622,5 +622,9 @@ export function getPingIntervalConfig() {
     // server recording a gap agree on the moment silence begins. Read by the
     // app's team map (app-plan.md §2); the web still carries its own copy.
     staleAfterMinutes: Number(env.attendanceGapThresholdMinutes),
+    // The forgotten-check-out figures (§7.74): the app stops tracking a
+    // shift open longer than the second; the server reminds after the first.
+    shiftReminderAfterHours: env.shiftReminderAfterHours,
+    trackingStopAfterHours: env.trackingStopAfterHours,
   };
 }

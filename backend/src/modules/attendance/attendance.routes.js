@@ -18,6 +18,7 @@ import {
   createManual,
   markStatus,
   cleanup,
+  openShiftReminders,
 } from "./attendance.controller.js";
 import {
   validateCheckInInput,
@@ -173,5 +174,12 @@ function verifyAttendanceCleanupToken(req, res, next) {
 
 attendanceRouter.post("/cleanup", verifyAttendanceCleanupToken, cleanup);
 attendanceRouter.get("/cleanup", verifyAttendanceCleanupToken, cleanup);
+
+// §7.74 — the forgotten-check-out backstop, on the same machine-only
+// credential as the cleanup (Vercel Cron's bearer, or the shared token).
+// The primary trigger is the heartbeat itself (attendance.service.js#
+// recordHeartbeat); this catches a shift whose phone went quiet.
+attendanceRouter.post("/open-shift-reminders", verifyAttendanceCleanupToken, openShiftReminders);
+attendanceRouter.get("/open-shift-reminders", verifyAttendanceCleanupToken, openShiftReminders);
 
 export default attendanceRouter;
