@@ -56,6 +56,20 @@ function TrackingLine({ trackingState, isOnline, onFixTracking, now }) {
     );
   }
 
+  // The forgotten check-out (§7.74): tracking stopped on its own once the
+  // shift ran past the server's limit; the only fix is a check-out, which
+  // is the button right underneath.
+  if (trackingState.reason === "shift_too_long") {
+    return (
+      <View style={styles.trackingRow} testID="shift-tracking-stopped">
+        <Text style={[typography.small, styles.trackingWarn]}>
+          Tracking stopped — this shift has been open more than {trackingState.hoursLimit} hours. Please check out.
+          {queued}
+        </Text>
+      </View>
+    );
+  }
+
   const why =
     trackingState.reason === "declined"
       ? "you chose not to share your location"

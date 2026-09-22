@@ -1,6 +1,7 @@
 import { NativeModules, PermissionsAndroid } from "react-native";
 import apiClient, { refreshClient } from "../../api/apiClient";
 import {
+  clearTrackingConfigCache,
   getDisclosureAnswer,
   getTrackingState,
   recordDisclosureAnswer,
@@ -41,6 +42,7 @@ function consentRecordFrom(body) {
 }
 
 beforeEach(async () => {
+  clearTrackingConfigCache();
   global.mockTrackingNative.running = false;
   global.mockTrackingNative.queue = [];
   global.mockTrackingNative.flags = {};
@@ -55,7 +57,7 @@ beforeEach(async () => {
     server.requests.push({ method: config.method, url: config.url, body: config.data ? JSON.parse(config.data) : null });
 
     if (config.url.includes("/location/config")) {
-      return respond(config, 200, { data: { pingIntervalMinutes: 2 } });
+      return respond(config, 200, { data: { pingIntervalMinutes: 2, trackingStopAfterHours: 12 } });
     }
     if (config.url.includes("/location/consent/me")) {
       return respond(config, 200, { data: server.consent });
@@ -232,5 +234,43 @@ describe("reconcileWithServer — the engine follows the server's word on the sh
     expect(openRecord).toBeNull();
     expect(native.stop).toHaveBeenCalled();
     expect(native.start).not.toHaveBeenCalled();
+  });
+});
+
+describe("the forgotten check-out (final-plan.md §7.74) — tracking stops after the server's limit", () => {
+  const HOUR = 60 * 60 * 1000;
+
+  test("a shift open longer than trackingStopAfterHours → the running engine stops and the card says why", async () => {
+    await recordDisclosureAnswer(DISCLOSURE_ANSWERS.GRANTED);
+    global.mockTrackingNative.running = true;
+    const longShift = { checkIn: { time: new Date(Date.now() - 13 * HOUR).toISOString() }, checkOut: {} };
+
+    await syncTrackingWithShift(longShift);
+
+    expect(native.stop).toHaveBeenCalled();
+    expect(native.start).not.toHaveBeenCalled();
+    expect(await getTrackingState(longShift)).toMatchObject({ status: TRACKING_STATUS.PAUSED, reason: PAUSE_REASONS.SHIFT_TOO_LONG, hoursLimit: 12 });
+  });
+
+  test("the limit is the server's: a shorter one from /location/config stops sooner", async () => {
+    await recordDisclosureAnswer(DISCLOSURE_ANSWERS.GRANTED);
+    const base = apiClient.defaults.adapter;
+    apiClient.defaults.adapter = async (config) =>
+      config.url.includes("/location/config") ? respond(config, 200, { data: { pingIntervalMinutes: 2, trackingStopAfterHours: 8 } }) : base(config);
+    const nineHours = { checkIn: { time: new Date(Date.now() - 9 * HOUR).toISOString() }, checkOut: {} };
+
+    await syncTrackingWithShift(nineHours);
+
+    expect(native.start).not.toHaveBeenCalled();
+    expect(await getTrackingState(nineHours)).toMatchObject({ reason: PAUSE_REASONS.SHIFT_TOO_LONG, hoursLimit: 8 });
+  });
+
+  test("a shift within the limit tracks as before", async () => {
+    await recordDisclosureAnswer(DISCLOSURE_ANSWERS.GRANTED);
+    const twoHours = { checkIn: { time: new Date(Date.now() - 2 * HOUR).toISOString() }, checkOut: {} };
+
+    await syncTrackingWithShift(twoHours);
+
+    expect(native.start).toHaveBeenCalled();
   });
 });

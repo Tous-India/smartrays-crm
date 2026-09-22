@@ -26,20 +26,46 @@ export const PAUSE_REASONS = {
   DECLINED: "declined",
   UNANSWERED: "unanswered",
   PERMISSION: "permission",
+  // The forgotten check-out (final-plan.md §7.74): the shift has been open
+  // longer than the server's TRACKING_STOP_AFTER_HOURS, so tracking stopped
+  // on its own — the shift itself is still open and needs a check-out.
+  SHIFT_TOO_LONG: "shift_too_long",
 };
 
-let cachedIntervalMs = null;
+let cachedConfig = null;
 
-/** The cadence is the server's (`GET /location/config`), fetched once per session. */
-async function resolveIntervalMs() {
-  if (cachedIntervalMs) {
-    return cachedIntervalMs;
+/**
+ * The server's tracking figures (`GET /location/config`), fetched once per
+ * session: the cadence, and how long a shift may run before the app stops
+ * tracking it. Nothing here is decided on the device.
+ */
+async function resolveConfig() {
+  if (cachedConfig) {
+    return cachedConfig;
   }
 
   const response = await getLocationConfig();
-  cachedIntervalMs = Number(response.data.data.pingIntervalMinutes) * 60 * 1000;
+  const config = response.data.data;
+  cachedConfig = {
+    intervalMs: Number(config.pingIntervalMinutes) * 60 * 1000,
+    trackingStopAfterHours: Number(config.trackingStopAfterHours) || 12,
+  };
 
-  return cachedIntervalMs;
+  return cachedConfig;
+}
+
+/** Tests: forget the cached figures. */
+export function clearTrackingConfigCache() {
+  cachedConfig = null;
+}
+
+/** How many hours a shift has been open, from its check-in. */
+export function hoursOpen(openRecord, now = new Date()) {
+  if (!openRecord?.checkIn?.time) {
+    return 0;
+  }
+
+  return (now.getTime() - new Date(openRecord.checkIn.time).getTime()) / 3600000;
 }
 
 /**
@@ -118,9 +144,13 @@ export async function syncConsentFromServer() {
  * Whether tracking is allowed to run right now, and if not, why. Requires the
  * current disclosure to have been GRANTED and the two location grants — a
  * "Not now", or no answer yet to the current wording, keeps tracking off
- * however the OS permissions stand.
+ * however the OS permissions stand. A shift open longer than the server's
+ * TRACKING_STOP_AFTER_HOURS (§7.74) is not tracked either: the disclosure
+ * promised tracking "only during a checked-in shift", and a shift nobody
+ * closed is not one anybody is working. `hoursLimit` rides along so the
+ * card can say how long is too long.
  */
-export async function getTrackingReadiness() {
+export async function getTrackingReadiness(openRecord = null) {
   const disclosure = await getDisclosureAnswer();
 
   if (!disclosure) {
@@ -135,6 +165,14 @@ export async function getTrackingReadiness() {
 
   if (!permissions.fine || !permissions.background) {
     return { ready: false, reason: PAUSE_REASONS.PERMISSION };
+  }
+
+  if (openRecord) {
+    const { trackingStopAfterHours } = await resolveConfig();
+
+    if (hoursOpen(openRecord) >= trackingStopAfterHours) {
+      return { ready: false, reason: PAUSE_REASONS.SHIFT_TOO_LONG, hoursLimit: trackingStopAfterHours };
+    }
   }
 
   return { ready: true, reason: null };
@@ -158,7 +196,7 @@ export async function syncTrackingWithShift(openRecord) {
     return;
   }
 
-  const readiness = await getTrackingReadiness();
+  const readiness = await getTrackingReadiness(openRecord);
 
   if (!readiness.ready) {
     if (status.isRunning) {
@@ -169,7 +207,7 @@ export async function syncTrackingWithShift(openRecord) {
   }
 
   if (!status.isRunning) {
-    await tracking.start({ intervalMs: await resolveIntervalMs() });
+    await tracking.start({ intervalMs: (await resolveConfig()).intervalMs });
   }
 }
 
@@ -195,10 +233,16 @@ export async function getTrackingState(openRecord) {
     return { status: TRACKING_STATUS.OFF, reason: null, queuedCount: 0, lastCapturedAt: null };
   }
 
-  const [readiness, status] = await Promise.all([getTrackingReadiness(), tracking.getStatus()]);
+  const [readiness, status] = await Promise.all([getTrackingReadiness(openRecord), tracking.getStatus()]);
 
   if (!readiness.ready) {
-    return { status: TRACKING_STATUS.PAUSED, reason: readiness.reason, queuedCount: status.queuedCount, lastCapturedAt: status.lastCapturedAt };
+    return {
+      status: TRACKING_STATUS.PAUSED,
+      reason: readiness.reason,
+      hoursLimit: readiness.hoursLimit || null,
+      queuedCount: status.queuedCount,
+      lastCapturedAt: status.lastCapturedAt,
+    };
   }
 
   return {
