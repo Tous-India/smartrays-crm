@@ -229,3 +229,73 @@ describe("signIn", () => {
     expect(useSessionStore.getState().status).toBe(SESSION_STATUS.RESTORING);
   });
 });
+
+describe("the consent cache follows the server (final-plan.md §7.73)", () => {
+  const CONSENT = {
+    id: "c1",
+    decision: "granted",
+    disclosureVersion: "2026-09-21.1",
+    appVersion: "0.0.1",
+    deviceId: "d",
+    recordedAt: "2026-09-21T09:00:00.000Z",
+  };
+
+  function serverWith(consent) {
+    return async (config) => {
+      calls.push(config.url);
+
+      if (config.url.includes("/location/consent/me")) {
+        return respond(config, 200, { data: consent });
+      }
+      if (config.url.includes("/auth/mobile/login")) {
+        return respond(config, 200, { data: { requiresTwoFactor: false, accessToken: "a", refreshToken: "r" } });
+      }
+      return respond(config, 200, { data: { name: "Employee", role: "employee" } });
+    };
+  }
+
+  async function settled() {
+    // The sync runs after the session is set, without being awaited.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  beforeEach(() => {
+    global.mockTrackingNative.flags = {};
+  });
+
+  test("launch restore fetches the latest decision and caches it — a reinstall is not asked again", async () => {
+    await saveTokens({ accessToken: "access-1", refreshToken: "refresh-1" });
+    apiClient.defaults.adapter = serverWith(CONSENT);
+
+    await restoreSession();
+    await settled();
+
+    expect(calls).toContain("/location/consent/me");
+    expect(global.mockTrackingNative.flags.disclosure).toBe("granted|2026-09-21.1|2026-09-21T09:00:00.000Z");
+  });
+
+  test("sign-in does the same", async () => {
+    apiClient.defaults.adapter = serverWith(CONSENT);
+
+    await signIn("e@x.com", "pw");
+    await settled();
+
+    expect(calls).toContain("/location/consent/me");
+    expect(global.mockTrackingNative.flags.disclosure).toBe("granted|2026-09-21.1|2026-09-21T09:00:00.000Z");
+  });
+
+  test("a failed consent fetch changes nothing about the session", async () => {
+    await saveTokens({ accessToken: "access-1", refreshToken: "refresh-1" });
+    apiClient.defaults.adapter = async (config) => {
+      if (config.url.includes("/location/consent/me")) {
+        return respond(config, 500, { message: "boom" });
+      }
+      return respond(config, 200, { data: { name: "Employee", role: "employee" } });
+    };
+
+    await restoreSession();
+    await settled();
+
+    expect(useSessionStore.getState().status).toBe(SESSION_STATUS.SIGNED_IN);
+  });
+});

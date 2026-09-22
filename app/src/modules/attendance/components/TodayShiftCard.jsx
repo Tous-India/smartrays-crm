@@ -56,7 +56,12 @@ function TrackingLine({ trackingState, isOnline, onFixTracking, now }) {
     );
   }
 
-  const why = trackingState.reason === "declined" ? "you chose not to share your location" : "location permission needed";
+  const why =
+    trackingState.reason === "declined"
+      ? "you chose not to share your location"
+      : trackingState.reason === "unanswered"
+        ? "please review the tracking notice"
+        : "location permission needed";
 
   return (
     <View style={styles.trackingRow} testID="shift-tracking-paused">

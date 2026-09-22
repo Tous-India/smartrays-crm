@@ -9,6 +9,7 @@ import { recordDisclosureAnswer, requestTrackingPermissions } from "../tracking.
 import { CAPTURE_MODES, SCREENS } from "../../../constants/screens.constants";
 import { DISCLOSURE_ANSWERS } from "../../../constants/tracking.constants";
 import { PERMISSION_STATUS } from "../../../utils/permissions.utils";
+import { messageFromError } from "../../../utils/apiError.utils";
 import { colors, radius, spacing, typography } from "../../../theme";
 
 /**
@@ -23,8 +24,10 @@ import { colors, radius, spacing, typography } from "../../../theme";
  * cadence comes from GET /location/config, the retention window is the
  * decided ping TTL (up to 47 days after capture for a late upload).
  *
- * Recording the acknowledgement server-side is a separate task; the answer
- * is kept on the device for now.
+ * The answer is recorded on the server (`POST /location/consent`, final-
+ * plan.md §7.73) with the version of this text, the app version and the
+ * install's device id, and cached on the device; a change to this text bumps
+ * DISCLOSURE_VERSION and everyone is asked again.
  */
 function TrackingDisclosureScreen({ navigation }) {
   const [intervalMinutes, setIntervalMinutes] = useState(null);
@@ -50,7 +53,7 @@ function TrackingDisclosureScreen({ navigation }) {
     setNotice(null);
 
     try {
-      await recordDisclosureAnswer(DISCLOSURE_ANSWERS.ACCEPTED);
+      await recordDisclosureAnswer(DISCLOSURE_ANSWERS.GRANTED);
       const granted = await requestTrackingPermissions();
 
       if (granted.fine !== PERMISSION_STATUS.GRANTED || granted.background !== PERMISSION_STATUS.GRANTED) {
@@ -64,14 +67,26 @@ function TrackingDisclosureScreen({ navigation }) {
 
       goToCheckIn();
     } catch (error) {
-      setNotice("Something went wrong asking for permissions. You can still check in.");
+      setNotice(messageFromError(error, "Your answer could not be recorded. Check your connection and try again."));
       setIsWorking(false);
     }
   }
 
   async function handleNotNow() {
-    await recordDisclosureAnswer(DISCLOSURE_ANSWERS.DECLINED);
-    goToCheckIn();
+    if (isWorking) {
+      return;
+    }
+
+    setIsWorking(true);
+    setNotice(null);
+
+    try {
+      await recordDisclosureAnswer(DISCLOSURE_ANSWERS.DECLINED);
+      goToCheckIn();
+    } catch (error) {
+      setNotice(messageFromError(error, "Your answer could not be recorded. Check your connection and try again."));
+      setIsWorking(false);
+    }
   }
 
   const cadence = intervalMinutes ? `about every ${intervalMinutes} minutes` : "a few times an hour";
@@ -94,7 +109,7 @@ function TrackingDisclosureScreen({ navigation }) {
 
       <ErrorBanner message={notice} testID="tracking-disclosure-notice" />
 
-      {notice ? (
+      {notice && !notice.includes("could not be recorded") ? (
         <PrimaryButton title="Check in without tracking" onPress={goToCheckIn} testID="tracking-disclosure-proceed" />
       ) : (
         <PrimaryButton title="Continue" onPress={handleContinue} loading={isWorking} testID="tracking-disclosure-continue" />

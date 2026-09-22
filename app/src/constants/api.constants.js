@@ -11,6 +11,8 @@ export const API_PATHS = {
   HEARTBEAT: "/attendance/heartbeat",
   LOCATION_CONFIG: "/location/config",
   LOCATION_PINGS: "/location/pings",
+  LOCATION_CONSENT: "/location/consent",
+  LOCATION_CONSENT_ME: "/location/consent/me",
 };
 
 /** The header the trusted-device token travels in (the web uses a cookie). */

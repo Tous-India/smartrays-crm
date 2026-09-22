@@ -1,8 +1,10 @@
 import * as tracking from "./trackingAdapter";
-import { getLocationConfig } from "./locationApi";
+import { getLocationConfig, getMyConsent, recordConsent } from "./locationApi";
 import { flushQueue } from "./pingQueue.service";
-import { DISCLOSURE_ANSWERS, TRACKING_FLAGS } from "../../constants/tracking.constants";
+import { getDeviceId } from "../../store/tokenStorage";
+import { DISCLOSURE_ANSWERS, DISCLOSURE_VERSION, TRACKING_FLAGS } from "../../constants/tracking.constants";
 import { PERMISSION_STATUS } from "../../utils/permissions.utils";
+import packageJson from "../../../package.json";
 
 /**
  * When tracking runs, and what the shift card says about it (app-plan.md
@@ -20,6 +22,7 @@ export const TRACKING_STATUS = {
 
 export const PAUSE_REASONS = {
   DECLINED: "declined",
+  UNANSWERED: "unanswered",
   PERMISSION: "permission",
 };
 
@@ -37,31 +40,92 @@ async function resolveIntervalMs() {
   return cachedIntervalMs;
 }
 
-export async function getDisclosureAnswer() {
-  const flag = await tracking.getFlag(TRACKING_FLAGS.DISCLOSURE);
-
+/**
+ * The device-side cache of the server's consent record (final-plan.md
+ * §7.73): `decision|disclosureVersion|recordedAt`. The server is the source;
+ * this is what the app reads between syncs and while offline.
+ */
+function parseCachedConsent(flag) {
   if (!flag) {
     return null;
   }
 
-  const [answer, answeredAt] = flag.split("|");
+  const [answer, version, answeredAt] = flag.split("|");
 
-  return { answer, answeredAt };
+  return { answer, version, answeredAt };
 }
 
+async function cacheConsent(answer, version, answeredAt) {
+  await tracking.setFlag(TRACKING_FLAGS.DISCLOSURE, `${answer}|${version}|${answeredAt}`);
+}
+
+/**
+ * The decision that applies to the CURRENT disclosure text, or null when the
+ * user has to be asked: never answered, or answered an older wording.
+ */
+export async function getDisclosureAnswer() {
+  const cached = parseCachedConsent(await tracking.getFlag(TRACKING_FLAGS.DISCLOSURE));
+
+  if (!cached || cached.version !== DISCLOSURE_VERSION) {
+    return null;
+  }
+
+  return cached;
+}
+
+/**
+ * Records the decision on the server — the record anyone can later point
+ * to — and caches it. The disclosure only shows before a check-in, which
+ * itself needs the server, so a failed record is surfaced to the caller
+ * rather than kept locally as if it counted.
+ */
 export async function recordDisclosureAnswer(answer) {
-  await tracking.setFlag(TRACKING_FLAGS.DISCLOSURE, `${answer}|${new Date().toISOString()}`);
+  const response = await recordConsent({
+    decision: answer,
+    disclosureVersion: DISCLOSURE_VERSION,
+    appVersion: packageJson.version,
+    deviceId: await getDeviceId(),
+  });
+
+  const record = response.data.data;
+  await cacheConsent(record.decision, record.disclosureVersion, record.recordedAt);
+
+  return record;
+}
+
+/**
+ * On sign-in and launch: the server's latest decision replaces the cache, so
+ * a reinstall — or a decision made on another phone — is honoured, and a
+ * decision on an older wording shows up as "ask again" through the version.
+ */
+export async function syncConsentFromServer() {
+  const response = await getMyConsent();
+  const record = response.data.data;
+
+  if (!record) {
+    await tracking.setFlag(TRACKING_FLAGS.DISCLOSURE, null);
+    return null;
+  }
+
+  await cacheConsent(record.decision, record.disclosureVersion, record.recordedAt);
+
+  return record;
 }
 
 /**
  * Whether tracking is allowed to run right now, and if not, why. Requires the
- * disclosure to have been accepted AND the two location grants — a "Not now"
- * on the disclosure keeps tracking off however the OS permissions stand.
+ * current disclosure to have been GRANTED and the two location grants — a
+ * "Not now", or no answer yet to the current wording, keeps tracking off
+ * however the OS permissions stand.
  */
 export async function getTrackingReadiness() {
   const disclosure = await getDisclosureAnswer();
 
-  if (!disclosure || disclosure.answer !== DISCLOSURE_ANSWERS.ACCEPTED) {
+  if (!disclosure) {
+    return { ready: false, reason: PAUSE_REASONS.UNANSWERED };
+  }
+
+  if (disclosure.answer !== DISCLOSURE_ANSWERS.GRANTED) {
     return { ready: false, reason: PAUSE_REASONS.DECLINED };
   }
 

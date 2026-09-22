@@ -19,7 +19,16 @@ export const TRACKING_FLAGS = {
   BATTERY_GUIDANCE: "batteryGuidance",
 };
 
+/**
+ * The version of the disclosure TEXT (TrackingDisclosureScreen). Bump it when
+ * the wording changes and every user is asked again: a decision on older
+ * wording is a decision on something else. Recorded with each consent
+ * (final-plan.md §7.73).
+ */
+export const DISCLOSURE_VERSION = "2026-09-21.1";
+
+/** The two decisions the server accepts (`POST /location/consent`). */
 export const DISCLOSURE_ANSWERS = {
-  ACCEPTED: "accepted",
+  GRANTED: "granted",
   DECLINED: "declined",
 };

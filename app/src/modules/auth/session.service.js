@@ -11,6 +11,16 @@ import {
 } from "../../store/tokenStorage";
 import useSessionStore from "../../store/sessionStore";
 import { hasServerResponse } from "../../utils/apiError.utils";
+import { syncConsentFromServer } from "../tracking/tracking.service";
+
+/**
+ * The server's consent record is the source (final-plan.md §7.73); the
+ * device only caches it. Refreshed whenever a session is established, in
+ * the background — a failure here changes nothing the user can see now.
+ */
+function refreshConsentCache() {
+  syncConsentFromServer().catch(() => {});
+}
 
 /**
  * Orchestration between the API, the keychain and the session store. Screens
@@ -39,6 +49,7 @@ export async function restoreSession() {
   try {
     const response = await fetchCurrentUser();
     setSignedIn(response.data.data);
+    refreshConsentCache();
   } catch (error) {
     if (hasServerResponse(error)) {
       await clearTokens();
@@ -67,6 +78,7 @@ async function establishSession(payload) {
   try {
     const response = await fetchCurrentUser();
     useSessionStore.getState().setSignedIn(response.data.data);
+    refreshConsentCache();
   } catch (error) {
     await clearTokens();
     throw error;
