@@ -6438,6 +6438,41 @@ Two things the run surfaced that are not this section's: the debug manifest of
 react-native-screens transitions never complete on a windowless emulator until the three
 animation scales are set to 0.
 
+## §7.74 — The forgotten check-out: a reminder, then tracking stops; the shift is never touched (2026-09-22)
+
+A shift left open overnight (§7.73's verification found one open 22 hours) means tracking ran
+all night, against the disclosure's own words — "only during a checked-in shift". The rule that
+closes that gap, in two halves, neither of which writes to an attendance record:
+
+1. **Reminder.** A shift open longer than `SHIFT_REMINDER_AFTER_HOURS` (env, default **10**) gets
+   **one** notification to the employee — type `shift_open_reminder`, "Your shift has been open
+   for N hours. Forgot to check out?" — through `createNotification`, so it reaches the web bell,
+   Web Push and FCM alike. "Once" is held by `ShiftReminder` (its own collection: `attendanceId`
+   unique, `employeeId`, `openForHours`, `sentAt`), never by a field on Attendance.
+2. **Tracking stops.** A shift open longer than `TRACKING_STOP_AFTER_HOURS` (env, default
+   **12**) is no longer tracked by the app: the engine stops on the next reconcile (the headless
+   flush runs one every ping interval, so this happens with the app closed too), and the shift
+   card says *Tracking stopped — this shift has been open more than 12 hours. Please check out.*
+   Both figures reach the app through `GET /location/config`; nothing is hardcoded on the device.
+
+**What does not happen:** the shift is not auto-closed, `checkOut` is not stamped, `workingHours`
+is not recomputed. Attendance feeds payroll (§7.53); closing a shift stays the employee's or an
+admin's act, exactly as before. The connectivity-gap rule (§6.5) already keeps the hours honest
+— the 22-hour shift above computed to 0.76 h — so the record needs no help from this section.
+
+**How the reminder fires in production.** Vercel runs no node-cron; two triggers, both serverless:
+- the **heartbeat** (`POST /attendance/heartbeat`, which the app sends after every flush and the
+  web every three minutes) — the moment the server knows a shift is still running is the moment
+  it checks the age, so a phone that is tracking all night reminds itself within one interval;
+- a **backstop** for a phone gone quiet: `GET/POST /attendance/open-shift-reminders`, on the same
+  machine-only credential as the cleanup (`CRON_SECRET` bearer or `ATTENDANCE_CLEANUP_TOKEN`),
+  scheduled hourly in `vercel.json`. Vercel's Hobby plan limits crons to once a day — on Hobby
+  the schedule must be daily, and the heartbeat carries the rest.
+
+Built 2026-09-22 (backend `6c64573`; app tracking stop in the same step). Tests: 8 backend
+(reminder once, not for a fresh or closed shift, the record untouched byte for byte, both
+triggers), 3 app (stops past the limit, the limit is the server's, within the limit tracks).
+
 *Mobile (React Native Android) backend preparation — bearer auth, FCM, batched pings + accuracy — is planned separately in `.context/mobile-backend-plan.md` (2026-09-19, plan only, nothing built).*
 
 *The React Native Android app (employee + manager only; screens and app-specific concerns) is planned in `.context/app-plan.md` (2026-09-19, plan only, nothing built).*
