@@ -4,6 +4,8 @@ import ServiceDetailScreen from "./ServiceDetailScreen";
 import { getService, setServiceStatus, setSubtaskDone } from "../api/serviceApi";
 import { getUserDirectory } from "../../../api/userApi";
 import { clearUserDirectoryCache } from "../../../hooks/useUserDirectory";
+import { clearPermissionsCache } from "../../../hooks/useMyPermissions";
+import apiClient from "../../../api/apiClient";
 
 jest.mock("../api/serviceApi", () => ({ getService: jest.fn(), setServiceStatus: jest.fn(), setSubtaskDone: jest.fn() }));
 jest.mock("../../../api/userApi", () => ({ getUserDirectory: jest.fn() }));
@@ -39,9 +41,15 @@ function serverError(status, message) {
   return error;
 }
 
+function permissionsAdapter(permissions) {
+  apiClient.defaults.adapter = async (config) => ({ status: 200, statusText: "200", headers: {}, config, data: { data: { role: "x", permissions } } });
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   clearUserDirectoryCache();
+  clearPermissionsCache();
+  permissionsAdapter({ services: { view: true } });
   getUserDirectory.mockReturnValue(ok([{ _id: "mgr-1", name: "Testing Manager", role: "manager" }]));
 });
 
@@ -118,4 +126,21 @@ test("a failed load shows the server's message", async () => {
   const screen = await render(<ServiceDetailScreen navigation={navigation} route={route} />);
 
   await waitFor(() => expect(screen.getByText("Service not found")).toBeTruthy());
+});
+
+test("Edit shows only when the server grants services.edit, and opens the form with the record", async () => {
+  getService.mockReturnValue(ok(SERVICE));
+  const employee = await render(<ServiceDetailScreen navigation={navigation} route={route} />);
+  await waitFor(() => expect(employee.getByText("Install router")).toBeTruthy());
+  expect(employee.queryByTestId("service-edit")).toBeNull();
+  employee.unmount();
+
+  clearPermissionsCache();
+  permissionsAdapter({ services: { view: true, edit: true } });
+  const nav = { goBack: jest.fn(), navigate: jest.fn() };
+  const manager = await render(<ServiceDetailScreen navigation={nav} route={route} />);
+  await waitFor(() => expect(manager.getByTestId("service-edit")).toBeTruthy());
+
+  await fireEvent.press(manager.getByTestId("service-edit"));
+  expect(nav.navigate).toHaveBeenCalledWith("ServiceForm", { service: SERVICE });
 });

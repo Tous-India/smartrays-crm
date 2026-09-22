@@ -12,10 +12,12 @@ import OfflineNote from "../../../components/OfflineNote";
 import useServerData from "../../../hooks/useServerData";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import useIsOnline from "../../../hooks/useIsOnline";
+import useMyPermissions, { can } from "../../../hooks/useMyPermissions";
 import { getService, setServiceStatus, setSubtaskDone } from "../api/serviceApi";
 import { SERVICE_STATUS, isOverdue } from "../services.utils";
 import { formatDate } from "../../../utils/date.utils";
 import { messageFromError } from "../../../utils/apiError.utils";
+import { SCREENS } from "../../../constants/screens.constants";
 import { colors, spacing, typography } from "../../../theme";
 
 /**
@@ -28,12 +30,18 @@ import { colors, spacing, typography } from "../../../theme";
  *
  * Offline, ticking and completing are server changes with no queue (§3.3):
  * the controls stay, disabled, with the reason.
+ *
+ * "Edit" appears only when the server's permissions carry services.edit (a
+ * manager, from the Team tab, where the form is registered); an employee
+ * never sees it, and the server would refuse the PATCH regardless.
  */
 function ServiceDetailScreen({ navigation, route }) {
   const { serviceId } = route.params;
   const isOnline = useIsOnline();
   const service = useServerData(async () => (await getService(serviceId)).data.data, { deps: [serviceId] });
   const { nameById } = useUserDirectory();
+  const { permissions } = useMyPermissions();
+  const canEdit = can(permissions, "services", "edit");
   const [busyKey, setBusyKey] = useState(null);
   const [actionError, setActionError] = useState(null);
 
@@ -56,7 +64,24 @@ function ServiceDetailScreen({ navigation, route }) {
 
   return (
     <Screen onRefresh={service.refetch} refreshing={service.isRefreshing} testID="service-detail-screen">
-      <ScreenHeader title={record?.title || "Service"} onBack={() => navigation.goBack()} />
+      <ScreenHeader
+        title={record?.title || "Service"}
+        onBack={() => navigation.goBack()}
+        right={
+          record && canEdit ? (
+            <Pressable
+              onPress={() => navigation.navigate(SCREENS.SERVICE_FORM, { service: record })}
+              disabled={!isOnline}
+              accessibilityRole="button"
+              accessibilityLabel="Edit service"
+              style={styles.edit}
+              testID="service-edit"
+            >
+              <Ionicons name="create-outline" size={24} color={isOnline ? colors.brandNavy : colors.disabled} />
+            </Pressable>
+          ) : null
+        }
+      />
 
       <ListState isLoading={service.isLoading} error={service.error} onRetry={service.refetch} testID="service-detail" />
 
@@ -142,6 +167,7 @@ const styles = StyleSheet.create({
   subtask: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: spacing.sm, minHeight: 44 },
   subtaskTitle: { flex: 1 },
   subtaskDone: { color: colors.textSecondary, textDecorationLine: "line-through" },
+  edit: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
 });
 
 export default ServiceDetailScreen;
