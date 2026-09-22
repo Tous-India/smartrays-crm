@@ -235,6 +235,29 @@ describe("PaymentsListPage", () => {
       });
     });
 
+    it("lays the fields out in reading order — Customer, then Contact | Amount, then Date | Collected By, then Notes — which is also the Tab order", async () => {
+      renderPage();
+      await screen.findByText("Acme Corp");
+
+      await userEvent.click(screen.getByRole("button", { name: /Record Payment/ }));
+      await screen.findByLabelText("Customer");
+
+      const dialog = screen.getByRole("dialog");
+      const labels = [...dialog.querySelectorAll(".ant-form-item-label label")].map((label) => label.textContent.trim());
+      expect(labels).toEqual(["Customer", "Contact", "Amount", "Date", "Collected By", "Notes"]);
+
+      // The two pairs share a row each: same Row, two half Cols.
+      // Form.Item renders its own `.ant-row` internally; the grid rows are the others.
+      const rows = [...dialog.querySelectorAll(".ant-row:not(.ant-form-item-row)")].map((row) =>
+        [...row.querySelectorAll(":scope > .ant-col .ant-form-item-label label")].map((label) => label.textContent.trim())
+      );
+      expect(rows).toEqual([
+        ["Contact", "Amount"],
+        ["Date", "Collected By"],
+      ]);
+      expect(dialog.querySelector(".ant-form-item-required")).toBeInTheDocument();
+    });
+
     it("populates Collected By from the same user directory and includes the selection in the saved payload", async () => {
       paymentApi.createPayment.mockResolvedValue({ data: { data: { _id: "new-payment" } } });
 

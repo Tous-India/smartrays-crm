@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Modal, Form, Select, InputNumber, DatePicker, Input, Typography } from "antd";
+import { Modal, Form, Select, InputNumber, DatePicker, Input, Typography, Row, Col } from "antd";
 import dayjs from "dayjs";
 import { listCustomers, listContacts } from "../../customer/api/customerApi";
 import useSessionStore from "../../../store/sessionStore";
@@ -34,7 +34,18 @@ const SEARCH_DEBOUNCE_MS = 300;
  * value before its options exist gives a control with a value and no label —
  * the exact bug from the reverted first attempt, and the same failure the
  * fixed-customer mode above exists to avoid.
+ *
+ * LAYOUT: four rows instead of six — Customer alone, then Contact | Amount,
+ * then Date | Collected By, then Notes alone — with `app-compact-form`'s
+ * 12px item margins. The pairs are what belongs together: who paid and how
+ * much; when and who took it. The two-column rows are `xs=24 sm=12`, so under
+ * 576px everything stacks again. Validation messages sit inside each item's
+ * own flow (AntD's explain block), so an error grows its row rather than
+ * covering the one beneath.
  */
+
+/** The two-column rows: side by side from `sm`, stacked below it. */
+const HALF = { xs: 24, sm: 12 };
 function RecordPaymentModal({ open, onCancel, onSubmit, isSubmitting, users, fixedCustomer, fixedCustomerContacts }) {
   const [form] = Form.useForm();
   const currentUser = useSessionStore((state) => state.user);
@@ -144,8 +155,13 @@ function RecordPaymentModal({ open, onCancel, onSubmit, isSubmitting, users, fix
       confirmLoading={isSubmitting}
       okText="Save"
       destroyOnHidden
+      // `Row gutter` applies -8px horizontal margins, which Chrome counts as
+      // 8px of scrollable overflow inside the padded modal body (the same
+      // artifact UserFormModal clips); the reduced top/bottom padding is the
+      // same pairing the other compact modals use.
+      styles={{ body: { overflowX: "hidden", paddingTop: 8, paddingBottom: 0 } }}
     >
-      <Form form={form} layout="vertical" initialValues={{ date: dayjs() }}>
+      <Form form={form} layout="vertical" className="app-compact-form" initialValues={{ date: dayjs() }}>
         {isFixed ? (
           <Form.Item label="Customer">
             <Typography.Text strong data-testid="fixed-customer">
@@ -167,43 +183,51 @@ function RecordPaymentModal({ open, onCancel, onSubmit, isSubmitting, users, fix
           </Form.Item>
         )}
 
-        <Form.Item label="Contact" name="contactId">
-          <Select
-            allowClear
-            showSearch
-            optionFilterProp="label"
-            loading={isLoadingContacts}
-            options={contactOptions}
-            placeholder={
-              contactOptions.length === 0 ? "No contacts for this customer (optional)" : "Who paid? (optional)"
-            }
-            notFoundContent={isLoadingContacts ? "Loading…" : "No contacts"}
-          />
-        </Form.Item>
+        <Row gutter={16}>
+          <Col {...HALF}>
+            <Form.Item label="Contact" name="contactId">
+              <Select
+                allowClear
+                showSearch
+                optionFilterProp="label"
+                loading={isLoadingContacts}
+                options={contactOptions}
+                placeholder={contactOptions.length === 0 ? "No contacts (optional)" : "Who paid? (optional)"}
+                notFoundContent={isLoadingContacts ? "Loading…" : "No contacts"}
+              />
+            </Form.Item>
+          </Col>
+          <Col {...HALF}>
+            <Form.Item label="Amount" name="amount" rules={[{ required: true, message: "Amount is required" }]}>
+              <InputNumber min={0} style={{ width: "100%" }} prefix="₹" />
+            </Form.Item>
+          </Col>
+        </Row>
 
-        <Form.Item label="Amount" name="amount" rules={[{ required: true, message: "Amount is required" }]}>
-          <InputNumber min={0} style={{ width: "100%" }} prefix="₹" />
-        </Form.Item>
-
-        <Form.Item label="Date" name="date" rules={[{ required: true, message: "Date is required" }]}>
-          {/* Hours:minutes only — same `showTime` config as LeadFormModal's
-              own follow-up date field; the default `showTime` also asks for
-              seconds, precision a payment record doesn't need either. */}
-          <DatePicker showTime={{ format: "HH:mm" }} format="YYYY-MM-DD HH:mm" style={{ width: "100%" }} />
-        </Form.Item>
+        <Row gutter={16}>
+          <Col {...HALF}>
+            <Form.Item label="Date" name="date" rules={[{ required: true, message: "Date is required" }]}>
+              {/* Hours:minutes only — same `showTime` config as LeadFormModal's
+                  own follow-up date field; the default `showTime` also asks for
+                  seconds, precision a payment record doesn't need either. */}
+              <DatePicker showTime={{ format: "HH:mm" }} format="YYYY-MM-DD HH:mm" style={{ width: "100%" }} />
+            </Form.Item>
+          </Col>
+          <Col {...HALF}>
+            <Form.Item label="Collected By" name="collectedBy">
+              <Select
+                allowClear
+                showSearch
+                optionFilterProp="label"
+                options={userOptions}
+                placeholder="Who collected it? (optional)"
+              />
+            </Form.Item>
+          </Col>
+        </Row>
 
         <Form.Item label="Notes" name="notes">
           <Input.TextArea rows={2} />
-        </Form.Item>
-
-        <Form.Item label="Collected By" name="collectedBy">
-          <Select
-            allowClear
-            showSearch
-            optionFilterProp="label"
-            options={userOptions}
-            placeholder="Who physically collected this payment? (optional)"
-          />
         </Form.Item>
       </Form>
     </Modal>
