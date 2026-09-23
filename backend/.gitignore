@@ -25,3 +25,9 @@ Thumbs.db
 # values FCM needs travel as environment variables (see .env.example).
 *firebase*service*account*.json
 *-firebase-adminsdk-*.json
+# Google service-account keys are also downloaded under the Firebase project's
+# own name plus the key id (smartrays-crm-<hash>-<keyid>.json). Catch those too:
+# a key must never be a file in this repo, ignored or not — the three values it
+# holds belong in the environment (.env.example).
+smartrays-crm-*.json
+*serviceAccountKey*.json
