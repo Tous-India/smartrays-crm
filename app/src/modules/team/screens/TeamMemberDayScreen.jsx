@@ -65,6 +65,8 @@ function TeamMemberDayScreen({ navigation, route }) {
         isEmpty={Boolean(team.data) && !row}
         emptyText="This person is not on your team."
         onRetry={team.refetch}
+        skeleton="team"
+        skeletonCount={1}
         testID="team-member-day"
       />
 

@@ -53,6 +53,7 @@ function TeamTodaySection({ team, onOpenPerson }) {
         isEmpty={Boolean(team.data) && team.data.reports.length === 0}
         emptyText="No one reports to you yet."
         onRetry={team.refetch}
+        skeleton="team"
         testID="team-today"
       />
       {team.data && !team.error

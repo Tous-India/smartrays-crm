@@ -58,6 +58,8 @@ function PayslipsScreen({ navigation }) {
         isEmpty={payroll.data.length === 0}
         emptyText="No approved payslips yet."
         onRetry={payroll.refetch}
+        skeleton="leave"
+        skeletonCount={2}
         testID="payslips-list"
       />
 

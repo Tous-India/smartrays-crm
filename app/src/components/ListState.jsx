@@ -1,24 +1,47 @@
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import ErrorBanner from "./ErrorBanner";
 import LinkText from "./LinkText";
+import {
+  AttendanceSkeletonRow,
+  GenericSkeletonRow,
+  LeaveSkeletonRow,
+  ServiceSkeletonRow,
+  TeamSkeletonRow,
+} from "./Skeleton";
 import { messageFromError } from "../utils/apiError.utils";
-import { colors, spacing, typography } from "../theme";
+import { spacing, typography } from "../theme";
 
 /**
  * The three states every list screen has before it has rows (the rule for
  * this app: loading, empty and error are always drawn, never left blank):
  *
- *   isLoading           — a spinner, until the first answer
+ *   isLoading           — placeholders shaped like the rows that are coming
  *   error               — the server's own message, verbatim, and "Try again"
  *   isEmpty (no rows)   — the caller's empty line, e.g. "No leave requests yet"
  *
  * Renders null once there are rows to show; the caller draws them.
+ *
+ * `skeleton` picks the shape ("service", "leave", "attendance", "team", or
+ * the generic two-line card) and `skeletonCount` how many — a screen never
+ * writes a loader of its own, which is what keeps them all consistent.
  */
-function ListState({ isLoading, error, isEmpty, emptyText, onRetry, testID = "list-state" }) {
+const SHAPES = {
+  service: ServiceSkeletonRow,
+  leave: LeaveSkeletonRow,
+  attendance: AttendanceSkeletonRow,
+  team: TeamSkeletonRow,
+  generic: GenericSkeletonRow,
+};
+
+function ListState({ isLoading, error, isEmpty, emptyText, onRetry, skeleton = "generic", skeletonCount = 3, testID = "list-state" }) {
   if (isLoading) {
+    const Row = SHAPES[skeleton] || SHAPES.generic;
+
     return (
-      <View style={styles.block} testID={`${testID}-loading`}>
-        <ActivityIndicator color={colors.brandNavy} />
+      <View testID={`${testID}-loading`}>
+        {Array.from({ length: skeletonCount }, (_, index) => (
+          <Row key={index} />
+        ))}
       </View>
     );
   }

@@ -18,6 +18,7 @@ function TeamLeaveSection({ leaves, nameById }) {
         isEmpty={Boolean(leaves.data) && leaves.data.length === 0}
         emptyText="No leave requests on the team."
         onRetry={leaves.refetch}
+        skeleton="leave"
         testID="team-leave"
       />
       {leaves.data && !leaves.error

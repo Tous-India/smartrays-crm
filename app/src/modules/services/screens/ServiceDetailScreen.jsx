@@ -83,7 +83,7 @@ function ServiceDetailScreen({ navigation, route }) {
         }
       />
 
-      <ListState isLoading={service.isLoading} error={service.error} onRetry={service.refetch} testID="service-detail" />
+      <ListState isLoading={service.isLoading} error={service.error} onRetry={service.refetch} skeleton="service" skeletonCount={2} testID="service-detail" />
 
       {record ? (
         <>

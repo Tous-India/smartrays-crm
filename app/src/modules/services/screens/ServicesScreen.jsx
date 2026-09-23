@@ -39,6 +39,7 @@ function ServicesScreen({ navigation }) {
         isEmpty={services.data.length === 0}
         emptyText={status === SERVICE_STATUS.TODO ? "Nothing to do — no services assigned to you." : "No completed services yet."}
         onRetry={services.refetch}
+        skeleton="service"
         testID="services-list"
       />
 

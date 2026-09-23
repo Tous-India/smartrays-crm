@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import PrimaryButton from "../../../components/PrimaryButton";
+import { SkeletonBlock } from "../../../components/Skeleton";
 import { formatClockTime, formatElapsed } from "../attendance.utils";
 import { colors, radius, spacing, typography } from "../../../theme";
 
@@ -103,10 +104,18 @@ function TodayShiftCard({
 }) {
   const now = useMinuteTick();
 
+  // The card's own skeleton: the header line, the status pill, a line of
+  // text and the action button, in their real places — so nothing jumps when
+  // the attendance answer lands.
   if (isLoading) {
     return (
       <View style={styles.card} testID="shift-card-loading">
-        <ActivityIndicator color={colors.brandNavy} />
+        <View style={styles.headerRow}>
+          <SkeletonBlock width={110} height={12} />
+          <SkeletonBlock width={96} height={20} radius={radius.sm} />
+        </View>
+        <SkeletonBlock width="85%" height={12} style={styles.skeletonLine} />
+        <SkeletonBlock width="100%" height={48} radius={radius.md} style={styles.skeletonButton} />
       </View>
     );
   }
@@ -191,6 +200,8 @@ const styles = StyleSheet.create({
   elapsed: { marginTop: spacing.md },
   line: { marginTop: spacing.xs },
   button: { marginTop: spacing.lg },
+  skeletonLine: { marginTop: spacing.md },
+  skeletonButton: { marginTop: spacing.lg },
   offline: { ...typography.small, color: colors.danger, marginTop: spacing.sm },
   trackingOk: { color: colors.brandGreen, marginTop: spacing.sm },
   trackingRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.sm, marginTop: spacing.sm },

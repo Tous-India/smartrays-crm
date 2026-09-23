@@ -89,6 +89,8 @@ function AttendanceHistoryScreen({ navigation }) {
         isEmpty={records.data.length === 0}
         emptyText={`No attendance recorded in ${formatMonth(month)}.`}
         onRetry={records.refetch}
+        skeleton="attendance"
+        skeletonCount={4}
         testID="history-list"
       />
 

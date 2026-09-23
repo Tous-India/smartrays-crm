@@ -30,6 +30,7 @@ function TeamServicesSection({ services, nameById, canCreate, isOnline, onAssign
         isEmpty={Boolean(services.data) && services.data.length === 0}
         emptyText="No open services on the team."
         onRetry={services.refetch}
+        skeleton="service"
         testID="team-services"
       />
 

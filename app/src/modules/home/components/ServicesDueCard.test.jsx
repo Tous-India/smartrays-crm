@@ -27,9 +27,10 @@ test("nothing assigned says so", async () => {
   expect(screen.getByTestId("services-due-empty")).toBeTruthy();
 });
 
-test("still loading says so", async () => {
+test("still loading draws placeholders, not text", async () => {
   const screen = await render(<ServicesDueCard services={[]} isLoading error={null} onOpen={() => {}} />);
-  expect(screen.getByText("Loading…")).toBeTruthy();
+  expect(screen.getByTestId("services-due-loading")).toBeTruthy();
+  expect(screen.queryByTestId("services-due-empty")).toBeNull();
 });
 
 test("a failed load shows the server's message", async () => {

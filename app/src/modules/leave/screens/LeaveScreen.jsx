@@ -4,6 +4,7 @@ import ScreenHeader from "../../../components/ScreenHeader";
 import Card from "../../../components/Card";
 import StatusPill from "../../../components/StatusPill";
 import ListState from "../../../components/ListState";
+import { SkeletonBlock } from "../../../components/Skeleton";
 import PrimaryButton from "../../../components/PrimaryButton";
 import OfflineNote from "../../../components/OfflineNote";
 import useServerData from "../../../hooks/useServerData";
@@ -37,7 +38,10 @@ function LeaveScreen({ navigation }) {
       <Card testID="leave-balance-card">
         <Text style={typography.label}>Paid leave this month</Text>
         {balance.isLoading ? (
-          <Text style={[typography.subtitle, styles.line]}>Loading…</Text>
+          <View testID="leave-balance-loading">
+            <SkeletonBlock width={180} height={24} style={styles.balance} />
+            <SkeletonBlock width="70%" height={10} style={styles.line} />
+          </View>
         ) : balance.error ? (
           <Text style={[typography.small, styles.line, styles.danger]} testID="leave-balance-error">
             {messageFromError(balance.error)}
@@ -67,6 +71,7 @@ function LeaveScreen({ navigation }) {
         isEmpty={leaves.data.length === 0}
         emptyText="No leave requests yet."
         onRetry={leaves.refetch}
+        skeleton="leave"
         testID="leave-list"
       />
       {!leaves.isLoading && !leaves.error

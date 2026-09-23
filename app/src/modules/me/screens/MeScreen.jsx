@@ -4,6 +4,7 @@ import Screen from "../../../components/Screen";
 import ScreenHeader from "../../../components/ScreenHeader";
 import Card from "../../../components/Card";
 import PrimaryButton from "../../../components/PrimaryButton";
+import { SkeletonBlock } from "../../../components/Skeleton";
 import useServerData from "../../../hooks/useServerData";
 import useSessionStore from "../../../store/sessionStore";
 import { signOut } from "../../auth/session.service";
@@ -24,7 +25,7 @@ function MeScreen({ navigation }) {
 
   function teamLine(pick) {
     if (team.isLoading) {
-      return "Loading…";
+      return null;
     }
 
     if (team.error) {
@@ -67,13 +68,18 @@ function MeScreen({ navigation }) {
   );
 }
 
+/** `value === null` means "still loading" — a placeholder the width of a name. */
 function Row({ label, value, testID }) {
   return (
     <>
       <Text style={[typography.label, styles.rowLabel]}>{label}</Text>
-      <Text style={typography.body} testID={testID}>
-        {value}
-      </Text>
+      {value === null ? (
+        <SkeletonBlock width={140} height={14} style={styles.rowSkeleton} />
+      ) : (
+        <Text style={typography.body} testID={testID}>
+          {value}
+        </Text>
+      )}
     </>
   );
 }
@@ -94,6 +100,7 @@ function LinkRow({ icon, title, subtitle, onPress, testID }) {
 const styles = StyleSheet.create({
   line: { marginTop: spacing.xs },
   rowLabel: { marginTop: spacing.md, marginBottom: 2 },
+  rowSkeleton: { marginTop: 2 },
   link: {
     flexDirection: "row",
     alignItems: "center",

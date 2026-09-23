@@ -128,7 +128,16 @@ function ServiceFormScreen({ navigation, route }) {
       <DateField label="Due date" value={dueDate} onChange={setDueDate} testID="service-form-due" />
 
       <Text style={[typography.label, styles.sectionLabel]}>Assign to</Text>
-      <ListState isLoading={assignees.isLoading} error={assignees.error} isEmpty={Boolean(assignees.data) && assignees.data.length === 0} emptyText="No one you can assign to." onRetry={assignees.refetch} testID="service-form-assignees" />
+      <ListState
+        isLoading={assignees.isLoading}
+        error={assignees.error}
+        isEmpty={Boolean(assignees.data) && assignees.data.length === 0}
+        emptyText="No one you can assign to."
+        onRetry={assignees.refetch}
+        skeleton="generic"
+        skeletonCount={2}
+        testID="service-form-assignees"
+      />
       {assignees.data
         ? assignees.data.map((person) => {
             const isSelected = String(person._id) === assignedToId;

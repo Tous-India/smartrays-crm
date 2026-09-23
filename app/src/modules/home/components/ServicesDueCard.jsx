@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 import Card from "../../../components/Card";
 import StatusPill from "../../../components/StatusPill";
+import { SkeletonBlock } from "../../../components/Skeleton";
 import { isDueToday, isOverdue, sortByUrgency } from "../../services/services.utils";
 import { formatShortDate } from "../../../utils/date.utils";
 import { messageFromError } from "../../../utils/apiError.utils";
@@ -33,7 +34,10 @@ function ServicesDueCard({ services, isLoading, error, onOpen }) {
       </View>
 
       {isLoading ? (
-        <Text style={[typography.subtitle, styles.line]}>Loading…</Text>
+        <View testID="services-due-loading">
+          <SkeletonBlock width="62%" height={12} style={styles.line} />
+          <SkeletonBlock width="45%" height={12} style={styles.line} />
+        </View>
       ) : error ? (
         <Text style={[typography.small, styles.line, styles.danger]} testID="services-due-error">
           {messageFromError(error)}
