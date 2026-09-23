@@ -1,5 +1,6 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { NavigationContainer, createNavigationContainerRef } from "@react-navigation/native";
+import BootSplash from "react-native-bootsplash";
 import useSessionStore, { SESSION_STATUS } from "../store/sessionStore";
 import { ROLES } from "../constants/roles.constants";
 import { restoreSession } from "../modules/auth/session.service";
@@ -25,6 +26,12 @@ import { navigateForNotification } from "../modules/push/pushNavigation";
  * `navigationRef` is how a tapped push notification navigates from outside
  * any screen (STEP 4); PushNotice is the in-app banner for one that arrived
  * while the app was open.
+ *
+ * The launch splash (react-native-bootsplash) is up from the activity's very
+ * first frame — the brand background and logo, no white flash — and is
+ * hidden HERE, once the session restore has answered, not when React mounts:
+ * a signed-in user goes from the splash straight to their own screen without
+ * the login screen flashing past. It fades out.
  */
 export const navigationRef = createNavigationContainerRef();
 
@@ -47,6 +54,18 @@ function RootNavigator() {
   useEffect(() => {
     restoreSession();
   }, []);
+
+  // Once, on the first answer the restore gives — whatever that answer is.
+  const splashHidden = useRef(false);
+
+  useEffect(() => {
+    if (splashHidden.current || status === SESSION_STATUS.RESTORING) {
+      return;
+    }
+
+    splashHidden.current = true;
+    BootSplash.hide({ fade: true }).catch(() => {});
+  }, [status]);
 
   usePushMessages(navigationRef, status === SESSION_STATUS.SIGNED_IN);
 

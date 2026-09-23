@@ -73,6 +73,12 @@ jest.mock("@react-native-community/datetimepicker", () => {
   return { __esModule: true, default: MockDateTimePicker };
 });
 
+// The launch splash: nothing to draw in Jest, but `hide` is asserted on.
+jest.mock("react-native-bootsplash", () => ({
+  __esModule: true,
+  default: { hide: jest.fn(async () => {}), isVisible: jest.fn(() => false) },
+}));
+
 // The map (MapLibre): plain views carrying the real props, so a test can
 // count markers and press one through its `onPress`.
 jest.mock("@maplibre/maplibre-react-native", () => {
