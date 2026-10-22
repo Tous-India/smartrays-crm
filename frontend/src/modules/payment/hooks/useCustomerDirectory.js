@@ -18,12 +18,25 @@ export function useCustomerDirectory() {
   useEffect(() => {
     let isMounted = true;
 
-    listCustomers({}).then((response) => {
-      if (isMounted) {
-        setCustomers(response.data.data);
-        setIsLoading(false);
-      }
-    });
+    listCustomers({})
+      .then((response) => {
+        if (isMounted) {
+          setCustomers(response.data.data);
+        }
+      })
+      // A caller without customers.view (an employee opening /payments by
+      // address) gets a 403; the page already says "Not authorized", so this
+      // just settles to an empty list instead of an uncaught rejection.
+      .catch(() => {
+        if (isMounted) {
+          setCustomers([]);
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      });
 
     return () => {
       isMounted = false;
