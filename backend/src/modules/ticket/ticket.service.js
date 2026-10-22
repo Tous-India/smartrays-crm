@@ -1,10 +1,12 @@
 import ApiError from "../../utils/ApiError.js";
 import { can } from "../../helpers/permission.helper.js";
-import { uploadTicketAttachment } from "../../services/cloudinary.service.js";
+import { uploadTicketAttachment, signedComplaintPhotoUrl } from "../../services/cloudinary.service.js";
 import { createNotification } from "../notification/notification.service.js";
 import Ticket from "./ticket.model.js";
 import Customer from "../customer/customer.model.js";
 import User from "../user/user.model.js";
+import Contact from "../customer/contact.model.js";
+import { kickComplaintChecks } from "./ticketEscalation.service.js";
 
 /**
  * Raise a ticket — internal (admin/manager, on a client's behalf after a
@@ -107,7 +109,87 @@ export async function listTickets(scope, requestingUser) {
     throw new ApiError(403, "You do not have permission to view tickets in this scope");
   }
 
-  return Ticket.find(buildScopeFilter(resolvedScope, requestingUser)).sort({ createdAt: -1 });
+  kickComplaintChecks();
+
+  const tickets = await Ticket.find(buildScopeFilter(resolvedScope, requestingUser)).sort({ createdAt: -1 }).lean();
+  return withNames(tickets);
+}
+
+/**
+ * Adds `customerName` and `assigneeName` beside the existing ids (2026-10-22,
+ * for the Complaints screens) — two batched lookups, not one per row. Purely
+ * additive: every field the list returned before is still there, unchanged.
+ */
+async function withNames(tickets) {
+  const customerIds = [...new Set(tickets.map((ticket) => String(ticket.customerId)))];
+  const userIds = [...new Set(tickets.map((ticket) => ticket.assignedToId).filter(Boolean).map(String))];
+
+  const [customers, users] = await Promise.all([
+    Customer.find({ _id: { $in: customerIds } }).select("companyName").lean(),
+    User.find({ _id: { $in: userIds } }).select("name").lean(),
+  ]);
+  const customerNames = new Map(customers.map((customer) => [String(customer._id), customer.companyName]));
+  const userNames = new Map(users.map((user) => [String(user._id), user.name]));
+
+  return tickets.map((ticket) => ({
+    ...ticket,
+    customerName: customerNames.get(String(ticket.customerId)) || null,
+    assigneeName: ticket.assignedToId ? userNames.get(String(ticket.assignedToId)) || null : null,
+  }));
+}
+
+/**
+ * One ticket with everything the person handling it needs (2026-10-22): who
+ * the customer is and whom to call, what they said, when they want a call,
+ * their photos as short-lived signed links, and the timeline with names.
+ * Same visibility as every other ticket action — 404 when out of scope.
+ */
+export async function getTicketDetail(ticketId, requestingUser) {
+  const ticket = await getViewableTicketOrThrow(ticketId, requestingUser);
+
+  const [customer, primaryContact, assignee] = await Promise.all([
+    Customer.findById(ticket.customerId).select("companyName phone siteAddress"),
+    Contact.findOne({ customerId: ticket.customerId, isPrimary: true }).sort({ createdAt: 1 }).select("name phone"),
+    ticket.assignedToId ? User.findById(ticket.assignedToId).select("name") : null,
+  ]);
+
+  const authorIds = [...new Set(ticket.history.map((entry) => entry.authorId).filter(Boolean).map(String))];
+  const authors = new Map(
+    (await User.find({ _id: { $in: authorIds } }).select("name").lean()).map((user) => [String(user._id), user.name])
+  );
+  const firstCustomerEntry = ticket.history.find((entry) => entry.byCustomer);
+
+  return {
+    _id: ticket._id,
+    number: ticket.number ?? null,
+    subject: ticket.subject,
+    category: ticket.category,
+    status: ticket.status,
+    source: ticket.source,
+    callbackTime: ticket.callbackTime ?? null,
+    description: firstCustomerEntry?.comment ?? ticket.history[0]?.comment ?? null,
+    customer: {
+      _id: customer?._id ?? ticket.customerId,
+      companyName: customer?.companyName ?? null,
+      phone: customer?.phone ?? null,
+      siteAddress: customer?.siteAddress ?? null,
+      primaryContact: primaryContact ? { name: primaryContact.name, phone: primaryContact.phone || null } : null,
+    },
+    assignedTo: assignee ? { _id: assignee._id, name: assignee.name } : null,
+    photoUrls: ticket.customerPhotos.map((photo) => signedComplaintPhotoUrl(photo.publicId)),
+    createdAt: ticket.createdAt,
+    acknowledgedAt: ticket.acknowledgedAt ?? null,
+    resolvedAt: ticket.resolvedAt ?? null,
+    escalations: ticket.escalations.map(({ kind, level, at }) => ({ kind, level, at })),
+    history: ticket.history.map((entry) => ({
+      type: entry.type,
+      by: entry.byCustomer ? "Customer" : authors.get(String(entry.authorId)) || "Staff",
+      comment: entry.comment,
+      fromStatus: entry.fromStatus,
+      toStatus: entry.toStatus,
+      createdAt: entry.createdAt,
+    })),
+  };
 }
 
 function resolveDefaultScope(requestingUser) {
@@ -240,6 +322,17 @@ export async function changeTicketStatus(ticketId, { status, comment }, requesti
 
   const fromStatus = ticket.status;
   ticket.status = status;
+  // Complaint timing (2026-10-22): the first move off "open" is the
+  // acknowledgement; reaching resolved/closed is the resolution, cleared again
+  // if the ticket is reopened. Escalation reads these.
+  if (fromStatus === "open" && status !== "open" && !ticket.acknowledgedAt) {
+    ticket.acknowledgedAt = new Date();
+  }
+  if (status === "resolved" || status === "closed") {
+    ticket.resolvedAt = ticket.resolvedAt || new Date();
+  } else {
+    ticket.resolvedAt = null;
+  }
   ticket.history.push({
     type: "status_change",
     authorId: requestingUser._id,

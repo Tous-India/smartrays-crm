@@ -162,3 +162,38 @@ export async function uploadTicketAttachment(fileInput) {
 
   return result.secure_url;
 }
+
+// --- Customer complaint photos (2026-10-22) --------------------------------
+// Private like attendance photos (§7.69): uploaded as "authenticated" and only
+// ever shown through short-lived signed links, because a complaint photo can
+// show the inside of a customer's home. The folder root is configurable so a
+// local machine's uploads stay apart from production's (CLOUDINARY_FOLDER_ROOT,
+// default "smartrays").
+const COMPLAINT_PHOTO_FORMAT = "jpg";
+
+function complaintPhotoFolder() {
+  return `${process.env.CLOUDINARY_FOLDER_ROOT || "smartrays"}/complaints`;
+}
+
+export async function uploadComplaintPhoto(photoBuffer, mimeType = "image/jpeg") {
+  const result = await cloudinary.uploader.upload(`data:${mimeType};base64,${photoBuffer.toString("base64")}`, {
+    folder: complaintPhotoFolder(),
+    resource_type: "image",
+    type: "authenticated",
+    format: COMPLAINT_PHOTO_FORMAT,
+  });
+
+  return { publicId: result.public_id };
+}
+
+export function signedComplaintPhotoUrl(publicId, { expiresInSeconds = SIGNED_URL_TTL_SECONDS } = {}) {
+  if (!publicId) {
+    return null;
+  }
+
+  return cloudinary.utils.private_download_url(publicId, COMPLAINT_PHOTO_FORMAT, {
+    resource_type: "image",
+    type: "authenticated",
+    expires_at: Math.round(Date.now() / 1000) + expiresInSeconds,
+  });
+}

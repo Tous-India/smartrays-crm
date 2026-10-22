@@ -2,7 +2,8 @@ import { Router } from "express";
 import multer from "multer";
 import authenticate from "../../middlewares/authenticate.middleware.js";
 import { authorize } from "../../middlewares/authorize.middleware.js";
-import { create, list, assign, changeStatus, addComment, addAttachment } from "./ticket.controller.js";
+import { create, list, detail, assign, changeStatus, addComment, addAttachment, runEscalations } from "./ticket.controller.js";
+import { verifyMachineToken } from "../../middlewares/machineToken.middleware.js";
 import {
   validateCreateTicketInput,
   validateListQuery,
@@ -23,6 +24,17 @@ ticketRouter.post("/", authenticate, authorize("tickets", "create"), validateCre
 // Permission checked inside listTickets per the requested ?scope=, not at
 // the route level — same reasoning as GET /leave and GET /travel-logs.
 ticketRouter.get("/", authenticate, validateListQuery, list);
+
+// Machine-only (Vercel Cron, daily) — registered before "/:id" so the path is
+// never read as a ticket id. GET for Vercel Cron, POST for manual runs.
+const verifyComplaintCronToken = verifyMachineToken({
+  notConfiguredMessage: "Complaint escalation is not configured",
+  invalidMessage: "Invalid or missing cron token",
+});
+ticketRouter.get("/escalations/run", verifyComplaintCronToken, runEscalations);
+ticketRouter.post("/escalations/run", verifyComplaintCronToken, runEscalations);
+
+ticketRouter.get("/:id", authenticate, detail);
 
 // Admin/manager only.
 ticketRouter.patch("/:id/assign", authenticate, authorize("tickets", "assign"), validateAssignInput, assign);

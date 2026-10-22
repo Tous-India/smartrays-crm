@@ -27,6 +27,9 @@ const TEST_ENV_DEFAULTS = {
   SMTP_USER: "test@smartrayssolutions.com",
   SMTP_PASSWORD: "test-smtp-password",
   SMTP_FROM: "Smartrays CMS <no-reply@smartrayssolutions.com>",
+  // Complaint escalations run on request activity in production; tests call
+  // them explicitly instead, so no request sends notifications on the side.
+  COMPLAINT_CHECKS_ON_ACTIVITY: "false",
 };
 
 for (const [name, value] of Object.entries(TEST_ENV_DEFAULTS)) {

@@ -7,12 +7,28 @@ import {
   changeTicketStatus,
   addTicketComment,
   addTicketAttachment,
+  getTicketDetail,
 } from "./ticket.service.js";
+import { runComplaintChecks } from "./ticketEscalation.service.js";
 
 export const create = asyncWrapper(async (req, res) => {
   const ticket = await createTicket(req.body, req.user);
 
   res.status(201).json(new ApiResponse(201, ticket, "Ticket raised successfully"));
+});
+
+export const detail = asyncWrapper(async (req, res) => {
+  const ticket = await getTicketDetail(req.params.id, req.user);
+
+  res.status(200).json(new ApiResponse(200, ticket, "Ticket fetched successfully"));
+});
+
+// Vercel Cron's daily backstop for complaint escalations + the admin summary
+// (ticketEscalation.service.js explains the two triggers).
+export const runEscalations = asyncWrapper(async (req, res) => {
+  const summary = await runComplaintChecks();
+
+  res.status(200).json(new ApiResponse(200, summary, "Complaint checks completed"));
 });
 
 export const list = asyncWrapper(async (req, res) => {

@@ -1,6 +1,17 @@
 import mongoose from "mongoose";
 
-const TICKET_CATEGORIES = ["new_project", "existing_client_query", "other"];
+// The last three come from the customer complaint link (2026-10-22): the
+// problem types a customer picks. "other" is shared by both sets.
+const COMPLAINT_CATEGORIES = ["sales_billing", "technical", "installation", "other"];
+const TICKET_CATEGORIES = ["new_project", "existing_client_query", "other", "sales_billing", "technical", "installation"];
+// Where the ticket came from. "complaint_link" = the customer's public link,
+// raised with no login (publicComplaint.service.js).
+const TICKET_SOURCES = ["internal", "portal", "complaint_link"];
+const CALLBACK_TIMES = ["morning", "afternoon", "evening", "anytime"];
+// Escalation steps (ticketEscalation.service.js): not acknowledged in time,
+// or not resolved in time — first the assignee's manager, then the admins.
+const ESCALATION_KINDS = ["acknowledge", "resolve"];
+const ESCALATION_LEVELS = ["manager", "admin"];
 const TICKET_STATUSES = ["open", "in_progress", "resolved", "closed"];
 // Not a lifecycle enum — just the two kinds of entry `history[]` holds
 // (§6.6: "timeline of status changes/comments").
@@ -12,10 +23,16 @@ const ticketHistoryEntrySchema = new mongoose.Schema({
     enum: TICKET_HISTORY_TYPES,
     required: true,
   },
+  // Null only for an entry written by a customer through the complaint link,
+  // who has no user account — `byCustomer` is true for exactly those.
   authorId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
-    required: true,
+    default: null,
+  },
+  byCustomer: {
+    type: Boolean,
+    default: false,
   },
   // Present for every "comment" entry (the actual text) and optionally
   // alongside a "status_change" entry (a note explaining the change).
@@ -111,13 +128,77 @@ const ticketSchema = new mongoose.Schema(
       type: [ticketHistoryEntrySchema],
       default: [],
     },
+    // --- Customer complaint link (2026-10-22) — all optional, absent on
+    // tickets raised before it existed. ---
+    // The number the customer is told ("Complaint no. 1004"). Never the _id:
+    // nothing public ever carries an internal id.
+    number: {
+      type: Number,
+      default: undefined,
+    },
+    source: {
+      type: String,
+      enum: TICKET_SOURCES,
+      default: "internal",
+    },
+    callbackTime: {
+      type: String,
+      enum: [...CALLBACK_TIMES, null],
+      default: null,
+    },
+    // Photos the customer attached. Private (Cloudinary "authenticated"),
+    // shown to staff through short-lived signed links only.
+    customerPhotos: {
+      type: [
+        {
+          publicId: { type: String, required: true },
+          uploadedAt: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
+    },
+    // First time anyone moved it off "open"; when it reached resolved/closed.
+    acknowledgedAt: {
+      type: Date,
+      default: null,
+    },
+    resolvedAt: {
+      type: Date,
+      default: null,
+    },
+    // Each (kind, level) is written at most once — the record that the
+    // reminder was sent, and to whom.
+    escalations: {
+      type: [
+        {
+          kind: { type: String, enum: ESCALATION_KINDS, required: true },
+          level: { type: String, enum: ESCALATION_LEVELS, required: true },
+          notifiedUserIds: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+          at: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
+    },
   },
   {
     timestamps: true,
   }
 );
 
+ticketSchema.index({ number: 1 }, { unique: true, partialFilterExpression: { number: { $type: "number" } } });
+ticketSchema.index({ customerId: 1, source: 1, createdAt: -1 });
+ticketSchema.index({ status: 1, createdAt: 1 });
+
 const Ticket = mongoose.model("Ticket", ticketSchema);
 
 export default Ticket;
-export { TICKET_CATEGORIES, TICKET_STATUSES, TICKET_HISTORY_TYPES };
+export {
+  TICKET_CATEGORIES,
+  TICKET_STATUSES,
+  TICKET_HISTORY_TYPES,
+  COMPLAINT_CATEGORIES,
+  TICKET_SOURCES,
+  CALLBACK_TIMES,
+  ESCALATION_KINDS,
+  ESCALATION_LEVELS,
+};

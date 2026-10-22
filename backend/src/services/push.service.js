@@ -111,6 +111,9 @@ const PRESENTATION = {
   attendance_break_in: { title: "Break", channelId: CHANNELS.ATTENDANCE },
   attendance_break_out: { title: "Break over", channelId: CHANNELS.ATTENDANCE },
   shift_open_reminder: { title: "Still checked in?", channelId: CHANNELS.REMINDERS },
+  complaint_assigned: { title: "New customer complaint", channelId: CHANNELS.WORK },
+  complaint_escalated: { title: "Complaint waiting", channelId: CHANNELS.WORK },
+  complaint_daily_summary: { title: "Complaints today", channelId: CHANNELS.GENERAL },
 };
 
 export function presentationFor(type) {

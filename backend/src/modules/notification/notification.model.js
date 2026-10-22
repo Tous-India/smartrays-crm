@@ -33,6 +33,11 @@ const NOTIFICATION_TYPES = [
   // §7.74 — a shift still open well past a normal length: "did you forget
   // to check out?" Sent once per shift, to the employee.
   "shift_open_reminder",
+  // Customer complaint link (2026-10-22) — ticket/publicComplaint.service.js
+  // and ticket/ticketEscalation.service.js.
+  "complaint_assigned",
+  "complaint_escalated",
+  "complaint_daily_summary",
 ];
 
 const notificationSchema = new mongoose.Schema(

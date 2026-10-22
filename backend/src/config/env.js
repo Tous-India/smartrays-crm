@@ -173,6 +173,13 @@ export const env = {
   // these describe a working day, not a heartbeat.
   shiftReminderAfterHours: Number(process.env.SHIFT_REMINDER_AFTER_HOURS) || 10,
   trackingStopAfterHours: Number(process.env.TRACKING_STOP_AFTER_HOURS) || 12,
+  // Customer complaints (2026-10-22) — ticketEscalation.service.js. Not
+  // picked up within the first, or not resolved within the second: the
+  // assignee's manager is told; still not done the third figure later, the
+  // admins are told. Hours.
+  complaintAcknowledgeHours: Number(process.env.COMPLAINT_ACKNOWLEDGE_HOURS) || 4,
+  complaintResolveHours: Number(process.env.COMPLAINT_RESOLVE_HOURS) || 48,
+  complaintAdminAfterHours: Number(process.env.COMPLAINT_ADMIN_AFTER_HOURS) || 4,
   // VAPID keypair for Web Push (§6.7/§3) — see src/services/webPush.service.js.
   vapidPublicKey: process.env.VAPID_PUBLIC_KEY,
   vapidPrivateKey: process.env.VAPID_PRIVATE_KEY,

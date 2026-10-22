@@ -1,5 +1,6 @@
 import asyncWrapper from "../../utils/asyncWrapper.js";
 import ApiResponse from "../../utils/ApiResponse.js";
+import { kickComplaintChecks } from "../ticket/ticketEscalation.service.js";
 import {
   subscribe,
   unsubscribe,
@@ -46,6 +47,9 @@ function parseTypesParam(rawType) {
 }
 
 export const list = asyncWrapper(async (req, res) => {
+  // The web's bell polls this all day — one of the "on activity" triggers for
+  // complaint escalations (throttled, fire-and-forget; ticketEscalation.service.js).
+  kickComplaintChecks();
   const unreadOnly = req.query.unreadOnly === "true";
   const types = parseTypesParam(req.query.type);
   const notifications = await listNotifications(req.user._id, unreadOnly, types);
