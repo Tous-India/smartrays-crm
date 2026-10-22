@@ -6473,9 +6473,9 @@ Built 2026-09-22 (backend `6c64573`; app tracking stop in the same step). Tests:
 (reminder once, not for a fresh or closed shift, the record untouched byte for byte, both
 triggers), 3 app (stops past the limit, the limit is the server's, within the limit tracks).
 
-*Mobile (React Native Android) backend preparation — bearer auth, FCM, batched pings + accuracy — is planned separately in `.context/mobile-backend-plan.md` (2026-09-19, plan only, nothing built).*
+*Mobile (React Native Android) backend preparation — bearer auth, FCM, batched pings + accuracy — is planned separately in `.context/mobile-backend-plan.md` (2026-09-19; all three items built and verified 2026-09-21/22).*
 
-*The React Native Android app (employee + manager only; screens and app-specific concerns) is planned in `.context/app-plan.md` (2026-09-19, plan only, nothing built).*
+*The React Native Android app (employee + manager only; screens and app-specific concerns) is planned in `.context/app-plan.md` (2026-09-19; phases 1–5 built and verified on the emulator 2026-09-21/23, store phase not started — status at the top of that file).*
 
 *Supersedes the raw module list in `.context/smartrays.md` for scope/data-model/API detail.
 `.context/smartrays.md` remains authoritative for tech stack, coding standards, and folder

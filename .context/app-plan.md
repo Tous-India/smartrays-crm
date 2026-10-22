@@ -1,6 +1,17 @@
 # Smartrays CRM — React Native Android app plan (2026-09-19)
 
-**Status: PLAN ONLY. Nothing here is built.** Employee and manager only.
+**Status (2026-10-22): phases 1–5 of §6 built, verified on the emulator (Pixel 8, Android 17)
+against the local backend; phase 6 (store) not started.** Employee and manager only. No physical
+device run yet — see §5 item 9.
+
+| Phase (§6) | State |
+|---|---|
+| 1 — Foundation | **Built, verified.** Sign-in + 2FA + remember-device, per-role navigation, keychain tokens, silent refresh, profile, FCM registration and tap routing. **Not built:** the in-app notifications list (`GET /notifications`). |
+| 2 — Shift core | **Built, verified.** Camera check-in/out, the native Kotlin foreground service with its own SQLite queue and batch flush (§1.3, `final-plan.md` §7.73), OEM battery screen, prominent disclosure with consent recorded on the server (app `8a316f7`, backend `1c05581`, web `852a7ff`), reboot receiver and server re-check (app `2bbfb86`), tracking stop on a long-open shift (`final-plan.md` §7.74). |
+| 3 — Employee self-service | **Built, verified:** leave (balance, apply, my requests), attendance history, payslips. **Not built:** the offline read cache and the offline leave draft (§3.3) — offline, actions stay visible and disabled with *No connection*. |
+| 4 — Manager layer | **Built, verified.** Team tab: Today, Map, Services, Leave. |
+| 5 — Tasks | **Built, verified.** My Services (To Do / Completed) and the manager's create/assign — on the Services module (`final-plan.md` §7.72). |
+| 6 — Store | **Not started.** Needs the privacy policy (§4.3) first. |
 
 Builds on `.context/mobile-backend-plan.md` (bearer auth + refresh, FCM, batched pings with
 accuracy) — those three are assumed, not re-planned. `final-plan.md` carries one cross-reference
@@ -333,9 +344,10 @@ whoever owns the policy wording, not something this plan decides.
 | 3 | **Bearer auth + refresh** | planned, `mobile-backend-plan.md` §1 | nothing in the app can call the API without it |
 | 4 | **FCM push** | planned, `mobile-backend-plan.md` §2 | §3.4; also the launch-time reason to open the app |
 | 5 | **Batched pings + accuracy** | planned, `mobile-backend-plan.md` §3 | §1.5 has nothing to flush to without it; §1.2 sends accuracy for nothing |
-| 6 | **Services module** | unbuilt (audit 2026-09-19); a new module, not an extension | the Tasks tab on both roles and the manager's assign screen |
+| 6 | **Services module** | **built** — `final-plan.md` §7.72 (2026-09-19) | the Tasks tab on both roles and the manager's assign screen |
 | 7 | **Privacy policy URL** (§4.3) | none exists | store listing, declaration form, disclosure link |
-| 8 | Firebase project + `google-services.json`; tracking-library Android licence | not started | §1.3, §3.4 |
+| 8 | Firebase project + `google-services.json` | **done** — FCM verified end to end 2026-09-22 (`mobile-backend-plan.md` §2); `google-services.json` is gitignored and restored on each machine | §3.4 |
+| 9 | **Does the free tracking engine survive OEM battery managers over a full shift?** | **open** — verified on the emulator only; needs real Xiaomi, Oppo/Realme, Vivo and Samsung devices through a whole shift | §1.3, §1.4. No licence is needed: the paid Transistorsoft SDK was considered and **rejected**; the app runs its own native Kotlin foreground service with its own SQLite queue (`final-plan.md` §7.73). If that engine does not survive, revisiting the paid SDK (~$399, perpetual, one app) is the fallback |
 
 1 and 2 are independent of the app and should start first; 3–5 are the backend plan in its stated
 order; 6 can run in parallel with the app's early phases; 7 needs whoever owns the company's
