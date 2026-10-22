@@ -162,3 +162,80 @@ API calls, 0 px sideways scroll on every page.** The app was not walked (no emul
 
 Test photos uploaded to the production Cloudinary account during verification (3, all under
 `smartrays-dev/`) were **deleted by id**; the folder is empty.
+
+### Phase 4 — late fixes (19:50)
+- #10 fixed `132e10f`: `/customers` shows "Not authorized" without customers.view, before any fetch.
+- #13 fixed `147b31f`: frontend `testTimeout` 15 s (was 5 s). One file still flakes **only under
+  full-suite load** on this 7.7 GB laptop: `UserManagementPage.test.jsx` deactivate tests (27/27 when
+  run alone; the same file also failed in the first full run, before any of tonight's web changes).
+
+---
+
+## FINAL REPORT — Instruction #1 (2026-10-22, 19:55 IST)
+**Status: done**, except the device/emulator part, which this machine cannot run (see Blocked).
+35 local commits on `backup/full-2026-09-25` (`3dd2a30` → this one). **Nothing pushed, nothing
+deployed, no Vercel change, production MongoDB never touched.**
+
+### Built and verified
+1. **Local database (Phase 1)** — MongoDB 8.0.17 on 127.0.0.1; a guard that refuses any non-local
+   database outside production unless `ALLOW_REMOTE_DB=true`; `npm run seed:demo -- --reset` with
+   realistic fake data (9 people, 2 teams, 21 leads, 8 customers, payments, services, leave, 30 days of
+   attendance + 21k pings, 8 site visits). Password `Demo@1234`, emails `@demo.smartrays.test`.
+2. **Customer complaint link (Phase 2)** — per-customer link (copy / WhatsApp share in one click),
+   phone-friendly public page with Hindi lines, routing to account owner / project manager / admin,
+   push + badge for the assignee, status on the same link, escalation 4 h / 48 h → manager → admins,
+   one admin summary a day, rate limits, private photos. Web + backend verified end to end in Chrome;
+   app screens built (Jest only).
+3. **Verified site visits (Phase 3)** — assign on a map; Arrived / photos / Done accepted only at the
+   site (accuracy-aware fence, open shift, live photo, ≥1 photo); verdicts Verified / Left early /
+   Not at site / At site now / Not started computed from the route; office view next to the day's
+   route. Web + backend verified in Chrome; the app's server calls verified with curl; app screens
+   Jest only.
+4. **Issues (Phase 4)** — 18 logged; 9 fixed tonight, including a likely-live HIGH bug (password-reset
+   pages unreachable when signed out). See the Phase 4 table.
+5. **Installation stages (Phase 5)** — design only, `.context/project-stages-plan.md`.
+
+Tests at the end: **backend 1214/1214**, **app 156/156**, **web 969/973 in a full run** (the 4 are
+the load-flaky file above; 27/27 alone). Every new test was shown failing before its change.
+
+### Still broken / not done
+- **App not run on a device or emulator** (no hypervisor, not admin, no Android SDK here).
+- Live map base layer watermark (CARTO) — left open as you said.
+- Phase 4 open items: #3 manager customer visibility, #4 payroll mid-month warning, #5 attendance
+  rate, #11 date formats, #12 leads cards on phones, #14 lint rule, #15 unused mongodb@3.7, #16 cron plan.
+- The other open items from earlier (dev/prod split in production, privacy policy, Play Store,
+  production crons, VAPID key, mileage rate, photo consent, ticket categories) — untouched as instructed.
+
+### Questions waiting for you
+1. **Push / deploy** — review the 35 commits and say go. Before deploying: on Vercel set `CRON_SECRET`
+   (or `ATTENDANCE_CLEANUP_TOKEN`) so the daily complaint check can run; optional `COMPLAINT_*_HOURS`,
+   `VISIT_RADIUS_METERS`; check the Vercel plan allows the crons in `vercel.json` (one is hourly).
+2. **Escalation timings** — keep 4 h (not picked up) / 48 h (not resolved) / +4 h to admins, and the
+   9 AM daily summary?
+3. **"Something else" complaints** go to the account owner. OK, or to the admin?
+4. **Manager customer visibility** — should a manager also see customers where their team is the
+   *project manager* (today: owner only, so the installation manager sees none)? Permission change.
+5. **Visit radius 200 m** and "Arrived only after checking in" — OK?
+6. **Complaint form** — add an optional "your name / phone" field (companies have several contacts)?
+7. **Hindi lines** on the customer page — keep?
+8. **Payroll mid-month warning** and the **attendance-rate fix** — may I change these? (Both touch
+   areas you reserved.)
+9. **Cloudinary** — a free separate account for development, so test photos never touch production's?
+10. **Remove the unused `mongodb@3.7`** dependency?
+11. **Device testing** — install Android Studio + JDK 17 and enable Windows Hypervisor Platform (admin,
+    reboot), or plug in a real Android phone (better on 7.7 GB RAM).
+12. The **15 questions** at the end of `.context/project-stages-plan.md` (§9).
+
+### Recommended next
+1. Review and deploy Phases 2–3 together with the password-reset fix (it is likely broken on live).
+2. Test the app on one real phone: complaint push → I'm on it; a site visit at a real address;
+   tracking through a full shift on a Xiaomi/Oppo/Vivo (the open OEM question).
+3. Split dev and production databases on the server side too (locally it is now enforced).
+4. Then the stage tracker from `project-stages-plan.md`, once §9 is answered.
+
+### Local machine state (for whoever picks this up)
+Running as background processes of this session (they stop when the session ends): MongoDB
+(`D:\Tools\mongodb`, data `D:\Tools\mongodb-data`), backend on :5000, frontend on :5173.
+`backend/.env.local` = the Vercel pull with local overrides (local `MONGODB_URI`, `NODE_ENV=development`,
+`VERCEL=1`, `CLOUDINARY_FOLDER_ROOT=smartrays-dev`, a local-only `CRON_SECRET`). Browser scripts used
+for verification are in `D:\Tools\verify` (outside the repo).
