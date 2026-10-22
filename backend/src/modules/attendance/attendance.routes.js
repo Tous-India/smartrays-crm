@@ -2,8 +2,6 @@ import { Router } from "express";
 import multer from "multer";
 import authenticate from "../../middlewares/authenticate.middleware.js";
 import { authorizeAny, requireAdmin } from "../../middlewares/authorize.middleware.js";
-import ApiError from "../../utils/ApiError.js";
-import { env } from "../../config/env.js";
 import {
   checkIn,
   checkOut,
@@ -32,6 +30,7 @@ import {
   validateMarkAttendanceStatusInput,
   validateRosterStatusInput,
 } from "./attendance.validation.js";
+import { verifyMachineToken } from "../../middlewares/machineToken.middleware.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -145,32 +144,12 @@ attendanceRouter.post(
  * running unauthenticated: an unset secret must never mean "open to
  * everyone" on an endpoint whose entire job is deleting data.
  */
-function verifyAttendanceCleanupToken(req, res, next) {
-  // Read from `process.env` at REQUEST time, not from the `env` snapshot
-  // taken at import time. Two reasons: a serverless invocation can be handed
-  // its environment per-request, and reading live means the guard doesn't
-  // depend on module import ORDER (which otherwise makes this endpoint
-  // untestable — `config/env.js` would already have been imported, and
-  // frozen, before a test could set the variable).
-  const sharedSecret = process.env.ATTENDANCE_CLEANUP_TOKEN || env.attendanceCleanupToken;
-  const cronSecret = process.env.CRON_SECRET;
-
-  if (!sharedSecret && !cronSecret) {
-    throw new ApiError(503, "Attendance cleanup is not configured");
-  }
-
-  const providedToken = req.headers["x-webhook-token"] || req.query.token;
-  const bearer = (req.headers.authorization || "").replace(/^Bearer /, "");
-
-  const matchesShared = Boolean(sharedSecret) && providedToken === sharedSecret;
-  const matchesCron = Boolean(cronSecret) && bearer === cronSecret;
-
-  if (!matchesShared && !matchesCron) {
-    throw new ApiError(401, "Invalid or missing cleanup token");
-  }
-
-  next();
-}
+// The check itself lives in middlewares/machineToken.middleware.js (moved
+// there unchanged, 2026-10-22, so the complaint escalations share it).
+const verifyAttendanceCleanupToken = verifyMachineToken({
+  notConfiguredMessage: "Attendance cleanup is not configured",
+  invalidMessage: "Invalid or missing cleanup token",
+});
 
 attendanceRouter.post("/cleanup", verifyAttendanceCleanupToken, cleanup);
 attendanceRouter.get("/cleanup", verifyAttendanceCleanupToken, cleanup);
