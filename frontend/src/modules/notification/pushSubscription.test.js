@@ -57,12 +57,17 @@ function stubPushSupport({ permission = "default", existing = null } = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   window.localStorage.clear();
+  // A fixed, test-only public key (the same one the backend fixtures use), so
+  // these tests never depend on what a developer's .env happens to hold —
+  // with no VITE_VAPID_PUBLIC_KEY locally, four of them failed (2026-10-22).
+  vi.stubEnv("VITE_VAPID_PUBLIC_KEY", "BMI_K3EwF0pYWhlolXL8edqnU4fBhH-7jHpPEASE8HPnl1O_dQKkKBI2sl6D_0PRhwo73nh2lvYM6u7WJlUXCMY");
   notificationApi.subscribeToPush.mockResolvedValue({ data: {} });
   notificationApi.unsubscribeFromPush.mockResolvedValue({ data: {} });
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
 });
 
 describe("support and permission reporting", () => {
