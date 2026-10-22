@@ -3,6 +3,8 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
+    // Required env vars with dummy values, so no test depends on a local .env.
+    setupFiles: ["./tests/setup/testEnv.js"],
     // Starting a MongoMemoryServer per test file can take a few seconds.
     hookTimeout: 30000,
     testTimeout: 15000,

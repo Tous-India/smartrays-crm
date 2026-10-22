@@ -1,8 +1,15 @@
 import dotenv from "dotenv";
 
 // Load shared defaults first, then let .env.local override anything on this machine.
-dotenv.config();
-dotenv.config({ path: ".env.local", override: true });
+// Not under Vitest: tests set every variable they need themselves
+// (tests/helpers/testDb.js and the individual test files), and `override: true`
+// would silently replace those with whatever a developer's .env.local holds —
+// production keys included. That made 11 lead-intake tests fail on a machine
+// whose .env.local carried a WEBSITE_LEAD_INTAKE_TOKEN (2026-10-22).
+if (!process.env.VITEST) {
+  dotenv.config();
+  dotenv.config({ path: ".env.local", override: true });
+}
 
 // Only variables the app needs at boot today are required here.
 // CREDENTIALS_ENCRYPTION_KEY was added 2026-07-13 alongside the customer
