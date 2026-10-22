@@ -8,6 +8,7 @@
     "dev": "nodemon server.js",
     "start": "node server.js",
     "seed:admin": "node src/scripts/seedAdmin.js",
+    "seed:demo": "node src/scripts/seedDemoData.js",
     "seed:permission-templates": "node src/scripts/seedPermissionTemplates.js",
     "backfill:lead-client-type": "node src/scripts/backfillLeadClientType.js",
     "migrate:attendance-photos": "node src/scripts/migrateAttendancePhotosToAuthenticated.js",
