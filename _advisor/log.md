@@ -131,3 +131,34 @@ administrator, and there is no JDK/Android SDK. Running the app needs you (admin
 and Android Studio (SDK + emulator), enable "Windows Hypervisor Platform" (Windows Features) and
 reboot. RAM is 7.7 GB — an emulator will be tight; a real Android phone over USB is the better
 test. All app changes tonight are covered by Jest only.
+
+### Phase 4 — Find and fix issues: DONE (19:45)
+Walked every page as **admin** (18 pages), **manager** (13) and **employee** (13), each at 1280 and
+390 px in real Chrome, recording console errors, failed API calls and sideways scroll; then
+exercised the main actions (complaint flow, visits, pay run, reports PDF/Excel for all 6 modules,
+live map/history, new-lead form, leave approval). Admin and manager: **0 console errors, 0 failed
+API calls, 0 px sideways scroll on every page.** The app was not walked (no emulator).
+
+| # | Sev | Issue | Status |
+|---|---|---|---|
+| 1 | HIGH | Signed-out visitors were bounced from `/forgot-password` and `/reset-password` to login — the emailed reset link could not be used (likely live in production) | **Fixed** `9241406` |
+| 2 | HIGH | Backend tests read the developer's `.env.local` (11 failures here; real keys loaded in tests) | **Fixed** `cf46312` |
+| 3 | HIGH (product) | Managers see customers by **owner** only: the installation manager (whose team are project managers) sees **zero** customers | **Question for you** (Q4) — not changed (permissions) |
+| 4 | MED | Payroll "Run payroll" for the **current, unfinished** month pays every day of the month (only marked absences deduct); no warning | **Not changed** (payroll) — recommend a warning |
+| 5 | MED | Attendance "Attendance Rate (of 22 working days)" divides the records in view by the month's weekdays — in the org-wide "Today" view 3 people present shows **13.6 %** | **Not changed** (attendance figure) — recommend hiding it unless one person/month is selected |
+| 6 | MED | Header check-in / break / check-out were icon-only (meaning only in a hover tooltip) | **Fixed** `d2e1cb6` |
+| 7 | MED | Leave Approve/Decline were a bare tick and cross | **Fixed** `defcad5` |
+| 8 | MED | Dashboard "Open Tickets" widget pointed nowhere and counted "unassigned" | **Fixed** `eef9ef9` → "Customer complaints": Waiting / Overdue / link |
+| 9 | LOW | Employee opening `/payments` by address: uncaught 403 error behind "Not authorized" | **Fixed** `444ac57` |
+| 10 | LOW | Employee opening `/customers` by address: two 403 API calls (page itself fine) | Open |
+| 11 | LOW | Dates use the browser's locale (`toLocaleString()` in ~20 places): a US-English browser shows 10/23/2026, 1:00:00 PM | Open — one shared en-IN formatter recommended |
+| 12 | LOW | Leads page on a phone: 9 "Needs attention" cards before the table | Open |
+| 13 | LOW | Frontend tests near the 5 s timeout are flaky on this laptop (customer wizard, lead call log) | Open — raise `testTimeout` |
+| 14 | LOW | ESLint `react-hooks/set-state-in-effect` fails across existing hooks (and new code following them) | Open — repo-wide decision |
+| 15 | LOW | Unused, end-of-life `mongodb@3.7` dependency in backend `package.json` (nothing imports it) | Open — remove with your OK (changes the lockfile) |
+| 16 | INFO | `vercel.json` already had an **hourly** cron; Vercel Hobby allows only daily | Open (deploy-time) |
+| 17 | INFO | Live map base layer shows "API KEY REQUIRED" (CARTO) | Left open as you instructed |
+| 18 | INFO | Global gotcha: antd's unlayered reset beats Tailwind on `<button>` text colour and `<p>` margins | Worked around in new code; noted |
+
+Test photos uploaded to the production Cloudinary account during verification (3, all under
+`smartrays-dev/`) were **deleted by id**; the folder is empty.
