@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import PermissionGate from "../../../routes/PermissionGate";
 import CopyablePhoneCell from "../../../components/CopyablePhoneCell";
 import CustomerStatusToggleButton from "./CustomerStatusToggleButton";
+import ComplaintLinkButton from "../../complaint/components/ComplaintLinkButton";
 import {
   CUSTOMER_STATUS_COLORS,
   CUSTOMER_STATUS_LABELS,
@@ -112,9 +113,13 @@ function CustomersTable({
       title: "Actions",
       key: "actions",
       render: (_, customer) => (
-        <PermissionGate module="customers" action="edit">
-          <CustomerStatusToggleButton customer={customer} onChanged={onChanged} size="small" />
-        </PermissionGate>
+        <div className="flex items-center gap-2">
+          {/* One click copies this customer's complaint link (2026-10-22). */}
+          <ComplaintLinkButton customerId={customer._id} customerName={customer.companyName} compact />
+          <PermissionGate module="customers" action="edit">
+            <CustomerStatusToggleButton customer={customer} onChanged={onChanged} size="small" />
+          </PermissionGate>
+        </div>
       ),
     },
   ];

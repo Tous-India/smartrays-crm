@@ -24,6 +24,8 @@ export const MODULE_ROUTES = {
   leads: (id) => `/leads/${id}`,
   leave: () => "/attendance",
   attendance: () => "/attendance",
+  complaints: (id) => `/complaints/${id}`,
+  complaint_summary: () => "/complaints",
 };
 
 /**

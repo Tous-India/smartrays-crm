@@ -182,7 +182,7 @@ export async function sendDailyComplaintSummary(now = new Date()) {
       : `Customer complaints: ${newYesterday} new yesterday, ${open} open, ${overdue} overdue.`;
   const admins = await activeAdminsExcept(null);
   for (const adminId of admins) {
-    await createNotification(adminId, "complaint_daily_summary", message, { module: "complaints", id: null });
+    await createNotification(adminId, "complaint_daily_summary", message, { module: "complaint_summary", id: null });
   }
 
   return { sent: true, date };
