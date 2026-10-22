@@ -178,3 +178,32 @@ describe("non-401 responses are untouched", () => {
     expect(assignedHref).toBeNull();
   });
 });
+
+/**
+ * Public pages (2026-10-22). On every load the app asks GET /auth/me who is
+ * signed in; a visitor with no session gets 401 SESSION_EXPIRED — and the
+ * interceptor sent them to /login from every page except /login itself. That
+ * made /forgot-password and /reset-password (the emailed reset link)
+ * unreachable for exactly the people who need them, and would do the same to
+ * a customer's complaint link (/c/:token).
+ */
+describe("public pages are never redirected to /login", () => {
+  it.each(["/forgot-password", "/reset-password", "/c/AbCdEfGhIjKlMnOpQrStUvWxYz012345"])(
+    "stays on %s when the session check says SESSION_EXPIRED",
+    async (pathname) => {
+      window.location.pathname = pathname;
+      respondWith(401, SESSION_EXPIRED);
+
+      await expect(apiClient.get("/auth/me")).rejects.toBeTruthy();
+      expect(assignedHref).toBeNull();
+    }
+  );
+
+  it("still redirects from a page that needs a login", async () => {
+    window.location.pathname = "/complaints";
+    respondWith(401, SESSION_EXPIRED);
+
+    await expect(apiClient.get("/tickets")).rejects.toBeTruthy();
+    expect(assignedHref).toBe("/login");
+  });
+});

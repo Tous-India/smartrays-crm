@@ -33,6 +33,17 @@ export function registerUnauthorizedHandler(handler) {
  */
 const SESSION_EXPIRED = "SESSION_EXPIRED";
 
+// Pages anyone may open without a session (2026-10-22). The app asks
+// GET /auth/me on every load, and a signed-out visitor's 401 used to redirect
+// them to /login from everywhere but /login — so the emailed password-reset
+// link and the customer complaint link could never be opened.
+const PUBLIC_PATHS = ["/login", "/forgot-password", "/reset-password"];
+const PUBLIC_PREFIXES = ["/c/"];
+
+function isPublicPage(pathname) {
+  return PUBLIC_PATHS.includes(pathname) || PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -65,7 +76,7 @@ apiClient.interceptors.response.use(
     if (isUnauthorized && isSessionExpired) {
       onUnauthorized?.();
 
-      if (window.location.pathname !== "/login") {
+      if (!isPublicPage(window.location.pathname)) {
         window.location.href = "/login";
       }
     }
