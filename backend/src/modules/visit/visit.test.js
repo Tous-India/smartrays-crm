@@ -328,3 +328,24 @@ describe("Customer picker for assigning visits", () => {
     expect(options.map((option) => option.companyName)).toEqual(["Sharma Residence"]);
   });
 });
+
+describe("A visit's Service can only be completed by Done at the site", () => {
+  it("refuses Mark complete on the Service while the visit is not done; Done at the site completes it", async () => {
+    await openShift();
+    const visit = await visitAt();
+
+    const refused = await employeeAgent.patch(`/api/v1/services/${visit.serviceId}/status`).send({ status: "completed" }).expect(409);
+    expect(refused.body.message).toMatch(/at the site/i);
+    expect((await Service.findById(visit.serviceId)).status).toBe("todo");
+
+    await arrive(visit._id, AT_SITE).expect(200);
+    await photo(visit._id, AT_SITE).expect(201);
+    await complete(visit._id, AT_SITE).expect(200);
+    expect((await Service.findById(visit.serviceId)).status).toBe("completed");
+  });
+
+  it("leaves ordinary services alone", async () => {
+    const plain = await managerAgent.post("/api/v1/services").send({ title: "Call the vendor", assignedToId: String(employee._id) }).expect(201);
+    await employeeAgent.patch(`/api/v1/services/${plain.body.data._id}/status`).send({ status: "completed" }).expect(200);
+  });
+});

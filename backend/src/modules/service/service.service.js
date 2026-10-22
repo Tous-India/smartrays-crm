@@ -4,6 +4,7 @@ import { resolveDirectReportIds } from "../attendance/attendance.service.js";
 import { createNotification } from "../notification/notification.service.js";
 import Service, { SERVICE_STATUSES } from "./service.model.js";
 import User from "../user/user.model.js";
+import Visit from "../visit/visit.model.js";
 
 /**
  * WHO CAN SEE WHICH SERVICES (§7.72). Resolved here, once, and applied to
@@ -189,6 +190,17 @@ export async function changeServiceStatus(serviceId, status, requestingUser) {
 
   if (service.status === status) {
     return service;
+  }
+
+  // A site visit's Service is completed only by the visit's Done, tapped at
+  // the site (visit.service.js#completeVisit) — never by "Mark complete"
+  // from anywhere (2026-10-22). Ordinary services are unaffected.
+  if (status === "completed") {
+    // { completion: null } matches a null or a missing completion alike.
+    const unfinishedVisit = await Visit.exists({ serviceId: service._id, completion: null });
+    if (unfinishedVisit) {
+      throw new ApiError(409, "This is a site visit. It is completed by tapping Done at the site, in the app.");
+    }
   }
 
   service.status = status;
