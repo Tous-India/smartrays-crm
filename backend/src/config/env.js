@@ -89,6 +89,9 @@ export const env = {
   isProduction: process.env.NODE_ENV === "production",
   port: process.env.PORT,
   mongodbUri: process.env.MONGODB_URI,
+  // Outside production a remote MONGODB_URI is refused at connect time unless
+  // this is exactly "true" — see config/databaseGuard.js.
+  allowRemoteDb: process.env.ALLOW_REMOTE_DB,
   jwtSecret: process.env.JWT_SECRET,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN,
   cookieName: process.env.COOKIE_NAME,

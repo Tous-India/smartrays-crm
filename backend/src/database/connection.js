@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { env } from "../config/env.js";
+import { assertDatabaseTargetAllowed } from "../config/databaseGuard.js";
 
 // Cached across invocations — required once this app also runs on Vercel's
 // serverless Node runtime (backend/api/index.js), where every request can be
@@ -16,6 +17,19 @@ let cachedConnectionPromise = null;
 export async function connectDatabase() {
   if (cachedConnectionPromise) {
     return cachedConnectionPromise;
+  }
+
+  // Outside production, only a local database unless ALLOW_REMOTE_DB=true
+  // (config/databaseGuard.js). Checked before any connection is attempted.
+  try {
+    assertDatabaseTargetAllowed({
+      nodeEnv: env.nodeEnv,
+      mongodbUri: env.mongodbUri,
+      allowRemoteDb: env.allowRemoteDb,
+    });
+  } catch (error) {
+    console.error(error.message);
+    throw error;
   }
 
   cachedConnectionPromise = mongoose
