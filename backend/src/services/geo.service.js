@@ -25,3 +25,25 @@ export function haversineDistanceMeters(coordsA, coordsB) {
 function toRadians(degrees) {
   return (degrees * Math.PI) / 180;
 }
+
+/**
+ * The accuracy-aware geofence rule (mobile-backend-plan.md §3.6), in one
+ * place so attendance and site visits apply exactly the same test:
+ * - a fix less precise than `maxAccuracyMeters` cannot say where the person
+ *   is, so it is not evaluated at all (`evaluated: false`);
+ * - otherwise it is outside when `distance − accuracy > radius` — the NEAREST
+ *   position consistent with the fix must itself be outside.
+ * A fix with no `accuracy` (every web ping) is evaluated on distance alone.
+ */
+export function evaluateFixAgainstFence(center, coords, radiusMeters, maxAccuracyMeters) {
+  const hasAccuracy = typeof coords.accuracy === "number";
+
+  if (hasAccuracy && coords.accuracy > maxAccuracyMeters) {
+    return { evaluated: false, distanceMeters: haversineDistanceMeters(center, coords), outside: false };
+  }
+
+  const distanceMeters = haversineDistanceMeters(center, coords);
+  const effectiveDistance = hasAccuracy ? distanceMeters - coords.accuracy : distanceMeters;
+
+  return { evaluated: true, distanceMeters, outside: effectiveDistance > radiusMeters };
+}

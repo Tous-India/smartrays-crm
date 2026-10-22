@@ -3,7 +3,7 @@ import { can } from "../../helpers/permission.helper.js";
 import { env } from "../../config/env.js";
 import { uploadAttendancePhoto, deleteCloudinaryAsset, signedAttendancePhotoUrl } from "../../services/cloudinary.service.js";
 import { generateExcelReport, generatePdfReport, excludeInactiveOrDeletedRefs } from "../../services/report.service.js";
-import { haversineDistanceMeters } from "../../services/geo.service.js";
+import { evaluateFixAgainstFence } from "../../services/geo.service.js";
 import { generateAutoTravelLog } from "../transport/travelLog.service.js";
 import { createNotification } from "../notification/notification.service.js";
 import Attendance from "./attendance.model.js";
@@ -286,24 +286,27 @@ export async function applyGeofenceCheck(attendance, coords, now) {
       return;
     }
 
-    // Accuracy (mobile-backend-plan.md §3.6, 2026-09-21). Both branches are
-    // no-ops when the fix carries no `accuracy`, which is every web ping:
-    // 1. a fix less precise than GEOFENCE_MAX_ACCURACY_METERS cannot say
-    //    where the person is, so it is not evaluated at all;
-    // 2. the breach test becomes `distance − accuracy > radius` — the
-    //    NEAREST position consistent with the fix must itself be outside.
-    const hasAccuracy = typeof coords.accuracy === "number";
+    // Accuracy (mobile-backend-plan.md §3.6, 2026-09-21): the rule lives in
+    // geo.service.js#evaluateFixAgainstFence (shared with site visits,
+    // 2026-10-22, unchanged). A fix less precise than
+    // GEOFENCE_MAX_ACCURACY_METERS is not evaluated; otherwise it is outside
+    // when `distance − accuracy > radius`. No accuracy (every web ping) →
+    // distance alone, exactly as before.
+    const fence = evaluateFixAgainstFence(
+      checkInCoords,
+      coords,
+      Number(env.geofenceRadiusMeters),
+      Number(env.geofenceMaxAccuracyMeters)
+    );
 
-    if (hasAccuracy && coords.accuracy > Number(env.geofenceMaxAccuracyMeters)) {
+    if (!fence.evaluated) {
       return;
     }
 
-    const distance = haversineDistanceMeters(checkInCoords, coords);
-    const effectiveDistance = hasAccuracy ? distance - coords.accuracy : distance;
-    const radiusMeters = Number(env.geofenceRadiusMeters);
+    const distance = fence.distanceMeters;
     const openViolation = attendance.geofenceViolations.find((violation) => !violation.end);
 
-    if (effectiveDistance > radiusMeters) {
+    if (fence.outside) {
       if (openViolation) {
         openViolation.maxDistanceMeters = Math.max(openViolation.maxDistanceMeters, distance);
       } else {
