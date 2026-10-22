@@ -130,7 +130,11 @@ function HeaderAttendanceControl() {
               onClick={() =>
                 isOnBreak ? runBreakAction(breakOut, "Break ended") : setCaptureMode("check-in")
               }
-            />
+            >
+              {/* The word beside the icon from tablet width up (2026-10-22) —
+                  an unlabeled play button did not read as "Check in". */}
+              <span className="hidden sm:inline">{isOnBreak ? "Resume" : "Check in"}</span>
+            </Button>
           </Tooltip>
         )}
 
@@ -148,7 +152,9 @@ function HeaderAttendanceControl() {
                 loading={isSubmittingBreak}
                 aria-label="Pause"
                 onClick={() => runBreakAction(breakIn, "Break started")}
-              />
+              >
+                <span className="hidden sm:inline">Break</span>
+              </Button>
             </span>
           </Tooltip>
         )}
@@ -166,7 +172,9 @@ function HeaderAttendanceControl() {
                 disabled={isOnBreak}
                 aria-label="Check out"
                 onClick={() => setCaptureMode("check-out")}
-              />
+              >
+                <span className="hidden sm:inline">Check out</span>
+              </Button>
             </span>
           </Tooltip>
         )}

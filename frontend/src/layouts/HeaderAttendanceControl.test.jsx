@@ -158,6 +158,20 @@ describe("HeaderAttendanceControl — state machine", () => {
   });
 });
 
+describe("HeaderAttendanceControl — the buttons say what they do (2026-10-22)", () => {
+  it("shows the words Check in, Break and Check out beside the icons", async () => {
+    mockRecords([]);
+    const { unmount } = render(<HeaderAttendanceControl />);
+    expect(await screen.findByRole("button", { name: "Check in" })).toHaveTextContent("Check in");
+    unmount();
+
+    mockRecords([CHECKED_IN]);
+    render(<HeaderAttendanceControl />);
+    expect(await screen.findByRole("button", { name: "Pause" })).toHaveTextContent("Break");
+    expect(screen.getByRole("button", { name: "Check out" })).toHaveTextContent("Check out");
+  });
+});
+
 describe("HeaderAttendanceControl — actions reuse the existing flows", () => {
   it("Play opens the existing check-in capture modal — never a quiet photo-less check-in", async () => {
     mockRecords([]);
