@@ -101,7 +101,11 @@ function LeaveApprovalCards({
                       onConfirm={() => onApprove(leave)}
                     >
                       <Tooltip title="Approve">
-                        <Button type="text" size="small" icon={<CheckOutlined />} aria-label="Approve" />
+                        {/* The word beside the icon from tablet width up (2026-10-22): a bare
+                            tick and cross were easy to mix up. */}
+                        <Button type="text" size="small" icon={<CheckOutlined />} aria-label="Approve">
+                          <span className="hidden sm:inline">Approve</span>
+                        </Button>
                       </Tooltip>
                     </Popconfirm>
                   )}
@@ -114,7 +118,9 @@ function LeaveApprovalCards({
                         icon={<CloseOutlined />}
                         aria-label="Decline"
                         onClick={() => onDecline(leave)}
-                      />
+                      >
+                        <span className="hidden sm:inline">Decline</span>
+                      </Button>
                     </Tooltip>
                   )}
                   {canMarkAbsence && (

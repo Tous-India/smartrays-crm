@@ -290,6 +290,8 @@ describe("LeaveSection — approve/decline/mark-unapproved-absence/delete, permi
     expect(screen.getByRole("button", { name: "Approve" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Mark Unapproved Absence" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Delete" })).toBeInTheDocument();
+    // 2026-10-22: the two everyday actions carry their word, not only an icon.
+    expect(screen.getByRole("button", { name: "Approve" })).toHaveTextContent("Approve");
   });
 
   it("shows the 2x-deduction consequence directly in the confirm prompt, not a tooltip, before an admin confirms", async () => {
