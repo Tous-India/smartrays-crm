@@ -4,7 +4,7 @@ One section per instruction number, append-only. Format and protocol: `_advisor/
 
 ## Instruction #1 — Overnight build brief
 Started: 2026-10-22 17:40 IST
-Status: in progress (this section is updated as work proceeds; the final report is at the end)
+Status: done 2026-10-22 19:55 IST — see FINAL REPORT at the end of this section (device testing blocked)
 
 ### Progress
 - 17:35 Stopped the local backend: it was still connected to the PRODUCTION cluster from the
