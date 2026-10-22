@@ -91,3 +91,43 @@ could never be used. Reproduced in Chrome, fixed, 3 tests.
 - Hindi: I added one short Hindi line under each label on the customer page; easy to remove.
 - `backend/vercel.json` already had `open-shift-reminders` **hourly**; Vercel's Hobby plan allows
   only daily crons (noted in §7.74). The new complaint cron is daily. Check the plan before deploying.
+
+### Phase 3 — Verified site visits: DONE on backend + web + app (19:05); emulator blocked
+**Reused, not duplicated**: a visit **is a Service** (created through `createService` → assignee
+check, push, Services list; scope and "only the assignee" from Services — **no new permission
+keys**); the geofence test is the attendance rule, moved unchanged into
+`geo.service#evaluateFixAgainstFence` (attendance+location tests 199/199); the route is the
+existing location pings / history endpoint; photos use the same private-Cloudinary helper as complaints.
+
+What it does:
+- **Assign** (web, admin/manager): customer → what for (chips) → who → day → where exactly (the
+  customer's saved site, or "Find" the address on OpenStreetMap, or tap the map). The spot is saved
+  on the customer. A manager can pick customers their team owns **or project-manages** (the normal
+  customer list is by owner only, which showed the installation manager zero customers).
+- **App**: on that Service's screen — **I've arrived** → **Take a site photo** (back camera only,
+  no gallery) → **Mark visit done** (+ notes). Each press takes a fresh GPS fix; the server accepts
+  only inside the site's fence (`VISIT_RADIUS_METERS`, default 200 m; fixes vaguer than ±100 m
+  refused), Arrived only during an open shift, photos only if taken in the last 15 min, Done only
+  with ≥1 photo. Refusals read like "You are 19.3 km from the site. You can tap Arrived only at the
+  site." "Mark complete" can no longer finish a visit's Service from anywhere (server refuses too).
+- **Office view** `/visits` (sidebar "Site visits"): one day at a time, problems first, each with one
+  word and one sentence — **Verified** (arrived + done at site, route stayed), **Left early** (two
+  consecutive pings outside between Arrived and Done, or no Done by end of day), **Not at site**
+  (day passed with no Arrived — the app allows Arrived only at the site), **At site now**,
+  **Not started**. Opening a visit shows the site circle, that day's route, Arrived/Done/photo points,
+  the photos stamped with time and distance, and notes.
+
+Tests: backend 23 (all failing before), web 4, app 7 (all failing without the code). Suites:
+backend 1214 / web (complaint+visit+touched files) green / app 156/156.
+Real Chrome (local DB): seeded week shows Verified ×4, Left early ("phone left the site at 11:47"),
+Not at site (route went to Connaught Place instead of DLF Phase 3), At site, Not started; route
+drawn; assigning a visit through the form works for the installation manager; 0 px sideways scroll
+at 390. The app's calls run against the local backend as Deepak: photo at site accepted, Done from
+Delhi refused ("17.2 km from the site"), Done at site → Verified; web shows the stamped photo.
+Screenshots: `_advisor/screenshots/phase3-visits/`.
+
+**Blocked — emulator**: this laptop has no hypervisor enabled (HypervisorPresent=False), I am not an
+administrator, and there is no JDK/Android SDK. Running the app needs you (admin) to: install JDK 17
+and Android Studio (SDK + emulator), enable "Windows Hypervisor Platform" (Windows Features) and
+reboot. RAM is 7.7 GB — an emulator will be tight; a real Android phone over USB is the better
+test. All app changes tonight are covered by Jest only.
