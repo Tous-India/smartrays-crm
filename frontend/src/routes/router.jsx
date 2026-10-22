@@ -17,7 +17,10 @@ import AttendancePage from "../pages/AttendancePage";
 import AttendanceTeamPage from "../pages/AttendanceTeamPage";
 import PayrollPage from "../pages/PayrollPage";
 import PayslipDetailPage from "../pages/PayslipDetailPage";
-// Tickets is DEFERRED from the UI, 2026-08-07 — see the routes below.
+// Tickets is DEFERRED from the UI, 2026-08-07 — see the routes below. It
+// returns as "Complaints" (2026-10-22): the customer complaint link.
+import ComplaintsPage from "../modules/complaint/components/ComplaintsPage";
+import PublicComplaintPage from "../modules/complaint/components/PublicComplaintPage";
 import PaymentsPage from "../pages/PaymentsPage";
 import ServicesPage from "../modules/service/components/ServicesPage";
 import ReportsPage from "../pages/ReportsPage";
@@ -46,6 +49,9 @@ export const router = createBrowserRouter(
       <Route path="/login" element={<LoginPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
+      {/* Public, no login — a customer's complaint link (2026-10-22). Short
+          path because it is pasted into WhatsApp/SMS. */}
+      <Route path="/c/:token" element={<PublicComplaintPage />} />
 
       <Route element={<ProtectedRoute />}>
         <Route index element={<RootRedirect />} />
@@ -69,6 +75,8 @@ export const router = createBrowserRouter(
               deleted rather than commented out — restoring means recreating
               two 7-line files, re-adding their imports above, and
               uncommenting the nav block in `MainLayout.jsx`. */}
+          <Route path="complaints" element={<ComplaintsPage />} />
+          <Route path="complaints/:id" element={<ComplaintsPage />} />
           <Route path="payments" element={<PaymentsPage />} />
           <Route path="services" element={<ServicesPage />} />
           <Route path="reports" element={<ReportsPage />} />

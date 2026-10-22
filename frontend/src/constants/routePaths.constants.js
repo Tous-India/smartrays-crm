@@ -32,6 +32,8 @@ export const ROUTE_PATHS = {
   // because `AmcRenewalsDueWidget` still references it, and that file has
   // uncommitted work from a concurrent session. Its "View all AMC records"
   // link needs repointing at /customers as a follow-up; see frontend/README.
+  // Customer complaints (2026-10-22) — the Tickets backend, back in the UI.
+  COMPLAINTS: "/complaints",
   PAYMENTS: "/payments",
   SERVICES: "/services",
   REPORTS: "/reports",
