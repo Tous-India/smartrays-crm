@@ -9,5 +9,8 @@ export default defineConfig({
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.js'],
     globals: true,
+    // The multi-step form tests (customer wizard, lead call log, user form) take
+    // 4-6 s on a slower laptop and failed intermittently at the 5 s default.
+    testTimeout: 15000,
   },
 })
