@@ -106,7 +106,7 @@ describe("DashboardPage — role-based widget composition", () => {
     expect(screen.getByText("Recently Added Customers")).toBeInTheDocument();
     expect(screen.getByText("Present Today")).toBeInTheDocument();
     expect(screen.getByText("Pending Leave Requests")).toBeInTheDocument();
-    expect(screen.getByText("Open Tickets")).toBeInTheDocument();
+    expect(screen.getByText("Customer complaints")).toBeInTheDocument();
     expect(screen.getByText("AMC Renewals Due")).toBeInTheDocument();
     expect(screen.getByText("Payments This Month")).toBeInTheDocument();
     expect(screen.getByText("Payroll Status (This Month)")).toBeInTheDocument();
@@ -130,7 +130,7 @@ describe("DashboardPage — role-based widget composition", () => {
     renderPage();
 
     expect(await screen.findByText("Present Today")).toBeInTheDocument();
-    expect(screen.getByText("Open Tickets")).toBeInTheDocument();
+    expect(screen.getByText("Customer complaints")).toBeInTheDocument();
     expect(screen.getByText("AMC Renewals Due")).toBeInTheDocument();
     expect(screen.queryByText("Pending Leave Requests")).not.toBeInTheDocument();
     expect(screen.queryByText("Payments This Month")).not.toBeInTheDocument();
@@ -153,7 +153,7 @@ describe("DashboardPage — role-based widget composition", () => {
     expect(await screen.findByText("Leads Pipeline")).toBeInTheDocument();
     expect(screen.queryByText("Customers Overview")).not.toBeInTheDocument();
     expect(screen.queryByText("Recently Added Customers")).not.toBeInTheDocument();
-    expect(screen.queryByText("Open Tickets")).not.toBeInTheDocument();
+    expect(screen.queryByText("Customer complaints")).not.toBeInTheDocument();
   });
 
   it("shows the 'no widgets' message for a role with an empty candidate list (customer)", () => {
@@ -250,7 +250,7 @@ describe("DashboardPage — permission-gating overrides role defaults", () => {
     expect(screen.queryByText("Customers Overview")).not.toBeInTheDocument();
     expect(screen.queryByText("Recently Added Customers")).not.toBeInTheDocument();
     expect(screen.queryByText("Present Today")).not.toBeInTheDocument();
-    expect(screen.queryByText("Open Tickets")).not.toBeInTheDocument();
+    expect(screen.queryByText("Customer complaints")).not.toBeInTheDocument();
     expect(screen.queryByText("AMC Renewals Due")).not.toBeInTheDocument();
     expect(leadApi.listLeads).not.toHaveBeenCalled();
     expect(customerApi.listCustomers).not.toHaveBeenCalled();

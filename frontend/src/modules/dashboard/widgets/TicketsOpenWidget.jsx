@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Row, Col, Statistic } from "antd";
+import { overdueText } from "../../complaint/utils/complaintTime";
 import { usePermission } from "../../../hooks/usePermission";
 import { listTickets } from "../../ticket/api/ticketApi";
 import WidgetCard from "./WidgetCard";
@@ -14,7 +16,7 @@ import WidgetCard from "./WidgetCard";
 function TicketsOpenWidget() {
   const canView = usePermission("tickets", "view_all");
   const [openCount, setOpenCount] = useState(0);
-  const [unassignedCount, setUnassignedCount] = useState(0);
+  const [overdueCount, setOverdueCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -32,9 +34,12 @@ function TicketsOpenWidget() {
         if (cancelled) {
           return;
         }
-        const openTickets = response.data.data.filter((ticket) => ticket.status === "open");
-        setOpenCount(openTickets.length);
-        setUnassignedCount(openTickets.filter((ticket) => !ticket.assignedToId).length);
+        // 2026-10-22: customer complaints. "Waiting" = not picked up yet;
+        // "Overdue" = past the escalation rule (not picked up in 4 h, or not
+        // resolved in 48 h — complaintTime.js, the server's figures).
+        const tickets = response.data.data;
+        setOpenCount(tickets.filter((ticket) => ticket.status === "open").length);
+        setOverdueCount(tickets.filter((ticket) => overdueText(ticket)).length);
       })
       .catch((fetchError) => {
         if (!cancelled) {
@@ -57,29 +62,25 @@ function TicketsOpenWidget() {
   }
 
   return (
-    <WidgetCard title="Open Tickets" isLoading={isLoading} error={error} isEmpty={false}>
+    <WidgetCard title="Customer complaints" isLoading={isLoading} error={error} isEmpty={false}>
       <Row gutter={16}>
         <Col span={12}>
           <Statistic
-            title={<span className="text-xs text-gray-500">Open</span>}
+            title={<span className="text-xs text-gray-500">Waiting</span>}
             value={openCount}
             valueStyle={{ fontSize: 20 }}
           />
         </Col>
         <Col span={12}>
           <Statistic
-            title={<span className="text-xs text-gray-500">Unassigned</span>}
-            value={unassignedCount}
-            valueStyle={{ fontSize: 20 }}
+            title={<span className="text-xs text-gray-500">Overdue</span>}
+            value={overdueCount}
+            valueStyle={{ fontSize: 20, color: overdueCount > 0 ? "#cf1322" : undefined }}
           />
         </Col>
       </Row>
-      {/* The "View all tickets →" link was removed 2026-08-07 when Tickets
-          was deferred from the UI: /tickets no longer resolves, and a link to
-          a dead route is exactly the state AmcRenewalsDueWidget has been sat
-          in for weeks. The counts themselves still come from a live backend
-          that was never touched, so the widget keeps earning its place — it
-          just no longer offers a destination that does not exist. */}
+      {/* Tickets came back as Complaints (2026-10-22), so the link has a real destination again. */}
+      <Link to="/complaints" className="mt-3 inline-block">View complaints →</Link>
     </WidgetCard>
   );
 }
