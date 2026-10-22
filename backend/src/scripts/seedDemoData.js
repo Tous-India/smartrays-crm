@@ -6,6 +6,7 @@ import { connectDatabase } from "../database/connection.js";
 import { reconcileRoleTemplatesOnBoot } from "../modules/permission/permission.service.js";
 import { createUser } from "../modules/user/user.service.js";
 import { createContact, createContract, createCustomer } from "../modules/customer/customer.service.js";
+import Customer from "../modules/customer/customer.model.js";
 import User from "../modules/user/user.model.js";
 import Team from "../modules/team/team.model.js";
 import Lead from "../modules/lead/lead.model.js";
@@ -15,6 +16,7 @@ import Attendance from "../modules/attendance/attendance.model.js";
 import LocationPing from "../modules/location/location.model.js";
 import LocationConsent from "../modules/location/locationConsent.model.js";
 import Leave from "../modules/leave/leave.model.js";
+import Visit from "../modules/visit/visit.model.js";
 
 /**
  * Fills a LOCAL database with realistic, entirely FAKE demo data: an admin, two
@@ -68,6 +70,7 @@ const PLACES = {
   indirapuram: { lat: 28.6411, lng: 77.3714 },
   rohini: { lat: 28.7383, lng: 77.0822 },
   okhla: { lat: 28.5355, lng: 77.2732 },
+  connaughtPlace: { lat: 28.6315, lng: 77.2167 },
 };
 
 function dayStart(date) {
@@ -236,6 +239,9 @@ async function seedCustomers({ admin, salesHead, salesTeam, installHead, install
       await createContract(customer._id, { type: "yearly", amount: Math.round(spec.kw * 900), label: "Annual maintenance (AMC)", startDate: commissioningDate, renewalDate: new Date(commissioningDate.getFullYear() + 1, commissioningDate.getMonth(), commissioningDate.getDate()), termYears: 1 }, admin);
     }
 
+    // The site's map position, as if picked on the map at the first visit.
+    await Customer.updateOne({ _id: customer._id }, { $set: { siteLocation: PLACES[spec.place] } });
+
     customers.push({ customer, spec, projectValue });
   }
 
@@ -399,10 +405,35 @@ function planDay({ day, office, sites, openNow }) {
     fixes.push({ capturedAt: time, coords: { ...jitter(point, 25), accuracy: Math.round(between(4, 28)) } });
   }
 
-  return { checkInTime, checkOutTime, fixes };
+  return { checkInTime, checkOutTime, fixes, legs };
+}
+
+/**
+ * Site visits that match the route (2026-10-22): each is a Service (as the
+ * app creates it) plus a Visit whose Arrived / Done times come from the same
+ * planned day that produces the location pings, so the office view tells the
+ * truth about them. Scenarios: verified visits; one where the phone left
+ * before Done (Left early); one where the employee went to Connaught Place
+ * instead (Not at site); one at a site right now; one not started yet.
+ * Seeded visits carry no photos (there is nothing real to show).
+ */
+function planVisits(people, customers) {
+  const c = (index) => customers[index];
+  return [
+    { user: people.installTeam[0], daysAgo: 6, customer: c(1), purpose: "Panel cleaning", scenario: "verified" },
+    { user: people.installTeam[1], daysAgo: 5, customer: c(2), purpose: "Inverter fault check", scenario: "verified" },
+    { user: people.salesTeam[2], daysAgo: 4, customer: c(6), purpose: "Site survey", scenario: "verified" },
+    { user: people.installTeam[2], daysAgo: 3, customer: c(4), purpose: "Structure inspection", scenario: "left_early" },
+    { user: people.installTeam[1], daysAgo: 2, customer: c(0), purpose: "Inspection", scenario: "not_at_site" },
+    { user: people.installTeam[0], daysAgo: 1, customer: c(5), purpose: "Net-meter check", scenario: "verified" },
+    { user: people.installTeam[0], daysAgo: 0, customer: c(3), purpose: "Commissioning", scenario: "at_site" },
+    { user: people.installTeam[2], daysAgo: 0, customer: c(7), purpose: "AMC quarterly inspection", scenario: "not_started" },
+  ];
 }
 
 async function seedAttendanceAndPings(people, leaves, customers) {
+  const visitPlan = planVisits(people, customers);
+  const visitsToCreate = [];
   const fieldStaff = [
     { user: people.salesHead, office: PLACES.officeGurugram },
     { user: people.installHead, office: PLACES.officeNoida },
@@ -426,14 +457,29 @@ async function seedAttendanceAndPings(people, leaves, customers) {
     for (let back = DAYS_OF_HISTORY; back >= 0; back -= 1) {
       const day = addMinutes(today, -back * 24 * 60);
       const isToday = back === 0;
-      if (day.getDay() === 0) continue; // Sunday off
-      if (leaveDays.has(`${user._id}|${day.getTime()}`)) continue;
-      if (isToday && !onShiftNow.has(String(user._id))) continue;
-      if (!isToday && chance(0.05)) continue; // the odd unexplained absence
+      // A day with a planned visit always happens; otherwise the usual gaps.
+      const plannedVisit = visitPlan.find((visit) => String(visit.user._id) === String(user._id) && visit.daysAgo === back);
+      if (!plannedVisit) {
+        if (day.getDay() === 0) continue; // Sunday off
+        if (leaveDays.has(`${user._id}|${day.getTime()}`)) continue;
+        if (isToday && !onShiftNow.has(String(user._id))) continue;
+        if (!isToday && chance(0.05)) continue; // the odd unexplained absence
+      }
 
-      const sites = [pick(sitePoints)];
-      if (chance(0.5)) sites.push(pick(sitePoints));
-      const { checkInTime, checkOutTime, fixes } = planDay({ day, office, sites, openNow: isToday });
+      const visitSite = plannedVisit ? PLACES[plannedVisit.customer.spec.place] : null;
+      let sites;
+      if (plannedVisit?.scenario === "not_at_site") {
+        sites = [PLACES.connaughtPlace]; // said "inspection", went to Connaught Place
+      } else if (plannedVisit && plannedVisit.scenario !== "not_started") {
+        sites = [visitSite, pick(sitePoints.filter((point) => point !== visitSite))];
+      } else {
+        sites = [pick(sitePoints)];
+        if (chance(0.5)) sites.push(pick(sitePoints));
+      }
+      const { checkInTime, checkOutTime, fixes, legs } = planDay({ day, office, sites, openNow: isToday });
+      if (plannedVisit) {
+        visitsToCreate.push({ plan: plannedVisit, day, legs, visitSite });
+      }
 
       const gaps = [];
       if (checkOutTime && chance(0.12)) {
@@ -484,7 +530,54 @@ async function seedAttendanceAndPings(people, leaves, customers) {
     });
   }
 
-  return { attendanceCount, pingCount };
+  const visitCount = await createSeedVisits(visitsToCreate, people.admin);
+  return { attendanceCount, pingCount, visitCount };
+}
+
+async function createSeedVisits(planned, admin) {
+  const radiusMeters = Number(process.env.VISIT_RADIUS_METERS) || 200;
+  let count = 0;
+
+  for (const { plan, day, legs, visitSite } of planned) {
+    const { customer, spec } = plan.customer;
+    const service = await Service.create({
+      title: `Site visit — ${customer.companyName} (${plan.purpose})`,
+      description: `Site: ${spec.area}`,
+      assignedToId: plan.user._id,
+      createdById: admin._id,
+      dueDate: at(day, 11, 0),
+      status: plan.scenario === "verified" ? "completed" : "todo",
+    });
+
+    const arrivalAt = addMinutes(legs[0].end, 2);
+    const leaveAt = legs[1]?.start || addMinutes(arrivalAt, 60);
+    const arrival = ["verified", "left_early", "at_site"].includes(plan.scenario)
+      ? { at: arrivalAt, coords: { ...jitter(visitSite, 15), accuracy: 9 }, distanceMeters: Math.round(between(5, 40)) }
+      : null;
+    const completion = plan.scenario === "verified"
+      ? { at: addMinutes(leaveAt, -3), coords: { ...jitter(visitSite, 15), accuracy: 8 }, distanceMeters: Math.round(between(5, 40)) }
+      : null;
+
+    if (completion) {
+      await Service.updateOne({ _id: service._id }, { $set: { completedAt: completion.at, completedById: plan.user._id } });
+    }
+
+    await Visit.create({
+      serviceId: service._id,
+      customerId: customer._id,
+      purpose: plan.purpose,
+      site: visitSite,
+      siteAddress: spec.area,
+      radiusMeters,
+      arrival,
+      completion,
+      notes: completion ? pick(["All panels cleaned, output normal", "Fault code cleared after restart", "Roof measured, meter photographed", "Net meter sealed and working"]) : "",
+      createdById: admin._id,
+    });
+    count += 1;
+  }
+
+  return count;
 }
 
 async function main() {
@@ -507,12 +600,12 @@ async function main() {
   const paymentCount = await seedPayments({ ...people, customers });
   const serviceCount = await seedServices({ ...people, customers });
   const leaves = await seedLeave(people);
-  const { attendanceCount, pingCount } = await seedAttendanceAndPings(people, leaves, customers);
+  const { attendanceCount, pingCount, visitCount } = await seedAttendanceAndPings(people, leaves, customers);
 
   const accounts = await User.find({}).select("name email role").sort({ role: 1, name: 1 }).lean();
   console.log("\nDemo data ready (all FAKE):");
   console.log(`  ${customers.length} customers, ${leadCount} leads, ${paymentCount} payments, ${serviceCount} services, ${leaves.length} leave requests`);
-  console.log(`  ${attendanceCount} attendance days, ${pingCount} location pings`);
+  console.log(`  ${attendanceCount} attendance days, ${pingCount} location pings, ${visitCount} site visits`);
   console.log(`\nEvery account's password: ${DEMO_PASSWORD}`);
   accounts.forEach((account) => console.log(`  ${account.role.padEnd(9)} ${account.email}  (${account.name})`));
 
