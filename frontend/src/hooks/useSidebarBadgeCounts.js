@@ -33,8 +33,11 @@ export const LEAVE_NOTIFICATION_TYPES = [
   "leave_unapproved_absence",
 ];
 
+// Customer complaints (2026-10-22): a new one routed to me, or one escalated to me.
+export const COMPLAINT_NOTIFICATION_TYPES = ["complaint_assigned", "complaint_escalated"];
+
 /**
- * Backs the Leads/Leave sidebar count badges (`MainLayout.jsx`) — each is
+ * Backs the Leads/Leave/Complaints sidebar count badges (`MainLayout.jsx`) — each is
  * just the caller's own unread-notification count, filtered by type, via
  * the same `GET /notifications` the bell dropdown already uses (no
  * dedicated count endpoint). Both counts are fetched independently and a
@@ -47,9 +50,11 @@ export const LEAVE_NOTIFICATION_TYPES = [
  * Leave since that nav item (and hence this badge) is already shown to
  * everyone.
  */
-export function useSidebarBadgeCounts({ canViewLeads }) {
+
+export function useSidebarBadgeCounts({ canViewLeads, canViewComplaints = false }) {
   const [newLeadsCount, setNewLeadsCount] = useState(0);
   const [pendingLeaveCount, setPendingLeaveCount] = useState(0);
+  const [newComplaintsCount, setNewComplaintsCount] = useState(0);
 
   const refetch = useCallback(async () => {
     if (canViewLeads) {
@@ -67,7 +72,16 @@ export function useSidebarBadgeCounts({ canViewLeads }) {
     } catch {
       // Leave the last-known count in place until the next tick.
     }
-  }, [canViewLeads]);
+
+    if (canViewComplaints) {
+      try {
+        const response = await listNotificationsByType(COMPLAINT_NOTIFICATION_TYPES, { unreadOnly: true });
+        setNewComplaintsCount(response.data.data.length);
+      } catch {
+        // Same as above — a failed poll keeps the last count.
+      }
+    }
+  }, [canViewLeads, canViewComplaints]);
 
   useEffect(() => {
     refetch();
@@ -120,7 +134,7 @@ export function useSidebarBadgeCounts({ canViewLeads }) {
    * bell, or its "Mark all as read" button.
    */
 
-  return { newLeadsCount, pendingLeaveCount };
+  return { newLeadsCount, pendingLeaveCount, newComplaintsCount };
 }
 
 export default useSidebarBadgeCounts;

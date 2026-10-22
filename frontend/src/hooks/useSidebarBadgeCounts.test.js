@@ -14,10 +14,13 @@ function advance(ms) {
   return act(() => vi.advanceTimersByTimeAsync(ms));
 }
 
-function mockCountsByType({ leads = 0, leave = 0 } = {}) {
+function mockCountsByType({ leads = 0, leave = 0, complaints = 0 } = {}) {
   notificationApi.listNotificationsByType.mockImplementation((types) => {
     if (types.includes("lead_created")) {
       return Promise.resolve({ data: { data: Array.from({ length: leads }) } });
+    }
+    if (types.includes("complaint_assigned")) {
+      return Promise.resolve({ data: { data: Array.from({ length: complaints }) } });
     }
     return Promise.resolve({ data: { data: Array.from({ length: leave }) } });
   });
@@ -108,7 +111,30 @@ describe("useSidebarBadgeCounts", () => {
 
     expect(result.current.clearLeadsBadge).toBeUndefined();
     expect(result.current.clearLeaveBadge).toBeUndefined();
-    expect(Object.keys(result.current).sort()).toEqual(["newLeadsCount", "pendingLeaveCount"]);
+    expect(Object.keys(result.current).sort()).toEqual(["newComplaintsCount", "newLeadsCount", "pendingLeaveCount"]);
+  });
+
+  // Customer complaints (2026-10-22): routed-to-me and escalated-to-me, unread.
+  it("counts unread complaint notifications only for someone who can see complaints", async () => {
+    mockCountsByType({ complaints: 2 });
+
+    const { result: allowed } = renderHook(() => useSidebarBadgeCounts({ canViewLeads: false, canViewComplaints: true }));
+    await advance(0);
+    expect(notificationApi.listNotificationsByType).toHaveBeenCalledWith(
+      ["complaint_assigned", "complaint_escalated"],
+      { unreadOnly: true }
+    );
+    expect(allowed.current.newComplaintsCount).toBe(2);
+
+    vi.clearAllMocks();
+    mockCountsByType({ complaints: 2 });
+    const { result: notAllowed } = renderHook(() => useSidebarBadgeCounts({ canViewLeads: false }));
+    await advance(0);
+    expect(notificationApi.listNotificationsByType).not.toHaveBeenCalledWith(
+      ["complaint_assigned", "complaint_escalated"],
+      expect.anything()
+    );
+    expect(notAllowed.current.newComplaintsCount).toBe(0);
   });
 
   it("counts leave_unapproved_absence toward the Leave badge", async () => {
