@@ -36,6 +36,8 @@ export const ROUTE_PATHS = {
   COMPLAINTS: "/complaints",
   PAYMENTS: "/payments",
   SERVICES: "/services",
+  // Verified site visits (2026-10-22).
+  VISITS: "/visits",
   REPORTS: "/reports",
   // Bare `/settings` redirects to `SETTINGS_USERS` — the sidebar's single
   // flat "Settings" nav item links here; the two concrete routes below are

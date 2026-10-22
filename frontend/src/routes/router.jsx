@@ -21,6 +21,7 @@ import PayslipDetailPage from "../pages/PayslipDetailPage";
 // returns as "Complaints" (2026-10-22): the customer complaint link.
 import ComplaintsPage from "../modules/complaint/components/ComplaintsPage";
 import PublicComplaintPage from "../modules/complaint/components/PublicComplaintPage";
+import VisitsPage from "../modules/visit/components/VisitsPage";
 import PaymentsPage from "../pages/PaymentsPage";
 import ServicesPage from "../modules/service/components/ServicesPage";
 import ReportsPage from "../pages/ReportsPage";
@@ -79,6 +80,8 @@ export const router = createBrowserRouter(
           <Route path="complaints/:id" element={<ComplaintsPage />} />
           <Route path="payments" element={<PaymentsPage />} />
           <Route path="services" element={<ServicesPage />} />
+          <Route path="visits" element={<VisitsPage />} />
+          <Route path="visits/:id" element={<VisitsPage />} />
           <Route path="reports" element={<ReportsPage />} />
           {/* Bare /settings redirects to the Users tab — the sidebar's one
               flat "Settings" nav item links here. Both concrete routes
