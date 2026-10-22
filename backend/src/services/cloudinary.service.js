@@ -163,37 +163,53 @@ export async function uploadTicketAttachment(fileInput) {
   return result.secure_url;
 }
 
-// --- Customer complaint photos (2026-10-22) --------------------------------
+// --- Private photos: customer complaints and site visits (2026-10-22) -------
 // Private like attendance photos (§7.69): uploaded as "authenticated" and only
-// ever shown through short-lived signed links, because a complaint photo can
-// show the inside of a customer's home. The folder root is configurable so a
-// local machine's uploads stay apart from production's (CLOUDINARY_FOLDER_ROOT,
-// default "smartrays").
-const COMPLAINT_PHOTO_FORMAT = "jpg";
+// ever shown through short-lived signed links — a complaint photo can show the
+// inside of a customer's home, and a site photo is proof of presence. The
+// folder root is configurable so a local machine's uploads stay apart from
+// production's (CLOUDINARY_FOLDER_ROOT, default "smartrays").
+const PRIVATE_PHOTO_FORMAT = "jpg";
 
-function complaintPhotoFolder() {
-  return `${process.env.CLOUDINARY_FOLDER_ROOT || "smartrays"}/complaints`;
+function privateFolder(name) {
+  return `${process.env.CLOUDINARY_FOLDER_ROOT || "smartrays"}/${name}`;
 }
 
-export async function uploadComplaintPhoto(photoBuffer, mimeType = "image/jpeg") {
+async function uploadPrivatePhoto(photoBuffer, mimeType, folderName) {
   const result = await cloudinary.uploader.upload(`data:${mimeType};base64,${photoBuffer.toString("base64")}`, {
-    folder: complaintPhotoFolder(),
+    folder: privateFolder(folderName),
     resource_type: "image",
     type: "authenticated",
-    format: COMPLAINT_PHOTO_FORMAT,
+    format: PRIVATE_PHOTO_FORMAT,
   });
 
   return { publicId: result.public_id };
 }
 
-export function signedComplaintPhotoUrl(publicId, { expiresInSeconds = SIGNED_URL_TTL_SECONDS } = {}) {
+function signedPrivatePhotoUrl(publicId, expiresInSeconds = SIGNED_URL_TTL_SECONDS) {
   if (!publicId) {
     return null;
   }
 
-  return cloudinary.utils.private_download_url(publicId, COMPLAINT_PHOTO_FORMAT, {
+  return cloudinary.utils.private_download_url(publicId, PRIVATE_PHOTO_FORMAT, {
     resource_type: "image",
     type: "authenticated",
     expires_at: Math.round(Date.now() / 1000) + expiresInSeconds,
   });
+}
+
+export function uploadComplaintPhoto(photoBuffer, mimeType = "image/jpeg") {
+  return uploadPrivatePhoto(photoBuffer, mimeType, "complaints");
+}
+
+export function signedComplaintPhotoUrl(publicId, { expiresInSeconds } = {}) {
+  return signedPrivatePhotoUrl(publicId, expiresInSeconds);
+}
+
+export function uploadVisitPhoto(photoBuffer, mimeType = "image/jpeg") {
+  return uploadPrivatePhoto(photoBuffer, mimeType, "visits");
+}
+
+export function signedVisitPhotoUrl(publicId, { expiresInSeconds } = {}) {
+  return signedPrivatePhotoUrl(publicId, expiresInSeconds);
 }

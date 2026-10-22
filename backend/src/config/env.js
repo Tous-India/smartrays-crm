@@ -180,6 +180,11 @@ export const env = {
   complaintAcknowledgeHours: Number(process.env.COMPLAINT_ACKNOWLEDGE_HOURS) || 4,
   complaintResolveHours: Number(process.env.COMPLAINT_RESOLVE_HOURS) || 48,
   complaintAdminAfterHours: Number(process.env.COMPLAINT_ADMIN_AFTER_HOURS) || 4,
+  // Verified site visits (2026-10-22) — visit.service.js. How close (metres)
+  // a phone must be to the site for Arrived / Done / a site photo. Each
+  // visit keeps the radius it was created with. The accuracy rule is the
+  // attendance one (GEOFENCE_MAX_ACCURACY_METERS, distance − accuracy).
+  visitRadiusMeters: Number(process.env.VISIT_RADIUS_METERS) || 200,
   // VAPID keypair for Web Push (§6.7/§3) — see src/services/webPush.service.js.
   vapidPublicKey: process.env.VAPID_PUBLIC_KEY,
   vapidPrivateKey: process.env.VAPID_PRIVATE_KEY,

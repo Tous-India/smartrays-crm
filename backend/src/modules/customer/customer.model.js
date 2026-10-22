@@ -200,6 +200,13 @@ const customerSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // The site's map position (2026-10-22), picked on a map when a site visit
+    // is assigned and reused for the next one. Optional — most customers have
+    // none until their first visit.
+    siteLocation: {
+      lat: { type: Number, min: -90, max: 90 },
+      lng: { type: Number, min: -180, max: 180 },
+    },
   },
   {
     timestamps: true,

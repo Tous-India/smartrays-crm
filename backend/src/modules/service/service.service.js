@@ -41,6 +41,14 @@ function scopeFilter(visibleAssigneeIds) {
 }
 
 /**
+ * The Service filter for what the caller may see — for modules built on
+ * Services (site visits, 2026-10-22) so they share this scope, not a copy.
+ */
+export async function resolveServiceScopeFilter(requestingUser) {
+  return scopeFilter(await resolveVisibleAssigneeIds(requestingUser));
+}
+
+/**
  * Who the caller may ASSIGN to. The same set as the visible scope — a
  * manager hands work to their own team (or themselves), an admin to anyone —
  * with one extra rule for everyone: the assignee must be a live account.

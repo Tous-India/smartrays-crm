@@ -19,6 +19,7 @@ import notificationRouter from "./modules/notification/notification.routes.js";
 import teamRouter, { teamTypeRouter } from "./modules/team/team.routes.js";
 import serviceRouter from "./modules/service/service.routes.js";
 import publicComplaintRouter from "./modules/ticket/publicComplaint.routes.js";
+import visitRouter from "./modules/visit/visit.routes.js";
 
 const router = Router();
 
@@ -38,6 +39,8 @@ router.use("/travel-logs", travelLogRouter);
 router.use("/payroll", payrollRouter);
 // Services (§7.72) — internal work items; supersedes the `/tasks` routes removed 2026-07-29.
 router.use("/services", serviceRouter);
+// Verified site visits (2026-10-22) — built on Services.
+router.use("/visits", visitRouter);
 router.use("/tickets", ticketRouter);
 // Public, no login — the customer complaint link (2026-10-22).
 router.use("/public/complaints", publicComplaintRouter);
