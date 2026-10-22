@@ -9,6 +9,8 @@ import apiClient from "../../../api/apiClient";
 
 jest.mock("../api/serviceApi", () => ({ getService: jest.fn(), setServiceStatus: jest.fn(), setSubtaskDone: jest.fn() }));
 jest.mock("../../../api/userApi", () => ({ getUserDirectory: jest.fn() }));
+// No visit behind these services (site visits have their own file).
+jest.mock("../../visits/api/visitApi", () => ({ findVisitForService: jest.fn(async () => null) }));
 jest.mock("@react-navigation/native", () => ({ useFocusEffect: jest.fn() }));
 
 /**

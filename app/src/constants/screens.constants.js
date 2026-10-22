@@ -5,6 +5,8 @@ export const SCREENS = {
   // The signed-in root: the tab bar, and the full-screen flows above it.
   MAIN_TABS: "MainTabs",
   CAPTURE: "Capture",
+  // Site photo for a verified visit (2026-10-22) — full screen, like Capture.
+  VISIT_PHOTO: "VisitPhoto",
   TRACKING_DISCLOSURE: "TrackingDisclosure",
   BATTERY_GUIDANCE: "BatteryGuidance",
   UNSUPPORTED_ROLE: "UnsupportedRole",

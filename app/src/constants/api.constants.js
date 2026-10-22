@@ -28,6 +28,8 @@ export const API_PATHS = {
   PUSH_DEVICES: "/notifications/devices",
   // Customer complaints (2026-10-22) — the web's ticket endpoints.
   TICKETS: "/tickets",
+  // Verified site visits (2026-10-22).
+  VISITS: "/visits",
 };
 
 /** The header the trusted-device token travels in (the web uses a cookie). */

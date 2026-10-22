@@ -14,6 +14,9 @@ import useUserDirectory from "../../../hooks/useUserDirectory";
 import useIsOnline from "../../../hooks/useIsOnline";
 import useMyPermissions, { can } from "../../../hooks/useMyPermissions";
 import { getService, setServiceStatus, setSubtaskDone } from "../api/serviceApi";
+import { findVisitForService } from "../../visits/api/visitApi";
+import VisitPanel from "../../visits/components/VisitPanel";
+import useSessionStore from "../../../store/sessionStore";
 import { SERVICE_STATUS, isOverdue } from "../services.utils";
 import { formatDate } from "../../../utils/date.utils";
 import { messageFromError } from "../../../utils/apiError.utils";
@@ -39,6 +42,10 @@ function ServiceDetailScreen({ navigation, route }) {
   const { serviceId } = route.params;
   const isOnline = useIsOnline();
   const service = useServerData(async () => (await getService(serviceId)).data.data, { deps: [serviceId] });
+  // A site visit behind this service, if any (2026-10-22): then the visit's
+  // own steps replace "Mark complete" — Done at the site completes it.
+  const visit = useServerData(() => findVisitForService(serviceId), { deps: [serviceId] });
+  const me = useSessionStore((state) => state.user);
   const { nameById } = useUserDirectory();
   const { permissions } = useMyPermissions();
   const canEdit = can(permissions, "services", "edit");
@@ -61,9 +68,14 @@ function ServiceDetailScreen({ navigation, route }) {
 
   const record = service.data;
   const isCompleted = record?.status === SERVICE_STATUS.COMPLETED;
+  const siteVisit = visit.data;
+
+  async function refreshAll() {
+    await Promise.all([service.refetch(), visit.refetch()]);
+  }
 
   return (
-    <Screen onRefresh={service.refetch} refreshing={service.isRefreshing} testID="service-detail-screen">
+    <Screen onRefresh={refreshAll} refreshing={service.isRefreshing} testID="service-detail-screen">
       <ScreenHeader
         title={record?.title || "Service"}
         onBack={() => navigation.goBack()}
@@ -133,9 +145,19 @@ function ServiceDetailScreen({ navigation, route }) {
             )}
           </Card>
 
+          {siteVisit ? (
+            <VisitPanel
+              visit={siteVisit}
+              canAct={String(record.assignedToId) === String(me?._id)}
+              isOnline={isOnline}
+              onChanged={refreshAll}
+              onTakePhoto={() => navigation.navigate(SCREENS.VISIT_PHOTO, { visitId: siteVisit._id })}
+            />
+          ) : null}
+
           <ErrorBanner message={actionError} testID="service-action-error" />
 
-          {isCompleted ? null : (
+          {isCompleted || siteVisit ? null : (
             <PrimaryButton
               title="Mark complete"
               onPress={() => runAction("status", () => setServiceStatus(serviceId, SERVICE_STATUS.COMPLETED))}

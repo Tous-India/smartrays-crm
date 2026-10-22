@@ -4,6 +4,7 @@ import { ManagerTabs } from "./MainTabs";
 import CaptureScreen from "../modules/attendance/screens/CaptureScreen";
 import TrackingDisclosureScreen from "../modules/tracking/screens/TrackingDisclosureScreen";
 import BatteryGuidanceScreen from "../modules/tracking/screens/BatteryGuidanceScreen";
+import VisitPhotoScreen from "../modules/visits/screens/VisitPhotoScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -18,6 +19,7 @@ function ManagerNavigator() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name={SCREENS.MAIN_TABS} component={ManagerTabs} />
       <Stack.Screen name={SCREENS.CAPTURE} component={CaptureScreen} />
+      <Stack.Screen name={SCREENS.VISIT_PHOTO} component={VisitPhotoScreen} />
       <Stack.Screen name={SCREENS.TRACKING_DISCLOSURE} component={TrackingDisclosureScreen} />
       <Stack.Screen name={SCREENS.BATTERY_GUIDANCE} component={BatteryGuidanceScreen} />
     </Stack.Navigator>
