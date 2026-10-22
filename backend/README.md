@@ -26,6 +26,31 @@ Fill in `.env`:
   phase through Phase 9 is built); see the Environment Variables section below for what each is for
   and how to generate it.
 
+### Local database — required for development (2026-10-22)
+
+Development runs against a **local** MongoDB, never the production cluster. Outside
+`NODE_ENV=production`, `connectDatabase()` refuses any `MONGODB_URI` that is not localhost
+(`src/config/databaseGuard.js`) unless `ALLOW_REMOTE_DB=true` is set on purpose.
+
+1. Run MongoDB 8.0 locally — Docker (`docker run -d -p 127.0.0.1:27017:27017 mongo:8.0`) or the
+   Community Server zip, which needs no installer or admin rights:
+   `mongod --dbpath <data folder> --bind_ip 127.0.0.1 --port 27017`.
+2. `MONGODB_URI=mongodb://127.0.0.1:27017/smartrays_dev` in `.env.local`.
+3. Fill it with fake demo data:
+
+   ```bash
+   npm run seed:demo -- --reset
+   ```
+
+   An admin, two managers with three field employees each, leads in every stage, eight Delhi NCR
+   customers with contacts/contracts/owner/project manager, payments, services with subtasks,
+   leave requests, and 30 days of attendance with location pings (three people on shift now).
+   Every account's password is `Demo@1234`; emails end in `@demo.smartrays.test`. The script
+   refuses any non-local database even when `ALLOW_REMOTE_DB=true`.
+
+Keep `VERCEL=1` in a local `.env.local` that holds production-like values: `server.js` skips the
+node-cron jobs (monthly payroll run, lead reminders, attendance photo cleanup) when it is set.
+
 ### Bootstrapping the first admin
 
 This is an internal tool — there is no public self-registration, and `POST /auth/register`
