@@ -14,6 +14,7 @@ import {
   IdcardOutlined,
   CheckSquareOutlined,
   CustomerServiceOutlined,
+  EnvironmentOutlined,
 } from "@ant-design/icons";
 import useSessionStore from "../store/sessionStore";
 import { can } from "../utils/permission.utils";
@@ -168,6 +169,13 @@ function MainLayout() {
         key: ROUTE_PATHS.SERVICES,
         label: "Services",
         icon: <CheckSquareOutlined />,
+        show: can(user, "services", "view"),
+      },
+      // Verified site visits (2026-10-22) — built on Services, same grant.
+      {
+        key: ROUTE_PATHS.VISITS,
+        label: "Site visits",
+        icon: <EnvironmentOutlined />,
         show: can(user, "services", "view"),
       },
       {
