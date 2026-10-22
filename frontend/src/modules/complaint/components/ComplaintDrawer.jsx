@@ -102,9 +102,10 @@ function ComplaintDrawer({ ticketId, onClose, onChanged }) {
               <p className="mt-2 text-gray-500">No phone number saved for this customer.</p>
             )}
             {detail.callbackTime && (
-              <p className="mt-2 text-gray-700">
+              // A <div>, not a <p>: antd's unlayered reset zeroes a <p>'s top margin.
+              <div className="mt-3 text-gray-700">
                 Wants a call: <strong>{CALLBACK_LABEL[detail.callbackTime]}</strong>
-              </p>
+              </div>
             )}
           </section>
 

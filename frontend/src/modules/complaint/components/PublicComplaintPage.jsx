@@ -5,6 +5,10 @@ import { getPublicComplaintPage, raisePublicComplaint } from "../api/complaintAp
 import { CALLBACK_TIMES, CATEGORY_LABEL, COMPLAINT_CATEGORIES, PHOTO_LIMITS, PUBLIC_STATUS } from "../constants/complaint.constants";
 import { shrinkPhoto } from "../utils/shrinkPhoto";
 
+// Text colour goes on an inner <span>, never on the <button> itself: antd's
+// global reset sets `button { color: inherit }` outside any CSS layer, which
+// beats Tailwind's layered text-* utilities on a button element.
+
 /**
  * `/c/:token` — the customer complaint page (2026-10-22). PUBLIC: no login,
  * reached from a link the customer got on WhatsApp/SMS. Built for a cheap
@@ -151,8 +155,8 @@ function PublicComplaintPage() {
         <div className="rounded-2xl bg-white p-6 text-center shadow-sm">
           <h1 className="text-xl font-semibold">Could not open the page</h1>
           <p className="mt-2 text-gray-600">Please check your internet and try again.</p>
-          <button type="button" onClick={load} className="mt-4 min-h-12 w-full rounded-xl bg-brand-navy px-4 text-lg font-semibold text-white">
-            Try again
+          <button type="button" onClick={load} className="mt-4 min-h-12 w-full rounded-xl bg-brand-navy px-4 text-lg font-semibold">
+            <span className="text-white">Try again</span>
           </button>
         </div>
       </Shell>
@@ -171,8 +175,8 @@ function PublicComplaintPage() {
           <p className="mt-1 text-3xl font-bold">No. {sent.number}</p>
           <p className="mt-2 text-gray-700">Please keep this number. You can open this same link any time to see the status.</p>
           <p className="mt-1 text-sm text-gray-500">यह नंबर संभाल कर रखें। स्थिति देखने के लिए यही लिंक फिर खोलें।</p>
-          <button type="button" onClick={() => setSent(null)} className="mt-4 min-h-12 w-full rounded-xl border-2 border-brand-navy px-4 text-lg font-semibold text-brand-navy">
-            Report another problem
+          <button type="button" onClick={() => setSent(null)} className="mt-4 min-h-12 w-full rounded-xl border-2 border-brand-navy px-4 text-lg font-semibold">
+            <span className="text-brand-navy">Report another problem</span>
           </button>
         </div>
       ) : (
@@ -227,9 +231,9 @@ function PublicComplaintPage() {
                     <button
                       type="button"
                       onClick={() => setPhotos((current) => current.filter((_, i) => i !== index))}
-                      className="min-h-10 rounded-lg px-3 text-sm font-semibold text-red-700"
+                      className="min-h-10 rounded-lg px-3 text-sm font-semibold"
                     >
-                      Remove
+                      <span className="text-red-700">Remove</span>
                     </button>
                   </li>
                 ))}
@@ -241,9 +245,9 @@ function PublicComplaintPage() {
                 <button
                   type="button"
                   onClick={() => photoInput.current?.click()}
-                  className="min-h-12 w-full rounded-xl border-2 border-dashed border-gray-300 bg-white px-4 text-base font-semibold text-gray-700"
+                  className="min-h-12 w-full rounded-xl border-2 border-dashed border-gray-300 bg-white px-4 text-base font-semibold"
                 >
-                  📷 Add a photo
+                  <span className="text-gray-700">📷 Add a photo</span>
                 </button>
               </>
             )}
@@ -280,9 +284,9 @@ function PublicComplaintPage() {
           <button
             type="submit"
             disabled={isSending}
-            className="min-h-14 w-full rounded-2xl bg-brand-navy px-4 text-lg font-semibold text-white disabled:opacity-60"
+            className="min-h-14 w-full rounded-2xl bg-brand-navy px-4 text-lg font-semibold disabled:opacity-60"
           >
-            {isSending ? "Sending…" : "Send complaint"}
+            <span className="text-white">{isSending ? "Sending…" : "Send complaint"}</span>
           </button>
         </form>
       )}
