@@ -13,6 +13,7 @@ import {
   BarChartOutlined,
   IdcardOutlined,
   CheckSquareOutlined,
+  CustomerServiceOutlined,
 } from "@ant-design/icons";
 import useSessionStore from "../store/sessionStore";
 import { can } from "../utils/permission.utils";
@@ -134,8 +135,10 @@ function MainLayout() {
   // Employees get a narrower, self-service nav (§7.39); every other role's
   // nav is untouched.
   const isEmployee = user?.role === "employee";
-  const { newLeadsCount, pendingLeaveCount } = useSidebarBadgeCounts({
+  const canViewComplaints = can(user, "tickets", "view_assigned") || can(user, "tickets", "view_all");
+  const { newLeadsCount, pendingLeaveCount, newComplaintsCount } = useSidebarBadgeCounts({
     canViewLeads,
+    canViewComplaints,
   });
 
   const menuItems = useMemo(() => {
@@ -189,18 +192,16 @@ function MainLayout() {
         icon: <WalletOutlined />,
         show: can(user, "payroll", "view") || can(user, "payroll", "run"),
       },
-      // Tickets is DEFERRED from the UI, 2026-08-07 — hidden, not removed. It
-      // is still a core module in final-plan.md with a Customer Portal
-      // dependency, and its backend module, routes, model and data are all
-      // untouched. Restoring it is this block plus the two routes in
-      // `router.jsx`; the permission tiers, the api module and the Dashboard
-      // widget were all deliberately left in place.
-      // {
-      //   key: ROUTE_PATHS.TICKETS,
-      //   label: "Tickets",
-      //   icon: <CustomerServiceOutlined />,
-      //   show: can(user, "tickets", "view_assigned") || can(user, "tickets", "view_all"),
-      // },
+      // Tickets, deferred from the UI 2026-08-07, returns as "Complaints"
+      // (2026-10-22): what customers raise through their complaint link. The
+      // badge counts unread complaints routed or escalated to me.
+      {
+        key: ROUTE_PATHS.COMPLAINTS,
+        label: "Complaints",
+        icon: <CustomerServiceOutlined />,
+        show: canViewComplaints,
+        badgeCount: newComplaintsCount,
+      },
       { key: ROUTE_PATHS.REPORTS, label: "Reports", icon: <BarChartOutlined />, show: true },
       // §7.39 (2026-08-05) — employee-only destinations. Leave is its own
       // page for this role (it's a tab inside Attendance for admin/manager),
@@ -239,7 +240,7 @@ function MainLayout() {
     }
 
     return items;
-  }, [user, canViewSettings, canViewLeads, newLeadsCount, pendingLeaveCount]);
+  }, [user, canViewSettings, canViewLeads, canViewComplaints, newLeadsCount, pendingLeaveCount, newComplaintsCount]);
 
   const allKnownKeys = useMemo(() => menuItems.map((item) => item.key), [menuItems]);
 
