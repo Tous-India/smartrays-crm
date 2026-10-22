@@ -18,6 +18,16 @@ export function routeForNotification(data = {}) {
     return { name: SCREENS.SERVICES_TAB };
   }
 
+  // Customer complaints (2026-10-22): routed or escalated to me → that one;
+  // the admin's daily summary → the list.
+  if ((type === "complaint_assigned" || type === "complaint_escalated") && id) {
+    return { name: SCREENS.SERVICES_TAB, params: { screen: SCREENS.COMPLAINT_DETAIL, params: { ticketId: id }, initial: false } };
+  }
+
+  if (type && String(type).startsWith("complaint_")) {
+    return { name: SCREENS.SERVICES_TAB, params: { screen: SCREENS.COMPLAINTS, initial: false } };
+  }
+
   if (typeof type === "string" && type.startsWith("leave_")) {
     return { name: SCREENS.LEAVE_TAB };
   }

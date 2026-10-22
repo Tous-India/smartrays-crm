@@ -104,3 +104,16 @@ test("a tap lands on the screen the notification is about", () => {
   expect(ref.navigate).toHaveBeenCalledWith("LeaveTab", undefined);
   expect(navigateForNotification({ isReady: () => false, navigate: jest.fn() }, {})).toBe(false);
 });
+
+// Customer complaints (2026-10-22).
+test("a complaint push opens that complaint; the admin's daily summary opens the list", () => {
+  expect(routeForNotification({ type: "complaint_assigned", module: "complaints", id: "t1" })).toEqual({
+    name: "ServicesTab",
+    params: { screen: "ComplaintDetail", params: { ticketId: "t1" }, initial: false },
+  });
+  expect(routeForNotification({ type: "complaint_escalated", module: "complaints", id: "t2" }).params.params).toEqual({ ticketId: "t2" });
+  expect(routeForNotification({ type: "complaint_daily_summary", module: "complaint_summary", id: "" })).toEqual({
+    name: "ServicesTab",
+    params: { screen: "Complaints", initial: false },
+  });
+});

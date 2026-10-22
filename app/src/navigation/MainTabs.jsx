@@ -5,6 +5,8 @@ import { SCREENS } from "../constants/screens.constants";
 import HomeScreen from "../modules/home/screens/HomeScreen";
 import ServicesScreen from "../modules/services/screens/ServicesScreen";
 import ServiceDetailScreen from "../modules/services/screens/ServiceDetailScreen";
+import ComplaintsScreen from "../modules/complaints/screens/ComplaintsScreen";
+import ComplaintDetailScreen from "../modules/complaints/screens/ComplaintDetailScreen";
 import LeaveScreen from "../modules/leave/screens/LeaveScreen";
 import ApplyLeaveScreen from "../modules/leave/screens/ApplyLeaveScreen";
 import MeScreen from "../modules/me/screens/MeScreen";
@@ -38,6 +40,8 @@ function ServicesTab() {
     <ServicesStack.Navigator screenOptions={NO_HEADER}>
       <ServicesStack.Screen name={SCREENS.SERVICES} component={ServicesScreen} />
       <ServicesStack.Screen name={SCREENS.SERVICE_DETAIL} component={ServiceDetailScreen} />
+      <ServicesStack.Screen name={SCREENS.COMPLAINTS} component={ComplaintsScreen} />
+      <ServicesStack.Screen name={SCREENS.COMPLAINT_DETAIL} component={ComplaintDetailScreen} />
     </ServicesStack.Navigator>
   );
 }

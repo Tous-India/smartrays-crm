@@ -26,6 +26,8 @@ export const API_PATHS = {
   LOCATION_LIVE: "/location/live",
   SERVICE_ASSIGNEES: "/services/assignees",
   PUSH_DEVICES: "/notifications/devices",
+  // Customer complaints (2026-10-22) — the web's ticket endpoints.
+  TICKETS: "/tickets",
 };
 
 /** The header the trusted-device token travels in (the web uses a cookie). */

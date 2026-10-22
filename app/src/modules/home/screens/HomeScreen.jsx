@@ -4,10 +4,13 @@ import { useFocusEffect } from "@react-navigation/native";
 import Screen from "../../../components/Screen";
 import TodayShiftCard from "../../attendance/components/TodayShiftCard";
 import ServicesDueCard from "../components/ServicesDueCard";
+import ComplaintsCard from "../components/ComplaintsCard";
 import useMyAttendance from "../../attendance/hooks/useMyAttendance";
 import useIsOnline from "../../../hooks/useIsOnline";
 import useServerData from "../../../hooks/useServerData";
 import useSessionStore from "../../../store/sessionStore";
+import useMyPermissions, { can } from "../../../hooks/useMyPermissions";
+import { listComplaints } from "../../complaints/api/complaintApi";
 import { listServices } from "../../services/api/serviceApi";
 import { SERVICE_STATUS } from "../../services/services.utils";
 import useTrackingLifecycle from "../../tracking/hooks/useTrackingLifecycle";
@@ -39,6 +42,17 @@ function HomeScreen({ navigation }) {
     { initialData: [], deps: [user?._id] }
   );
 
+  // Customer complaints (2026-10-22): mine, for anyone who can see complaints.
+  const { permissions } = useMyPermissions();
+  const canSeeComplaints = can(permissions, "tickets", "view_assigned") || can(permissions, "tickets", "view_all");
+  const myComplaints = useServerData(
+    async () =>
+      canSeeComplaints
+        ? (await listComplaints()).data.data.filter((ticket) => String(ticket.assignedToId) === String(user?._id))
+        : [],
+    { initialData: [], deps: [user?._id, canSeeComplaints] }
+  );
+
   useFocusEffect(
     useCallback(() => {
       refetch();
@@ -48,6 +62,7 @@ function HomeScreen({ navigation }) {
   function refreshAll() {
     refetch();
     servicesDue.refetch();
+    myComplaints.refetch();
   }
 
   // The prominent disclosure (app-plan.md §4.1) comes before the first
@@ -100,6 +115,15 @@ function HomeScreen({ navigation }) {
         error={servicesDue.error}
         onOpen={() => navigation.navigate(SCREENS.SERVICES_TAB)}
       />
+
+      {canSeeComplaints ? (
+        <ComplaintsCard
+          complaints={myComplaints.data}
+          isLoading={myComplaints.isLoading}
+          error={myComplaints.error}
+          onOpen={() => navigation.navigate(SCREENS.SERVICES_TAB, { screen: SCREENS.COMPLAINTS, initial: false })}
+        />
+      ) : null}
     </Screen>
   );
 }

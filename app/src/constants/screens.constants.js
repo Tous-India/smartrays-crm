@@ -13,6 +13,9 @@ export const SCREENS = {
   SERVICES_TAB: "ServicesTab",
   SERVICES: "Services",
   SERVICE_DETAIL: "ServiceDetail",
+  // Customer complaints (2026-10-22) — inside the Services (work) tab.
+  COMPLAINTS: "Complaints",
+  COMPLAINT_DETAIL: "ComplaintDetail",
   LEAVE_TAB: "LeaveTab",
   LEAVE: "Leave",
   APPLY_LEAVE: "ApplyLeave",
