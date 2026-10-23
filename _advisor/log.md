@@ -266,3 +266,41 @@ any working day. Why: the old one divided a whole team's days by one person's mo
 
 Suites: backend 1224/1224, app 160/160, web 986/989 (3 = UserManagementPage, flaky only under
 full-suite load; 27/27 alone). Screenshots: `_advisor/screenshots/fixes-2026-10-23/`.
+
+---
+
+## Chat brief 2026-10-23 — Complaints redesign (one public link, Vinay assigns)
+Status: done (13:00–15:40 IST). Local only; nothing pushed or deployed.
+Owner's answers used: assign picker = all active staff; keep the 9 AM summary (to assigners);
+typed address + optional GPS; preferred time = time of day; permission = complaints.view_all +
+complaints.assign (admin by default, grantable).
+
+| Item | Verified | Commit |
+|---|---|---|
+| complaints.view_all / complaints.assign permission | test (fails before) | `16047e1` |
+| One public form; requirement → lead; phone match; status token. Removed: per-customer links + auto-routing. Reused: rate limiter, photo checks, number counter, private photos | 9 tests (fail before) | `3454cc6` |
+| Staff API: list, detail, assign (+priority, visit date), technician steps, photos, send-back, notifications, history; /tickets no longer shows complaints | 15 tests (fail before) | `3d7f012` |
+| Reminders: unassigned 4 h, visit date passed, daily summary to assigners (config: COMPLAINT_ASSIGN_REMINDER_HOURS, COMPLAINT_VISIT_GRACE_HOURS) | 8 tests (fail before); live through the cron endpoint | `4097774` |
+| Web: form, status page, share link, list, complaint page | tests (fail before); Chrome 1280 + 390 full loop | `fa3942b`, `ba6254a`, `d48ae51`, `f8f9366`, `d505de6` |
+| App: admin signs in; push routing; list/detail/assign/photo/send-back | Jest (fail before); emulator walk-through | `e1ac689`, `d5e04f1`, `20730d8`, `6e6d61e`, `071d15d`, `1a0bbf0` |
+
+Bugs found while testing and fixed: invisible "See the status" button (antd link reset); phone filters
+cut off; **app kept the previous person's permissions after sign-out (pre-existing)**; app history rows
+drawn over each other. Screenshots: `_advisor/screenshots/complaints-redesign/`.
+Test data and its 3 dev-folder Cloudinary photos were deleted afterwards.
+
+## Chat brief 2026-10-23 — company/household name only when the phone does not match (MASTER BRIEF item 2)
+Status: done (15:00–15:55 IST). Owner's answers: per-customer coded link comes BACK; "Your name" stays
+required; address optional when matched, required when not.
+
+- Phone check `POST /public/complaints/check-phone` → only `{ matched }`. **Limits chosen: 10 per 15 min
+  per address, 300 per hour overall** (submit stays 5/hour/address).
+- Server enforces: not matched → company/household name + address required (also for requirements).
+- Per-customer link with a code restored (`/c/:token`, prefilled, no phone check); customer page shares it.
+- Vinay: typed name, "Did you mean …?", Link, customer search, "Save <number> as a contact for …?".
+
+Verified: 15 backend tests + web/app tests (all failed before); Chrome 390: matched → no field; unmatched
+→ field, empty refused, sends with name; API without name → 400; check-phone 11th call → 429; own link
+prefilled; Did you mean → Link → Save contact → number now matches. Screenshots:
+`_advisor/screenshots/complaint-identify/`.
+Commits: `f68177d`, `d8be41a`, `edfe299`, `e7ade23`, `f08adbd`, `0d699dd`.
