@@ -43,6 +43,9 @@ const NOTIFICATION_TYPES = [
   "complaint_sent_back",
   "complaint_reminder",
   "complaint_daily_summary",
+  // Live status (2026-10-23): someone on the team has been Location off or
+  // Disconnected too long during a shift — to their manager.
+  "staff_location_alert",
 ];
 
 const notificationSchema = new mongoose.Schema(

@@ -117,6 +117,7 @@ const PRESENTATION = {
   complaint_sent_back: { title: "Complaint sent back", channelId: CHANNELS.WORK },
   complaint_reminder: { title: "Complaint reminder", channelId: CHANNELS.REMINDERS },
   complaint_daily_summary: { title: "Complaints today", channelId: CHANNELS.GENERAL },
+  staff_location_alert: { title: "Team member not tracked", channelId: CHANNELS.WORK },
 };
 
 export function presentationFor(type) {

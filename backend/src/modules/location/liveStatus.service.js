@@ -293,3 +293,146 @@ export async function getMyLiveStatus(requestingUser, now = new Date()) {
   const [row] = await liveStatusFor([{ _id: requestingUser._id, name: requestingUser.name, role: requestingUser.role }], now);
   return { ...row, fix: FIX[row.status] ?? (row.batteryLow ? "charge_phone" : null) };
 }
+
+// ---------- the day's timeline ----------
+
+const TIMELINE_LABEL = {
+  checked_in: "Checked in",
+  checked_out: "Checked out",
+  moving: "Moving",
+  stationary: "Stationary",
+  location_off: "Location off",
+  location_on: "Location back on",
+  offline: "Offline (uploaded later)",
+  disconnected: "No signal",
+};
+
+/**
+ * One person's day as a short list of changes — "9:40 checked in → 10:05
+ * moving → 10:50 at Sharma site → 12:10 location off" — from that day's
+ * shifts, fixes and status events. Each fix is Moving / At site / Stationary
+ * by the same rules as the live status; a fix that reached the server late is
+ * Offline (uploaded later); a stretch with no fixes at all is No signal.
+ * Consecutive repeats collapse into one entry.
+ */
+export async function getDayTimeline(employeeId, dateKey) {
+  const start = new Date(`${dateKey}T00:00:00+05:30`);
+  const end = new Date(start.getTime() + 24 * 3600000);
+  const t = liveThresholds();
+
+  const [attendances, events, services, customers] = await Promise.all([
+    Attendance.find({ employeeId, "checkIn.time": { $gte: start, $lt: end } }).sort({ "checkIn.time": 1 }).lean(),
+    LocationStatusEvent.find({ employeeId, at: { $gte: start, $lt: end } }).sort({ at: 1 }).lean(),
+    Service.find({ assignedToId: employeeId, dueDate: { $gte: start, $lt: end } }).select("_id").lean(),
+    Customer.find({ "siteLocation.lat": { $type: "number" } }).select("companyName siteLocation").lean(),
+  ]);
+  const visits = services.length ? await Visit.find({ serviceId: { $in: services.map((s) => s._id) } }).select("site radiusMeters customerId").lean() : [];
+  const visitNames = new Map(
+    (await Customer.find({ _id: { $in: visits.map((v) => v.customerId) } }).select("companyName").lean()).map((c) => [String(c._id), c.companyName])
+  );
+  const customerSites = customers.map((c) => ({ name: c.companyName, lat: c.siteLocation.lat, lng: c.siteLocation.lng }));
+
+  const raw = [];
+  for (const attendance of attendances) {
+    raw.push({ at: attendance.checkIn.time, status: "checked_in" });
+    const pings = await LocationPing.find({ attendanceId: attendance._id }).sort({ capturedAt: 1 }).select("coords capturedAt createdAt speed").lean();
+    pings.forEach((ping, index) => {
+      const previous = pings[index - 1];
+      if (previous && minutes(ping.capturedAt - previous.capturedAt) >= t.disconnectedAfterMinutes) {
+        raw.push({ at: previous.capturedAt, status: "disconnected" });
+      }
+      if (ping.createdAt && minutes(ping.createdAt - ping.capturedAt) >= t.offlineAfterMinutes) {
+        raw.push({ at: ping.capturedAt, status: "offline" });
+        return;
+      }
+      const site = visits.find((visit) => haversineDistanceMeters(ping.coords, visit.site) <= visit.radiusMeters);
+      if (site) {
+        const name = visitNames.get(String(site.customerId));
+        raw.push({ at: ping.capturedAt, status: "at_site", label: name ? `At ${name}` : "At site" });
+        return;
+      }
+      let speedKmh = typeof ping.speed === "number" ? kmh(ping.speed) : null;
+      if (speedKmh === null && previous) {
+        const seconds = (ping.capturedAt - previous.capturedAt) / 1000;
+        if (seconds > 0) speedKmh = kmh(haversineDistanceMeters(previous.coords, ping.coords) / seconds);
+      }
+      if (speedKmh !== null && speedKmh >= t.movingSpeedKmh) {
+        raw.push({ at: ping.capturedAt, status: "moving" });
+        return;
+      }
+      const place = nearestPlace(ping.coords, customerSites, env.livePlaceRadiusMeters);
+      raw.push({ at: ping.capturedAt, status: "stationary", label: place ? `At ${place}` : undefined });
+    });
+    if (attendance.checkOut?.time) raw.push({ at: attendance.checkOut.time, status: "checked_out" });
+  }
+  for (const event of events) raw.push({ at: event.at, status: event.type });
+
+  raw.sort((a, b) => new Date(a.at) - new Date(b.at));
+  const entries = [];
+  for (const entry of raw) {
+    const label = entry.label ?? TIMELINE_LABEL[entry.status] ?? entry.status;
+    const last = entries.at(-1);
+    if (last && last.status === entry.status && last.label === label) continue;
+    // The first fix after check-in is where they already were, not a change.
+    if (last?.status === "checked_in" && entry.status === "stationary" && !entry.label) continue;
+    entries.push({ at: entry.at, status: entry.status, label });
+  }
+  return { employeeId, date: dateKey, entries };
+}
+
+// ---------- manager alerts ----------
+
+const ALERT_KINDS = ["location_off", "disconnected"];
+
+/**
+ * Tells the MANAGER (or, with no manager, the admins) when someone has been
+ * Location off or Disconnected for LIVE_ALERT_AFTER_MINUTES during a shift —
+ * once per episode, recorded on the person's live record. Runs on activity
+ * (kickLiveAlerts) — there is no node-cron on Vercel.
+ */
+export async function runLiveAlerts(now = new Date()) {
+  const open = await Attendance.find({ "checkIn.time": { $ne: null }, "checkOut.time": null }).select("employeeId").lean();
+  if (open.length === 0) return { checked: 0, alerted: 0 };
+  const people = await User.find({ _id: { $in: open.map((a) => a.employeeId) }, isActive: true }).select("_id name role managerId").lean();
+  const rows = await liveStatusFor(people, now);
+  let alerted = 0;
+
+  for (const row of rows) {
+    if (!ALERT_KINDS.includes(row.status) || !row.since) continue;
+    if (minutes(now - new Date(row.since)) < env.liveAlertAfterMinutes) continue;
+    const key = new Date(row.since).toISOString();
+    const claimed = await EmployeeLiveStatus.updateOne(
+      { employeeId: row.employeeId, alerts: { $not: { $elemMatch: { kind: row.status, key } } } },
+      { $push: { alerts: { kind: row.status, key, at: now } } },
+      { upsert: true }
+    ).catch(() => ({ modifiedCount: 0, upsertedCount: 0 }));
+    if (claimed.modifiedCount !== 1 && claimed.upsertedCount !== 1) continue;
+
+    const person = people.find((p) => String(p._id) === String(row.employeeId));
+    const recipients = person?.managerId
+      ? [person.managerId]
+      : (await User.find({ role: "admin", isActive: true }).select("_id").lean()).map((a) => a._id);
+    const sinceText = new Date(row.since).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit" });
+    const message =
+      row.status === "location_off"
+        ? `${row.name}: location is turned off on their phone since ${sinceText}.`
+        : `${row.name}: no signal from their phone since ${sinceText} — it may be off, or the app closed.`;
+    const { createNotification } = await import("../notification/notification.service.js");
+    for (const userId of recipients) {
+      await createNotification(userId, "staff_location_alert", message, { module: "live_status", id: row.employeeId });
+    }
+    alerted += 1;
+  }
+  return { checked: rows.length, alerted };
+}
+
+let lastAlertRunAt = 0;
+const ALERT_THROTTLE_MS = 3 * 60 * 1000;
+
+/** The "on activity" trigger: at most once per 3 minutes per server instance; never throws. */
+export function kickLiveAlerts(now = new Date()) {
+  if (process.env.LIVE_ALERTS_ON_ACTIVITY === "false") return;
+  if (now.getTime() - lastAlertRunAt < ALERT_THROTTLE_MS) return;
+  lastAlertRunAt = now.getTime();
+  runLiveAlerts(now).catch((error) => console.error("[live-status] alert check failed:", error.message));
+}

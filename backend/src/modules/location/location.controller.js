@@ -9,7 +9,8 @@ import {
   resolveVisibleEmployeeIds,
 } from "./location.service.js";
 import { recordLocationConsent, getMyLatestConsent, listLatestConsents } from "./locationConsent.service.js";
-import { getMyLiveStatus, getTeamLiveStatus, recordStatusEvents } from "./liveStatus.service.js";
+import { getDayTimeline, getMyLiveStatus, getTeamLiveStatus, kickLiveAlerts, recordStatusEvents } from "./liveStatus.service.js";
+import ApiError from "../../utils/ApiError.js";
 
 export const create = asyncWrapper(async (req, res) => {
   // The batch form (mobile-backend-plan.md §3.2): a 200 with a per-ping
@@ -73,12 +74,14 @@ export const consentList = asyncWrapper(async (req, res) => {
 // --- Live employee status (2026-10-23) ---
 export const statusEvents = asyncWrapper(async (req, res) => {
   const result = await recordStatusEvents(req.body.events, req.user);
+  kickLiveAlerts();
 
   res.status(200).json(new ApiResponse(200, result, "Status events recorded"));
 });
 
 export const liveStatus = asyncWrapper(async (req, res) => {
   const team = await getTeamLiveStatus(await resolveVisibleEmployeeIds(req.user));
+  kickLiveAlerts();
 
   res.status(200).json(new ApiResponse(200, team, "Live status fetched successfully"));
 });
@@ -87,4 +90,20 @@ export const myStatus = asyncWrapper(async (req, res) => {
   const mine = await getMyLiveStatus(req.user);
 
   res.status(200).json(new ApiResponse(200, mine, "Your status fetched successfully"));
+});
+
+const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** GET /location/timeline?employeeId=&date=YYYY-MM-DD — one person's day; the live map's visibility. */
+export const timeline = asyncWrapper(async (req, res) => {
+  const employeeId = req.query.employeeId || String(req.user._id);
+  const date = req.query.date || new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+  if (!DATE_KEY.test(date)) throw new ApiError(400, "date must be YYYY-MM-DD");
+  const visible = await resolveVisibleEmployeeIds(req.user);
+  if (visible !== null && !visible.includes(String(employeeId))) {
+    throw new ApiError(403, "You cannot see this person's day");
+  }
+  const day = await getDayTimeline(employeeId, date);
+
+  res.status(200).json(new ApiResponse(200, day, "Timeline fetched successfully"));
 });

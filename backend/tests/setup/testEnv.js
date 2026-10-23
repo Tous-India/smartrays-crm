@@ -30,6 +30,8 @@ const TEST_ENV_DEFAULTS = {
   // Complaint escalations run on request activity in production; tests call
   // them explicitly instead, so no request sends notifications on the side.
   COMPLAINT_CHECKS_ON_ACTIVITY: "false",
+  // Live-status manager alerts run on activity in the app; never behind a test.
+  LIVE_ALERTS_ON_ACTIVITY: "false",
 };
 
 for (const [name, value] of Object.entries(TEST_ENV_DEFAULTS)) {
