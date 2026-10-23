@@ -129,7 +129,10 @@ describe("Customer CRUD + scoping", () => {
   it("a manager sees only their direct reports' customers, not an unaffiliated sales associate's", async () => {
     await sales1Agent.post("/api/v1/customers").send(buildCustomerPayload({ projectManagerId: manager1._id }));
     await sales2Agent.post("/api/v1/customers").send(buildCustomerPayload({ projectManagerId: manager1._id }));
-    await sales3Agent.post("/api/v1/customers").send(buildCustomerPayload({ projectManagerId: manager1._id }));
+    // Neither owned nor project-managed by the manager's team. (Since
+    // 2026-10-23 a manager also sees customers their team project-manages, so
+    // this one must have a project manager outside the team to stay hidden.)
+    await sales3Agent.post("/api/v1/customers").send(buildCustomerPayload({ projectManagerId: sales3._id }));
 
     const response = await managerAgent.get("/api/v1/customers");
 

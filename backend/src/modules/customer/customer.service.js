@@ -31,7 +31,10 @@ export async function resolveOwnershipFilter(requestingUser) {
     const teamMembers = await User.find({ managerId: requestingUser._id }).select("_id");
     const visibleOwnerIds = teamMembers.map((member) => member._id);
     visibleOwnerIds.push(requestingUser._id);
-    return { ownerId: { $in: visibleOwnerIds } };
+    // 2026-10-23 (owner's decision): a manager also sees the customers their
+    // team — or they — PROJECT-MANAGE, not only those they own. Otherwise the
+    // installation manager, whose team are the project managers, saw none.
+    return { $or: [{ ownerId: { $in: visibleOwnerIds } }, { projectManagerId: { $in: visibleOwnerIds } }] };
   }
 
   return { ownerId: requestingUser._id };
