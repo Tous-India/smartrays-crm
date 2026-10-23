@@ -21,7 +21,10 @@ function SegmentedControl({ options, value, onChange, testID }) {
             style={[styles.segment, isSelected && styles.segmentSelected]}
             testID={testID ? `${testID}-${option.value}` : undefined}
           >
-            <Text style={[styles.label, isSelected && styles.labelSelected]}>{option.label}</Text>
+            {/* One line, shrunk to fit — four options ("Unassigned (2)") wrapped on a phone. */}
+            <Text style={[styles.label, isSelected && styles.labelSelected]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
+              {option.label}
+            </Text>
           </Pressable>
         );
       })}
