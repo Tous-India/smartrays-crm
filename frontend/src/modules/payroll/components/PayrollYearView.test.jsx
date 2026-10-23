@@ -309,3 +309,27 @@ describe("when a year has no runs at all", () => {
     expect(await screen.findByText(`No pay runs in ${THIS_YEAR} yet.`)).toBeInTheDocument();
   });
 });
+
+// 2026-10-23 (owner's decision): a WARNING, not a block, when the month is not over.
+describe("Run payroll — unfinished month warning", () => {
+  it("warns that the current month is not over, and still allows a draft", async () => {
+    render(<PayrollYearView />);
+    await userEvent.click(await screen.findByRole("button", { name: /run payroll/i }));
+
+    const warning = await screen.findByTestId("payroll-unfinished-month-warning");
+    expect(warning).toHaveTextContent(`${dayjs().format("MMMM YYYY")} is not over yet`);
+    expect(warning).toHaveTextContent(/counted as paid/i);
+    expect(screen.getByRole("button", { name: /generate draft/i })).toBeEnabled();
+  });
+
+  it("does not warn for a month that has ended", async () => {
+    render(<PayrollYearView />);
+    await userEvent.click(await screen.findByRole("button", { name: /run payroll/i }));
+    const picker = screen.getByLabelText("Payroll period");
+    await userEvent.click(picker);
+    await userEvent.clear(picker);
+    await userEvent.type(picker, `${dayjs().subtract(1, "month").format("YYYY-MM")}{enter}`);
+
+    await waitFor(() => expect(screen.queryByTestId("payroll-unfinished-month-warning")).not.toBeInTheDocument());
+  });
+});

@@ -86,6 +86,12 @@ function PayrollYearView() {
     [data, runMonth]
   );
 
+  // 2026-10-23 (owner's decision): running payroll before the month ends is
+  // allowed, but warned about — the calculation counts days that have not
+  // happened yet as paid, and only absences marked so far are deducted.
+  const monthEnd = runMonth.endOf("month");
+  const isUnfinishedMonth = !monthEnd.isBefore(dayjs());
+
   const yearOptions = useMemo(() => {
     const years = data?.years?.length ? data.years : [dayjs().year()];
 
@@ -296,6 +302,16 @@ function PayrollYearView() {
                 : "A draft can be regenerated as often as you like. An approved run is frozen and will be refused."
           }
         />
+        {isUnfinishedMonth && (
+          <Alert
+            type="warning"
+            showIcon
+            className="!mb-4"
+            data-testid="payroll-unfinished-month-warning"
+            message={`${runMonth.format("MMMM YYYY")} is not over yet — it ends on ${monthEnd.format("DD MMM YYYY")}.`}
+            description="Days that have not happened yet are counted as paid, and only absences marked so far are deducted. You can still generate a draft; run it again after the month ends for the final figures (it replaces the draft)."
+          />
+        )}
         <div className="flex flex-col gap-2">
           <Text>Period</Text>
           <DatePicker
