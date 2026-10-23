@@ -28,6 +28,11 @@ import androidx.core.app.NotificationCompat
  * a later release), the refusal is caught and a notification asks the
  * employee to open the app, which resumes tracking through the ordinary
  * shift sync on launch.
+ *
+ * The same after an app UPDATE (2026-10-23): installing a new version kills
+ * the service like a reboot does, and an update from the Play Store can land
+ * mid-shift. MY_PACKAGE_REPLACED is also on Android's list of broadcasts
+ * allowed to start a foreground service.
  */
 class BootReceiver : BroadcastReceiver() {
 
@@ -87,6 +92,7 @@ class BootReceiver : BroadcastReceiver() {
     private const val NOTIFICATION_ID = 4102
     private val BOOT_ACTIONS = setOf(
       Intent.ACTION_BOOT_COMPLETED,
+      Intent.ACTION_MY_PACKAGE_REPLACED,
       // Some OEMs (HTC, a few others) send this instead of BOOT_COMPLETED on a fast boot.
       "android.intent.action.QUICKBOOT_POWERON",
     )
