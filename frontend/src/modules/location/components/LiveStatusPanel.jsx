@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Drawer, Empty, Spin, Timeline } from "antd";
 import { fetchLocationTimeline } from "../api/locationApi";
-import { formatTime } from "../../../utils/date.utils";
+import { formatTime, toLocalDateKey } from "../../../utils/date.utils";
 
 /**
  * Live employee status (2026-10-23) — the counts at the top (tap to filter),
@@ -43,7 +43,8 @@ function PersonDay({ person, meta, onClose }) {
 
   useEffect(() => {
     let cancelled = false;
-    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kolkata" });
+    // The browser's own date — the office is in India (the date-format rule forbids toLocale*String).
+    const today = toLocalDateKey(new Date());
     fetchLocationTimeline(person.employeeId, today)
       .then((response) => !cancelled && setEntries(response.data.data.entries))
       .catch(() => !cancelled && setFailed(true));

@@ -27,11 +27,12 @@ export default function useLiveStatus() {
     fetchLocationConfig()
       .then((response) => setStatuses(response.data.data.statuses || []))
       .catch(() => setStatuses([]));
-    load();
+    const first = setTimeout(load, 0);
     const timer = setInterval(load, POLL_MS);
     const onVisible = () => document.visibilityState === "visible" && load();
     document.addEventListener("visibilitychange", onVisible);
     return () => {
+      clearTimeout(first);
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
