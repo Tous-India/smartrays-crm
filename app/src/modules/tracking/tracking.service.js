@@ -30,6 +30,9 @@ export const PAUSE_REASONS = {
   // longer than the server's TRACKING_STOP_AFTER_HOURS, so tracking stopped
   // on its own — the shift itself is still open and needs a check-out.
   SHIFT_TOO_LONG: "shift_too_long",
+  // Location switched off in the phone's settings (2026-10-23): the engine
+  // runs but can get no fix — the manager sees "Location off".
+  LOCATION_OFF: "location_off",
 };
 
 let cachedConfig = null;
@@ -197,6 +200,7 @@ export async function syncTrackingWithShift(openRecord) {
   }
 
   const readiness = await getTrackingReadiness(openRecord);
+  await reportPermissionChange(readiness);
 
   if (!readiness.ready) {
     if (status.isRunning) {
@@ -209,6 +213,25 @@ export async function syncTrackingWithShift(openRecord) {
   if (!status.isRunning) {
     await tracking.start({ intervalMs: (await resolveConfig()).intervalMs });
   }
+}
+
+/**
+ * Live status (2026-10-23): a location permission taken away during a shift
+ * is a "location off" for the manager, given back a "location on" — queued
+ * once each (a flag remembers which was last) and sent with the next flush.
+ * Turning the GPS itself off is noticed by the service (TrackingService.kt).
+ */
+async function reportPermissionChange(readiness) {
+  const reported = Boolean(await tracking.getFlag(TRACKING_FLAGS.PERMISSION_OFF_REPORTED));
+  const missing = readiness.reason === PAUSE_REASONS.PERMISSION;
+
+  if (missing === reported) {
+    return;
+  }
+
+  await tracking.addStatusEvent(missing ? "location_off" : "location_on", missing ? "permission_revoked" : null);
+  await tracking.setFlag(TRACKING_FLAGS.PERMISSION_OFF_REPORTED, missing ? "1" : null);
+  flushQueue().catch(() => {});
 }
 
 /**
@@ -243,6 +266,10 @@ export async function getTrackingState(openRecord) {
       queuedCount: status.queuedCount,
       lastCapturedAt: status.lastCapturedAt,
     };
+  }
+
+  if (status.isRunning && status.locationOn === false) {
+    return { status: TRACKING_STATUS.PAUSED, reason: PAUSE_REASONS.LOCATION_OFF, queuedCount: status.queuedCount, lastCapturedAt: status.lastCapturedAt };
   }
 
   return {

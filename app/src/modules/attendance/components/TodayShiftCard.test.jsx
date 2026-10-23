@@ -1,3 +1,4 @@
+import { Linking } from "react-native";
 import { fireEvent, render } from "@testing-library/react-native";
 import TodayShiftCard from "./TodayShiftCard";
 
@@ -71,4 +72,15 @@ test("a load error says so instead of pretending nobody is checked in", async ()
 
   expect(screen.getByTestId("shift-card-error")).toBeTruthy();
   expect(screen.queryByTestId("shift-check-in")).toBeNull();
+});
+
+test("location switched off on the phone → 'Tracking paused — location is off', and Turn on opens the location settings (2026-10-23)", async () => {
+  const sendIntent = jest.spyOn(Linking, "sendIntent").mockResolvedValue();
+  const onFixTracking = jest.fn();
+  const screen = await renderCard({ openRecord: OPEN, onFixTracking, trackingState: { status: "paused", reason: "location_off", queuedCount: 0 } });
+
+  expect(screen.getByText(/Tracking paused — location is off on this phone/)).toBeTruthy();
+  await fireEvent.press(screen.getByTestId("shift-tracking-fix"));
+  expect(sendIntent).toHaveBeenCalledWith("android.settings.LOCATION_SOURCE_SETTINGS");
+  expect(onFixTracking).not.toHaveBeenCalled();
 });

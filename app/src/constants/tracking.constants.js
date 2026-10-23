@@ -17,6 +17,8 @@ export const PING_RETENTION_DAYS = 45;
 export const TRACKING_FLAGS = {
   DISCLOSURE: "disclosure",
   BATTERY_GUIDANCE: "batteryGuidance",
+  // Set while a "location off — permission revoked" event is the last one sent (2026-10-23).
+  PERMISSION_OFF_REPORTED: "permissionOffReported",
 };
 
 /**

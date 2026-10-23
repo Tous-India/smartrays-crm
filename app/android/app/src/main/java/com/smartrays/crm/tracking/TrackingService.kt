@@ -5,8 +5,11 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.location.LocationManager
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -15,6 +18,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.facebook.react.ReactApplication
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.modules.core.DeviceEventManagerModule
@@ -41,6 +45,11 @@ import java.util.UUID
  *
  * Every so often, while the device has a network, it starts the headless
  * flush task so queued fixes go up even with the app closed.
+ *
+ * Live status (2026-10-23): each fix is stored with what the phone reports
+ * (DeviceReport), and while running the service listens for location being
+ * switched off / on and queues that as an event, flushed straight away when
+ * there is internet — the manager sees "Location off" within minutes.
  */
 class TrackingService : Service() {
 
@@ -48,6 +57,13 @@ class TrackingService : Service() {
   private var intervalMs: Long = DEFAULT_INTERVAL_MS
   private var lastFlushRequestAt: Long = 0L
   private var startedAt: Long = 0L
+  private var locationOn: Boolean? = null
+
+  private val providersReceiver = object : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+      checkLocationSwitch()
+    }
+  }
 
   private val callback = object : LocationCallback() {
     override fun onLocationResult(result: LocationResult) {
@@ -62,8 +78,9 @@ class TrackingService : Service() {
 
       val id = UUID.randomUUID().toString()
       val accuracy = if (location.hasAccuracy()) location.accuracy else null
+      val device = DeviceReport.read(applicationContext, if (location.hasSpeed()) location.speed else null)
 
-      PingQueueDb.get(applicationContext).insert(id, capturedAt, location.latitude, location.longitude, accuracy)
+      PingQueueDb.get(applicationContext).insert(id, capturedAt, location.latitude, location.longitude, accuracy, device)
       TrackingState.recordFix(applicationContext, capturedAt)
       emitToJs(id, capturedAt, location.latitude, location.longitude, accuracy)
       maybeRequestFlush()
@@ -89,6 +106,7 @@ class TrackingService : Service() {
     startedAt = System.currentTimeMillis()
     startForegroundWithNotification()
     requestUpdates()
+    watchLocationSwitch()
     TrackingState.markRunning(applicationContext, intervalMs)
     return START_STICKY
   }
@@ -142,9 +160,48 @@ class TrackingService : Service() {
 
   private fun stopTracking() {
     client.removeLocationUpdates(callback)
+    unwatchLocationSwitch()
     TrackingState.markStopped(applicationContext)
     stopForeground(STOP_FOREGROUND_REMOVE)
     stopSelf()
+  }
+
+  private fun watchLocationSwitch() {
+    if (locationOn != null) return
+    locationOn = DeviceReport.isLocationOn(applicationContext)
+    // Switched off before this start (or while the service was dead): say so now.
+    if (locationOn == false) queueLocationEvent(false)
+    ContextCompat.registerReceiver(this, providersReceiver, IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION), ContextCompat.RECEIVER_NOT_EXPORTED)
+  }
+
+  private fun unwatchLocationSwitch() {
+    if (locationOn == null) return
+    locationOn = null
+    try {
+      unregisterReceiver(providersReceiver)
+    } catch (error: IllegalArgumentException) {
+      // Not registered — nothing to undo.
+    }
+  }
+
+  /** PROVIDERS_CHANGED fires for each provider; only a real on ↔ off change is an event. */
+  private fun checkLocationSwitch() {
+    val now = DeviceReport.isLocationOn(applicationContext)
+    if (locationOn == null || now == locationOn) return
+    locationOn = now
+    queueLocationEvent(now)
+  }
+
+  private fun queueLocationEvent(on: Boolean) {
+    PingQueueDb.get(applicationContext).insertEvent(
+      UUID.randomUUID().toString(),
+      if (on) "location_on" else "location_off",
+      if (on) null else "gps_off",
+      System.currentTimeMillis(),
+    )
+    Log.i(TAG, "Location switched " + if (on) "on" else "off")
+    lastFlushRequestAt = 0L
+    maybeRequestFlush()
   }
 
   private fun emitToJs(id: String, capturedAt: Long, lat: Double, lng: Double, accuracy: Float?) {
@@ -185,6 +242,7 @@ class TrackingService : Service() {
 
   override fun onDestroy() {
     client.removeLocationUpdates(callback)
+    unwatchLocationSwitch()
     super.onDestroy()
   }
 

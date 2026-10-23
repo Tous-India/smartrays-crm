@@ -1,5 +1,6 @@
 import * as tracking from "./trackingAdapter";
 import { uploadPingBatch } from "./locationApi";
+import { postStatusEvents } from "../live/api/liveApi";
 import { heartbeat } from "../attendance/api/attendanceApi";
 import { PING_BATCH_LIMIT, PING_RETENTION_DAYS } from "../../constants/tracking.constants";
 import { hasServerResponse } from "../../utils/apiError.utils";
@@ -18,9 +19,15 @@ import { hasServerResponse } from "../../utils/apiError.utils";
  * device demonstrably reached the server, so one heartbeat follows each
  * successful flush; the server's 409 after a check-out is ignored.
  *
+ * Live status (2026-10-23): each fix carries what the phone reported when it
+ * was taken (speed, battery, charging, location on, network), and the queued
+ * "location off / on" events go up first, as soon as there is internet.
+ *
  * Single-flight: the foreground app and the headless flush task share this
  * module, so only one upload runs at a time whoever asked.
  */
+
+const STATUS_EVENT_BATCH_LIMIT = 100;
 
 let flushInFlight = null;
 
@@ -39,6 +46,10 @@ async function performFlush() {
 
   await tracking.pruneCapturedBefore(Date.now() - PING_RETENTION_DAYS * 24 * 60 * 60 * 1000);
 
+  if (!(await flushStatusEvents(summary))) {
+    return summary;
+  }
+
   // Loop until a batch comes back short — the queue is then empty.
   for (;;) {
     const rows = await tracking.takeQueued(PING_BATCH_LIMIT);
@@ -55,6 +66,7 @@ async function performFlush() {
         lng: row.lng,
         ...(typeof row.accuracy === "number" ? { accuracy: row.accuracy } : {}),
       },
+      ...deviceReport(row),
     }));
 
     let report;
@@ -87,6 +99,53 @@ async function performFlush() {
       return summary;
     }
   }
+}
+
+const NETWORKS = ["wifi", "cellular", "none", "unknown"];
+
+/** The optional fields the server's live status reads; absent ones are left out. */
+export function deviceReport(row) {
+  const device = {};
+  if (typeof row.battery === "number") device.battery = row.battery;
+  if (typeof row.charging === "boolean") device.charging = row.charging;
+  if (typeof row.locationOn === "boolean") device.locationOn = row.locationOn;
+  if (NETWORKS.includes(row.network)) device.network = row.network;
+
+  return {
+    ...(typeof row.speed === "number" && row.speed >= 0 ? { speed: row.speed } : {}),
+    ...(Object.keys(device).length > 0 ? { device } : {}),
+  };
+}
+
+/** Sends the queued status events; false when the pass should stop (no network, refused). */
+async function flushStatusEvents(summary) {
+  const events = await tracking.takeStatusEvents(STATUS_EVENT_BATCH_LIMIT);
+
+  if (events.length === 0) {
+    return true;
+  }
+
+  try {
+    await postStatusEvents(
+      events.map((event) => ({
+        type: event.type,
+        ...(event.reason ? { reason: event.reason } : {}),
+        at: new Date(event.at).toISOString(),
+      }))
+    );
+  } catch (error) {
+    if (!hasServerResponse(error) || error.response.status >= 500 || error.response.status === 401) {
+      summary.stoppedBy = hasServerResponse(error) ? `HTTP ${error.response.status}` : "network";
+      return false;
+    }
+    // A 4xx the server will never accept (bad data): drop them, log it, carry on.
+    console.log(`[tracking] status events refused: HTTP ${error.response.status}`);
+  }
+
+  await tracking.deleteStatusEvents(events.map((event) => event.id));
+  summary.statusEvents = events.length;
+
+  return true;
 }
 
 async function sendHeartbeat(summary) {

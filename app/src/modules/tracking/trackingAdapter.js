@@ -11,10 +11,12 @@ import { PERMISSION_STATUS, requestPermission } from "../../utils/permissions.ut
  * Contract:
  *   start({ intervalMs })          begin capturing fixes at that cadence
  *   stop()                         end capturing; the persistent notification goes
- *   getStatus()                    { isRunning, queuedCount, lastCapturedAt, intervalMs }
+ *   getStatus()                    { isRunning, queuedCount, lastCapturedAt, intervalMs, locationOn }
  *   onPing(listener) → unsubscribe a fix was captured (only while JS is alive)
  *   takeQueued(limit) / deleteQueued(ids)   the offline queue, oldest first
  *   pruneCapturedBefore(cutoffMs)  drop fixes the server would purge anyway
+ *   takeStatusEvents(limit) / deleteStatusEvents(ids) / addStatusEvent(type, reason)
+ *                                  the "location off / on" queue (2026-10-23)
  *   permission helpers             the three grants tracking depends on
  *   getFlag / setFlag              small durable flags (disclosure, guidance)
  */
@@ -47,6 +49,8 @@ export async function getStatus() {
     queuedCount: Number(status.queuedCount) || 0,
     lastCapturedAt: status.lastCapturedAt ? new Date(status.lastCapturedAt) : null,
     intervalMs: status.intervalMs || null,
+    // Location switched on in the phone's settings (2026-10-23); unknown counts as on.
+    locationOn: status.locationOn !== false,
   };
 }
 
@@ -65,7 +69,11 @@ export function onPing(listener) {
   return () => subscription.remove();
 }
 
-/** Up to `limit` queued fixes, oldest first: [{ id, capturedAt, lat, lng, accuracy? }]. */
+/**
+ * Up to `limit` queued fixes, oldest first:
+ * [{ id, capturedAt, lat, lng, accuracy?, speed?, battery?, charging?, locationOn?, network? }]
+ * — the device fields are what the phone reported at capture (2026-10-23).
+ */
 export async function takeQueued(limit) {
   assertNative();
   const json = await native.takeQueued(limit);
@@ -87,6 +95,30 @@ export async function pruneCapturedBefore(cutoffMs) {
   assertNative();
 
   return native.pruneCapturedBefore(cutoffMs);
+}
+
+/** Up to `limit` queued "location off / on" events, oldest first: [{ id, type, reason?, at }]. */
+export async function takeStatusEvents(limit) {
+  assertNative();
+  const json = await native.takeStatusEvents(limit);
+
+  return JSON.parse(json || "[]");
+}
+
+export async function deleteStatusEvents(ids) {
+  assertNative();
+
+  if (ids.length === 0) {
+    return 0;
+  }
+
+  return native.deleteStatusEvents(ids);
+}
+
+/** Queues an event noticed on the JS side (a permission found revoked). */
+export async function addStatusEvent(type, reason) {
+  assertNative();
+  await native.addStatusEvent(type, reason ?? null, Date.now());
 }
 
 export async function getFlag(key) {

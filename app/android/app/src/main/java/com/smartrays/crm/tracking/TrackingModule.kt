@@ -58,6 +58,7 @@ class TrackingModule(private val context: ReactApplicationContext) : ReactContex
         if (lastFix != null) putDouble("lastCapturedAt", lastFix.toDouble()) else putNull("lastCapturedAt")
         val interval = TrackingState.savedIntervalMs(context)
         if (interval != null) putDouble("intervalMs", interval.toDouble()) else putNull("intervalMs")
+        putBoolean("locationOn", DeviceReport.isLocationOn(context))
       }
       promise.resolve(status)
     } catch (error: Exception) {
@@ -91,6 +92,37 @@ class TrackingModule(private val context: ReactApplicationContext) : ReactContex
       promise.resolve(PingQueueDb.get(context).deleteCapturedBefore(cutoffMs.toLong()).toDouble())
     } catch (error: Exception) {
       promise.reject("E_TRACKING_PRUNE", error)
+    }
+  }
+
+  /** The oldest `limit` queued "location off / on" events, as a JSON string (2026-10-23). */
+  @ReactMethod
+  fun takeStatusEvents(limit: Double, promise: Promise) {
+    try {
+      promise.resolve(PingQueueDb.get(context).takeEvents(limit.toInt()).toString())
+    } catch (error: Exception) {
+      promise.reject("E_TRACKING_TAKE_EVENTS", error)
+    }
+  }
+
+  @ReactMethod
+  fun deleteStatusEvents(ids: ReadableArray, promise: Promise) {
+    try {
+      val list = (0 until ids.size()).mapNotNull { ids.getString(it) }
+      promise.resolve(PingQueueDb.get(context).deleteEvents(list).toDouble())
+    } catch (error: Exception) {
+      promise.reject("E_TRACKING_DELETE_EVENTS", error)
+    }
+  }
+
+  /** An event JavaScript noticed (a permission found revoked). */
+  @ReactMethod
+  fun addStatusEvent(type: String, reason: String?, at: Double, promise: Promise) {
+    try {
+      PingQueueDb.get(context).insertEvent(java.util.UUID.randomUUID().toString(), type, reason, at.toLong())
+      promise.resolve(null)
+    } catch (error: Exception) {
+      promise.reject("E_TRACKING_ADD_EVENT", error)
     }
   }
 

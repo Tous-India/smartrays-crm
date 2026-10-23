@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { Linking, StyleSheet, Text, View } from "react-native";
 import PrimaryButton from "../../../components/PrimaryButton";
 import { SkeletonBlock } from "../../../components/Skeleton";
 import { formatClockTime, formatElapsed } from "../attendance.utils";
@@ -66,6 +66,27 @@ function TrackingLine({ trackingState, isOnline, onFixTracking, now }) {
         <Text style={[typography.small, styles.trackingWarn]}>
           Tracking stopped — this shift has been open more than {trackingState.hoursLimit} hours. Please check out.
           {queued}
+        </Text>
+      </View>
+    );
+  }
+
+  // Location switched off in the phone's settings (2026-10-23): "Turn on"
+  // opens that setting directly.
+  if (trackingState.reason === "location_off") {
+    return (
+      <View style={styles.trackingRow} testID="shift-tracking-paused">
+        <Text style={[typography.small, styles.trackingWarn]}>
+          Tracking paused — location is off on this phone
+          {queued}
+        </Text>
+        <Text
+          style={styles.trackingFix}
+          onPress={() => Linking.sendIntent("android.settings.LOCATION_SOURCE_SETTINGS").catch(() => Linking.openSettings())}
+          accessibilityRole="button"
+          testID="shift-tracking-fix"
+        >
+          Turn on
         </Text>
       </View>
     );

@@ -1,4 +1,5 @@
 import { NativeModules, PermissionsAndroid } from "react-native";
+import { flushQueue } from "./pingQueue.service";
 import apiClient, { refreshClient } from "../../api/apiClient";
 import {
   clearTrackingConfigCache,
@@ -46,6 +47,8 @@ beforeEach(async () => {
   global.mockTrackingNative.running = false;
   global.mockTrackingNative.queue = [];
   global.mockTrackingNative.flags = {};
+  global.mockTrackingNative.events = [];
+  global.mockTrackingNative.locationOn = true;
   server.consent = null;
   server.attendance = [];
   server.requests.length = 0;
@@ -116,6 +119,50 @@ test("disclosure accepted but background location missing → paused (permission
 
   expect(native.stop).toHaveBeenCalled();
   expect(await getTrackingState(OPEN_SHIFT)).toMatchObject({ status: TRACKING_STATUS.PAUSED, reason: PAUSE_REASONS.PERMISSION });
+});
+
+test("location permission taken away during a shift → ONE 'location off' event for the manager; given back → 'location on' (2026-10-23)", async () => {
+  await recordDisclosureAnswer(DISCLOSURE_ANSWERS.GRANTED);
+  PermissionsAndroid.check.mockImplementation(async (permission) => permission !== PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION);
+
+  const sent = () => server.requests.filter((request) => request.url.includes("/location/status-events")).flatMap((request) => request.body.events);
+
+  await syncTrackingWithShift(OPEN_SHIFT);
+  await flushQueue();
+  await syncTrackingWithShift(OPEN_SHIFT);
+  await flushQueue();
+
+  expect(sent().map(({ type, reason }) => ({ type, reason }))).toEqual([{ type: "location_off", reason: "permission_revoked" }]);
+
+  PermissionsAndroid.check.mockResolvedValue(true);
+  await syncTrackingWithShift(OPEN_SHIFT);
+  await flushQueue();
+  await syncTrackingWithShift(OPEN_SHIFT);
+  await flushQueue();
+
+  expect(sent().map(({ type }) => type)).toEqual(["location_off", "location_on"]);
+  expect(global.mockTrackingNative.events).toEqual([]);
+});
+
+test("no shift → no location events, whatever the permissions", async () => {
+  await recordDisclosureAnswer(DISCLOSURE_ANSWERS.GRANTED);
+  PermissionsAndroid.check.mockResolvedValue(false);
+
+  await syncTrackingWithShift(null);
+  await flushQueue();
+
+  expect(server.requests.some((request) => request.url.includes("/location/status-events"))).toBe(false);
+});
+
+test("location switched off while the engine runs → the card says paused (location off), not 'tracking' (2026-10-23)", async () => {
+  await recordDisclosureAnswer(DISCLOSURE_ANSWERS.GRANTED);
+  global.mockTrackingNative.running = true;
+  global.mockTrackingNative.locationOn = false;
+
+  expect(await getTrackingState(OPEN_SHIFT)).toMatchObject({ status: TRACKING_STATUS.PAUSED, reason: PAUSE_REASONS.LOCATION_OFF });
+
+  global.mockTrackingNative.locationOn = true;
+  expect(await getTrackingState(OPEN_SHIFT)).toMatchObject({ status: TRACKING_STATUS.TRACKING, reason: null });
 });
 
 test("the queue count and last fix reach the card", async () => {

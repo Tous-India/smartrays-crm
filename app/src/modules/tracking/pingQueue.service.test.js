@@ -41,6 +41,7 @@ beforeEach(() => {
   batches.length = 0;
   heartbeats.length = 0;
   global.mockTrackingNative.queue = [];
+  global.mockTrackingNative.events = [];
   refreshClient.defaults.adapter = networkDown;
   jest.spyOn(console, "log").mockImplementation(() => {});
 });
@@ -173,4 +174,57 @@ test("two callers during one flush share the same upload", async () => {
 
   expect(uploads).toBe(1);
   expect(heartbeats).toHaveLength(1);
+});
+
+test("sends what the phone reported with each fix: speed, battery, charging, location on, network (2026-10-23)", async () => {
+  const at = Date.now() - 5 * 60000;
+  global.mockTrackingNative.queue = [
+    { id: "a", capturedAt: at, lat: 12.9, lng: 77.6, accuracy: 6, speed: 4.2, battery: 37, charging: false, locationOn: true, network: "cellular" },
+    { id: "b", capturedAt: at + 120000, lat: 12.9, lng: 77.6 },
+  ];
+  apiClient.defaults.adapter = serverAcceptingAll();
+
+  await flushQueue();
+
+  const [first, second] = batches[0];
+  expect(first.speed).toBe(4.2);
+  expect(first.device).toEqual({ battery: 37, charging: false, locationOn: true, network: "cellular" });
+  // An old row (queued before the update) has none of it — and sends none.
+  expect(second.speed).toBeUndefined();
+  expect(second.device).toBeUndefined();
+});
+
+test("sends the queued 'location off / on' events, oldest first, and deletes them once the server has them", async () => {
+  const at = Date.now() - 10 * 60000;
+  global.mockTrackingNative.events = [
+    { id: "e2", type: "location_on", at: at + 60000 },
+    { id: "e1", type: "location_off", reason: "gps_off", at },
+  ];
+  const posted = [];
+  apiClient.defaults.adapter = async (config) => {
+    if (config.url.includes("/location/status-events")) {
+      posted.push(JSON.parse(config.data).events);
+      return respond(config, 200, { data: { recorded: 2 } });
+    }
+    return serverAcceptingAll()(config);
+  };
+
+  await flushQueue();
+
+  expect(posted).toEqual([
+    [
+      { type: "location_off", reason: "gps_off", at: new Date(at).toISOString() },
+      { type: "location_on", at: new Date(at + 60000).toISOString() },
+    ],
+  ]);
+  expect(global.mockTrackingNative.events).toEqual([]);
+});
+
+test("no internet → the events stay queued for the next flush", async () => {
+  global.mockTrackingNative.events = [{ id: "e1", type: "location_off", reason: "gps_off", at: Date.now() }];
+  apiClient.defaults.adapter = networkDown;
+
+  await flushQueue();
+
+  expect(global.mockTrackingNative.events).toHaveLength(1);
 });
