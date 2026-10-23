@@ -39,7 +39,9 @@ export const navigationRef = createNavigationContainerRef();
 // because the server lets an admin see everyone — plus the full complaints
 // list and assigning, which follow permissions, not role.
 export function navigatorForRole(role) {
-  if (role === ROLES.EMPLOYEE) {
+  // Sales associates (2026-10-23): the employee screens — check-in,
+  // tracking, services, leave, Me. Their leads and customers stay on the web.
+  if (role === ROLES.EMPLOYEE || role === ROLES.SALES_ASSOCIATE) {
     return <EmployeeNavigator />;
   }
 
