@@ -304,3 +304,9 @@ Verified: 15 backend tests + web/app tests (all failed before); Chrome 390: matc
 prefilled; Did you mean → Link → Save contact → number now matches. Screenshots:
 `_advisor/screenshots/complaint-identify/`.
 Commits: `f68177d`, `d8be41a`, `edfe299`, `e7ade23`, `f08adbd`, `0d699dd`.
+
+## MASTER BRIEF (2026-10-23, afternoon) — progress
+- Item 1 — all suites rerun (16:05): backend 1242/1242, app 172/172, web 1003/1005 → the 2 failures:
+  DashboardPage test still expected the old tickets grant to show complaints (updated, `c98635d`);
+  UserManagementPage = the known full-load flake (passes alone). Screenshots committed (`9b6fcdc`).
+- Item 2 — done (see the entry above).
