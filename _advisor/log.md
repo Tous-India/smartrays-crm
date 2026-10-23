@@ -339,7 +339,24 @@ Commits: `f68177d`, `d8be41a`, `edfe299`, `e7ade23`, `f08adbd`, `0d699dd`.
 - Item 4 — LIVE EMPLOYEE STATUS, backend + web done (`da6af9e`, `de1d37d`, `96d50b0`, `1fa19e4`):
   device report on pings, location-off events, status for every person, day timeline, manager push,
   web Live Map counts / problems first / coloured markers / a person's day (Chrome 1280 + 390 px).
-  App side in progress (screens written, native device report next).
+  App side done 18:30–18:55 (`9cde5ac`, `b087672`, `e426abe`):
+  - Team tab "Live" (manager + admin): tappable counts, status-coloured markers, list problems first,
+    tap a marker/person → card → "Open their day" (status now + timeline); refreshes every 45 s.
+    Map markers were invisible with MapLibre ViewAnnotation on Android → switched to Marker (fixed).
+  - Home "What the office sees" (employee): own status + fix-it button (location settings / Wi-Fi /
+    tracking screen); the shift card now says "Tracking paused — location is off" instead of "active".
+  - Phone sends speed, battery, charging, location on, network with every fix (native queue v2 —
+    the upgrade kept queued fixes); GPS switched off/on → event queued and sent at once when online;
+    permission removed during a shift → "location off (permission revoked)" once.
+  - Emulator (debug build, local backend): GPS off → server had `location_off/gps_off` 0.4 s later,
+    manager API + app showed Deepak "Location off"; Home card showed it with "Turn on location", which
+    opened Location settings; GPS on → `location_on` 1 s later. Pings stored with
+    `{battery 100, charging false, locationOn true, network wifi}`. Manager Team → Live screenshots in
+    `_advisor/screenshots/live-status/app-*.png`.
+  - Tests: app 191/191 (new: Team Live, MyStatusCard, live.utils, flush device report + events,
+    permission events, location-off card state — each shown failing before its change).
+  - Not tested on device: the manager PUSH after 15 min (needs Firebase — backend tests cover the
+    notification record).
 - Owner's away-until-Monday list, (2) + (3), 18:00–18:30:
   - App icon recreated (`a013ac2`) by `app/scripts/generate-icons.mjs` from the logo: every density,
     adaptive + round + themed monochrome, background #fbfbfa = splash, `app/store/play-icon-512.png`.
