@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import apiClient from "../api/apiClient";
 import { API_PATHS } from "../constants/api.constants";
+import useSessionStore from "../store/sessionStore";
 
 /**
  * What the server says this user may do (`GET /users/me/permissions`,
@@ -12,6 +13,15 @@ import { API_PATHS } from "../constants/api.constants";
  */
 let cached = null;
 let inFlight = null;
+
+// One phone, several people (2026-10-23): whenever the signed-in user changes
+// — sign out, sign in as someone else, a refresh that fails — forget the
+// answer, or the next person inherits the previous one's permissions.
+useSessionStore.subscribe((state, previous) => {
+  if (state.user?._id !== previous.user?._id) {
+    cached = null;
+  }
+});
 
 function loadPermissions() {
   if (!inFlight) {
