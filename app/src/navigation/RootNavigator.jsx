@@ -35,12 +35,15 @@ import { navigateForNotification } from "../modules/push/pushNavigation";
  */
 export const navigationRef = createNavigationContainerRef();
 
-function navigatorForRole(role) {
+// Admin (2026-10-23) gets the manager's app — the Team tab shows everyone,
+// because the server lets an admin see everyone — plus the full complaints
+// list and assigning, which follow permissions, not role.
+export function navigatorForRole(role) {
   if (role === ROLES.EMPLOYEE) {
     return <EmployeeNavigator />;
   }
 
-  if (role === ROLES.MANAGER) {
+  if (role === ROLES.MANAGER || role === ROLES.ADMIN) {
     return <ManagerNavigator />;
   }
 

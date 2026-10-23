@@ -57,7 +57,20 @@ function useMyPermissions() {
     };
   }, []);
 
-  return { role: result?.role || null, permissions: result?.permissions || null, error };
+  return { role: result?.role || null, permissions: permissionsFor(result), error };
+}
+
+// Every module, every action: true — what an admin holds.
+const EVERYTHING = new Proxy({}, { get: () => new Proxy({}, { get: () => true }) });
+
+/**
+ * The permissions to check against. Admins always pass (2026-10-23), as on
+ * the server (permission.helper.js) — their stored permissions are empty,
+ * because the server never reads them.
+ */
+export function permissionsFor(answer) {
+  if (!answer) return null;
+  return answer.role === "admin" ? EVERYTHING : answer.permissions || null;
 }
 
 /** `can(permissions, "services", "create")` — false until the permissions have loaded. */

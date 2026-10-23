@@ -11,5 +11,5 @@ export const ROLES = {
   CUSTOMER: "customer",
 };
 
-/** Roles the app serves in v1 (app-plan.md, scope decision): the field roles. */
-export const APP_ROLES = [ROLES.EMPLOYEE, ROLES.MANAGER];
+/** Roles the app serves: the field roles, and admin (2026-10-23) for live tracking and complaints. */
+export const APP_ROLES = [ROLES.EMPLOYEE, ROLES.MANAGER, ROLES.ADMIN];

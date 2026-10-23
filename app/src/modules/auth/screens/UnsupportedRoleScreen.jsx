@@ -7,9 +7,10 @@ import { signOut } from "../session.service";
 import { spacing, typography } from "../../../theme";
 
 /**
- * Admin, sales associate and customer accounts are out of the app's scope
- * (app-plan.md, scope decision): their work is the web app's. The account
- * signed in fine — this says so, and offers the way back out.
+ * Sales associate and customer accounts are out of the app's scope
+ * (app-plan.md, scope decision; admin joined the app 2026-10-23): their work
+ * is the web app's. The account signed in fine — this says so, and offers
+ * the way back out.
  */
 function UnsupportedRoleScreen() {
   const user = useSessionStore((state) => state.user);
@@ -21,7 +22,7 @@ function UnsupportedRoleScreen() {
       <View style={styles.body}>
         <Text style={typography.title}>This app is for field staff</Text>
         <Text style={[typography.subtitle, styles.text]}>
-          {greeting} account ({user?.role}) uses the web CRM. Employee and manager accounts sign in here.
+          {greeting} account ({user?.role}) uses the web CRM. Employee, manager and admin accounts sign in here.
         </Text>
         <PrimaryButton title="Sign out" onPress={signOut} testID="unsupported-sign-out" />
       </View>
