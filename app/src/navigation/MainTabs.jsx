@@ -16,6 +16,7 @@ import PayslipsScreen from "../modules/me/screens/PayslipsScreen";
 import TeamScreen from "../modules/team/screens/TeamScreen";
 import TeamMemberDayScreen from "../modules/team/screens/TeamMemberDayScreen";
 import ServiceFormScreen from "../modules/team/screens/ServiceFormScreen";
+import PersonDayScreen from "../modules/live/screens/PersonDayScreen";
 import { colors } from "../theme";
 
 /**
@@ -53,6 +54,7 @@ function TeamTab() {
     <TeamStack.Navigator screenOptions={NO_HEADER}>
       <TeamStack.Screen name={SCREENS.TEAM} component={TeamScreen} />
       <TeamStack.Screen name={SCREENS.TEAM_MEMBER_DAY} component={TeamMemberDayScreen} />
+      <TeamStack.Screen name={SCREENS.PERSON_DAY} component={PersonDayScreen} />
       <TeamStack.Screen name={SCREENS.TEAM_SERVICE_DETAIL} component={ServiceDetailScreen} />
       <TeamStack.Screen name={SCREENS.SERVICE_FORM} component={ServiceFormScreen} />
     </TeamStack.Navigator>
