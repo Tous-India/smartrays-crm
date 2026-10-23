@@ -7,7 +7,7 @@ import * as leadApi from "../modules/lead/api/leadApi";
 import * as customerApi from "../modules/customer/api/customerApi";
 import * as attendanceApi from "../modules/attendance/api/attendanceApi";
 import * as leaveApi from "../modules/leave/api/leaveApi";
-import * as ticketApi from "../modules/ticket/api/ticketApi";
+import * as complaintApi from "../modules/complaint/api/complaintApi";
 import * as amcApi from "../modules/amc/api/amcApi";
 import * as paymentApi from "../modules/payment/api/paymentApi";
 import * as payrollApi from "../modules/payroll/api/payrollApi";
@@ -30,8 +30,9 @@ vi.mock("../modules/leave/api/leaveApi", () => ({
   listLeave: vi.fn(),
 }));
 
-vi.mock("../modules/ticket/api/ticketApi", () => ({
-  listTickets: vi.fn(),
+// The "Customer complaints" widget reads the complaints list (2026-10-23).
+vi.mock("../modules/complaint/api/complaintApi", () => ({
+  listComplaints: vi.fn(),
 }));
 
 vi.mock("../modules/amc/api/amcApi", () => ({
@@ -74,7 +75,7 @@ const EMPTY_CUSTOMERS = { data: { data: [] } };
 function mockOperationalWidgetsEmpty() {
   attendanceApi.getTeamAttendance.mockResolvedValue({ data: { data: [] } });
   leaveApi.listLeave.mockResolvedValue({ data: { data: [] } });
-  ticketApi.listTickets.mockResolvedValue({ data: { data: [] } });
+  complaintApi.listComplaints.mockResolvedValue({ data: { data: [] } });
   amcApi.listAmc.mockResolvedValue({ data: { data: [] } });
   paymentApi.listPayments.mockResolvedValue({ data: { data: [] } });
   payrollApi.listPayroll.mockResolvedValue({ data: { data: [] } });
@@ -112,7 +113,7 @@ describe("DashboardPage — role-based widget composition", () => {
     expect(screen.getByText("Payroll Status (This Month)")).toBeInTheDocument();
   });
 
-  it("renders manager's narrower operational widget set (Attendance/Tickets/AMC, not Leave/Payments/Payroll)", async () => {
+  it("renders manager's narrower operational widget set (Attendance/AMC, not Leave/Payments/Payroll/Complaints)", async () => {
     useSessionStore.setState({
       user: {
         _id: "manager-1",
@@ -130,7 +131,8 @@ describe("DashboardPage — role-based widget composition", () => {
     renderPage();
 
     expect(await screen.findByText("Present Today")).toBeInTheDocument();
-    expect(screen.getByText("Customer complaints")).toBeInTheDocument();
+    // Complaints follow complaints.* since 2026-10-23 — the old tickets grant no longer shows them.
+    expect(screen.queryByText("Customer complaints")).not.toBeInTheDocument();
     expect(screen.getByText("AMC Renewals Due")).toBeInTheDocument();
     expect(screen.queryByText("Pending Leave Requests")).not.toBeInTheDocument();
     expect(screen.queryByText("Payments This Month")).not.toBeInTheDocument();
@@ -255,7 +257,7 @@ describe("DashboardPage — permission-gating overrides role defaults", () => {
     expect(leadApi.listLeads).not.toHaveBeenCalled();
     expect(customerApi.listCustomers).not.toHaveBeenCalled();
     expect(attendanceApi.getTeamAttendance).not.toHaveBeenCalled();
-    expect(ticketApi.listTickets).not.toHaveBeenCalled();
+    expect(complaintApi.listComplaints).not.toHaveBeenCalled();
     expect(amcApi.listAmc).not.toHaveBeenCalled();
   });
 });
@@ -287,14 +289,14 @@ describe("DashboardPage — one widget failing doesn't break the others", () => 
     expect(screen.getByText("Customers Overview")).toBeInTheDocument();
   });
 
-  it("shows an inline error on the failing Tickets widget while the AMC widget on the same page still renders real data", async () => {
+  it("shows an inline error on the failing Complaints widget while the AMC widget on the same page still renders real data", async () => {
     vi.clearAllMocks();
     leadApi.listLeads.mockResolvedValue(EMPTY_LEADS);
     customerApi.listCustomers.mockResolvedValue(EMPTY_CUSTOMERS);
     customerApi.listContracts.mockResolvedValue({ data: { data: [] } });
     attendanceApi.getTeamAttendance.mockResolvedValue({ data: { data: [] } });
     leaveApi.listLeave.mockResolvedValue({ data: { data: [] } });
-    ticketApi.listTickets.mockRejectedValue(new Error("tickets API down"));
+    complaintApi.listComplaints.mockRejectedValue(new Error("tickets API down"));
     amcApi.listAmc.mockResolvedValue({
       data: { data: [{ _id: "amc1", renewalDate: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000).toISOString() }] },
     });
