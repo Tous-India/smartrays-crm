@@ -47,6 +47,10 @@ beforeAll(async () => {
   ({ default: Ticket } = await import("./ticket.model.js"));
   ({ default: Notification } = await import("../notification/notification.model.js"));
   ({ runComplaintChecks } = await import("./ticketEscalation.service.js"));
+  // The "once a day" guarantee is TicketDigest's unique index; on a fresh
+  // test database wait until it is built, or a race can slip a duplicate in.
+  const { default: TicketDigest } = await import("./ticketDigest.model.js");
+  await TicketDigest.init();
 
   vinay = await createUserDirectly({ name: "Vinay Gupta", email: "vinay@test.local", password: "AdminPass123!", role: "admin" });
   coordinator = await createUserDirectly({

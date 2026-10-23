@@ -25,7 +25,10 @@ export function firstName(name) {
  * brackets, then a +91 / 91 country code or a leading 0.
  */
 export function normalizeIndianMobile(phone) {
-  let digits = String(phone || "").replace(/\D/g, "");
+  const raw = String(phone || "").trim();
+  let digits = raw.replace(/\D/g, "");
+  // "+…" means a country code is coming: not complete until it is +91 and 10 digits.
+  if (raw.startsWith("+")) return digits.length === 12 && digits.startsWith("91") ? digits.slice(2) : null;
   if (digits.length === 12 && digits.startsWith("91")) digits = digits.slice(2);
   else if (digits.length === 11 && digits.startsWith("0")) digits = digits.slice(1);
   return /^\d{10}$/.test(digits) ? digits : null;
