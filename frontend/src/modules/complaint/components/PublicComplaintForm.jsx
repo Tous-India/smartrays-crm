@@ -136,11 +136,15 @@ function PublicComplaintForm() {
           <p className="mt-2 text-3xl font-bold">No. {sent.number}</p>
           <p className="mt-2 text-gray-700">We will call you soon. Keep this number, and save the link below to see the status any time.</p>
           <p className="mt-1 text-sm text-gray-500">यह नंबर संभाल कर रखें। स्थिति देखने के लिए नीचे का लिंक सेव करें।</p>
+          {/* Background inline and colour on the span: antd's unlayered reset
+              (`a { background-color: transparent; color: … }`) beats Tailwind's
+              bg-/text- utilities on a link — it rendered white on white. */}
           <Link
             to={statusPath}
-            className="mt-4 flex min-h-12 w-full items-center justify-center rounded-xl bg-brand-navy px-4 text-lg font-semibold !text-white"
+            className="mt-4 flex min-h-12 w-full items-center justify-center rounded-xl px-4 text-lg font-semibold"
+            style={{ backgroundColor: "#163b78" }}
           >
-            See the status
+            <span className="text-white">See the status</span>
           </Link>
           <p className="mt-2 break-all text-center text-xs text-gray-500">
             {typeof window !== "undefined" ? `${window.location.origin}${statusPath}` : statusPath}
