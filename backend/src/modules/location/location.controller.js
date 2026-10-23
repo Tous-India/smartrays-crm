@@ -6,8 +6,10 @@ import {
   getLiveLocations,
   getLocationHistory,
   getPingIntervalConfig,
+  resolveVisibleEmployeeIds,
 } from "./location.service.js";
 import { recordLocationConsent, getMyLatestConsent, listLatestConsents } from "./locationConsent.service.js";
+import { getMyLiveStatus, getTeamLiveStatus, recordStatusEvents } from "./liveStatus.service.js";
 
 export const create = asyncWrapper(async (req, res) => {
   // The batch form (mobile-backend-plan.md §3.2): a 200 with a per-ping
@@ -19,9 +21,9 @@ export const create = asyncWrapper(async (req, res) => {
     return;
   }
 
-  const { coords, capturedAt } = req.body;
+  const { coords, capturedAt, speed, device } = req.body;
 
-  const ping = await submitPing({ coords, capturedAt }, req.user);
+  const ping = await submitPing({ coords, capturedAt, speed, device }, req.user);
 
   res.status(201).json(new ApiResponse(201, ping, "Location ping recorded"));
 });
@@ -66,4 +68,23 @@ export const consentList = asyncWrapper(async (req, res) => {
   const rows = await listLatestConsents(req.user);
 
   res.status(200).json(new ApiResponse(200, rows, "Location consents fetched successfully"));
+});
+
+// --- Live employee status (2026-10-23) ---
+export const statusEvents = asyncWrapper(async (req, res) => {
+  const result = await recordStatusEvents(req.body.events, req.user);
+
+  res.status(200).json(new ApiResponse(200, result, "Status events recorded"));
+});
+
+export const liveStatus = asyncWrapper(async (req, res) => {
+  const team = await getTeamLiveStatus(await resolveVisibleEmployeeIds(req.user));
+
+  res.status(200).json(new ApiResponse(200, team, "Live status fetched successfully"));
+});
+
+export const myStatus = asyncWrapper(async (req, res) => {
+  const mine = await getMyLiveStatus(req.user);
+
+  res.status(200).json(new ApiResponse(200, mine, "Your status fetched successfully"));
 });

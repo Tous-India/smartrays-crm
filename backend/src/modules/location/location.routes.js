@@ -1,8 +1,8 @@
 import { Router } from "express";
 import authenticate from "../../middlewares/authenticate.middleware.js";
 import { authorizeAny } from "../../middlewares/authorize.middleware.js";
-import { create, live, history, config, recordConsent, myConsent, consentList } from "./location.controller.js";
-import { validatePingInput, validateHistoryQuery, validateConsentInput } from "./location.validation.js";
+import { create, live, history, config, recordConsent, myConsent, consentList, statusEvents, liveStatus, myStatus } from "./location.controller.js";
+import { validatePingInput, validateHistoryQuery, validateConsentInput, validateStatusEventsInput } from "./location.validation.js";
 
 const locationRouter = Router();
 
@@ -22,6 +22,13 @@ locationRouter.get(
 );
 
 locationRouter.get("/config", authenticate, config);
+
+// --- Live employee status (2026-10-23) ---
+// Your own phone's "location off / on" and your own status: a session is enough.
+locationRouter.post("/status-events", authenticate, validateStatusEventsInput, statusEvents);
+locationRouter.get("/my-status", authenticate, myStatus);
+// Everyone's: the live map's view grants, scoped by the same helper.
+locationRouter.get("/live-status", authenticate, authorizeAny("location", VIEW_ACTIONS), liveStatus);
 
 // --- Location consent (final-plan.md §7.73) ---
 // Recording and reading your OWN decision needs only a session — like a ping,

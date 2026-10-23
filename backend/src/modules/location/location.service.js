@@ -5,6 +5,7 @@ import { applyGeofenceCheck, closeOpenGeofenceViolation } from "../attendance/at
 import { signedAttendancePhotoUrl } from "../../services/cloudinary.service.js";
 import LocationPing, { LOCATION_PING_TTL_SECONDS } from "./location.model.js";
 import Attendance from "../attendance/attendance.model.js";
+import { LIVE_FLAGS, LIVE_STATUSES, liveThresholds, recordDeviceReport } from "./liveStatus.service.js";
 import User from "../user/user.model.js";
 
 /**
@@ -25,7 +26,7 @@ import User from "../user/user.model.js";
  * guaranteed to never throw, so it's called after the ping is already
  * created and never affects this endpoint's response.
  */
-export async function submitPing({ coords, capturedAt }, requestingUser) {
+export async function submitPing({ coords, capturedAt, speed, device }, requestingUser) {
   const openAttendance = await findOpenAttendance(requestingUser._id);
 
   if (!openAttendance) {
@@ -37,8 +38,11 @@ export async function submitPing({ coords, capturedAt }, requestingUser) {
     attendanceId: openAttendance._id,
     coords,
     capturedAt,
+    ...(speed !== undefined && speed !== null ? { speed } : {}),
+    ...(device ? { device } : {}),
   });
 
+  await recordDeviceReport(requestingUser._id, ping).catch((error) => console.error("[live-status] record failed:", error.message));
   await applyGeofenceCheck(openAttendance, coords, new Date(capturedAt));
 
   return ping;
@@ -136,6 +140,8 @@ export async function submitPingBatch(pings, requestingUser) {
         coords: ping.coords,
         capturedAt,
         clientPingId: ping.clientPingId,
+        ...(typeof ping.speed === "number" ? { speed: ping.speed } : {}),
+        ...(ping.device ? { device: ping.device } : {}),
       },
     });
   });
@@ -152,7 +158,11 @@ export async function submitPingBatch(pings, requestingUser) {
     }
   });
 
-  await applyGeofenceToBatch(documents.filter((entry) => results[entry.index].status === "accepted"));
+  const accepted = documents.filter((entry) => results[entry.index].status === "accepted");
+  await applyGeofenceToBatch(accepted);
+  // Live status (2026-10-23): we heard from this phone; the newest fix says how it is.
+  const newest = accepted.map((entry) => entry.doc).sort((a, b) => b.capturedAt - a.capturedAt)[0] ?? null;
+  await recordDeviceReport(employeeId, newest).catch((error) => console.error("[live-status] record failed:", error.message));
 
   return {
     accepted: results.filter((one) => one.status === "accepted").length,
@@ -626,5 +636,10 @@ export function getPingIntervalConfig() {
     // shift open longer than the second; the server reminds after the first.
     shiftReminderAfterHours: env.shiftReminderAfterHours,
     trackingStopAfterHours: env.trackingStopAfterHours,
+    // Live status (2026-10-23): one list of names and colours for the web
+    // Live Map and the app's team map, and the thresholds behind them.
+    statuses: LIVE_STATUSES,
+    flags: LIVE_FLAGS,
+    liveThresholds: liveThresholds(),
   };
 }

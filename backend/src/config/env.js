@@ -131,6 +131,21 @@ export const env = {
   // missed heartbeats at the expected ~2-5 minute client cadence before a gap
   // is recorded, rather than flagging routine jitter as a connectivity issue.
   attendanceGapThresholdMinutes: process.env.ATTENDANCE_GAP_THRESHOLD_MINUTES || "10",
+  // Live employee status (2026-10-23) — location/liveStatus.service.js. All
+  // optional. Moving: faster than LIVE_MOVING_SPEED_KMH. Stationary: the last
+  // fixes within LIVE_STATIONARY_RADIUS_METERS. Offline: nothing received for
+  // LIVE_OFFLINE_AFTER_MINUTES (the phone keeps recording); Disconnected:
+  // nothing for LIVE_DISCONNECTED_AFTER_MINUTES, cause unknown. Battery low:
+  // under LIVE_BATTERY_LOW_PERCENT and not charging. The manager is told when
+  // someone is Location off or Disconnected for LIVE_ALERT_AFTER_MINUTES during
+  // a shift. A customer's site is named within LIVE_PLACE_RADIUS_METERS.
+  liveMovingSpeedKmh: Number(process.env.LIVE_MOVING_SPEED_KMH) || 5,
+  liveStationaryRadiusMeters: Number(process.env.LIVE_STATIONARY_RADIUS_METERS) || 100,
+  liveOfflineAfterMinutes: Number(process.env.LIVE_OFFLINE_AFTER_MINUTES) || 6,
+  liveDisconnectedAfterMinutes: Number(process.env.LIVE_DISCONNECTED_AFTER_MINUTES) || 30,
+  liveBatteryLowPercent: Number(process.env.LIVE_BATTERY_LOW_PERCENT) || 15,
+  liveAlertAfterMinutes: Number(process.env.LIVE_ALERT_AFTER_MINUTES) || 15,
+  livePlaceRadiusMeters: Number(process.env.LIVE_PLACE_RADIUS_METERS) || 200,
   // Not required at boot — optional geofencing sensitivity tuning for
   // Attendance/Location (§6.5/§7.4). Defaults to 500 meters if unset: how far
   // a location ping may drift from the shift's check-in point before it's

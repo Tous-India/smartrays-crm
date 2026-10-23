@@ -3,6 +3,8 @@ import mongoose from "mongoose";
 // 45 days — see .context/final-plan.md §6.5/§7.4b. Old pings purge automatically
 // via the TTL index below; there is no separate cleanup cron.
 const LOCATION_PING_TTL_SECONDS = 45 * 24 * 60 * 60;
+// The phone's connection when it sent the fix (live status, 2026-10-23).
+const NETWORK_TYPES = ["wifi", "cellular", "none", "unknown"];
 
 const locationPingSchema = new mongoose.Schema(
   {
@@ -36,6 +38,23 @@ const locationPingSchema = new mongoose.Schema(
     clientPingId: {
       type: String,
     },
+    // Live status (2026-10-23) — all optional; every web ping and every
+    // older document has none. Metres per second, as the phone's GPS reports it.
+    speed: {
+      type: Number,
+      min: 0,
+    },
+    // What the phone said about itself at this fix.
+    device: {
+      type: {
+        battery: { type: Number, min: 0, max: 100 },
+        charging: { type: Boolean },
+        locationOn: { type: Boolean },
+        network: { type: String, enum: NETWORK_TYPES },
+      },
+      default: undefined,
+      _id: false,
+    },
   },
   {
     timestamps: true,
@@ -57,4 +76,4 @@ locationPingSchema.index(
 const LocationPing = mongoose.model("LocationPing", locationPingSchema);
 
 export default LocationPing;
-export { LOCATION_PING_TTL_SECONDS };
+export { LOCATION_PING_TTL_SECONDS, NETWORK_TYPES };

@@ -1,5 +1,6 @@
 import ApiError from "../../utils/ApiError.js";
 import { CONSENT_DECISIONS } from "./locationConsent.model.js";
+import { NETWORK_TYPES } from "./location.model.js";
 
 /**
  * The most pings one batch may carry (mobile-backend-plan.md §3.2). At the
@@ -32,6 +33,28 @@ function assertCoords(coords, where) {
   }
 }
 
+/**
+ * Live status fields (2026-10-23) — all optional, so every existing client
+ * keeps working: `speed` in m/s, and `device` = { battery 0–100, charging,
+ * locationOn, network }.
+ */
+function assertDeviceReport({ speed, device }, where) {
+  if (speed !== undefined && speed !== null && (typeof speed !== "number" || Number.isNaN(speed) || speed < 0)) {
+    throw new ApiError(400, `${where}speed must be a non-negative number (m/s)`);
+  }
+  if (device === undefined || device === null) return;
+  if (typeof device !== "object") throw new ApiError(400, `${where}device must be an object`);
+  const { battery, charging, locationOn, network } = device;
+  if (battery !== undefined && (typeof battery !== "number" || battery < 0 || battery > 100)) {
+    throw new ApiError(400, `${where}device.battery must be 0–100`);
+  }
+  if (charging !== undefined && typeof charging !== "boolean") throw new ApiError(400, `${where}device.charging must be true or false`);
+  if (locationOn !== undefined && typeof locationOn !== "boolean") throw new ApiError(400, `${where}device.locationOn must be true or false`);
+  if (network !== undefined && !NETWORK_TYPES.includes(network)) {
+    throw new ApiError(400, `${where}device.network must be one of ${NETWORK_TYPES.join(", ")}`);
+  }
+}
+
 function assertCapturedAt(capturedAt, where) {
   if (!capturedAt || Number.isNaN(Date.parse(capturedAt))) {
     throw new ApiError(400, `${where}A valid capturedAt timestamp is required`);
@@ -61,6 +84,7 @@ export function validatePingInput(req, res, next) {
 
   assertCoords(coords, "");
   assertCapturedAt(capturedAt, "");
+  assertDeviceReport(req.body, "");
 
   next();
 }
@@ -87,6 +111,7 @@ function validatePingBatch(pings) {
 
     assertCoords(ping.coords, where);
     assertCapturedAt(ping.capturedAt, where);
+    assertDeviceReport(ping, where);
   });
 }
 
@@ -147,5 +172,32 @@ export function validateConsentInput(req, res, next) {
     }
   });
 
+  next();
+}
+
+// Live status (2026-10-23): what the phone says happened to location.
+export const STATUS_EVENT_TYPES = ["location_off", "location_on"];
+export const STATUS_EVENT_REASONS = ["gps_off", "permission_revoked", "unknown"];
+const MAX_STATUS_EVENTS = 100;
+
+/** Validates POST /location/status-events { events: [{ type, at, reason? }] }. */
+export function validateStatusEventsInput(req, res, next) {
+  const { events } = req.body;
+  if (!Array.isArray(events) || events.length === 0) {
+    throw new ApiError(400, "events must be a non-empty list");
+  }
+  if (events.length > MAX_STATUS_EVENTS) {
+    throw new ApiError(400, `events may contain at most ${MAX_STATUS_EVENTS} entries`);
+  }
+  events.forEach((event, index) => {
+    const where = `events[${index}]: `;
+    if (!event || !STATUS_EVENT_TYPES.includes(event.type)) {
+      throw new ApiError(400, `${where}type must be one of ${STATUS_EVENT_TYPES.join(", ")}`);
+    }
+    if (!event.at || Number.isNaN(Date.parse(event.at))) throw new ApiError(400, `${where}a valid 'at' timestamp is required`);
+    if (event.reason !== undefined && !STATUS_EVENT_REASONS.includes(event.reason)) {
+      throw new ApiError(400, `${where}reason must be one of ${STATUS_EVENT_REASONS.join(", ")}`);
+    }
+  });
   next();
 }
