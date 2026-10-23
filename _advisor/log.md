@@ -391,6 +391,23 @@ Commits: `f68177d`, `d8be41a`, `edfe299`, `e7ade23`, `f08adbd`, `0d699dd`.
     (classes.dex + resources.arsc). Installed on the emulator with Metro stopped: login ✓, home data ✓,
     check-in with live photo + GPS ✓, tracking disclosure → "Allow all the time" ✓, foreground tracking
     service ✓, first ping stored by the local backend ✓.
+- Item 7 — GOOGLE MAPS done 19:15–20:05 (`a987813`, `53a5a1c`, `dbb7c2f`; side fix `cc1706b`):
+  - App: react-native-maps with the Google provider on the Team → Live map (MapLibre removed). Key from the
+    untracked env file (GOOGLE_MAPS_API_KEY in app/.env / .env.localtest / .env.production) → manifest.
+  - Web: the official Maps JavaScript API via @vis.gl/react-google-maps (+ @googlemaps/markerclusterer) for
+    every map — Live Map, Location History, attendance map, site visits. Leaflet removed entirely (no tiles).
+    Key from frontend/.env.local (VITE_GOOGLE_MAPS_API_KEY).
+  - No key exists yet (backend/.env's GOOGLE_MAPS_API_KEY is a 26-char placeholder, not a real key), so
+    every map shows "Map not configured" — the lists, counts and timelines around it all still work.
+    Checked: web in Chrome 1280/390 (no Maps request, no console error, no overflow); app on the emulator.
+    Screenshots `_advisor/screenshots/google-maps/`. No paid extras (no Places/Directions/Geocoding).
+  - SHA-1 for the Android key restriction — debug: `5E:8F:16:06:2E:A3:CD:2C:4A:0D:54:78:76:BA:A6:F3:8C:AB:F6:25`
+    (React Native's standard debug keystore). Release/upload: no upload key on this laptop (see waiting list);
+    for Play builds also add the "App signing key" SHA-1 from Play Console.
+  - Side fix found while testing: installing an app update during a shift killed tracking until the app was
+    opened — now restarts by itself (MY_PACKAGE_REPLACED), verified on the emulator.
+  - Web tests: map suites 327/327; the full run has load-timeout flakes on this 7.7 GB laptop with the
+    emulator up (each failing file passes alone) — full rerun with the emulator off is in item 11.
 
 ### WAITING FOR OWNER
 1. Firebase: `app/android/app/google-services.json` + backend FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL /
@@ -398,3 +415,8 @@ Commits: `f68177d`, `d8be41a`, `edfe299`, `e7ade23`, `f08adbd`, `0d699dd`.
 2. Signing key: path to `smartrays-upload.jks` and `D:\Tools\gradle-home\gradle.properties`
    (SMARTRAYS_UPLOAD_STORE_FILE / _STORE_PASSWORD / _KEY_ALIAS / _KEY_PASSWORD) — needed for items 9–10.
 3. A real phone over Wireless debugging (Developer options → Wireless debugging → pair) for device tests.
+4. Google Maps keys (Google Cloud — creating the project/billing is yours): an ANDROID key restricted to
+   package com.smartrays.crm + the SHA-1s above ("Maps SDK for Android" only) → app/.env.production and
+   .env.localtest as GOOGLE_MAPS_API_KEY; a BROWSER key restricted to the CRM's domains ("Maps JavaScript
+   API" only) → frontend/.env.local locally and VITE_GOOGLE_MAPS_API_KEY in Vercel (your go). Until then
+   maps say "Map not configured".
