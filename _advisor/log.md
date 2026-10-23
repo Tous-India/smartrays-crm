@@ -310,3 +310,33 @@ Commits: `f68177d`, `d8be41a`, `edfe299`, `e7ade23`, `f08adbd`, `0d699dd`.
   DashboardPage test still expected the old tickets grant to show complaints (updated, `c98635d`);
   UserManagementPage = the known full-load flake (passes alone). Screenshots committed (`9b6fcdc`).
 - Item 2 — done (see the entry above).
+- Item 3 — Phase 2 device testing on the EMULATOR (no real phone connected yet), 16:10–17:20, local backend:
+  | Flow | Result |
+  |---|---|
+  | Login (employee, manager, admin) | ✓ |
+  | Tracking permissions: disclosure → location → notifications → "Allow all the time" | ✓ — **bug fixed** (`4c7899b`): "Turn on" during an open shift opened the check-in camera |
+  | Check-out and check-in, live photo + GPS | ✓ |
+  | Pings reach the server (2-min interval) | ✓ stored ~2 s after capture |
+  | Screen off 5 min | ✓ pings continued, position moving |
+  | App swiped away from Recents | ✓ pings continued (foreground service) |
+  | Phone reboot, app NOT opened | ✓ tracking restarted by itself ~30 s after boot |
+  | Offline 6 min (airplane mode) | ✓ 3 queued pings uploaded 1 min after reconnect, original capture times kept |
+  | Leave apply (employee) | ✓ |
+  | Leave approve (manager) | **gap fixed** (`3ccc0a8`… see git): the app could not approve — added Approve / Decline on the Team tab; ✓ on device |
+  | Services + subtask tick | ✓ (saved on the server) |
+  | Attendance history | ✓ |
+  | Payslips | ✓ empty state; after approving the LOCAL October draft, the PDF opens in the phone's viewer |
+  | Complaints (admin + technician) | ✓ (earlier today) |
+  | Site visit: refused when not checked in, refused 3.0 km away, Arrived at site, live photo, Done | ✓ |
+  | Push notifications | NOT TESTABLE — needs Firebase files (see WAITING FOR OWNER) |
+  Notes: the app has no in-app notifications list (only push banners) — listed for item 8. A check-out
+  at 16:52 was caused by my adb driver tapping from a stale screen dump (driver fixed), not by the app.
+  The local October payroll draft was approved to test payslips (local data only).
+  Screenshots: `_advisor/screenshots/phase2/`.
+
+### WAITING FOR OWNER
+1. Firebase: `app/android/app/google-services.json` + backend FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL /
+   FIREBASE_PRIVATE_KEY (local) — needed to test push on the phone.
+2. Signing key: path to `smartrays-upload.jks` and `D:\Tools\gradle-home\gradle.properties`
+   (SMARTRAYS_UPLOAD_STORE_FILE / _STORE_PASSWORD / _KEY_ALIAS / _KEY_PASSWORD) — needed for items 9–10.
+3. A real phone over Wireless debugging (Developer options → Wireless debugging → pair) for device tests.
