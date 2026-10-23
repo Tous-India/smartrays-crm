@@ -56,6 +56,8 @@ export const router = createBrowserRouter(
           its status page (2026-10-23). Short paths: pasted into WhatsApp/SMS. */}
       <Route path="/complaint" element={<PublicComplaintForm />} />
       <Route path="/complaint/status/:token" element={<PublicComplaintStatus />} />
+      {/* A customer's own link with a code — the same form, prefilled (back 2026-10-23). */}
+      <Route path="/c/:token" element={<PublicComplaintForm />} />
 
       <Route element={<ProtectedRoute />}>
         <Route index element={<RootRedirect />} />
