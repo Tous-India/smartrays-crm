@@ -55,3 +55,13 @@ export function fetchLocationHistoryRange({ employeeIds, from, to }) {
 export function fetchLocationConsents() {
   return apiClient.get("/location/consent");
 }
+
+/** Live employee status (2026-10-23): everyone visible, problems first, and the counts. */
+export function fetchLiveStatus() {
+  return apiClient.get("/location/live-status");
+}
+
+/** One person's day as a short timeline. `date` is YYYY-MM-DD (India). */
+export function fetchLocationTimeline(employeeId, date) {
+  return apiClient.get("/location/timeline", { params: { employeeId, date } });
+}

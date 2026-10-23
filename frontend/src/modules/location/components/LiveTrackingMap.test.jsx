@@ -19,6 +19,11 @@ vi.mock("../../../components/LeafletMapView", () => ({
 vi.mock("../api/locationApi", () => ({
   fetchLiveLocations: vi.fn(),
   fetchLocationHistory: vi.fn(),
+  // Live status (2026-10-23) is tested in LiveStatusPanel.test.jsx; here it
+  // has not loaded, so these tests see the map exactly as before.
+  fetchLiveStatus: vi.fn(() => new Promise(() => {})),
+  fetchLocationConfig: vi.fn(() => Promise.resolve({ data: { data: { statuses: [] } } })),
+  fetchLocationTimeline: vi.fn(),
 }));
 vi.mock("../../attendance/api/attendanceApi", () => ({
   getTeamAttendance: vi.fn(),

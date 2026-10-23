@@ -3,6 +3,8 @@ import dayjs from "dayjs";
 import { Alert, Empty, List, Spin, Tag, Tooltip, Typography } from "antd";
 import LeafletMapView from "../../../components/LeafletMapView";
 import useLiveTrails from "../hooks/useLiveTrails";
+import useLiveStatus from "../hooks/useLiveStatus";
+import LiveStatusPanel from "./LiveStatusPanel";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 
 const { Text } = Typography;
@@ -84,6 +86,17 @@ function UnlocatableWarning({ people }) {
 function LiveTrackingMap() {
   const { entries, unlocatable, isLoading, error } = useLiveTrails();
   const { users } = useUserDirectory();
+  // Live status (2026-10-23): what each person is doing, problems first; the
+  // current-position marker takes that status's colour.
+  const { live, statuses } = useLiveStatus();
+  const statusColor = useMemo(() => {
+    const colorOf = Object.fromEntries(statuses.map((s) => [s.key, s.color]));
+    return new Map((live?.people ?? []).map((person) => [String(person.employeeId), colorOf[person.status]]));
+  }, [live, statuses]);
+  const statusLabel = useMemo(() => {
+    const labelOf = Object.fromEntries(statuses.map((s) => [s.key, s.label]));
+    return new Map((live?.people ?? []).map((person) => [String(person.employeeId), labelOf[person.status]]));
+  }, [live, statuses]);
 
   const employeeNameById = useMemo(() => new Map(users.map((user) => [String(user._id), user.name])), [users]);
 
@@ -132,8 +145,8 @@ function LiveTrackingMap() {
         // and a timeline band could be read as the same signal. Grey for stale
         // says "old" without borrowing any other vocabulary.
         shape: "current",
-        color: stale ? "grey" : "blue",
-        label: `${name} — ${stale ? "STALE, " : ""}last updated ${relativeTime(entry.capturedAt)}`,
+        color: statusColor.get(String(entry.employeeId)) ?? (stale ? "grey" : "blue"),
+        label: `${name} — ${statusLabel.get(String(entry.employeeId)) ?? (stale ? "STALE" : "on shift")}, last updated ${relativeTime(entry.capturedAt)}`,
       });
 
       if (entry.pings.length > 1) {
@@ -146,7 +159,9 @@ function LiveTrackingMap() {
     });
 
     return { markers: allMarkers, paths: allPaths };
-  }, [entries, employeeNameById]);
+  }, [entries, employeeNameById, statusColor, statusLabel]);
+
+  const statusPanel = live ? <LiveStatusPanel live={live} statuses={statuses} /> : null;
 
   if (error) {
     return (
@@ -176,7 +191,12 @@ function LiveTrackingMap() {
    */
   if (entries.length === 0 && unlocatable.length === 0) {
     // (a) Genuinely nobody working. Calm, neutral — nothing is wrong.
-    return <Empty description="No one is currently checked in" />;
+    return (
+      <div className="flex flex-col gap-4">
+        <Empty description="No one is currently checked in" />
+        {statusPanel}
+      </div>
+    );
   }
 
   if (entries.length === 0) {
@@ -185,7 +205,12 @@ function LiveTrackingMap() {
     // names, not an empty state — "2 employees" tells an admin something is
     // wrong; "Ramesh, silent 3h 07m" tells them who to call and how worried to
     // be.
-    return <UnlocatableWarning people={unlocatable} />;
+    return (
+      <div className="flex flex-col gap-4">
+        <UnlocatableWarning people={unlocatable} />
+        {statusPanel}
+      </div>
+    );
   }
 
   return (
@@ -196,9 +221,10 @@ function LiveTrackingMap() {
 
       <LeafletMapView markers={markers} paths={paths} />
 
-      {/* Doubles as a legend and stays useful before tiles load. Staleness is
-          stated in words here, not only as a marker colour. */}
-      <List
+      {/* The status panel (counts, problems first, a person's day) replaces
+          the old list once live status has loaded. */}
+      {statusPanel}
+      {!live && <List
         size="small"
         bordered
         dataSource={entries}
@@ -232,7 +258,7 @@ function LiveTrackingMap() {
             </List.Item>
           );
         }}
-      />
+      />}
     </div>
   );
 }
