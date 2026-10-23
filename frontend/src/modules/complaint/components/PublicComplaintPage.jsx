@@ -55,6 +55,8 @@ function PublicComplaintPage() {
   const [category, setCategory] = useState(null);
   const [description, setDescription] = useState("");
   const [callbackTime, setCallbackTime] = useState("anytime");
+  const [contactName, setContactName] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
   const [photos, setPhotos] = useState([]);
   const [formError, setFormError] = useState("");
   const [isSending, setIsSending] = useState(false);
@@ -110,6 +112,8 @@ function PublicComplaintPage() {
     form.append("category", category);
     form.append("description", description.trim());
     form.append("callbackTime", callbackTime);
+    if (contactName.trim()) form.append("contactName", contactName.trim());
+    if (contactPhone.trim()) form.append("contactPhone", contactPhone.trim());
     photos.forEach((photo) => form.append("photos", photo));
 
     setIsSending(true);
@@ -120,6 +124,8 @@ function PublicComplaintPage() {
       setDescription("");
       setPhotos([]);
       setCallbackTime("anytime");
+      setContactName("");
+      setContactPhone("");
       load();
       window.scrollTo?.({ top: 0, behavior: "smooth" });
     } catch (error) {
@@ -276,6 +282,32 @@ function PublicComplaintPage() {
               })}
             </div>
           </fieldset>
+
+          <div>
+            <p className="text-lg font-semibold">5. Your name and phone <span className="font-normal text-gray-500">(optional)</span></p>
+            <p className="mb-2 text-sm text-gray-500">आपका नाम और फ़ोन नंबर (अगर अलग हो)</p>
+            <label htmlFor="complaint-name" className="mb-1 block text-sm text-gray-700">Your name</label>
+            <input
+              id="complaint-name"
+              value={contactName}
+              onChange={(event) => setContactName(event.target.value)}
+              maxLength={80}
+              autoComplete="name"
+              className="mb-3 min-h-12 w-full rounded-xl border-2 border-gray-200 bg-white px-3 text-base focus:border-brand-navy focus:outline-none"
+            />
+            <label htmlFor="complaint-phone" className="mb-1 block text-sm text-gray-700">Phone number to call</label>
+            <input
+              id="complaint-phone"
+              type="tel"
+              inputMode="tel"
+              value={contactPhone}
+              onChange={(event) => setContactPhone(event.target.value)}
+              maxLength={20}
+              autoComplete="tel"
+              placeholder="98xxx xxxxx"
+              className="min-h-12 w-full rounded-xl border-2 border-gray-200 bg-white px-3 text-base focus:border-brand-navy focus:outline-none"
+            />
+          </div>
 
           {formError && (
             <p role="alert" className="rounded-xl bg-red-50 px-3 py-2 text-base text-red-800">{formError}</p>

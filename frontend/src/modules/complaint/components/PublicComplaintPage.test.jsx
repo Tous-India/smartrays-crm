@@ -123,3 +123,23 @@ describe("PublicComplaintPage — the customer's complaint link", () => {
     expect(screen.getByLabelText("2. What happened?")).toHaveValue("Need a call about the bill");
   });
 });
+
+describe("PublicComplaintPage — optional name and phone (2026-10-23)", () => {
+  it("sends the name and phone when the customer fills them in", async () => {
+    complaintApi.getPublicComplaintPage.mockResolvedValue({ data: { data: { customerName: "Sharma Residence", complaints: [] } } });
+    complaintApi.raisePublicComplaint.mockResolvedValue({ data: { data: { number: 1006, status: "received" } } });
+    renderPage();
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByRole("button", { name: /Not working/ }));
+    await user.type(screen.getByLabelText("2. What happened?"), "No power since noon");
+    await user.type(screen.getByLabelText("Your name"), "Sunita");
+    await user.type(screen.getByLabelText("Phone number to call"), "98111 22333");
+    await user.click(screen.getByRole("button", { name: "Send complaint" }));
+
+    await waitFor(() => expect(complaintApi.raisePublicComplaint).toHaveBeenCalled());
+    const [, form] = complaintApi.raisePublicComplaint.mock.calls[0];
+    expect(form.get("contactName")).toBe("Sunita");
+    expect(form.get("contactPhone")).toBe("98111 22333");
+  });
+});

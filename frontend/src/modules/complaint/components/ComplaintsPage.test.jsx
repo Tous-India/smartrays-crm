@@ -124,3 +124,13 @@ describe("ComplaintsPage", () => {
     expect(screen.queryByRole("button", { name: "I'm on it" })).not.toBeInTheDocument();
   });
 });
+
+describe("ComplaintsPage — who raised it (2026-10-23)", () => {
+  it("shows who raised it and calls their number first", async () => {
+    complaintApi.getComplaint.mockResolvedValue({ data: { data: { ...DETAIL, raisedBy: { name: "Sunita", phone: "98111 22333" } } } });
+    renderPage("/complaints/t2");
+
+    expect(await screen.findByTestId("complaint-raised-by")).toHaveTextContent("Raised by Sunita · 98111 22333");
+    expect(screen.getByRole("link", { name: /Call Sunita/ })).toHaveAttribute("href", "tel:9811122333");
+  });
+});

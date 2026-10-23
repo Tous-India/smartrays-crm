@@ -67,8 +67,11 @@ function ComplaintDrawer({ ticketId, onClose, onChanged }) {
     }
   }
 
-  const contact = detail?.customer.primaryContact;
-  const callNumber = contact?.phone || detail?.customer.phone;
+  // Call the person who raised it, if they left a number; otherwise the
+  // customer's primary contact, then the customer's own phone.
+  const raisedBy = detail?.raisedBy;
+  const contact = raisedBy?.phone ? raisedBy : detail?.customer.primaryContact;
+  const callNumber = raisedBy?.phone || contact?.phone || detail?.customer.phone;
 
   return (
     <Drawer
@@ -87,6 +90,12 @@ function ComplaintDrawer({ ticketId, onClose, onChanged }) {
           <section>
             <p className="text-lg font-semibold">{detail.customer.companyName}</p>
             {detail.customer.siteAddress && <p className="text-gray-500">{detail.customer.siteAddress}</p>}
+            {raisedBy && (
+              <div className="mt-1 text-gray-700" data-testid="complaint-raised-by">
+                Raised by <strong>{raisedBy.name || "the customer"}</strong>
+                {raisedBy.phone ? ` · ${raisedBy.phone}` : ""}
+              </div>
+            )}
             {callNumber ? (
               <Button
                 type="primary"
