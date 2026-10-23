@@ -142,6 +142,25 @@ describe("TeamScreen", () => {
     expect(navigation.navigate).toHaveBeenCalledWith("PersonDay", { person: lost });
   });
 
+  test("opened from Home's 'today at a glance' → straight to Live, filtered to that group (2026-10-23)", async () => {
+    const now = new Date().toISOString();
+    getTeamLiveStatus.mockReturnValue(
+      ok({
+        people: [
+          { employeeId: "emp-2", name: "Other One", status: "location_off", since: now },
+          { employeeId: "emp-1", name: "Testing User 2", status: "moving", since: now },
+          { employeeId: "emp-3", name: "Not Yet", status: "not_checked_in" },
+        ],
+        counts: {},
+      })
+    );
+    const screen = await render(<TeamScreen navigation={navigation} route={{ params: { segment: "live", filter: "attention" } }} />);
+
+    await waitFor(() => expect(screen.getByTestId("team-live")).toBeTruthy());
+    expect(screen.getAllByTestId(/^live-row-/).map((row) => row.props.testID)).toEqual(["live-row-emp-2"]);
+    expect(screen.getByText("Need attention")).toBeTruthy();
+  });
+
   test("Services: open items grouped by assignee, overdue flagged; Assign opens the form", async () => {
     listServices.mockReturnValue(
       ok([

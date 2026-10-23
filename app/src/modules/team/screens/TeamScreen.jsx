@@ -62,11 +62,17 @@ export function availableSegments(permissions) {
   return segments;
 }
 
-function TeamScreen({ navigation }) {
+function TeamScreen({ navigation, route }) {
   const isOnline = useIsOnline();
   const { permissions, error: permissionsError } = useMyPermissions();
   const segments = useMemo(() => availableSegments(permissions), [permissions]);
-  const [segment, setSegment] = useState(null);
+  // Opened from Home's "today at a glance": { segment: "live", filter }.
+  const opened = route?.params;
+  const [segment, setSegment] = useState(opened?.segment ?? null);
+
+  useEffect(() => {
+    if (opened?.segment) setSegment(opened.segment);
+  }, [opened]);
   const current = segment && segments.some((option) => option.value === segment) ? segment : segments[0]?.value;
 
   const team = useTeamToday();
@@ -110,7 +116,13 @@ function TeamScreen({ navigation }) {
 
           {current === SEGMENTS.TODAY ? <TeamTodaySection team={team} onOpenPerson={openPerson} /> : null}
           {current === SEGMENTS.LIVE ? (
-            <TeamLiveSection live={live} meta={liveMeta} onOpenPerson={(person) => navigation.navigate(SCREENS.PERSON_DAY, { person })} />
+            <TeamLiveSection
+              key={opened?.openedAt ?? "live"}
+              live={live}
+              meta={liveMeta}
+              initialFilter={opened?.filter ?? null}
+              onOpenPerson={(person) => navigation.navigate(SCREENS.PERSON_DAY, { person })}
+            />
           ) : null}
           {current === SEGMENTS.SERVICES ? (
             <TeamServicesSection

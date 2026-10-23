@@ -6,13 +6,14 @@ import TodayShiftCard from "../../attendance/components/TodayShiftCard";
 import ServicesDueCard from "../components/ServicesDueCard";
 import ComplaintsCard from "../components/ComplaintsCard";
 import MyStatusCard from "../../live/components/MyStatusCard";
+import TodayGlanceCard from "../../live/components/TodayGlanceCard";
 import useLiveMeta from "../../live/hooks/useLiveMeta";
-import { getMyLiveStatus } from "../../live/api/liveApi";
+import { getMyLiveStatus, getTeamLiveStatus } from "../../live/api/liveApi";
 import useMyAttendance from "../../attendance/hooks/useMyAttendance";
 import useIsOnline from "../../../hooks/useIsOnline";
 import useServerData from "../../../hooks/useServerData";
 import useSessionStore from "../../../store/sessionStore";
-import useMyPermissions, { can } from "../../../hooks/useMyPermissions";
+import useMyPermissions, { can, canAny } from "../../../hooks/useMyPermissions";
 import { listComplaints } from "../../complaints/api/complaintApi";
 import { listServices } from "../../services/api/serviceApi";
 import { SERVICE_STATUS } from "../../services/services.utils";
@@ -57,11 +58,18 @@ function HomeScreen({ navigation }) {
   const liveMeta = useLiveMeta();
   const { refetch: refetchMyStatus } = myStatus;
 
+  // Today at a glance (2026-10-23): for whoever may see the team's
+  // locations — a manager their team, an admin everyone.
+  const seesTeam = canAny(permissions, "location", ["view_team", "view_all"]);
+  const teamLive = useServerData(async () => (seesTeam ? (await getTeamLiveStatus()).data.data : null), { deps: [user?._id, seesTeam] });
+  const { refetch: refetchTeamLive } = teamLive;
+
   useFocusEffect(
     useCallback(() => {
       refetch();
       refetchMyStatus();
-    }, [refetch, refetchMyStatus])
+      refetchTeamLive();
+    }, [refetch, refetchMyStatus, refetchTeamLive])
   );
 
   function refreshAll() {
@@ -69,6 +77,7 @@ function HomeScreen({ navigation }) {
     servicesDue.refetch();
     myComplaints.refetch();
     myStatus.refetch();
+    teamLive.refetch();
   }
 
   // The prominent disclosure (app-plan.md §4.1) comes before the first
@@ -120,6 +129,15 @@ function HomeScreen({ navigation }) {
           status={myStatus.data}
           meta={liveMeta}
           onCheckTracking={() => navigation.navigate(SCREENS.TRACKING_DISCLOSURE, { afterwards: "back" })}
+        />
+      ) : null}
+
+      {seesTeam ? (
+        <TodayGlanceCard
+          live={teamLive}
+          onOpen={(filter) =>
+            navigation.navigate(SCREENS.TEAM_TAB, { screen: SCREENS.TEAM, params: { segment: "live", filter, openedAt: Date.now() } })
+          }
         />
       ) : null}
 

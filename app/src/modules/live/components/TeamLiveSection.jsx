@@ -6,7 +6,7 @@ import ListState from "../../../components/ListState";
 import PrimaryButton from "../../../components/PrimaryButton";
 import LiveCounts from "./LiveCounts";
 import LivePersonRow from "./LivePersonRow";
-import { detailLine } from "../live.utils";
+import { GROUP_LABELS, detailLine, matchesFilter } from "../live.utils";
 import { formatTime } from "../../../utils/date.utils";
 import { colors, spacing, typography } from "../../../theme";
 
@@ -34,8 +34,8 @@ export function markersFromLive(people, meta) {
     }));
 }
 
-function TeamLiveSection({ live, meta, onOpenPerson }) {
-  const [filter, setFilter] = useState(null);
+function TeamLiveSection({ live, meta, onOpenPerson, initialFilter = null }) {
+  const [filter, setFilter] = useState(initialFilter);
   const [selectedId, setSelectedId] = useState(null);
 
   if (live.isLoading || live.error || !live.data) {
@@ -43,7 +43,7 @@ function TeamLiveSection({ live, meta, onOpenPerson }) {
   }
 
   const people = live.data.people;
-  const shown = filter ? people.filter((person) => person.status === filter) : people;
+  const shown = people.filter((person) => matchesFilter(person, filter));
   const markers = markersFromLive(shown, meta);
   const selected = people.find((person) => String(person.employeeId) === selectedId) ?? null;
   const selectedStatus = selected ? meta[selected.status] : null;
@@ -71,7 +71,7 @@ function TeamLiveSection({ live, meta, onOpenPerson }) {
         </Card>
       ) : null}
 
-      <Text style={[typography.label, styles.section]}>{filter ? meta[filter]?.label : "Everyone — problems first"}</Text>
+      <Text style={[typography.label, styles.section]}>{filter ? (meta[filter]?.label ?? GROUP_LABELS[filter]) : "Everyone — problems first"}</Text>
       {shown.length === 0 ? (
         <Text style={[typography.subtitle, styles.empty]} testID="team-live-empty">
           {filter ? "Nobody in this state right now." : "No one on the team yet."}

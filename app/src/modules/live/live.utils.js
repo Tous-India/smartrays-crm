@@ -3,6 +3,26 @@
 
 export const COUNTED = ["moving", "stationary", "at_site", "offline", "location_off", "disconnected"];
 
+// Filters that cover more than one status ("today at a glance").
+export const FILTER_GROUPS = {
+  on_shift: COUNTED,
+  attention: ["location_off", "disconnected"],
+};
+
+export const GROUP_LABELS = {
+  on_shift: "On shift",
+  attention: "Need attention",
+  not_checked_in: "Not checked in",
+  checked_out: "Checked out",
+  on_leave: "On leave",
+};
+
+/** Does this person match the list's filter — a status key or a group? */
+export function matchesFilter(person, filter) {
+  if (!filter) return true;
+  return (FILTER_GROUPS[filter] ?? [filter]).includes(person.status);
+}
+
 // The same colours the server serves — used only until the config has loaded.
 export const FALLBACK_META = {
   moving: { label: "Moving", color: "#1971c2" },
