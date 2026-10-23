@@ -1,17 +1,25 @@
 /**
- * Display-only date helpers. Nothing here decides a rule; the server's
- * dates are shown in the device's locale.
+ * Display-only date helpers. Nothing here decides a rule.
+ *
+ * One Indian format everywhere (2026-10-23, owner's decision), the same as
+ * the web: DD MMM YYYY, h:mm AM/PM. Built by hand rather than with
+ * toLocale*String, whose output follows the phone's language setting (and
+ * Hermes' Intl support) and so differed from phone to phone.
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTHS_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const pad2 = (number) => String(number).padStart(2, "0");
 
-/** "22 Sep 2026" — a calendar date, no time. */
+/** "03 Oct 2026" — a calendar date, no time. */
 export function formatDate(value) {
   if (!value) {
     return "—";
   }
 
-  return new Date(value).toLocaleDateString([], { day: "numeric", month: "short", year: "numeric" });
+  const date = new Date(value);
+  return `${pad2(date.getDate())} ${MONTHS_SHORT[date.getMonth()]} ${date.getFullYear()}`;
 }
 
 /** "22 Sep" — for a due date in a compact row. */
@@ -20,12 +28,24 @@ export function formatShortDate(value) {
     return "";
   }
 
-  return new Date(value).toLocaleDateString([], { day: "numeric", month: "short" });
+  const date = new Date(value);
+  return `${pad2(date.getDate())} ${MONTHS_SHORT[date.getMonth()]}`;
 }
 
 /** "September 2026" — a month picker's label. */
 export function formatMonth(date) {
-  return date.toLocaleDateString([], { month: "long", year: "numeric" });
+  return `${MONTHS_LONG[date.getMonth()]} ${date.getFullYear()}`;
+}
+
+/** "1:05 PM" — a time of day. */
+export function formatTime(value) {
+  if (!value) {
+    return "—";
+  }
+
+  const date = new Date(value);
+  const hours = date.getHours();
+  return `${hours % 12 || 12}:${pad2(date.getMinutes())} ${hours < 12 ? "AM" : "PM"}`;
 }
 
 /** Local midnight of the day `value` falls in. */

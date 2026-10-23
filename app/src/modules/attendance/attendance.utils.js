@@ -1,3 +1,4 @@
+import { formatTime } from "../../utils/date.utils";
 /**
  * Pure helpers over the attendance records `GET /attendance/me` returns.
  * They only READ what the server decided; nothing here computes a status,
@@ -54,9 +55,9 @@ export function formatElapsed(fromIso, now = new Date()) {
   return `${hours}h ${String(minutes).padStart(2, "0")}m`;
 }
 
-/** "09:12" in the device's locale, 24-hour. */
+/** "9:12 AM" — the shared time format (utils/date.utils.js, 2026-10-23). */
 export function formatClockTime(iso) {
-  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+  return formatTime(iso);
 }
 
 /** "±12 m" for a fix's accuracy, or "" when the fix carries none. */

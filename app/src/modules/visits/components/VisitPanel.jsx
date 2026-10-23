@@ -10,8 +10,9 @@ import { arriveAtVisit, completeVisit } from "../api/visitApi";
 import { VISIT_STATUS_LABEL, VISIT_STATUS_TONE, distanceMeters, getFreshFix, plainDistance } from "../visits.utils";
 import { messageFromError } from "../../../utils/apiError.utils";
 import { colors, spacing, typography } from "../../../theme";
+import { formatTime } from "../../../utils/date.utils";
 
-const time = (iso) => new Date(iso).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+const time = (iso) => formatTime(iso);
 
 /**
  * The site-visit part of a Service screen (2026-10-22). Three steps, one at

@@ -1,9 +1,10 @@
+import { formatMonth } from "../../utils/date.utils";
 /** Payroll statuses a payslip exists for — a draft or a period under review has none (the server 409s). */
 export const PAYSLIP_STATUSES = ["approved", "paid"];
 
 /** "September 2026" from a payroll record's numeric month and year. */
 export function formatPayrollMonth(record) {
-  return new Date(record.year, record.month - 1, 1).toLocaleDateString([], { month: "long", year: "numeric" });
+  return formatMonth(new Date(record.year, record.month - 1, 1));
 }
 
 /** "₹12,345" — rupees, no paise, as the payslip prints them. */

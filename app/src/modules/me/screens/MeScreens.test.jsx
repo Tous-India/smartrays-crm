@@ -115,7 +115,7 @@ describe("AttendanceHistoryScreen", () => {
     const screen = await render(<AttendanceHistoryScreen navigation={navigation} />);
 
     await waitFor(() => expect(screen.getByTestId("history-row-a9")).toBeTruthy());
-    expect(screen.getByText(new RegExp(`Out 12:35 · ${formatShortDate(outAt)}`))).toBeTruthy();
+    expect(screen.getByText(new RegExp(`Out 12:35 PM · ${formatShortDate(outAt)}`))).toBeTruthy();
   });
 
   test("a failed month shows the server's message", async () => {
