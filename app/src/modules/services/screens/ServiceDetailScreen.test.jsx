@@ -107,10 +107,12 @@ test("the server's refusal is shown word for word", async () => {
 });
 
 test("offline: ticking and completing stay visible but disabled, with the reason", async () => {
-  NetInfo.addEventListener.mockImplementationOnce((listener) => {
+  // Two listeners: the screen's own, and the shared frame's offline banner.
+  const offline = (listener) => {
     listener({ isConnected: false, isInternetReachable: false });
     return () => {};
-  });
+  };
+  NetInfo.addEventListener.mockImplementationOnce(offline).mockImplementationOnce(offline);
   getService.mockReturnValue(ok(SERVICE));
   const screen = await render(<ServiceDetailScreen navigation={navigation} route={route} />);
   await waitFor(() => expect(screen.getByTestId("service-mark-complete")).toBeTruthy());

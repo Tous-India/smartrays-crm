@@ -60,10 +60,12 @@ describe("LeaveScreen", () => {
   });
 
   test("offline: Apply stays, disabled, with the reason", async () => {
-    NetInfo.addEventListener.mockImplementationOnce((listener) => {
+    // Two listeners: the screen's own, and the shared frame's offline banner.
+    const offline = (listener) => {
       listener({ isConnected: false, isInternetReachable: false });
       return () => {};
-    });
+    };
+    NetInfo.addEventListener.mockImplementationOnce(offline).mockImplementationOnce(offline);
     getLeaveBalance.mockReturnValue(ok({ paidLeaveUsed: 0, paidLeaveLimit: 2, paidLeaveRemaining: 2 }));
     listMyLeaves.mockReturnValue(ok([]));
     const screen = await render(<LeaveScreen navigation={navigation} />);
