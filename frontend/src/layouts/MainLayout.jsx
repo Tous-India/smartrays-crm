@@ -136,7 +136,10 @@ function MainLayout() {
   // Employees get a narrower, self-service nav (§7.39); every other role's
   // nav is untouched.
   const isEmployee = user?.role === "employee";
-  const canViewComplaints = can(user, "tickets", "view_assigned") || can(user, "tickets", "view_all");
+  // Customer complaints (2026-10-23): every staff member may be assigned one
+  // ("My complaints"); assigners see them all ("Complaints").
+  const canViewComplaints = Boolean(user) && user.role !== "customer";
+  const isComplaintAssigner = can(user, "complaints", "assign") || can(user, "complaints", "view_all");
   const { newLeadsCount, pendingLeaveCount, newComplaintsCount } = useSidebarBadgeCounts({
     canViewLeads,
     canViewComplaints,
@@ -201,11 +204,11 @@ function MainLayout() {
         show: can(user, "payroll", "view") || can(user, "payroll", "run"),
       },
       // Tickets, deferred from the UI 2026-08-07, returns as "Complaints"
-      // (2026-10-22): what customers raise through their complaint link. The
-      // badge counts unread complaints routed or escalated to me.
+      // (2026-10-22) — what customers send through the public complaint form
+      // (2026-10-23). The badge counts unread complaint notifications.
       {
         key: ROUTE_PATHS.COMPLAINTS,
-        label: "Complaints",
+        label: isComplaintAssigner ? "Complaints" : "My complaints",
         icon: <CustomerServiceOutlined />,
         show: canViewComplaints,
         badgeCount: newComplaintsCount,
@@ -248,7 +251,7 @@ function MainLayout() {
     }
 
     return items;
-  }, [user, canViewSettings, canViewLeads, canViewComplaints, newLeadsCount, pendingLeaveCount, newComplaintsCount]);
+  }, [user, canViewSettings, canViewLeads, canViewComplaints, isComplaintAssigner, newLeadsCount, pendingLeaveCount, newComplaintsCount]);
 
   const allKnownKeys = useMemo(() => menuItems.map((item) => item.key), [menuItems]);
 

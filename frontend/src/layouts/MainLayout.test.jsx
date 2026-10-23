@@ -97,6 +97,27 @@ describe("MainLayout — nav composition and Settings gating", () => {
     expect(screen.queryByRole("menuitem", { name: /Tickets/ })).not.toBeInTheDocument();
   });
 
+  // Customer complaints (2026-10-23): assigners (admin or complaints.assign)
+  // get "Complaints"; every other staff member, who may be assigned one,
+  // gets "My complaints". The old tickets.* grants no longer decide it.
+  it.each([
+    ["an admin", ADMIN_USER, "Complaints"],
+    ["a coordinator granted complaints.assign", { _id: "c-1", name: "Office", role: "employee", permissions: { complaints: { view_all: true, assign: true } } }, "Complaints"],
+    ["an employee", { _id: "e-1", name: "Suresh", role: "employee", permissions: {} }, "My complaints"],
+    ["a manager holding only tickets.*", { _id: "m-1", name: "Mgr", role: "manager", permissions: { tickets: { view_all: true, assign: true } } }, "My complaints"],
+  ])("shows %s the right complaints entry", async (_label, user, expected) => {
+    useSessionStore.setState({ user, isAuthenticated: true, isLoading: false });
+    renderLayout();
+
+    await screen.findByText("Dashboard Content");
+    const item = screen.getByRole("menuitem", { name: new RegExp(expected) });
+    expect(item.querySelector("a")).toHaveAttribute("href", "/complaints");
+    if (expected === "My complaints") {
+      // Case-sensitive: "My complaints" has a small c.
+      expect(screen.queryByRole("menuitem", { name: /Complaints/ })).not.toBeInTheDocument();
+    }
+  });
+
   it("still shows Settings for a user with no admin grants — it holds their own Account (§7.39)", async () => {
     useSessionStore.setState({
       user: { _id: "sales-1", name: "Sam Sales", role: "sales_associate", permissions: {} },
