@@ -117,6 +117,21 @@ describe("GET /location/timeline — the day for one person", () => {
     expect(timeline.entries.find((e) => e.status === "offline").label).toMatch(/uploaded later/i);
   });
 
+  it("a shift still open from the day before shows on today's timeline", async () => {
+    const attendance = await Attendance.create({
+      employeeId: emp._id,
+      date: new Date("2026-10-22T13:00:00Z"),
+      checkIn: { time: new Date("2026-10-22T13:00:00Z"), coords: { lat: 28.4, lng: 77.0 } },
+      status: "present",
+    });
+    await mongoose.connection.db.collection("locationpings").insertMany([
+      { employeeId: emp._id, attendanceId: attendance._id, coords: { lat: 28.4, lng: 77.0 }, capturedAt: at("09:00"), createdAt: at("09:00"), speed: 9, clientPingId: "y1" },
+    ]);
+    const timeline = (await empAgent.get(`/api/v1/location/timeline?date=${DAY}`).expect(200)).body.data;
+    expect(timeline.entries[0]).toMatchObject({ status: "checked_in", label: "On shift since yesterday" });
+    expect(timeline.entries.map((e) => e.status)).toContain("moving");
+  });
+
   it("follows the live map's visibility — someone else's day is refused", async () => {
     await dayOfDeepak();
     await otherAgent.get(`/api/v1/location/timeline?employeeId=${emp._id}&date=${DAY}`).expect(403);

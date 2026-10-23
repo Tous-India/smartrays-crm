@@ -321,7 +321,14 @@ export async function getDayTimeline(employeeId, dateKey) {
   const t = liveThresholds();
 
   const [attendances, events, services, customers] = await Promise.all([
-    Attendance.find({ employeeId, "checkIn.time": { $gte: start, $lt: end } }).sort({ "checkIn.time": 1 }).lean(),
+    // Every shift that touches the day — including one still open from yesterday.
+    Attendance.find({
+      employeeId,
+      "checkIn.time": { $lt: end },
+      $or: [{ "checkOut.time": null }, { "checkOut.time": { $gte: start } }],
+    })
+      .sort({ "checkIn.time": 1 })
+      .lean(),
     LocationStatusEvent.find({ employeeId, at: { $gte: start, $lt: end } }).sort({ at: 1 }).lean(),
     Service.find({ assignedToId: employeeId, dueDate: { $gte: start, $lt: end } }).select("_id").lean(),
     Customer.find({ "siteLocation.lat": { $type: "number" } }).select("companyName siteLocation").lean(),
@@ -334,8 +341,9 @@ export async function getDayTimeline(employeeId, dateKey) {
 
   const raw = [];
   for (const attendance of attendances) {
-    raw.push({ at: attendance.checkIn.time, status: "checked_in" });
-    const pings = await LocationPing.find({ attendanceId: attendance._id }).sort({ capturedAt: 1 }).select("coords capturedAt createdAt speed").lean();
+    const startedBefore = attendance.checkIn.time < start;
+    raw.push({ at: startedBefore ? start : attendance.checkIn.time, status: "checked_in", label: startedBefore ? "On shift since yesterday" : undefined });
+    const pings = await LocationPing.find({ attendanceId: attendance._id, capturedAt: { $gte: start, $lt: end } }).sort({ capturedAt: 1 }).select("coords capturedAt createdAt speed").lean();
     pings.forEach((ping, index) => {
       const previous = pings[index - 1];
       if (previous && minutes(ping.capturedAt - previous.capturedAt) >= t.disconnectedAfterMinutes) {
@@ -363,7 +371,7 @@ export async function getDayTimeline(employeeId, dateKey) {
       const place = nearestPlace(ping.coords, customerSites, env.livePlaceRadiusMeters);
       raw.push({ at: ping.capturedAt, status: "stationary", label: place ? `At ${place}` : undefined });
     });
-    if (attendance.checkOut?.time) raw.push({ at: attendance.checkOut.time, status: "checked_out" });
+    if (attendance.checkOut?.time && attendance.checkOut.time < end) raw.push({ at: attendance.checkOut.time, status: "checked_out" });
   }
   for (const event of events) raw.push({ at: event.at, status: event.type });
 
