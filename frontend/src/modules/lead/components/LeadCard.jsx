@@ -3,6 +3,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { Card } from "antd";
 import { FireFilled } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
+import { formatDate } from "../../../utils/date.utils";
 
 function isOverdue(followUpDate) {
   return followUpDate && new Date(followUpDate) < new Date();
@@ -52,7 +53,7 @@ function LeadCard({ lead, canDrag }) {
         )}
         {lead.followUpDate && (
           <div className={`text-xs ${isOverdue(lead.followUpDate) ? "font-medium text-red-600" : "text-gray-500"}`}>
-            Follow-up: {new Date(lead.followUpDate).toLocaleDateString()}
+            Follow-up: {formatDate(lead.followUpDate)}
           </div>
         )}
       </Card>

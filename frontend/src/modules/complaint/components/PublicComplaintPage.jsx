@@ -4,6 +4,7 @@ import BrandLogo from "../../../components/BrandLogo";
 import { getPublicComplaintPage, raisePublicComplaint } from "../api/complaintApi";
 import { CALLBACK_TIMES, CATEGORY_LABEL, COMPLAINT_CATEGORIES, PHOTO_LIMITS, PUBLIC_STATUS } from "../constants/complaint.constants";
 import { shrinkPhoto } from "../utils/shrinkPhoto";
+import { formatDate } from "../../../utils/date.utils";
 
 // Text colour goes on an inner <span>, never on the <button> itself: antd's
 // global reset sets `button { color: inherit }` outside any CSS layer, which
@@ -18,9 +19,6 @@ import { shrinkPhoto } from "../utils/shrinkPhoto";
  * Shows the customer's name and their own complaints' status — nothing else
  * the server knows about them.
  */
-
-const formatDate = (iso) =>
-  new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 
 function StatusPill({ status }) {
   const meta = PUBLIC_STATUS[status] || PUBLIC_STATUS.received;

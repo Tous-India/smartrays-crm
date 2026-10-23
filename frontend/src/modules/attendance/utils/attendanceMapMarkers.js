@@ -1,3 +1,4 @@
+import { formatTime, formatDateTime } from "../../../utils/date.utils";
 /**
  * Was this instant inside a recorded geofence violation window? Used to
  * surface a breach ON the shift-endpoint marker itself rather than only as a
@@ -58,7 +59,7 @@ function deriveShiftEndpointMarkers(record) {
       shape,
       color,
       label,
-      detail: event.time ? new Date(event.time).toLocaleString() : "Time not recorded",
+      detail: event.time ? formatDateTime(event.time) : "Time not recorded",
       note: breach
         ? `Outside geofence at this point (max ${Math.round(breach.maxDistanceMeters)}m)`
         : undefined,
@@ -115,7 +116,7 @@ export function deriveAttendanceMapMarkers(record) {
         markers.push({
           lat: lastBefore.coords.lat,
           lng: lastBefore.coords.lng,
-          label: `Connectivity gap started — last known position (${new Date(gap.start).toLocaleTimeString()})`,
+          label: `Connectivity gap started — last known position (${formatTime(gap.start)})`,
           color: "red",
         });
       }
@@ -124,7 +125,7 @@ export function deriveAttendanceMapMarkers(record) {
         markers.push({
           lat: firstAfter.coords.lat,
           lng: firstAfter.coords.lng,
-          label: `Connectivity gap ended — reconnected (${new Date(gap.end).toLocaleTimeString()})`,
+          label: `Connectivity gap ended — reconnected (${formatTime(gap.end)})`,
           color: "red",
         });
       }
@@ -148,7 +149,7 @@ export function deriveAttendanceMapMarkers(record) {
           markers.push({
             lat: ping.coords.lat,
             lng: ping.coords.lng,
-            label: `Outside geofence (max ${Math.round(violation.maxDistanceMeters)}m) — ${new Date(ping.capturedAt).toLocaleTimeString()}`,
+            label: `Outside geofence (max ${Math.round(violation.maxDistanceMeters)}m) — ${formatTime(ping.capturedAt)}`,
             color: "orange",
           });
         });

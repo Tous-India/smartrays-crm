@@ -3,6 +3,7 @@ import { Select, List, Tag } from "antd";
 import { useAnalyticsQuery } from "../hooks/useAnalyticsQuery";
 import { getAmcRenewalsUpcoming } from "../api/analyticsApi";
 import ChartSectionCard from "./ChartSectionCard";
+import { formatDate } from "../../../utils/date.utils";
 
 const DAY_WINDOW_OPTIONS = [
   { value: 7, label: "Next 7 days" },
@@ -41,7 +42,7 @@ function AmcRenewalsUpcomingList() {
             <div className="flex w-full items-center justify-between">
               <span>{renewal.customerName}</span>
               <span className="flex items-center gap-2">
-                <Tag color="blue">{new Date(renewal.renewalDate).toLocaleDateString()}</Tag>
+                <Tag color="blue">{formatDate(renewal.renewalDate)}</Tag>
                 <span className="text-gray-500">
                   {renewal.amount != null ? renewal.amount.toLocaleString() : "—"}
                 </span>

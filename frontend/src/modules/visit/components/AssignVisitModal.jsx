@@ -113,7 +113,7 @@ function AssignVisitModal({ defaultDate, onClose, onAssigned }) {
           </div>
           <div>
             <div className="mb-1 font-semibold">Day</div>
-            <DatePicker className="w-full" size="large" value={date} onChange={(value) => value && setDate(value)} allowClear={false} format="ddd, D MMM YYYY" />
+            <DatePicker className="w-full" size="large" value={date} onChange={(value) => value && setDate(value)} allowClear={false} format="ddd, DD MMM YYYY" />
           </div>
         </div>
 

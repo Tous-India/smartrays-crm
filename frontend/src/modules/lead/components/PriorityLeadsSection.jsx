@@ -2,6 +2,7 @@ import { Card, Empty, Tag, Space, Button, Tooltip } from "antd";
 import { FireFilled, FireOutlined, PhoneOutlined, CheckCircleOutlined, CloseCircleOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
 import LeadFollowUpCell from "./LeadFollowUpCell";
+import { formatDateTime } from "../../../utils/date.utils";
 
 const URGENCY_STYLES = {
   overdue: { color: "red", label: "Overdue", borderClass: "border-red-200" },
@@ -138,7 +139,7 @@ function PriorityLeadsSection({
                   </span>
                   {lead.followUpDate && (
                     <span className="whitespace-nowrap text-xs text-gray-500 mb-1">
-                      {new Date(lead.followUpDate).toLocaleString()}
+                      {formatDateTime(lead.followUpDate)}
                     </span>
                   )}
                 </div>

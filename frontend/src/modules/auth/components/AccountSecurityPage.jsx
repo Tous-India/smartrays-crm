@@ -26,6 +26,7 @@ import {
   revokeAllTrustedDevices,
   disableTwoFactor,
 } from "../twoFactorApi";
+import { formatDate } from "../../../utils/date.utils";
 
 const { Paragraph, Text } = Typography;
 
@@ -241,8 +242,8 @@ function AccountSecurityPage() {
                   title={device.label}
                   description={
                     <span className="text-xs">
-                      Trusted {new Date(device.createdAt).toLocaleDateString()} · expires{" "}
-                      {new Date(device.expiresAt).toLocaleDateString()}
+                      Trusted {formatDate(device.createdAt)} · expires{" "}
+                      {formatDate(device.expiresAt)}
                     </span>
                   }
                 />

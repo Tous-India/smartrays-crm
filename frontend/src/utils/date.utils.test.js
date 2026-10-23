@@ -106,3 +106,52 @@ describe("isWithinRange", () => {
     expect(isWithinRange("2026-08-06T00:01:00", from, to)).toBe(false);
   });
 });
+
+// 2026-10-23 (owner's decision): one Indian date format everywhere — DD MMM YYYY —
+// never the browser's own (a US-English browser showed 10/23/2026, 1:00:00 PM).
+import fs from "node:fs";
+import path from "node:path";
+import { formatDate, formatDateTime, formatTime } from "./date.utils";
+
+describe("display formats (DD MMM YYYY)", () => {
+  it("formats a date as DD MMM YYYY", () => {
+    expect(formatDate("2026-10-03T08:30:00")).toBe("03 Oct 2026");
+    expect(formatDate(new Date(2026, 0, 15))).toBe("15 Jan 2026");
+  });
+
+  it("formats a date and time as DD MMM YYYY, h:mm AM/PM", () => {
+    expect(formatDateTime("2026-10-23T13:05:00")).toBe("23 Oct 2026, 1:05 PM");
+  });
+
+  it("formats a time as h:mm AM/PM", () => {
+    expect(formatTime("2026-10-23T09:40:00")).toBe("9:40 AM");
+  });
+
+  it("shows a dash for no value", () => {
+    expect(formatDate(null)).toBe("—");
+    expect(formatDateTime(undefined)).toBe("—");
+  });
+});
+
+describe("no browser-locale date formatting in the app", () => {
+  function sourceFiles(dir) {
+    return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) return sourceFiles(full);
+      return /\.(jsx?)$/.test(entry.name) && !/\.test\./.test(entry.name) ? [full] : [];
+    });
+  }
+
+  it("uses formatDate / formatDateTime / formatTime instead of toLocale*String on dates", () => {
+    const src = path.join(process.cwd(), "src");
+    const offenders = [];
+    for (const file of sourceFiles(src)) {
+      fs.readFileSync(file, "utf8").split(/\r?\n/).forEach((line, index) => {
+        if (/toLocaleDateString\(|toLocaleTimeString\(|(Date\([^)]*\)|At\)?|\.time\)?|date\)?)\.toLocaleString\(/.test(line)) {
+          offenders.push(`${path.relative(src, file)}:${index + 1}`);
+        }
+      });
+    }
+    expect(offenders).toEqual([]);
+  });
+});

@@ -226,7 +226,7 @@ function LeadFormModal({ open, mode, initialLead, onCancel, onSubmit, isSubmitti
                 {/* Hours:minutes only — the default `showTime` also asks for
                     seconds, precision nobody scheduling a follow-up call
                     actually needs. */}
-                <DatePicker showTime={{ format: "HH:mm" }} format="YYYY-MM-DD HH:mm" style={{ width: "100%" }} />
+                <DatePicker showTime={{ format: "h:mm A", use12Hours: true }} format="DD MMM YYYY, h:mm A" style={{ width: "100%" }} />
               </Form.Item>
             </Col>
           </Row>

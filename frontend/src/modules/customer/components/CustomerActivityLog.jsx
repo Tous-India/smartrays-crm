@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { Card, List, Typography } from "antd";
 import { ACTIVITY_ACTION_LABELS } from "../constants/customer.constants";
 import useUserDirectory from "../../../hooks/useUserDirectory";
+import { formatDateTime } from "../../../utils/date.utils";
 
 const { Text } = Typography;
 
@@ -48,7 +49,7 @@ function CustomerActivityLog({ activity }) {
           return (
             <List.Item>
               <Text type="secondary" className="text-xs">
-                {new Date(entry.createdAt).toLocaleString()}
+                {formatDateTime(entry.createdAt)}
               </Text>
               <span className="ml-2">{ACTIVITY_ACTION_LABELS[entry.action] || entry.action}</span>
               <span className="ml-2 text-gray-500">by {actorName}</span>

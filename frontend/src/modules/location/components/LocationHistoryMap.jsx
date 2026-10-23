@@ -7,6 +7,7 @@ import useUserDirectory from "../../../hooks/useUserDirectory";
 import useSessionStore from "../../../store/sessionStore";
 import employeeColor from "../employeeColor";
 import { canViewOtherPeoplesLocation } from "../locationAccess";
+import { formatDateTime } from "../../../utils/date.utils";
 
 const { Text } = Typography;
 
@@ -152,7 +153,7 @@ function LocationHistoryMap() {
     const point = marker.point;
     const name = nameById.get(String(point.employeeId)) || "Unknown";
     const label = point.kind === "checkIn" ? "Check-in" : "Check-out";
-    const when = point.time ? new Date(point.time).toLocaleString() : "Time not recorded";
+    const when = point.time ? formatDateTime(point.time) : "Time not recorded";
     const coords = `${point.coords.lat.toFixed(5)}, ${point.coords.lng.toFixed(5)}`;
     const breach = point.geofenceBreachMeters
       ? `<div style="color:#b45309;font-weight:600;margin-bottom:4px">Outside geofence (max ${point.geofenceBreachMeters}m)</div>`

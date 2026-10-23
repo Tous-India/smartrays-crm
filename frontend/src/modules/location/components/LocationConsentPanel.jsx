@@ -64,7 +64,7 @@ function LocationConsentPanel() {
       title: "Recorded",
       dataIndex: "recordedAt",
       key: "recordedAt",
-      render: (recordedAt) => (recordedAt ? dayjs(recordedAt).format("DD MMM YYYY, HH:mm") : "—"),
+      render: (recordedAt) => (recordedAt ? dayjs(recordedAt).format("DD MMM YYYY, h:mm A") : "—"),
     },
     {
       title: "Disclosure version",

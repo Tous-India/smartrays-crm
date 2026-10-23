@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { deriveAttendanceMapMarkers } from "./attendanceMapMarkers";
+import { formatDateTime } from "../../../utils/date.utils";
 
 /**
  * §7.66 — the shift's own endpoints on the Attendance location map.
@@ -35,8 +36,8 @@ describe("shift endpoint markers", () => {
   it("carries the timestamp on each marker so the popup can show it", () => {
     const [start, end] = endpoints(deriveAttendanceMapMarkers(BASE)([]));
 
-    expect(start.detail).toBe(new Date(BASE.checkIn.time).toLocaleString());
-    expect(end.detail).toBe(new Date(BASE.checkOut.time).toLocaleString());
+    expect(start.detail).toBe(formatDateTime(BASE.checkIn.time));
+    expect(end.detail).toBe(formatDateTime(BASE.checkOut.time));
   });
 
   it("renders ONLY check-in when the shift is still open — it never invents an end point", () => {

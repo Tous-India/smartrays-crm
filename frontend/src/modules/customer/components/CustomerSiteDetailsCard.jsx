@@ -8,6 +8,7 @@ import {
   NET_METERING_STATUS_LABELS,
   SUBSIDY_CLAIM_STATUS_LABELS,
 } from "../constants/customer.constants";
+import { formatDate } from "../../../utils/date.utils";
 
 /**
  * "Site & Installation Details" card — the solar-specific fields carried
@@ -54,7 +55,7 @@ function CustomerSiteDetailsCard({ customer, onEdit }) {
           {customer.installedCapacityKw ?? "—"}
         </Descriptions.Item>
         <Descriptions.Item label="Commissioning Date">
-          {customer.commissioningDate ? new Date(customer.commissioningDate).toLocaleDateString() : "—"}
+          {customer.commissioningDate ? formatDate(customer.commissioningDate) : "—"}
         </Descriptions.Item>
         <Descriptions.Item label="Panel Brand / Model">
           {customer.panelBrand || customer.panelModel
@@ -67,16 +68,16 @@ function CustomerSiteDetailsCard({ customer, onEdit }) {
             : "—"}
         </Descriptions.Item>
         <Descriptions.Item label="Panel Warranty Expiry">
-          {customer.panelWarrantyExpiry ? new Date(customer.panelWarrantyExpiry).toLocaleDateString() : "—"}
+          {customer.panelWarrantyExpiry ? formatDate(customer.panelWarrantyExpiry) : "—"}
         </Descriptions.Item>
         <Descriptions.Item label="Inverter Warranty Expiry">
           {customer.inverterWarrantyExpiry
-            ? new Date(customer.inverterWarrantyExpiry).toLocaleDateString()
+            ? formatDate(customer.inverterWarrantyExpiry)
             : "—"}
         </Descriptions.Item>
         <Descriptions.Item label="Workmanship Warranty Expiry">
           {customer.workmanshipWarrantyExpiry
-            ? new Date(customer.workmanshipWarrantyExpiry).toLocaleDateString()
+            ? formatDate(customer.workmanshipWarrantyExpiry)
             : "—"}
         </Descriptions.Item>
         <Descriptions.Item label="Net Metering Status">

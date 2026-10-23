@@ -1,6 +1,7 @@
 import { Modal } from "antd";
 import HistoryMapView from "../../location/components/HistoryMapView";
 import { deriveAttendanceMapMarkers } from "../utils/attendanceMapMarkers";
+import { formatDate } from "../../../utils/date.utils";
 
 /**
  * "View on Map" (§7.4d, 2026-08-04) — opened from `AttendancePhotoModal`.
@@ -26,7 +27,7 @@ function AttendanceLocationMapModal({ open, record, onCancel }) {
       onCancel={onCancel}
       footer={null}
       width={720}
-      title={`Location — ${new Date(record.date).toLocaleDateString()}`}
+      title={`Location — ${formatDate(record.date)}`}
       destroyOnHidden
     >
       <HistoryMapView

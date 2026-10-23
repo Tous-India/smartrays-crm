@@ -4,6 +4,7 @@ import { getVisit } from "../api/visitApi";
 import { fetchLocationHistory } from "../../location/api/locationApi";
 import { VISIT_STATUS, explainVisit } from "../constants/visit.constants";
 import VisitMap from "./VisitMap";
+import { formatDateTime } from "../../../utils/date.utils";
 
 /**
  * One site visit next to that day's actual route (2026-10-22): the site and
@@ -12,7 +13,7 @@ import VisitMap from "./VisitMap";
  * employee's notes. The route comes from the existing location history
  * endpoint — the same data the Live Map's history uses.
  */
-const time = (iso) => new Date(iso).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+const time = (iso) => formatDateTime(iso);
 
 function VisitDetailDrawer({ visitId, onClose }) {
   const { message } = App.useApp();

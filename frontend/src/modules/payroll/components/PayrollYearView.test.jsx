@@ -165,7 +165,7 @@ describe("the run list", () => {
     const rows = [...document.querySelectorAll(".ant-table-tbody tr.ant-table-row")];
 
     expect(rows[0].textContent).toContain("Vinay");
-    expect(rows[1].textContent).toContain("Paid 5 May 2026");
+    expect(rows[1].textContent).toContain("Paid 05 May 2026");
   });
 
   it("opens the existing review table when a run is clicked", async () => {

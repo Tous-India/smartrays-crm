@@ -5,6 +5,7 @@ import ConnectivityGapBar from "./ConnectivityGapBar";
 import GeofenceViolationBar from "./GeofenceViolationBar";
 import AttendanceLocationMapModal from "./AttendanceLocationMapModal";
 import { ATTENDANCE_STATUS_COLORS, ATTENDANCE_STATUS_LABELS } from "../constants/attendance.constants";
+import { formatDate, formatDateTime } from "../../../utils/date.utils";
 
 const { Text } = Typography;
 
@@ -45,7 +46,7 @@ function PhotoSlot({ title, photoUrl, time, coords, showPhoto, showLocation }) {
             <Empty description="No photo" image={Empty.PRESENTED_IMAGE_SIMPLE} />
           </div>
         ))}
-      <div className="mt-1 text-xs text-gray-500">{time ? new Date(time).toLocaleString() : "Not recorded"}</div>
+      <div className="mt-1 text-xs text-gray-500">{time ? formatDateTime(time) : "Not recorded"}</div>
       {showLocation && <CoordsDisplay coords={coords} />}
     </div>
   );
@@ -95,7 +96,7 @@ function AttendancePhotoModal({ open, record, onCancel, showPhotos, showLocation
       open={open}
       onCancel={onCancel}
       footer={null}
-      title={`Attendance — ${new Date(record.date).toLocaleDateString()}`}
+      title={`Attendance — ${formatDate(record.date)}`}
     >
       <Space direction="vertical" size="middle" className="w-full">
         <Space wrap>

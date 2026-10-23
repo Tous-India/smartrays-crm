@@ -210,7 +210,7 @@ function RecordPaymentModal({ open, onCancel, onSubmit, isSubmitting, users, fix
               {/* Hours:minutes only — same `showTime` config as LeadFormModal's
                   own follow-up date field; the default `showTime` also asks for
                   seconds, precision a payment record doesn't need either. */}
-              <DatePicker showTime={{ format: "HH:mm" }} format="YYYY-MM-DD HH:mm" style={{ width: "100%" }} />
+              <DatePicker showTime={{ format: "h:mm A", use12Hours: true }} format="DD MMM YYYY, h:mm A" style={{ width: "100%" }} />
             </Form.Item>
           </Col>
           <Col {...HALF}>

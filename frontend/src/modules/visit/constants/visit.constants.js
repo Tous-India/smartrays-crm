@@ -1,3 +1,4 @@
+import { formatDate, formatTime } from "../../../utils/date.utils";
 // Verified site visits (2026-10-22): the five words the office sees, and one
 // plain sentence explaining each — computed by the server from where the
 // phone actually was (visit.status.js).
@@ -12,8 +13,8 @@ export const VISIT_STATUS = {
 
 export const VISIT_PURPOSES = ["Site survey", "Installation", "Service visit", "Inspection", "Net-meter work"];
 
-const time = (iso) => new Date(iso).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
-const day = (iso) => new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+const time = (iso) => formatTime(iso);
+const day = (iso) => formatDate(iso);
 
 export function explainVisit(visit) {
   const arrived = visit.arrival?.at ? time(visit.arrival.at) : null;

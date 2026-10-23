@@ -70,7 +70,7 @@ function VisitsPage() {
 
       <div className="flex flex-wrap items-center gap-2">
         <Button icon={<LeftOutlined />} onClick={() => setDate((d) => d.subtract(1, "day"))} aria-label="Previous day" />
-        <DatePicker value={date} onChange={(value) => value && setDate(value)} allowClear={false} format="ddd, D MMM YYYY" />
+        <DatePicker value={date} onChange={(value) => value && setDate(value)} allowClear={false} format="ddd, DD MMM YYYY" />
         <Button icon={<RightOutlined />} onClick={() => setDate((d) => d.add(1, "day"))} aria-label="Next day" />
         {!date.isSame(dayjs(), "day") && <Button onClick={() => setDate(dayjs())}>Today</Button>}
         {problems > 0 && <Tag color="red" className="ml-1">{problems} need a look</Tag>}

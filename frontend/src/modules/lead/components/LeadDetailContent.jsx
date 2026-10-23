@@ -28,6 +28,7 @@ import {
 const WON_ICON_COLOR = "#52c41a";
 const LOST_ICON_COLOR = "#f5222d";
 import { buildActivityTimeline } from "../utils/buildActivityTimeline";
+import { formatDate, formatDateTime } from "../../../utils/date.utils";
 
 /**
  * The slide-over's body: fields, call history, the assembled activity
@@ -157,7 +158,7 @@ function LeadDetailContent({
           {lead.budget != null ? lead.budget.toLocaleString() : "—"}
         </Descriptions.Item>
         <Descriptions.Item label="Follow-up">
-          {lead.followUpDate ? new Date(lead.followUpDate).toLocaleString() : "—"}
+          {lead.followUpDate ? formatDateTime(lead.followUpDate) : "—"}
         </Descriptions.Item>
         <Descriptions.Item label="Follow-up Note" span={2}>
           {lead.followUpNote || "—"}
@@ -202,7 +203,7 @@ function LeadDetailContent({
             </Descriptions.Item>
             {lead.siteSurveyStatus && lead.siteSurveyStatus !== "not_scheduled" && (
               <Descriptions.Item label="Site Survey Date">
-                {lead.siteSurveyDate ? new Date(lead.siteSurveyDate).toLocaleDateString() : "—"}
+                {lead.siteSurveyDate ? formatDate(lead.siteSurveyDate) : "—"}
               </Descriptions.Item>
             )}
           </Descriptions>
@@ -219,7 +220,7 @@ function LeadDetailContent({
           <List.Item>
             <div>
               <div>
-                {new Date(call.calledAt).toLocaleString()} —{" "}
+                {formatDateTime(call.calledAt)} —{" "}
                 {CALL_OUTCOME_LABELS[call.outcome] || call.outcome}
               </div>
               {call.notes && <div className="text-xs text-gray-500">{call.notes}</div>}
@@ -234,7 +235,7 @@ function LeadDetailContent({
         dataSource={timeline}
         renderItem={(entry) => (
           <List.Item key={entry.key}>
-            <span className="text-xs text-gray-500">{new Date(entry.date).toLocaleString()}</span>
+            <span className="text-xs text-gray-500">{formatDateTime(entry.date)}</span>
             <span className="ml-2">{entry.description}</span>
           </List.Item>
         )}

@@ -69,7 +69,7 @@ function EditPaymentModal({ open, payment, onCancel, onSubmit, isSubmitting, use
         </Form.Item>
 
         <Form.Item label="Date" name="date" rules={[{ required: true, message: "Date is required" }]}>
-          <DatePicker showTime={{ format: "HH:mm" }} format="YYYY-MM-DD HH:mm" style={{ width: "100%" }} />
+          <DatePicker showTime={{ format: "h:mm A", use12Hours: true }} format="DD MMM YYYY, h:mm A" style={{ width: "100%" }} />
         </Form.Item>
 
         <Form.Item label="Notes" name="notes">

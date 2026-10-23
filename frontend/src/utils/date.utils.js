@@ -111,3 +111,30 @@ export function isWithinRange(date, from, to) {
 
   return ms >= from.valueOf() && ms <= to.valueOf();
 }
+
+// --- Display formats (2026-10-23, owner's decision) -------------------------
+// One Indian format everywhere — DD MMM YYYY ("03 Oct 2026") — never the
+// browser's own locale, which showed "10/23/2026, 1:00:00 PM" on a US-English
+// browser and "23/10/2026" on another. Times are h:mm AM/PM. Use these for
+// every date shown on screen; keep toLocalDateKey for values sent to the API.
+export const DISPLAY_DATE_FORMAT = "DD MMM YYYY";
+export const DISPLAY_TIME_FORMAT = "h:mm A";
+export const DISPLAY_DATE_TIME_FORMAT = `${DISPLAY_DATE_FORMAT}, ${DISPLAY_TIME_FORMAT}`;
+
+function display(value, format) {
+  if (value === null || value === undefined || value === "") return "—";
+  const parsed = dayjs(value);
+  return parsed.isValid() ? parsed.format(format) : "—";
+}
+
+export function formatDate(value) {
+  return display(value, DISPLAY_DATE_FORMAT);
+}
+
+export function formatDateTime(value) {
+  return display(value, DISPLAY_DATE_TIME_FORMAT);
+}
+
+export function formatTime(value) {
+  return display(value, DISPLAY_TIME_FORMAT);
+}

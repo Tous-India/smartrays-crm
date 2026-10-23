@@ -5,6 +5,7 @@ import PermissionGate from "../../../routes/PermissionGate";
 import ContractFormModal from "./ContractFormModal";
 import { createContract, updateContract, deleteContract } from "../api/customerApi";
 import { CONTRACT_TYPE_COLORS, CONTRACT_TYPE_LABELS } from "../constants/customer.constants";
+import { formatDate } from "../../../utils/date.utils";
 
 const AUTOMATION_CONTRACT_TYPES = ["monthly", "onetime"];
 
@@ -115,7 +116,7 @@ function CustomerContractsSection({ customerId, contracts, canEdit, onChanged })
               {contract.amount != null && <span className="text-gray-500">₹{contract.amount.toLocaleString()}</span>}
               {contract.renewalDate && (
                 <span className="text-gray-500">
-                  Renews {new Date(contract.renewalDate).toLocaleDateString()}
+                  Renews {formatDate(contract.renewalDate)}
                 </span>
               )}
             </Space>

@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import AttendancePhotoModal from "./AttendancePhotoModal";
+import { formatDateTime } from "../../../utils/date.utils";
 
 vi.mock("../../../hooks/useUserDirectory", () => ({
   default: () => ({ users: [] }),
@@ -145,7 +146,7 @@ describe("AttendancePhotoModal", () => {
       expect(screen.queryByText("No coordinates captured")).not.toBeInTheDocument();
       expect(screen.queryByText("Location")).not.toBeInTheDocument();
       // Time is never gated — still visible either way.
-      expect(screen.getByText(new Date(RECORD_WITH_PHOTOS.checkIn.time).toLocaleString())).toBeInTheDocument();
+      expect(screen.getByText(formatDateTime(RECORD_WITH_PHOTOS.checkIn.time))).toBeInTheDocument();
     });
 
     it("shows the photo but hides coords/Location when only showPhotos is granted", () => {

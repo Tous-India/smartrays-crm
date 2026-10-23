@@ -10,6 +10,7 @@ import {
   CONTRACT_TYPE_COLORS,
   CONTRACT_TYPE_LABELS,
 } from "../constants/customer.constants";
+import { formatDate } from "../../../utils/date.utils";
 
 /**
  * List View table per leads-customer-functional-spec.md: Company Name,
@@ -102,7 +103,7 @@ function CustomersTable({
       title: "Signed Up",
       dataIndex: "signedUpAt",
       sorter: (a, b) => new Date(a.signedUpAt) - new Date(b.signedUpAt),
-      render: (value) => (value ? new Date(value).toLocaleDateString() : "—"),
+      render: (value) => (value ? formatDate(value) : "—"),
     },
     {
       title: "Status",

@@ -6,6 +6,7 @@ import LeadFollowUpCell from "./LeadFollowUpCell";
 import PermissionGate from "../../../routes/PermissionGate";
 import CopyablePhoneCell from "../../../components/CopyablePhoneCell";
 import { LEAD_STATUS_COLORS, LEAD_STATUS_LABELS, CLIENT_TYPE_LABELS } from "../constants/lead.constants";
+import { formatDate } from "../../../utils/date.utils";
 
 function isOverdue(followUpDate) {
   return followUpDate && new Date(followUpDate) < new Date();
@@ -137,7 +138,7 @@ function LeadsTable({
           <LeadFollowUpCell lead={lead} onReschedule={onRescheduleFollowUp} />
         ) : value ? (
           <span className={isOverdue(value) ? "font-medium text-red-600" : ""}>
-            {new Date(value).toLocaleDateString()}
+            {formatDate(value)}
           </span>
         ) : (
           "—"
@@ -152,7 +153,7 @@ function LeadsTable({
     {
       title: "Created",
       dataIndex: "createdAt",
-      render: (value) => new Date(value).toLocaleDateString(),
+      render: (value) => formatDate(value),
     },
     {
       title: "Actions",

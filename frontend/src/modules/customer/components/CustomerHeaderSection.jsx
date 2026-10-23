@@ -5,6 +5,7 @@ import useUserDirectory from "../../../hooks/useUserDirectory";
 import CustomerStatusToggleButton from "./CustomerStatusToggleButton";
 import ComplaintLinkButton from "../../complaint/components/ComplaintLinkButton";
 import { CUSTOMER_STATUS_COLORS, CUSTOMER_STATUS_LABELS } from "../constants/customer.constants";
+import { formatDate } from "../../../utils/date.utils";
 
 const { Title, Text } = Typography;
 
@@ -43,7 +44,7 @@ function CustomerHeaderSection({ customer, onEdit, onDelete, onChanged }) {
         </div>
         <Text type="secondary">
           Source: {customer.source || "—"} · Owner: {ownerName || "—"} · Signed up:{" "}
-          {customer.signedUpAt ? new Date(customer.signedUpAt).toLocaleDateString() : "—"}
+          {customer.signedUpAt ? formatDate(customer.signedUpAt) : "—"}
         </Text>
         {(customer.email || customer.phone) && (
           <div>

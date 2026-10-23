@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import dayjs from "dayjs";
+import { DISPLAY_DATE_FORMAT, formatTime } from "../utils/date.utils";
 
 /**
  * Real-time clock/date shown in the shortened top bar (§ UI/UX pass). Ticks
@@ -7,10 +9,7 @@ import { useEffect, useState } from "react";
  * the same reasoning every other interval-driven piece in this app already
  * follows (`useCheckedInHeartbeatLoop`, the Location live-map poll).
  *
- * Format: "Mon, 21 Jul 2026 · 3:45 PM" — `en-GB` naturally orders
- * day/month/year in that sequence for the date half; the time half is
- * formatted separately since a single locale/option set can't produce both
- * halves in this exact combined shape.
+ * Format: "Mon, 21 Jul 2026 · 3:45 PM" — from the shared display formats.
  */
 function LiveClock() {
   const [now, setNow] = useState(() => new Date());
@@ -20,13 +19,10 @@ function LiveClock() {
     return () => clearInterval(intervalId);
   }, []);
 
-  const datePart = now.toLocaleDateString("en-GB", {
-    weekday: "short",
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-  const timePart = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  // The shared display formats (utils/date.utils.js, 2026-10-23): the weekday
+  // plus DD MMM YYYY, and h:mm AM/PM — same output as before, no locale needed.
+  const datePart = dayjs(now).format(`ddd, ${DISPLAY_DATE_FORMAT}`);
+  const timePart = formatTime(now);
 
   return (
     <span className="text-sm text-white/80">

@@ -43,19 +43,19 @@ function LeadFollowUpCell({ lead, onReschedule, iconOnly = false }) {
     <DatePicker
       value={value}
       onChange={handleChange}
-      showTime={{ format: "HH:mm" }}
-      format="YYYY-MM-DD HH:mm"
+      showTime={{ format: "h:mm A", use12Hours: true }}
+      format="DD MMM YYYY, h:mm A"
       size="small"
       allowClear
       placeholder="Set follow-up"
       variant="borderless"
-      // Explicit width — "YYYY-MM-DD HH:mm" (16 chars) plus the calendar
+      // Explicit width — "DD MMM YYYY, h:mm A" (up to 21 chars) plus the calendar
       // icon needs more room than AntD's own default DatePicker width
       // gives it; left unset, the input truncated its own text (down to
       // "S.." for the placeholder) rather than the column being too
       // narrow for a naturally-sized picker. In icon mode this is instead
       // collapsed to an invisible 1x1px trigger — see the component docblock.
-      style={iconOnly ? { position: "absolute", width: 1, height: 1, padding: 0, opacity: 0 } : { width: 150 }}
+      style={iconOnly ? { position: "absolute", width: 1, height: 1, padding: 0, opacity: 0 } : { width: 180 }}
       className={isOverdue(lead.followUpDate) ? "!text-red-600 font-medium" : ""}
       onClick={(event) => event.stopPropagation()}
       {...(iconOnly ? { open: isIconPickerOpen, onOpenChange: setIsIconPickerOpen } : {})}
