@@ -9,7 +9,7 @@ import ListState from "../../../components/ListState";
 import useServerData from "../../../hooks/useServerData";
 import { getMyAttendance } from "../../attendance/api/attendanceApi";
 import { formatClockTime, monthKey } from "../../attendance/attendance.utils";
-import MonthCalendar from "../../attendance/components/MonthCalendar";
+import MonthCalendar, { DAY_KINDS } from "../../attendance/components/MonthCalendar";
 import { buildMonthDays, computeAttendanceSummary } from "../../attendance/attendanceSummary";
 import { formatDate, formatMonth, formatShortDate, startOfDay } from "../../../utils/date.utils";
 import { colors, spacing, typography } from "../../../theme";
@@ -152,7 +152,7 @@ function AttendanceHistoryScreen({ navigation }) {
             <Card key={record._id} testID={`history-row-${record._id}`}>
               <View style={styles.rowHeader}>
                 <Text style={[typography.body, styles.day]}>{formatDate(record.date)}</Text>
-                {record.status ? <StatusPill label={record.status} tone={statusTone(record.status)} /> : null}
+                {record.status ? <StatusPill label={DAY_KINDS[record.status]?.label ?? record.status} tone={statusTone(record.status)} /> : null}
               </View>
               <Text style={[typography.small, styles.line]}>
                 {record.checkIn?.time ? `In ${formatClockTime(record.checkIn.time)}` : "No check-in"}

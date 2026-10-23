@@ -165,6 +165,9 @@ describe("AttendanceHistoryScreen", () => {
 
     await fireEvent.press(screen.getByTestId("history-day-2"));
     expect(screen.getAllByTestId(/^history-row-/)).toHaveLength(3);
+    // Statuses read as words, not keys: "On leave", not "on_leave".
+    expect(screen.getAllByText("On leave", { exact: true })).toHaveLength(2); // the legend and the row
+    expect(screen.queryByText("on_leave")).toBeNull();
   });
 
   test("a failed month shows the server's message", async () => {
