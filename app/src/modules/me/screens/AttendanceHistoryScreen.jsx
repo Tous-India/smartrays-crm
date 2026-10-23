@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Ionicons from "@react-native-vector-icons/ionicons";
 import Screen from "../../../components/Screen";
@@ -9,6 +9,8 @@ import ListState from "../../../components/ListState";
 import useServerData from "../../../hooks/useServerData";
 import { getMyAttendance } from "../../attendance/api/attendanceApi";
 import { formatClockTime, monthKey } from "../../attendance/attendance.utils";
+import MonthCalendar from "../../attendance/components/MonthCalendar";
+import { buildMonthDays, computeAttendanceSummary } from "../../attendance/attendanceSummary";
 import { formatDate, formatMonth, formatShortDate, startOfDay } from "../../../utils/date.utils";
 import { colors, spacing, typography } from "../../../theme";
 
@@ -17,6 +19,10 @@ import { colors, spacing, typography } from "../../../theme";
  * record — the day, check-in and check-out times, the server's working
  * hours and its status. Own photos and coordinates are never shown (§7.4c);
  * nothing is computed here, the rows are `GET /attendance/me` as returned.
+ *
+ * 2026-10-23: a month calendar on top, each day coloured by its record's
+ * status (tap a day for only its rows), and the month's summary — the
+ * web's own counting rule (attendanceSummary.js), not a new one.
  */
 function shiftMonth(date, delta) {
   return new Date(date.getFullYear(), date.getMonth() + delta, 1);
@@ -58,20 +64,33 @@ function AttendanceHistoryScreen({ navigation }) {
     { initialData: [], deps: [key] }
   );
   const isCurrentMonth = key === monthKey(new Date());
+  const [selectedDay, setSelectedDay] = useState(null);
+  const weeks = useMemo(() => buildMonthDays(month, records.data), [month, records.data]);
+  const summary = useMemo(
+    () => computeAttendanceSummary(records.data, { from: month, to: new Date(month.getFullYear(), month.getMonth() + 1, 0) }),
+    [month, records.data]
+  );
+  const selectedRecords = selectedDay ? weeks.flat().find((slot) => slot?.day === selectedDay)?.records ?? [] : null;
+  const shown = selectedRecords ?? records.data;
+
+  function changeMonth(delta) {
+    setSelectedDay(null);
+    setMonth(shiftMonth(month, delta));
+  }
 
   return (
     <Screen onRefresh={records.refetch} refreshing={records.isRefreshing} testID="attendance-history-screen">
       <ScreenHeader title="Attendance history" onBack={() => navigation.goBack()} />
 
       <View style={styles.monthRow}>
-        <Pressable onPress={() => setMonth(shiftMonth(month, -1))} accessibilityRole="button" accessibilityLabel="Previous month" style={styles.monthButton} testID="history-prev-month">
+        <Pressable onPress={() => changeMonth(-1)} accessibilityRole="button" accessibilityLabel="Previous month" style={styles.monthButton} testID="history-prev-month">
           <Ionicons name="chevron-back" size={24} color={colors.brandNavy} />
         </Pressable>
         <Text style={[typography.body, styles.monthLabel]} testID="history-month">
           {formatMonth(month)}
         </Text>
         <Pressable
-          onPress={() => setMonth(shiftMonth(month, 1))}
+          onPress={() => changeMonth(1)}
           disabled={isCurrentMonth}
           accessibilityRole="button"
           accessibilityLabel="Next month"
@@ -94,8 +113,42 @@ function AttendanceHistoryScreen({ navigation }) {
         testID="history-list"
       />
 
+      {!records.isLoading && !records.error ? (
+        <Card testID="history-month-card">
+          <MonthCalendar weeks={weeks} selectedDay={selectedDay} onSelectDay={setSelectedDay} />
+          <View style={styles.summary}>
+            <Text style={[typography.body, styles.summaryItem]} testID="history-summary-present">
+              {summary.present} present
+            </Text>
+            <Text style={[typography.body, styles.summaryItem]} testID="history-summary-half_day">
+              {summary.half_day} half day
+            </Text>
+            <Text style={[typography.body, styles.summaryItem]} testID="history-summary-absent">
+              {summary.absent} absent
+            </Text>
+            <Text style={[typography.body, styles.summaryItem]} testID="history-summary-on_leave">
+              {summary.on_leave} on leave
+            </Text>
+            <Text style={[typography.body, styles.summaryItem]} testID="history-summary-hours">
+              {String(summary.hours)} h worked
+            </Text>
+          </View>
+          {summary.attendanceRate !== null ? (
+            <Text style={[typography.small, styles.rate]} testID="history-summary-rate">
+              Attendance {summary.attendanceRate}% of {summary.workingDays} working days so far (Monday–Saturday)
+            </Text>
+          ) : null}
+        </Card>
+      ) : null}
+
+      {selectedDay ? (
+        <Text style={[typography.label, styles.dayHeading]} testID="history-selected-day">
+          {formatDate(new Date(month.getFullYear(), month.getMonth(), selectedDay))} — tap the day again for the whole month
+        </Text>
+      ) : null}
+
       {!records.isLoading && !records.error
-        ? records.data.map((record) => (
+        ? shown.map((record) => (
             <Card key={record._id} testID={`history-row-${record._id}`}>
               <View style={styles.rowHeader}>
                 <Text style={[typography.body, styles.day]}>{formatDate(record.date)}</Text>
@@ -121,6 +174,10 @@ const styles = StyleSheet.create({
   rowHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: spacing.sm },
   day: { fontWeight: "600" },
   line: { marginTop: spacing.xs },
+  summary: { flexDirection: "row", flexWrap: "wrap", columnGap: spacing.lg, rowGap: spacing.xs, marginTop: spacing.md },
+  summaryItem: { fontWeight: "600" },
+  rate: { marginTop: spacing.xs },
+  dayHeading: { marginBottom: spacing.sm },
 });
 
 export default AttendanceHistoryScreen;

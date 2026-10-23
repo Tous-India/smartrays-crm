@@ -118,6 +118,34 @@ describe("AttendanceHistoryScreen", () => {
     expect(screen.getByText(new RegExp(`Out 12:35 PM · ${formatShortDate(outAt)}`))).toBeTruthy();
   });
 
+  test("a month calendar coloured by the server's statuses, the month's summary, and a tapped day shows only that day (2026-10-23)", async () => {
+    const now = new Date();
+    // India-midnight dates, the way the server stores them.
+    const india = (n) => new Date(Date.UTC(now.getFullYear(), now.getMonth(), n) - 330 * 60000).toISOString();
+    getMyAttendance.mockReturnValue(
+      ok([
+        { _id: "p1", date: india(1), checkIn: { time: india(1) }, checkOut: { time: india(1) }, workingHours: 8, status: "present" },
+        { _id: "h1", date: india(2), checkIn: { time: india(2) }, checkOut: { time: india(2) }, workingHours: 4, status: "half_day" },
+        { _id: "l1", date: india(3), status: "on_leave" },
+      ])
+    );
+    const screen = await render(<AttendanceHistoryScreen navigation={navigation} />);
+
+    await waitFor(() => expect(screen.getByTestId("history-day-1")).toBeTruthy());
+    expect(screen.getByTestId("history-day-1").props.accessibilityLabel).toMatch(/Present$/);
+    expect(screen.getByTestId("history-day-2").props.accessibilityLabel).toMatch(/Half day$/);
+    expect(screen.getByTestId("history-day-3").props.accessibilityLabel).toMatch(/On leave$/);
+    expect(screen.getByTestId("history-summary-present").props.children).toEqual([1, " present"]);
+    expect(screen.getByTestId("history-summary-half_day").props.children).toEqual([1, " half day"]);
+    expect(screen.getByTestId("history-summary-hours").props.children).toEqual(["12", " h worked"]);
+
+    await fireEvent.press(screen.getByTestId("history-day-2"));
+    expect(screen.getAllByTestId(/^history-row-/).map((row) => row.props.testID)).toEqual(["history-row-h1"]);
+
+    await fireEvent.press(screen.getByTestId("history-day-2"));
+    expect(screen.getAllByTestId(/^history-row-/)).toHaveLength(3);
+  });
+
   test("a failed month shows the server's message", async () => {
     getMyAttendance.mockRejectedValue(serverError(500, "Attendance unavailable"));
     const screen = await render(<AttendanceHistoryScreen navigation={navigation} />);
