@@ -1,4 +1,4 @@
-import { PermissionsAndroid } from "react-native";
+import { Linking, PermissionsAndroid } from "react-native";
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 import CaptureScreen from "./CaptureScreen";
 import { checkIn, checkOut } from "../api/attendanceApi";
@@ -147,4 +147,14 @@ test("location blocked links to the app settings, and confirm stays disabled", a
 
   await fireEvent.press(screen.getByTestId("capture-location-settings"));
   expect(openAppSettings).toHaveBeenCalled();
+});
+
+test("location services off → says so, with a button straight to the phone's location setting (2026-10-23)", async () => {
+  const sendIntent = jest.spyOn(Linking, "sendIntent").mockResolvedValue();
+  global.mockGeolocationNext({ error: { code: 2 } });
+  const screen = await render(<CaptureScreen navigation={navigation} route={checkInRoute} />);
+
+  await waitFor(() => expect(screen.getByTestId("capture-location-unavailable")).toBeTruthy());
+  await fireEvent.press(screen.getByTestId("capture-location-turn-on"));
+  expect(sendIntent).toHaveBeenCalledWith("android.settings.LOCATION_SOURCE_SETTINGS");
 });

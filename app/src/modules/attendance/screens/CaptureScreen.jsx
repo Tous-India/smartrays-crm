@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import { useIsFocused } from "@react-navigation/native";
 import { Camera, useCameraDevice } from "react-native-vision-camera";
 import Screen from "../../../components/Screen";
@@ -311,9 +311,14 @@ function LocationStatus({ location }) {
     return (
       <View testID="capture-location-unavailable">
         <Text style={[typography.body, styles.locationWarn]}>
-          Location is unavailable. Turn on location services on this phone and try again.
+          Location is off on this phone. Turn it on, come back, and tap Try again.
         </Text>
         <View style={styles.actions}>
+          <SecondaryAction
+            title="Turn on location"
+            onPress={() => Linking.sendIntent("android.settings.LOCATION_SOURCE_SETTINGS").catch(openAppSettings)}
+            testID="capture-location-turn-on"
+          />
           <SecondaryAction title="Try again" onPress={location.request} testID="capture-location-retry" />
         </View>
       </View>

@@ -39,7 +39,8 @@ test("checked in: elapsed time since the check-in, and the check-out action", as
   const screen = await renderCard({ openRecord: OPEN, onCheckOut });
 
   expect(screen.getByTestId("shift-card-checked-in")).toBeTruthy();
-  expect(screen.getByText("2h 05m")).toBeTruthy();
+  // One line, the owner's wording (2026-10-23): "Checked in at 9:42 AM · working 3h 15m".
+  expect(screen.getByTestId("shift-checked-in-line").props.children.join("")).toMatch(/^Checked in at \d{1,2}:\d{2} (AM|PM) · working 2h 05m$/);
   await fireEvent.press(screen.getByTestId("shift-check-out"));
   expect(onCheckOut).toHaveBeenCalled();
 });

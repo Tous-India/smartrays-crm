@@ -9,7 +9,8 @@ import { colors, radius, spacing, typography } from "../../../theme";
  * The shift card (app-plan.md §1.1) in its three states:
  *
  *   not checked in  — "Check in"
- *   checked in      — since when, elapsed (ticks each minute), "Check out"
+ *   checked in      — "Checked in at 9:42 AM · working 3h 15m" (ticks each
+ *                     minute), the tracking status right under it, "Check out"
  *   checked out     — today's times and the server's working hours, and a
  *                     second check-in, which the server allows after a check-out
  *
@@ -157,10 +158,11 @@ function TodayShiftCard({
           <Text style={typography.label}>Today&apos;s shift</Text>
           <Text style={[typography.small, styles.badge, styles.badgeActive]}>Checked in</Text>
         </View>
-        <Text style={[typography.title, styles.elapsed]}>{formatElapsed(openRecord.checkIn.time, now)}</Text>
-        <Text style={[typography.subtitle, styles.line]}>Since {formatClockTime(openRecord.checkIn.time)}</Text>
+        <Text style={[typography.body, styles.checkedInLine]} testID="shift-checked-in-line">
+          Checked in at {formatClockTime(openRecord.checkIn.time)} · working {formatElapsed(openRecord.checkIn.time, now)}
+        </Text>
         <TrackingLine trackingState={trackingState} isOnline={isOnline} onFixTracking={onFixTracking} now={now} />
-        <PrimaryButton title="Check out" onPress={onCheckOut} disabled={!isOnline} testID="shift-check-out" style={styles.button} />
+        <PrimaryButton title="Check out" onPress={onCheckOut} disabled={!isOnline} size="large" testID="shift-check-out" style={styles.button} />
         {!isOnline && <Text style={styles.offline}>No connection — check-out needs the server.</Text>}
       </View>
     );
@@ -180,7 +182,7 @@ function TodayShiftCard({
           <Text style={[typography.subtitle, styles.line]}>Working hours: {todayRecord.workingHours.toFixed(2)}</Text>
         )}
         {todayRecord.status && <Text style={[typography.subtitle, styles.line]}>Status: {todayRecord.status}</Text>}
-        <PrimaryButton title="Check in again" onPress={onCheckIn} disabled={!isOnline} testID="shift-check-in" style={styles.button} />
+        <PrimaryButton title="Check in again" onPress={onCheckIn} disabled={!isOnline} size="large" testID="shift-check-in" style={styles.button} />
         {!isOnline && <Text style={styles.offline}>No connection — check-in needs the server.</Text>}
       </View>
     );
@@ -193,7 +195,7 @@ function TodayShiftCard({
         <Text style={[typography.small, styles.badge]}>Not checked in</Text>
       </View>
       <Text style={[typography.body, styles.line]}>Check in with a photo and your location to start your shift.</Text>
-      <PrimaryButton title="Check in" onPress={onCheckIn} disabled={!isOnline} testID="shift-check-in" style={styles.button} />
+      <PrimaryButton title="Check in" onPress={onCheckIn} disabled={!isOnline} size="large" testID="shift-check-in" style={styles.button} />
       {!isOnline && <Text style={styles.offline}>No connection — check-in needs the server.</Text>}
     </View>
   );
@@ -218,7 +220,7 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   badgeActive: { color: colors.textOnBrand, backgroundColor: colors.brandGreen },
-  elapsed: { marginTop: spacing.md },
+  checkedInLine: { marginTop: spacing.md, fontSize: 18, fontWeight: "700", color: colors.textPrimary },
   line: { marginTop: spacing.xs },
   button: { marginTop: spacing.lg },
   skeletonLine: { marginTop: spacing.md },

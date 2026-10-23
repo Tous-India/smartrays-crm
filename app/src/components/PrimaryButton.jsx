@@ -8,7 +8,7 @@ import { colors, radius, spacing, typography } from "../theme";
  * request does nothing. The label stays readable while the request runs, so
  * the button still says what it is doing.
  */
-function PrimaryButton({ title, onPress, loading = false, disabled = false, testID, style }) {
+function PrimaryButton({ title, onPress, loading = false, disabled = false, size, testID, style }) {
   const isInactive = loading || disabled;
 
   return (
@@ -18,10 +18,10 @@ function PrimaryButton({ title, onPress, loading = false, disabled = false, test
       accessibilityRole="button"
       accessibilityState={{ disabled: isInactive, busy: loading }}
       testID={testID}
-      style={({ pressed }) => [styles.button, pressed && !isInactive && styles.pressed, isInactive && styles.inactive, style]}
+      style={({ pressed }) => [styles.button, size === "large" && styles.large, pressed && !isInactive && styles.pressed, isInactive && styles.inactive, style]}
     >
       {loading ? <ActivityIndicator size="small" color={colors.textOnBrand} style={styles.spinner} /> : null}
-      <Text style={styles.title}>{title}</Text>
+      <Text style={[styles.title, size === "large" && styles.largeTitle]}>{title}</Text>
     </Pressable>
   );
 }
@@ -37,6 +37,9 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     minHeight: 48,
   },
+  // size="large": the shift card's Check in / Check out (2026-10-23).
+  large: { minHeight: 64, borderRadius: radius.lg },
+  largeTitle: { fontSize: 20 },
   spinner: { marginRight: 0 },
   pressed: { opacity: 0.85 },
   inactive: { opacity: 0.6 },
