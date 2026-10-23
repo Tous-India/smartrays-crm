@@ -173,13 +173,13 @@ export const env = {
   // these describe a working day, not a heartbeat.
   shiftReminderAfterHours: Number(process.env.SHIFT_REMINDER_AFTER_HOURS) || 10,
   trackingStopAfterHours: Number(process.env.TRACKING_STOP_AFTER_HOURS) || 12,
-  // Customer complaints (2026-10-22) — ticketEscalation.service.js. Not
-  // picked up within the first, or not resolved within the second: the
-  // assignee's manager is told; still not done the third figure later, the
-  // admins are told. Hours.
-  complaintAcknowledgeHours: Number(process.env.COMPLAINT_ACKNOWLEDGE_HOURS) || 4,
-  complaintResolveHours: Number(process.env.COMPLAINT_RESOLVE_HOURS) || 48,
-  complaintAdminAfterHours: Number(process.env.COMPLAINT_ADMIN_AFTER_HOURS) || 4,
+  // Customer complaints (2026-10-23) — ticketEscalation.service.js. Hours a
+  // complaint may stay unassigned before the assigners are reminded; hours
+  // after the end of the visit date before an unresolved complaint is
+  // reminded to the technician and the assigners (0 = the next morning's
+  // first check).
+  complaintAssignReminderHours: Number(process.env.COMPLAINT_ASSIGN_REMINDER_HOURS) || 4,
+  complaintVisitGraceHours: Number(process.env.COMPLAINT_VISIT_GRACE_HOURS) || 0,
   // Verified site visits (2026-10-22) — visit.service.js. How close (metres)
   // a phone must be to the site for Arrived / Done / a site photo. Each
   // visit keeps the radius it was created with. The accuracy rule is the

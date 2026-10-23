@@ -1,45 +1,41 @@
 import { env } from "../../config/env.js";
 import { createNotification } from "../notification/notification.service.js";
 import Customer from "../customer/customer.model.js";
-import User from "../user/user.model.js";
 import Ticket from "./ticket.model.js";
 import TicketDigest from "./ticketDigest.model.js";
+import { findComplaintAssigners } from "./complaintPeople.js";
 
 /**
- * Complaint escalation and the admin's daily summary (2026-10-22).
+ * Complaint reminders and the daily summary (2026-10-23 — replaces the
+ * manager → admin escalation of 2026-10-22).
  *
- * THE RULE (complaints raised through the customer link only):
- * - Not acknowledged (still "Received") COMPLAINT_ACKNOWLEDGE_HOURS (4) after
- *   it was raised → the assignee's manager is told. Still not acknowledged
- *   COMPLAINT_ADMIN_AFTER_HOURS (4) later → the admins are told.
- * - Not resolved COMPLAINT_RESOLVE_HOURS (48) after it was raised → the
- *   manager, then the admins the same number of hours later.
- * - An assignee with no active manager goes straight to the admins at the
- *   first step. An admin is never told about a complaint they hold themselves.
- * - The admins are NOT told about every complaint — only these escalations,
- *   plus one summary a day (from 9 AM India time).
- * Each (kind, level) is recorded on the ticket by a conditional update, so a
- * step is sent once however many triggers fire at the same moment.
+ * THE RULES (complaints from the public form only):
+ * - Not assigned COMPLAINT_ASSIGN_REMINDER_HOURS (4) after it arrived, or
+ *   after the technician sent it back → every assigner is reminded, once
+ *   per time it became unassigned.
+ * - Its visit date has passed (India time) plus COMPLAINT_VISIT_GRACE_HOURS
+ *   (0) and it is not resolved → the technician and every assigner are
+ *   reminded, once per visit date (a new date can be reminded again).
+ * - One summary a day (from 9 AM India time) to every assigner.
+ * "Assigners" = active admins + anyone holding complaints.assign
+ * (complaintPeople.js). Each reminder is recorded on the ticket by a
+ * conditional update, so it is sent once however many triggers fire at once.
  *
  * HOW IT RUNS ON VERCEL (no node-cron there — the same two-trigger pattern
  * as the forgotten-check-out reminder, §7.74):
  * 1. On activity — `kickComplaintChecks()`, called (throttled to once per
- *    5 minutes per server instance) when anyone opens a complaint page or
- *    list, raises a complaint, or the web's notification bell polls. During
- *    working hours that is every few minutes.
+ *    5 minutes per server instance) when anyone opens a complaint list or
+ *    status page, raises a complaint, or the web's notification bell polls.
  * 2. A daily backstop — `GET /api/v1/tickets/escalations/run`, on the same
  *    machine-only credential as the attendance cleanup, scheduled in
  *    vercel.json at 03:30 UTC (09:00 IST). It also sends the daily summary.
  */
 
 const HOUR_MS = 3600000;
-const OPEN_STATUSES = ["open", "in_progress"];
+const WORKING_STATUSES = ["assigned", "on_the_way", "working"];
 const SUMMARY_FROM_HOUR_IST = 9;
 const ACTIVITY_THROTTLE_MS = 5 * 60 * 1000;
-
-function hours(name) {
-  return env[name];
-}
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function indiaDateParts(date) {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -54,95 +50,80 @@ function indiaDateParts(date) {
   return { date: `${get("year")}-${get("month")}-${get("day")}`, hour: Number(get("hour")) };
 }
 
-async function activeAdminsExcept(excludedId) {
-  const admins = await User.find({ role: "admin", isActive: true }).select("_id");
-  return admins.filter((admin) => String(admin._id) !== String(excludedId)).map((admin) => admin._id);
+function shortDate(visitDate) {
+  const [, month, day] = visitDate.split("-").map(Number);
+  return `${day} ${MONTHS[month - 1]}`;
 }
 
-/** The steps due for one ticket at `now`: [{ kind, level, overdueHours }]. */
-function dueSteps(ticket, hasManager, now) {
-  const ageHours = (now - ticket.createdAt) / HOUR_MS;
-  const steps = [];
-
-  const consider = (kind, baseHours) => {
-    if (ageHours < baseHours) return;
-    if (hasManager) {
-      steps.push({ kind, level: "manager", overdueHours: baseHours });
-      if (ageHours >= baseHours + hours("complaintAdminAfterHours")) {
-        steps.push({ kind, level: "admin", overdueHours: baseHours + hours("complaintAdminAfterHours") });
-      }
-    } else {
-      steps.push({ kind, level: "admin", overdueHours: baseHours });
-    }
-  };
-
-  if (ticket.status === "open") consider("acknowledge", hours("complaintAcknowledgeHours"));
-  consider("resolve", hours("complaintResolveHours"));
-
-  return steps;
+/** The moment a visit date counts as passed: the end of that India day, plus the grace. */
+function visitPassedAt(visitDate) {
+  return new Date(new Date(`${visitDate}T00:00:00+05:30`).getTime() + 24 * HOUR_MS + env.complaintVisitGraceHours * HOUR_MS);
 }
 
-function escalationMessage(ticket, customerName, assigneeName, step) {
-  const what =
-    step.kind === "acknowledge"
-      ? `has not been picked up in ${step.overdueHours} hours`
-      : `is not resolved after ${step.overdueHours} hours`;
-  return `Complaint ${ticket.number} from ${customerName} ${what}. Assigned to ${assigneeName}.`;
+async function who(ticket) {
+  if (ticket.customerId) {
+    const customer = await Customer.findById(ticket.customerId).select("companyName").lean();
+    if (customer) return customer.companyName;
+  }
+  return ticket.contactName || "a customer";
+}
+
+/** Records the reminder; true only for the caller that recorded it first. */
+async function claim(ticket, kind, key, recipients, now) {
+  const claimed = await Ticket.updateOne(
+    { _id: ticket._id, reminders: { $not: { $elemMatch: { kind, key } } } },
+    { $push: { reminders: { kind, key, notifiedUserIds: recipients, at: now } } }
+  );
+  return claimed.modifiedCount === 1;
+}
+
+async function send(recipients, message, ticket) {
+  for (const userId of recipients) {
+    await createNotification(userId, "complaint_reminder", message, { module: "complaints", id: ticket._id });
+  }
 }
 
 /**
- * Sends every escalation step that is due and not yet sent. Returns
- * `{ checked, escalated }` (escalated = steps newly recorded).
+ * Sends every reminder that is due and not yet sent. Returns
+ * `{ checked, reminded }` (reminded = reminders newly recorded).
  */
-export async function runTicketEscalations(now = new Date()) {
-  const earliestHours = Math.min(hours("complaintAcknowledgeHours"), hours("complaintResolveHours"));
-  const tickets = await Ticket.find({
-    source: "complaint_link",
-    status: { $in: OPEN_STATUSES },
-    assignedToId: { $ne: null },
-    createdAt: { $lte: new Date(now.getTime() - earliestHours * HOUR_MS) },
-  });
-
-  let escalated = 0;
-
-  for (const ticket of tickets) {
-    const assignee = await User.findById(ticket.assignedToId).select("_id name managerId");
-    const manager = assignee?.managerId
-      ? await User.findOne({ _id: assignee.managerId, isActive: true }).select("_id")
-      : null;
-    const hasManager = Boolean(manager) && String(manager._id) !== String(ticket.assignedToId);
-
-    const steps = dueSteps(ticket, hasManager, now).filter(
-      (step) => !ticket.escalations.some((done) => done.kind === step.kind && done.level === step.level)
-    );
-    if (steps.length === 0) continue;
-
-    const customer = await Customer.findById(ticket.customerId).select("companyName");
-
-    for (const step of steps) {
-      const recipients = step.level === "manager" ? [manager._id] : await activeAdminsExcept(ticket.assignedToId);
-
-      // Record first, conditionally: whoever wins this update sends; anyone
-      // racing it finds the step already there and sends nothing.
-      const claimed = await Ticket.updateOne(
-        { _id: ticket._id, escalations: { $not: { $elemMatch: { kind: step.kind, level: step.level } } } },
-        { $push: { escalations: { kind: step.kind, level: step.level, notifiedUserIds: recipients, at: now } } }
-      );
-      if (claimed.modifiedCount !== 1) continue;
-
-      escalated += 1;
-      const message = escalationMessage(ticket, customer?.companyName || "a customer", assignee?.name || "nobody", step);
-      for (const userId of recipients) {
-        await createNotification(userId, "complaint_escalated", message, { module: "complaints", id: ticket._id });
-      }
-    }
+export async function runComplaintReminders(now = new Date()) {
+  const assignBefore = new Date(now.getTime() - env.complaintAssignReminderHours * HOUR_MS);
+  const [unassigned, working] = await Promise.all([
+    Ticket.find({ source: "complaint_link", status: "open", unassignedSince: { $lte: assignBefore } }),
+    Ticket.find({ source: "complaint_link", status: { $in: WORKING_STATUSES }, visitDate: { $type: "string" } }),
+  ]);
+  const overdue = working.filter((ticket) => visitPassedAt(ticket.visitDate) <= now);
+  if (unassigned.length === 0 && overdue.length === 0) {
+    return { checked: 0, reminded: 0 };
   }
 
-  return { checked: tickets.length, escalated };
+  const assignerIds = (await findComplaintAssigners()).map((assigner) => assigner._id);
+  let reminded = 0;
+
+  for (const ticket of unassigned) {
+    if (!(await claim(ticket, "unassigned", ticket.unassignedSince.toISOString(), assignerIds, now))) continue;
+    reminded += 1;
+    const hours = Math.floor((now - ticket.unassignedSince) / HOUR_MS);
+    await send(assignerIds, `Complaint ${ticket.number} from ${await who(ticket)} has not been assigned for ${hours} hours.`, ticket);
+  }
+
+  for (const ticket of overdue) {
+    const recipients = [ticket.assignedToId, ...assignerIds.filter((id) => String(id) !== String(ticket.assignedToId))];
+    if (!(await claim(ticket, "visit_overdue", ticket.visitDate, recipients, now))) continue;
+    reminded += 1;
+    await send(
+      recipients,
+      `Complaint ${ticket.number} from ${await who(ticket)}: the visit date (${shortDate(ticket.visitDate)}) has passed and it is not resolved yet.`,
+      ticket
+    );
+  }
+
+  return { checked: unassigned.length + overdue.length, reminded };
 }
 
 /**
- * One summary per India date for every active admin, from 9 AM IST.
+ * One summary per India date for every assigner, from 9 AM IST.
  * Returns `{ sent, date }`.
  */
 export async function sendDailyComplaintSummary(now = new Date()) {
@@ -155,20 +136,15 @@ export async function sendDailyComplaintSummary(now = new Date()) {
   const yesterdayStart = new Date(`${yesterday}T00:00:00+05:30`);
   const todayStart = new Date(`${date}T00:00:00+05:30`);
 
-  const [newYesterday, open, overdue] = await Promise.all([
+  const [newYesterday, notAssigned, inProgress, visitOverdue] = await Promise.all([
     Ticket.countDocuments({ source: "complaint_link", createdAt: { $gte: yesterdayStart, $lt: todayStart } }),
-    Ticket.countDocuments({ source: "complaint_link", status: { $in: OPEN_STATUSES } }),
-    Ticket.countDocuments({
-      source: "complaint_link",
-      $or: [
-        { status: "open", createdAt: { $lte: new Date(now.getTime() - hours("complaintAcknowledgeHours") * HOUR_MS) } },
-        { status: { $in: OPEN_STATUSES }, createdAt: { $lte: new Date(now.getTime() - hours("complaintResolveHours") * HOUR_MS) } },
-      ],
-    }),
+    Ticket.countDocuments({ source: "complaint_link", status: "open" }),
+    Ticket.countDocuments({ source: "complaint_link", status: { $in: WORKING_STATUSES } }),
+    Ticket.countDocuments({ source: "complaint_link", status: { $in: WORKING_STATUSES }, visitDate: { $lt: date } }),
   ]);
 
   try {
-    await TicketDigest.create({ date, counts: { newYesterday, open, overdue } });
+    await TicketDigest.create({ date, counts: { newYesterday, open: notAssigned + inProgress, overdue: visitOverdue } });
   } catch (error) {
     if (error?.code === 11000) {
       return { sent: false, date };
@@ -177,12 +153,11 @@ export async function sendDailyComplaintSummary(now = new Date()) {
   }
 
   const message =
-    open === 0 && newYesterday === 0
+    newYesterday + notAssigned + inProgress === 0
       ? "No open customer complaints."
-      : `Customer complaints: ${newYesterday} new yesterday, ${open} open, ${overdue} overdue.`;
-  const admins = await activeAdminsExcept(null);
-  for (const adminId of admins) {
-    await createNotification(adminId, "complaint_daily_summary", message, { module: "complaint_summary", id: null });
+      : `Customer complaints: ${newYesterday} new yesterday, ${notAssigned} not assigned, ${inProgress} in progress, ${visitOverdue} past their visit date.`;
+  for (const assigner of await findComplaintAssigners()) {
+    await createNotification(assigner._id, "complaint_daily_summary", message, { module: "complaint_summary", id: null });
   }
 
   return { sent: true, date };
@@ -190,9 +165,9 @@ export async function sendDailyComplaintSummary(now = new Date()) {
 
 /** Both checks — what the daily backstop endpoint runs. */
 export async function runComplaintChecks(now = new Date()) {
-  const escalations = await runTicketEscalations(now);
+  const reminders = await runComplaintReminders(now);
   const summary = await sendDailyComplaintSummary(now);
-  return { ...escalations, summarySent: summary.sent };
+  return { ...reminders, summarySent: summary.sent };
 }
 
 let lastActivityRunAt = 0;
