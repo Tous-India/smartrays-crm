@@ -167,6 +167,8 @@ export async function getTicketDetail(ticketId, requestingUser) {
     status: ticket.status,
     source: ticket.source,
     callbackTime: ticket.callbackTime ?? null,
+    // The person who raised it through the link, if they gave a name/number.
+    raisedBy: ticket.contactName || ticket.contactPhone ? { name: ticket.contactName || null, phone: ticket.contactPhone || null } : null,
     description: firstCustomerEntry?.comment ?? ticket.history[0]?.comment ?? null,
     customer: {
       _id: customer?._id ?? ticket.customerId,

@@ -146,6 +146,19 @@ const ticketSchema = new mongoose.Schema(
       enum: [...CALLBACK_TIMES, null],
       default: null,
     },
+    // Who raised it through the link and on which number to call back — both
+    // optional (2026-10-23): a company has several contacts, and the person
+    // complaining may not be the one on file.
+    contactName: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    contactPhone: {
+      type: String,
+      trim: true,
+      default: null,
+    },
     // Photos the customer attached. Private (Cloudinary "authenticated"),
     // shown to staff through short-lived signed links only.
     customerPhotos: {

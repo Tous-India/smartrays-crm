@@ -19,6 +19,9 @@ export const INVALID_LINK_MESSAGE = "This link is not valid. Please ask Smartray
 
 export const PHOTO_LIMITS = { maxCount: 3, maxBytes: 5 * 1024 * 1024 };
 const DESCRIPTION_LIMITS = { min: 5, max: 1000 };
+const CONTACT_NAME_MAX = 80;
+// A phone number: digits with optional +, spaces, dashes or brackets, 7–15 digits.
+const PHONE_PATTERN = /^\+?[\d\s()-]+$/;
 const RECENT_COMPLAINTS_SHOWN = 10;
 
 const CATEGORY_LABELS = {
@@ -84,6 +87,21 @@ export function detectImageType(buffer) {
   return null;
 }
 
+function validateContact({ contactName, contactPhone }) {
+  const name = typeof contactName === "string" ? contactName.trim() : "";
+  const phone = typeof contactPhone === "string" ? contactPhone.trim() : "";
+
+  if (name.length > CONTACT_NAME_MAX) {
+    throw new ApiError(400, `Please keep your name under ${CONTACT_NAME_MAX} characters.`);
+  }
+  const digits = phone.replace(/\D/g, "");
+  if (phone && (!PHONE_PATTERN.test(phone) || digits.length < 7 || digits.length > 15)) {
+    throw new ApiError(400, "Please enter a valid phone number, or leave it empty.");
+  }
+
+  return { contactName: name || null, contactPhone: phone || null };
+}
+
 function validateComplaint({ category, description, callbackTime }, files) {
   if (!COMPLAINT_CATEGORIES.includes(category)) {
     throw new ApiError(400, "Please choose what the problem is about.");
@@ -146,6 +164,7 @@ export async function pickAssignee(customer, category) {
 export async function raiseComplaint(token, body, files = []) {
   const customer = await customerOrThrow(token);
   const complaint = validateComplaint(body, files);
+  const contact = validateContact(body);
 
   const assignee = await pickAssignee(customer, complaint.category);
   const uploaded = [];
@@ -164,6 +183,8 @@ export async function raiseComplaint(token, body, files = []) {
     source: "complaint_link",
     number,
     callbackTime: complaint.callbackTime,
+    contactName: contact.contactName,
+    contactPhone: contact.contactPhone,
     assignedToId: assignee?._id || null,
     customerPhotos: uploaded.map(({ publicId }) => ({ publicId })),
     history: [{ type: "comment", byCustomer: true, comment: complaint.description }],

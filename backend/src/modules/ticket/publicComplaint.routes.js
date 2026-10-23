@@ -41,7 +41,7 @@ const raisePerLink = rateLimit({
 // answer "up to 3 photos" in plain words; anything beyond that is cut off here.
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: PHOTO_LIMITS.maxBytes, files: PHOTO_LIMITS.maxCount + 1, fields: 10, fieldSize: 8 * 1024 },
+  limits: { fileSize: PHOTO_LIMITS.maxBytes, files: PHOTO_LIMITS.maxCount + 1, fields: 12, fieldSize: 8 * 1024 },
 }).array("photos", PHOTO_LIMITS.maxCount + 1);
 
 function receivePhotos(req, res, next) {

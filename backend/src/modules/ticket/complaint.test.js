@@ -450,3 +450,33 @@ describe("Staff complaint detail", () => {
     await outsiderAgent.get(`/api/v1/tickets/${ticket._id}`).expect(404);
   });
 });
+
+describe("Who is complaining — optional name and phone (2026-10-23)", () => {
+  it("stores the name and phone when given, and the assignee's call button uses that number", async () => {
+    await Contact.create({ customerId: customer._id, name: "Rajesh Sharma", phone: "+91 98990 11111", isPrimary: true });
+    const { token } = await linkFor(customer._id);
+    const raised = await request(app)
+      .post(pub(token))
+      .field("category", "technical")
+      .field("description", "Inverter beeping all night")
+      .field("contactName", "  Sunita (daughter)  ")
+      .field("contactPhone", "98111 22333")
+      .expect(201);
+    const ticket = await Ticket.findOne({ number: raised.body.data.number });
+
+    expect(ticket.contactName).toBe("Sunita (daughter)");
+    expect(ticket.contactPhone).toBe("98111 22333");
+    const detail = (await pmAgent.get(`/api/v1/tickets/${ticket._id}`).expect(200)).body.data;
+    expect(detail.raisedBy).toEqual({ name: "Sunita (daughter)", phone: "98111 22333" });
+  });
+
+  it("is optional, and refuses a phone number that is not one", async () => {
+    const { token } = await linkFor(customer._id);
+    const plain = await request(app).post(pub(token)).field("category", "other").field("description", "No name given here").expect(201);
+    expect((await Ticket.findOne({ number: plain.body.data.number })).contactName ?? null).toBeNull();
+
+    const bad = await request(app).post(pub(token)).field("category", "other").field("description", "Bad phone here").field("contactPhone", "call me maybe").expect(400);
+    expect(bad.body.message).toMatch(/phone number/i);
+    await request(app).post(pub(token)).field("category", "other").field("description", "Long name here").field("contactName", "x".repeat(81)).expect(400);
+  });
+});
