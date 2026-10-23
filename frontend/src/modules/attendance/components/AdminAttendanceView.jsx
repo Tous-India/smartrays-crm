@@ -249,6 +249,14 @@ function AdminAttendanceView() {
     [fullDirectory]
   );
 
+  // How many people the attendance rate is about (2026-10-23): one selected
+  // employee, or the roster (active, non-admin) narrowed by the team filter.
+  const peopleInView = useMemo(() => {
+    if (selectedEmployeeId) return 1;
+    const team = selectedTeamId ? teams.find((candidate) => candidate._id === selectedTeamId) : null;
+    return rosterEmployees.filter((employee) => !team || String(employee.managerId) === String(team.headManagerId)).length;
+  }, [selectedEmployeeId, selectedTeamId, teams, rosterEmployees]);
+
   const todayRecordsByEmployeeId = useMemo(
     () => new Map(todayRecords.map((record) => [String(record.employeeId), record])),
     [todayRecords]
@@ -298,7 +306,7 @@ function AdminAttendanceView() {
   return (
     <div className="flex flex-col gap-4">
       {/* §B1 — stat cards ABOVE the filters. */}
-      <AttendanceSummaryStats records={filteredRecords} month={rangeStart} />
+      <AttendanceSummaryStats records={filteredRecords} from={rangeStart} to={rangeEnd} peopleCount={peopleInView} />
 
       {/* §7.4g — pending leave requests MOVED here from the Leave Requests
           tab, directly below the stat cards. They render in exactly one

@@ -1,24 +1,33 @@
+import dayjs from "dayjs";
+
 const COUNTABLE_STATUSES = ["present", "absent", "half_day", "on_leave"];
 
+// Sunday is the weekly off; Monday–Saturday are working days (2026-10-23).
+// Change here if the company's working week changes.
+const WEEKLY_OFF_DAYS = [0]; // 0 = Sunday
+
 /**
- * Client-side summary over an already-fetched month's records — no new
- * endpoint needed: every record already carries its own `status`, and that's
- * all this computes from. "Working days" has no existing precedent
- * anywhere in this codebase (Payroll's own `daysInMonth`, `payroll.service.js
- * #computePayrollFields`, counts every calendar day including weekends, for
- * its own pro-rata salary math) — defined here as weekday count (Mon-Fri)
- * instead, deliberately different from Payroll's convention: a day with no
- * Attendance record (a weekend) is never treated as absent, so counting it
- * in this percentage's denominator would make every employee's attendance
- * rate look artificially low for simply having weekends off.
+ * The attendance summary over records already fetched for a view.
  *
- * `half_day` counts as 0.5 of an attended day, matching the exact weighting
- * `backend/src/modules/report/analytics.service.js#getAttendanceTrend`
- * already established for "attendance rate" as a concept in this codebase
- * - reused here rather than a second, differently-weighted definition of
- * the same phrase.
+ * RATE (redefined 2026-10-23, owner's decision):
+ *
+ *   rate = attended days ÷ (people in view × working days that have happened)
+ *
+ *   attended days = present + ½ × half_day (the weighting
+ *   analytics.service.js#getAttendanceTrend already uses)
+ *
+ * It replaced `attended ÷ Monday–Friday days in the whole month`, which was
+ * right only for one person's month: in the team/admin views it added every
+ * person's days but divided by ONE person's month (3 of 8 people present
+ * today showed 13.6 %), it counted days still to come (everyone looked low
+ * mid-month), and it left Saturdays out of the denominator while worked
+ * Saturdays counted in the numerator (a full-timer could pass 100 %).
+ *
+ * `from`/`to` are the period shown; `peopleCount` is how many people the view
+ * covers; `now` is injectable for tests. `attendanceRate` is null when no
+ * working day has happened yet in the period, and never above 100.
  */
-export function computeAttendanceSummary(records, month) {
+export function computeAttendanceSummary(records, { from, to, peopleCount = 1, now = dayjs() }) {
   const counts = { present: 0, absent: 0, half_day: 0, on_leave: 0 };
 
   records.forEach((record) => {
@@ -27,25 +36,27 @@ export function computeAttendanceSummary(records, month) {
     }
   });
 
-  const workingDays = countWeekdaysInMonth(month);
+  const workingDays = countWorkingDays(dayjs(from), dayjs(to), dayjs(now));
+  const expectedDays = workingDays * Math.max(0, peopleCount);
   const attendedDays = counts.present + counts.half_day * 0.5;
-  const attendanceRate = workingDays > 0 ? Math.round((attendedDays / workingDays) * 1000) / 10 : 0;
+  const attendanceRate =
+    expectedDays > 0 ? Math.min(100, Math.round((attendedDays / expectedDays) * 1000) / 10) : null;
 
-  return { ...counts, workingDays, attendanceRate };
+  return { ...counts, workingDays, peopleCount, expectedDays, attendedDays, attendanceRate };
 }
 
-function countWeekdaysInMonth(month) {
-  const daysInMonth = month.daysInMonth();
-  let weekdays = 0;
+/** Working days from `from` to `to` (inclusive), counting only days up to today. */
+function countWorkingDays(from, to, now) {
+  const last = to.isAfter(now, "day") ? now.startOf("day") : to.startOf("day");
+  let count = 0;
 
-  for (let day = 1; day <= daysInMonth; day += 1) {
-    const dayOfWeek = month.date(day).day(); // 0 = Sunday, 6 = Saturday
-    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
-      weekdays += 1;
+  for (let day = from.startOf("day"); !day.isAfter(last, "day"); day = day.add(1, "day")) {
+    if (!WEEKLY_OFF_DAYS.includes(day.day())) {
+      count += 1;
     }
   }
 
-  return weekdays;
+  return count;
 }
 
 export default computeAttendanceSummary;

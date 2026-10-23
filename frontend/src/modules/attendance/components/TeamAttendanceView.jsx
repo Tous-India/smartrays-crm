@@ -61,7 +61,11 @@ function TeamAttendanceView() {
   return (
     <div className="flex flex-col gap-4">
       {/* §B1 — stat cards ABOVE the filters, on every tab. */}
-      <AttendanceSummaryStats records={filteredRecords} month={month} />
+      <AttendanceSummaryStats
+        records={filteredRecords}
+        month={month}
+        peopleCount={selectedEmployeeId ? 1 : Math.max(1, employeeOptions.length - 1)}
+      />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         {/* `wrap`: the three pickers are 439px together — the outer row wraps

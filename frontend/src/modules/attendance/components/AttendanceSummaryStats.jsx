@@ -19,8 +19,19 @@ import { computeAttendanceSummary } from "../utils/attendanceSummary";
  * Detail's section cards); it was simply never wired onto these five
  * `<Card>` elements' `className`.
  */
-function AttendanceSummaryStats({ records, month }) {
-  const summary = computeAttendanceSummary(records, month);
+/**
+ * `from`/`to` are the period the view shows and `peopleCount` how many
+ * people it covers (2026-10-23). A view of one person's month may pass just
+ * `month`; it means that whole month, for one person.
+ */
+function AttendanceSummaryStats({ records, month, from, to, peopleCount = 1 }) {
+  const summary = computeAttendanceSummary(records, {
+    from: from ?? month.startOf("month"),
+    to: to ?? month.endOf("month"),
+    peopleCount,
+  });
+  const people = `${summary.peopleCount} ${summary.peopleCount === 1 ? "person" : "people"}`;
+  const days = `${summary.workingDays} working day${summary.workingDays === 1 ? "" : "s"} so far`;
 
   return (
     <Row gutter={12}>
@@ -47,10 +58,15 @@ function AttendanceSummaryStats({ records, month }) {
       <Col xs={24} sm={8} md={8}>
         <Card size="small" className="app-elevated-card">
           <Statistic
-            title={`Attendance Rate (of ${summary.workingDays} working days)`}
-            value={summary.attendanceRate}
-            suffix="%"
+            title="Attendance rate"
+            value={summary.attendanceRate ?? "—"}
+            suffix={summary.attendanceRate === null ? undefined : "%"}
           />
+          <div className="text-xs text-gray-500" data-testid="attendance-rate-basis">
+            {summary.attendanceRate === null
+              ? "No working day has passed yet"
+              : `${summary.attendedDays} of ${summary.expectedDays} expected days · ${people} × ${days}`}
+          </div>
         </Card>
       </Col>
     </Row>
