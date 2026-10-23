@@ -446,6 +446,18 @@ Commits: `f68177d`, `d8be41a`, `edfe299`, `e7ade23`, `f08adbd`, `0d699dd`.
   - Seen, not changed (owner's rules): the server recorded 0.37 h for a 6:23–8:48 PM shift; and the month
     summary (the web's rule, copied) counts RECORDS, so a day with several shifts counts several times
     ("21 present" in a 20-working-day month) — see WAITING FOR OWNER 5.
+- Item 10 — PRODUCTION APK built 20:55–21:00:
+  `app/dist/smartrays-production-NOT-FOR-PLAY-debugkey-1.0.apk` — 66 MB, R8 on, API
+  https://smartrays-crm-backend.vercel.app/api/v1 (the host the web's /api proxy points at; host verified in
+  the APK), web link https://crm.smartrayssolutions.com. HTTPS ONLY — checked in the built manifest:
+  usesCleartextTraffic=false, network_security_config_production. Signed with the DEBUG key because there is
+  no upload key here → NOT for the Play Store; re-run `scripts/build-release.sh production` once the
+  SMARTRAYS_UPLOAD_* properties exist and it signs with the upload key.
+  - Smoke test: installed on the emulator, starts to the login screen, no crash. NOT logged in — that would
+    use the live backend and production database (not without your go). Test APK put back afterwards.
+  - Heads-up: the live backend does not have today's endpoints yet (live status, timeline, status events,
+    complaints redesign…) until the backend is deployed (your go) — until then those parts of this APK
+    would show errors against the live server.
 
 ### WAITING FOR OWNER
 1. Firebase: `app/android/app/google-services.json` + backend FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL /
