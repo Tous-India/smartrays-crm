@@ -18,9 +18,11 @@ import AttendanceTeamPage from "../pages/AttendanceTeamPage";
 import PayrollPage from "../pages/PayrollPage";
 import PayslipDetailPage from "../pages/PayslipDetailPage";
 // Tickets is DEFERRED from the UI, 2026-08-07 — see the routes below. It
-// returns as "Complaints" (2026-10-22): the customer complaint link.
+// returns as "Complaints" (2026-10-22); one public complaint form (2026-10-23).
 import ComplaintsPage from "../modules/complaint/components/ComplaintsPage";
-import PublicComplaintPage from "../modules/complaint/components/PublicComplaintPage";
+import ComplaintDetailPage from "../modules/complaint/components/ComplaintDetailPage";
+import PublicComplaintForm from "../modules/complaint/components/PublicComplaintForm";
+import PublicComplaintStatus from "../modules/complaint/components/PublicComplaintStatus";
 import VisitsPage from "../modules/visit/components/VisitsPage";
 import PaymentsPage from "../pages/PaymentsPage";
 import ServicesPage from "../modules/service/components/ServicesPage";
@@ -50,9 +52,10 @@ export const router = createBrowserRouter(
       <Route path="/login" element={<LoginPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
-      {/* Public, no login — a customer's complaint link (2026-10-22). Short
-          path because it is pasted into WhatsApp/SMS. */}
-      <Route path="/c/:token" element={<PublicComplaintPage />} />
+      {/* Public, no login — the one complaint form for every customer and
+          its status page (2026-10-23). Short paths: pasted into WhatsApp/SMS. */}
+      <Route path="/complaint" element={<PublicComplaintForm />} />
+      <Route path="/complaint/status/:token" element={<PublicComplaintStatus />} />
 
       <Route element={<ProtectedRoute />}>
         <Route index element={<RootRedirect />} />
@@ -77,7 +80,7 @@ export const router = createBrowserRouter(
               two 7-line files, re-adding their imports above, and
               uncommenting the nav block in `MainLayout.jsx`. */}
           <Route path="complaints" element={<ComplaintsPage />} />
-          <Route path="complaints/:id" element={<ComplaintsPage />} />
+          <Route path="complaints/:id" element={<ComplaintDetailPage />} />
           <Route path="payments" element={<PaymentsPage />} />
           <Route path="services" element={<ServicesPage />} />
           <Route path="visits" element={<VisitsPage />} />
