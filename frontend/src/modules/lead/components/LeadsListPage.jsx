@@ -18,6 +18,11 @@ import useSessionStore from "../../../store/sessionStore";
 import { usePermission } from "../../../hooks/usePermission";
 import { createLead, updateLead, deleteLead, toggleHotFlag, exportLeads, logLeadCall } from "../api/leadApi";
 import { ROUTE_PATHS } from "../../../constants/routePaths.constants";
+import LeadMobileList from "./LeadMobileList";
+import { useIsPhone } from "../../../hooks/useIsPhone";
+
+// On a phone, "Needs attention" shows this many before "Show all" (2026-10-23).
+const PHONE_PRIORITY_LIMIT = 3;
 
 /**
  * Shared shell for `/leads` (Table) and `/leads/board` (Board) — one page
@@ -29,6 +34,7 @@ import { ROUTE_PATHS } from "../../../constants/routePaths.constants";
 function LeadsListPage({ view }) {
   const { message } = App.useApp();
   const navigate = useNavigate();
+  const isPhone = useIsPhone();
   const [searchParams, setSearchParams] = useSearchParams();
   const { users } = useUserDirectory();
   const currentUser = useSessionStore((state) => state.user);
@@ -187,6 +193,7 @@ function LeadsListPage({ view }) {
     <div>
       <PriorityLeadsSection
         priorityLeads={priorityLeads}
+        maxVisible={isPhone ? PHONE_PRIORITY_LIMIT : undefined}
         onLogCall={setLogCallTarget}
         onRescheduleFollowUp={handleRescheduleFollowUp}
         onRequestStatusChange={statusFlow.requestStatusChange}
@@ -204,7 +211,9 @@ function LeadsListPage({ view }) {
         isExporting={isExporting}
       />
 
-      {view === "table" ? (
+      {view === "table" && isPhone ? (
+        <LeadMobileList leads={leads} isLoading={isLoading} users={users} onLogCall={setLogCallTarget} />
+      ) : view === "table" ? (
         <LeadsTable
           leads={leads}
           isLoading={isLoading}

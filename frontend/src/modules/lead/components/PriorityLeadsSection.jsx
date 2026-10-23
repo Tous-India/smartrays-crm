@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Card, Empty, Tag, Space, Button, Tooltip } from "antd";
 import { FireFilled, FireOutlined, PhoneOutlined, CheckCircleOutlined, CloseCircleOutlined } from "@ant-design/icons";
 import { useNavigate } from "react-router-dom";
@@ -98,12 +99,19 @@ function PriorityLeadsSection({
   onRescheduleFollowUp,
   onRequestStatusChange,
   onToggleHot,
+  maxVisible,
 }) {
   const navigate = useNavigate();
+  // On a phone (2026-10-23) only the most urgent few show, with "Show all".
+  const [showAll, setShowAll] = useState(false);
+  const isCapped = Boolean(maxVisible) && priorityLeads.length > maxVisible && !showAll;
+  const visibleLeads = isCapped ? priorityLeads.slice(0, maxVisible) : priorityLeads;
 
   return (
-    <div className="mb-4 bg-[#E8F1FB] p-1.25 rounded-[7px]">
-      <h3 className="mb-2 text-sm font-semibold text-gray-700 p-[10px] pb-0">Needs Attention</h3>
+    <div className="mb-4 bg-[#E8F1FB] p-1.25 rounded-[7px]" data-testid="priority-leads">
+      <h3 className="mb-2 text-sm font-semibold text-gray-700 p-[10px] pb-0">
+        Needs Attention{priorityLeads.length > 0 ? ` (${priorityLeads.length})` : ""}
+      </h3>
 
       {priorityLeads.length === 0 ? (
         <Card size="small">
@@ -114,7 +122,7 @@ function PriorityLeadsSection({
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-3 p-[10px] sm:grid-cols-2 lg:grid-cols-4">
-          {priorityLeads.map((lead) => {
+          {visibleLeads.map((lead) => {
             const urgency = lead.followUpUrgency ? URGENCY_STYLES[lead.followUpUrgency] : null;
 
             return (
@@ -123,6 +131,7 @@ function PriorityLeadsSection({
                 size="small"
                 hoverable
                 className={`cursor-pointer ${urgency ? urgency.borderClass : "border-orange-200"}`}
+                data-testid="priority-lead-card"
                 onClick={() => navigate(`/leads/${lead._id}`)}
               >
                 <div className="flex flex-col items-start justify-between gap-2">
@@ -214,6 +223,13 @@ function PriorityLeadsSection({
               </Card>
             );
           })}
+        </div>
+      )}
+      {Boolean(maxVisible) && priorityLeads.length > maxVisible && (
+        <div className="px-[10px] pb-[10px]">
+          <Button block onClick={() => setShowAll((value) => !value)}>
+            {showAll ? "Show fewer" : `Show all ${priorityLeads.length}`}
+          </Button>
         </div>
       )}
     </div>
