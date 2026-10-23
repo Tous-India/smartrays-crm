@@ -32,6 +32,8 @@ export const SCREENS = {
   TEAM_TAB: "TeamTab",
   TEAM: "Team",
   TEAM_MEMBER_DAY: "TeamMemberDay",
+  // A person's live status and their day as a timeline (2026-10-23).
+  PERSON_DAY: "PersonDay",
   TEAM_SERVICE_DETAIL: "TeamServiceDetail",
   SERVICE_FORM: "ServiceForm",
 };

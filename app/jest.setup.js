@@ -89,7 +89,7 @@ jest.mock("@maplibre/maplibre-react-native", () => {
     Component.displayName = name;
     return Component;
   };
-  return { __esModule: true, Map: stub("map"), Camera: stub("camera"), ViewAnnotation: stub("view-annotation") };
+  return { __esModule: true, Map: stub("map"), Camera: stub("camera"), ViewAnnotation: stub("view-annotation"), Marker: stub("marker") };
 });
 
 // Firebase (STEP 4): an in-memory twin of the messaging SDK. `apps` says
@@ -143,8 +143,9 @@ jest.mock("@bam.tech/react-native-image-resizer", () => ({
 }));
 
 // The tracking engine's native module (TrackingModule.kt), as an in-memory
-// twin: a queue array and a flags map, plus the service's start/stop state.
-const mockTracking = { running: false, intervalMs: null, queue: [], flags: {}, lastCapturedAt: null };
+// twin: a queue array and a flags map, plus the service's start/stop state;
+// `events` is the "location off / on" queue (2026-10-23).
+const mockTracking = { running: false, intervalMs: null, queue: [], events: [], flags: {}, lastCapturedAt: null, locationOn: true };
 global.mockTrackingNative = mockTracking;
 jest.mock("react-native", () => {
   const actual = jest.requireActual("react-native");
@@ -168,6 +169,7 @@ jest.mock("react-native", () => {
       queuedCount: mockTracking.queue.length,
       lastCapturedAt: mockTracking.lastCapturedAt,
       intervalMs: mockTracking.intervalMs,
+      locationOn: mockTracking.locationOn,
     })),
     takeQueued: jest.fn(async (limit) =>
       JSON.stringify([...mockTracking.queue].sort((a, b) => a.capturedAt - b.capturedAt).slice(0, limit))
@@ -187,6 +189,15 @@ jest.mock("react-native", () => {
       else mockTracking.flags[key] = value;
     }),
     getFlag: jest.fn(async (key) => mockTracking.flags[key] ?? null),
+    takeStatusEvents: jest.fn(async (limit) => JSON.stringify([...mockTracking.events].sort((a, b) => a.at - b.at).slice(0, limit))),
+    deleteStatusEvents: jest.fn(async (ids) => {
+      const before = mockTracking.events.length;
+      mockTracking.events = mockTracking.events.filter((event) => !ids.includes(event.id));
+      return before - mockTracking.events.length;
+    }),
+    addStatusEvent: jest.fn(async (type, reason, at) => {
+      mockTracking.events.push({ id: `evt-${mockTracking.events.length + 1}`, type, reason, at });
+    }),
     addListener: jest.fn(),
     removeListeners: jest.fn(),
   };

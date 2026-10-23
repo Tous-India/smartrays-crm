@@ -10,6 +10,7 @@ import { createService, getLiveLocations, getTeamAttendance, listAssignees, list
 import { listServices } from "../../services/api/serviceApi";
 import { getLocationConfig } from "../../tracking/locationApi";
 import { getUserDirectory } from "../../../api/userApi";
+import { getTeamLiveStatus } from "../../live/api/liveApi";
 
 jest.mock("../api/teamApi", () => ({
   listDirectReports: jest.fn(),
@@ -23,6 +24,7 @@ jest.mock("../api/teamApi", () => ({
 jest.mock("../../services/api/serviceApi", () => ({ listServices: jest.fn() }));
 jest.mock("../../tracking/locationApi", () => ({ getLocationConfig: jest.fn() }));
 jest.mock("../../../api/userApi", () => ({ getUserDirectory: jest.fn() }));
+jest.mock("../../live/api/liveApi", () => ({ getTeamLiveStatus: jest.fn() }));
 jest.mock("@react-navigation/native", () => ({ useFocusEffect: jest.fn() }));
 
 /**
@@ -76,6 +78,7 @@ beforeEach(() => {
   getLocationConfig.mockReturnValue(ok({ pingIntervalMinutes: 2, staleAfterMinutes: 10 }));
   listServices.mockReturnValue(ok([]));
   listAssignees.mockReturnValue(ok([REPORT]));
+  getTeamLiveStatus.mockReturnValue(ok({ people: [], counts: {} }));
 });
 
 describe("TeamScreen", () => {
@@ -92,51 +95,51 @@ describe("TeamScreen", () => {
     expect(navigation.navigate).toHaveBeenCalledWith("TeamMemberDay", { employeeId: "emp-1", name: "Testing User 2" });
   });
 
-  test("segments follow the permissions: no location grant → no Map, no create grant → no Assign", async () => {
+  test("segments follow the permissions: no location grant → no Live, no create grant → no Assign", async () => {
     permissionsAdapter({ attendance: { view_team: true }, services: { view: true }, leave: { view_team: true } });
     const screen = await render(<TeamScreen navigation={navigation} />);
 
     await waitFor(() => expect(screen.getByTestId("team-segment-today")).toBeTruthy());
-    expect(screen.queryByTestId("team-segment-map")).toBeNull();
+    expect(screen.queryByTestId("team-segment-live")).toBeNull();
 
     await fireEvent.press(screen.getByTestId("team-segment-services"));
     await waitFor(() => expect(screen.getByTestId("team-services-empty")).toBeTruthy());
     expect(screen.queryByTestId("team-assign-service")).toBeNull();
   });
 
-  test("Map: markers for live positions, stale ones marked; tapping one offers their day", async () => {
-    const fresh = new Date().toISOString();
-    const old = new Date(Date.now() - 30 * 60000).toISOString();
-    listDirectReports.mockReturnValue(ok([REPORT, { _id: "emp-2", name: "Other One", role: "employee" }]));
-    getTeamAttendance.mockReturnValue(
-      ok(["emp-1", "emp-2"].map((id) => ({ _id: `r-${id}`, employeeId: id, date: fresh, checkIn: { time: fresh }, checkOut: {} })))
-    );
-    getLiveLocations.mockReturnValue(
-      ok({
-        entries: [
-          { employeeId: "emp-1", coords: { lat: 28.6, lng: 77.2 }, capturedAt: fresh },
-          { employeeId: "emp-2", coords: { lat: 28.7, lng: 77.3 }, capturedAt: old },
-        ],
-        unlocatable: [],
-        openShiftCount: 2,
-      })
-    );
+  test("Live: counts, problems first, status-coloured markers; a count filters; a person opens their day", async () => {
+    const now = new Date().toISOString();
+    const lost = { employeeId: "emp-2", name: "Other One", status: "location_off", since: now, coords: { lat: 28.7, lng: 77.3 }, lastPingAt: now };
+    const moving = { employeeId: "emp-1", name: "Testing User 2", status: "moving", speedKmh: 22, since: now, coords: { lat: 28.6, lng: 77.2 }, lastPingAt: now, battery: 12, batteryLow: true };
+    const out = { employeeId: "emp-3", name: "Gone Home", status: "checked_out" };
+    getTeamLiveStatus.mockReturnValue(ok({ people: [lost, moving, out], counts: { moving: 1, location_off: 1 } }));
+    getLocationConfig.mockReturnValue(ok({ statuses: [{ key: "moving", label: "Moving", color: "#1971c2" }, { key: "location_off", label: "Location off", color: "#e03131" }, { key: "checked_out", label: "Checked out", color: "#495057" }] }));
     const screen = await render(<TeamScreen navigation={navigation} />);
-    await waitFor(() => expect(screen.getByTestId("team-segment-map")).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId("team-segment-live")).toBeTruthy());
 
-    await fireEvent.press(screen.getByTestId("team-segment-map"));
+    await fireEvent.press(screen.getByTestId("team-segment-live"));
 
-    await waitFor(() => expect(screen.getByTestId("team-map-marker-emp-1")).toBeTruthy());
-    expect(screen.getByTestId("team-map-marker-emp-2").props.accessibilityLabel).toBe("Other One, stale");
-    expect(screen.getByTestId("team-map-silent").props.children.join("")).toMatch(/Silent: Other One/);
+    await waitFor(() => expect(screen.getByTestId("live-count-location_off")).toBeTruthy());
+    expect(screen.getByText("Location off 1")).toBeTruthy();
+    const rows = screen.getAllByTestId(/^live-row-/).map((row) => row.props.testID);
+    expect(rows).toEqual(["live-row-emp-2", "live-row-emp-1", "live-row-emp-3"]);
+    expect(screen.getByTestId("live-battery-low-emp-1")).toBeTruthy();
+    // Checked-out people are listed but have no marker; markers carry the status colour.
+    expect(screen.queryByTestId("team-map-marker-emp-3")).toBeNull();
+    await waitFor(() => expect(screen.getByTestId("team-map-dot-emp-2").props.style).toEqual(expect.arrayContaining([{ backgroundColor: "#e03131" }])));
 
-    const annotations = screen.getAllByTestId("mock-view-annotation");
-    await fireEvent(annotations[1], "onPress");
-    await waitFor(() => expect(screen.getByTestId("team-map-selected")).toBeTruthy());
-    expect(screen.getByText(/STALE — last update/)).toBeTruthy();
+    // Tapping a marker opens that person's card.
+    await fireEvent.press(screen.getByTestId("team-map-marker-emp-1"));
+    expect(screen.getByTestId("team-live-selected")).toBeTruthy();
+    expect(screen.getByText("Battery 12 %")).toBeTruthy();
 
-    await fireEvent.press(screen.getByTestId("team-map-open-day"));
-    expect(navigation.navigate).toHaveBeenCalledWith("TeamMemberDay", { employeeId: "emp-2", name: "Other One" });
+    await fireEvent.press(screen.getByTestId("live-count-location_off"));
+    expect(screen.getAllByTestId(/^live-row-/).map((row) => row.props.testID)).toEqual(["live-row-emp-2"]);
+
+    await fireEvent.press(screen.getByTestId("live-row-emp-2"));
+    expect(screen.getByTestId("team-live-selected")).toBeTruthy();
+    await fireEvent.press(screen.getByTestId("team-live-open-day"));
+    expect(navigation.navigate).toHaveBeenCalledWith("PersonDay", { person: lost });
   });
 
   test("Services: open items grouped by assignee, overdue flagged; Assign opens the form", async () => {

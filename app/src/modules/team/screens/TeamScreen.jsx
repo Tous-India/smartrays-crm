@@ -1,12 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Screen from "../../../components/Screen";
 import ScreenHeader from "../../../components/ScreenHeader";
 import SegmentedControl from "../../../components/SegmentedControl";
 import ListState from "../../../components/ListState";
 import TeamTodaySection from "../components/TeamTodaySection";
-import TeamMapSection from "../components/TeamMapSection";
 import TeamServicesSection from "../components/TeamServicesSection";
 import TeamLeaveSection from "../components/TeamLeaveSection";
+import TeamLiveSection from "../../live/components/TeamLiveSection";
+import useLiveMeta from "../../live/hooks/useLiveMeta";
+import { getTeamLiveStatus } from "../../live/api/liveApi";
 import useTeamToday from "../hooks/useTeamToday";
 import useServerData from "../../../hooks/useServerData";
 import useUserDirectory from "../../../hooks/useUserDirectory";
@@ -18,20 +20,25 @@ import { SERVICE_STATUS, sortByUrgency } from "../../services/services.utils";
 import { SCREENS } from "../../../constants/screens.constants";
 
 /**
- * The manager's Team tab (app-plan.md §2): Today · Map · Services · Leave in
+ * The manager's Team tab (app-plan.md §2): Today · Live · Services · Leave in
  * one screen, segmented. Which segments show is the server's answer
  * (`GET /users/me/permissions`): a segment whose grant the manager lacks is
  * not drawn, and a 403 that arrives anyway is shown as the server's words.
  * Every segment reads the web's own team-scoped endpoints.
+ *
+ * Live (2026-10-23, replaces the plain map): everyone's live status — counts,
+ * status-coloured markers, problems first — refreshed every 45 s while open,
+ * like the web Live Map. For an admin the server answers with everyone.
  */
 const SEGMENTS = {
   TODAY: "today",
-  MAP: "map",
+  LIVE: "live",
   SERVICES: "services",
   LEAVE: "leave",
 };
 
 const VIEW_TEAM = ["view_team", "view_all"];
+const LIVE_REFRESH_MS = 45000;
 
 export function availableSegments(permissions) {
   const segments = [];
@@ -41,7 +48,7 @@ export function availableSegments(permissions) {
   }
 
   if (canAny(permissions, "location", VIEW_TEAM)) {
-    segments.push({ value: SEGMENTS.MAP, label: "Map" });
+    segments.push({ value: SEGMENTS.LIVE, label: "Live" });
   }
 
   if (can(permissions, "services", "view")) {
@@ -65,22 +72,32 @@ function TeamScreen({ navigation }) {
   const team = useTeamToday();
   const services = useServerData(async () => sortByUrgency((await listServices(SERVICE_STATUS.TODO)).data.data), { initialData: null });
   const leaves = useServerData(async () => (await listTeamLeaves()).data.data, { initialData: null });
+  const live = useServerData(async () => (await getTeamLiveStatus()).data.data, { initialData: null });
+  const liveMeta = useLiveMeta();
+  const { refetch: refetchLive } = live;
+
+  useEffect(() => {
+    if (current !== SEGMENTS.LIVE) return undefined;
+    const timer = setInterval(refetchLive, LIVE_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [current, refetchLive]);
   const { nameById } = useUserDirectory();
 
   function refetchAll() {
     team.refetch();
     services.refetch();
     leaves.refetch();
+    live.refetch();
   }
 
   function openPerson(row) {
     navigation.navigate(SCREENS.TEAM_MEMBER_DAY, { employeeId: row.person._id, name: row.person.name });
   }
 
-  const refreshing = team.isRefreshing || services.isRefreshing || leaves.isRefreshing;
+  const refreshing = team.isRefreshing || services.isRefreshing || leaves.isRefreshing || live.isRefreshing;
 
   return (
-    <Screen onRefresh={refetchAll} refreshing={refreshing} scroll={current !== SEGMENTS.MAP} testID="team-screen">
+    <Screen onRefresh={refetchAll} refreshing={refreshing} testID="team-screen">
       <ScreenHeader title="Team" subtitle="Your direct reports" />
 
       {permissions === null ? (
@@ -92,7 +109,9 @@ function TeamScreen({ navigation }) {
           <SegmentedControl options={segments} value={current} onChange={setSegment} testID="team-segment" />
 
           {current === SEGMENTS.TODAY ? <TeamTodaySection team={team} onOpenPerson={openPerson} /> : null}
-          {current === SEGMENTS.MAP ? <TeamMapSection team={team} onOpenPerson={openPerson} /> : null}
+          {current === SEGMENTS.LIVE ? (
+            <TeamLiveSection live={live} meta={liveMeta} onOpenPerson={(person) => navigation.navigate(SCREENS.PERSON_DAY, { person })} />
+          ) : null}
           {current === SEGMENTS.SERVICES ? (
             <TeamServicesSection
               services={services}

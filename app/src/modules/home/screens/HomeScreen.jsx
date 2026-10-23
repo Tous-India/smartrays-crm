@@ -5,6 +5,9 @@ import Screen from "../../../components/Screen";
 import TodayShiftCard from "../../attendance/components/TodayShiftCard";
 import ServicesDueCard from "../components/ServicesDueCard";
 import ComplaintsCard from "../components/ComplaintsCard";
+import MyStatusCard from "../../live/components/MyStatusCard";
+import useLiveMeta from "../../live/hooks/useLiveMeta";
+import { getMyLiveStatus } from "../../live/api/liveApi";
 import useMyAttendance from "../../attendance/hooks/useMyAttendance";
 import useIsOnline from "../../../hooks/useIsOnline";
 import useServerData from "../../../hooks/useServerData";
@@ -48,16 +51,24 @@ function HomeScreen({ navigation }) {
   const isComplaintAssigner = can(permissions, "complaints", "assign") || can(permissions, "complaints", "view_all");
   const myComplaints = useServerData(async () => (await listComplaints()).data.data, { initialData: [], deps: [user?._id] });
 
+  // What the office sees (2026-10-23): my own live status, with a fix-it
+  // button when something is wrong. Shown only while on a shift.
+  const myStatus = useServerData(async () => (await getMyLiveStatus()).data.data, { deps: [user?._id, openRecord?._id] });
+  const liveMeta = useLiveMeta();
+  const { refetch: refetchMyStatus } = myStatus;
+
   useFocusEffect(
     useCallback(() => {
       refetch();
-    }, [refetch])
+      refetchMyStatus();
+    }, [refetch, refetchMyStatus])
   );
 
   function refreshAll() {
     refetch();
     servicesDue.refetch();
     myComplaints.refetch();
+    myStatus.refetch();
   }
 
   // The prominent disclosure (app-plan.md §4.1) comes before the first
@@ -103,6 +114,14 @@ function HomeScreen({ navigation }) {
         trackingState={trackingState}
         onFixTracking={() => navigation.navigate(SCREENS.TRACKING_DISCLOSURE, openRecord ? { afterwards: "back" } : undefined)}
       />
+
+      {openRecord ? (
+        <MyStatusCard
+          status={myStatus.data}
+          meta={liveMeta}
+          onCheckTracking={() => navigation.navigate(SCREENS.TRACKING_DISCLOSURE, { afterwards: "back" })}
+        />
+      ) : null}
 
       <ServicesDueCard
         services={servicesDue.data}
