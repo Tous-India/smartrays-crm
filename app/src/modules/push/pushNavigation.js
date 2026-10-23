@@ -28,11 +28,29 @@ export function routeForNotification(data = {}) {
     return { name: SCREENS.SERVICES_TAB, params: { screen: SCREENS.COMPLAINTS, initial: false } };
   }
 
+  // Live status (2026-10-23): someone's location is off / disconnected →
+  // the Team tab's Live list, filtered to who needs attention.
+  if (type === "staff_location_alert") {
+    return { name: SCREENS.TEAM_TAB, params: { screen: SCREENS.TEAM, params: { segment: "live", filter: "attention", openedAt: Date.now() } } };
+  }
+
   if (typeof type === "string" && type.startsWith("leave_")) {
     return { name: SCREENS.LEAVE_TAB };
   }
 
   return { name: SCREENS.HOME };
+}
+
+/**
+ * The same target as seen from ABOVE the tabs — the root navigator, or a
+ * screen in the role stack such as Notifications (2026-10-23). React
+ * Navigation only handles a tab name from inside the tabs; from up here it
+ * has to go through MainTabs, or the tap does nothing.
+ */
+export function rootRouteForNotification(data = {}) {
+  const target = routeForNotification(data);
+
+  return { name: SCREENS.MAIN_TABS, params: { screen: target.name, params: target.params } };
 }
 
 /**
@@ -45,7 +63,7 @@ export function navigateForNotification(navigationRef, data) {
     return false;
   }
 
-  const target = routeForNotification(data);
+  const target = rootRouteForNotification(data);
   navigationRef.navigate(target.name, target.params);
 
   return true;

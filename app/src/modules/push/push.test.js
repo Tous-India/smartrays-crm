@@ -101,7 +101,9 @@ test("a tap lands on the screen the notification is about", () => {
 
   const ref = { isReady: () => true, navigate: jest.fn() };
   expect(navigateForNotification(ref, { type: "leave_declined" })).toBe(true);
-  expect(ref.navigate).toHaveBeenCalledWith("LeaveTab", undefined);
+  // From the root navigator a tab is reached THROUGH the tabs (2026-10-23):
+  // a bare "LeaveTab" is not handled by any navigator up there.
+  expect(ref.navigate).toHaveBeenCalledWith("MainTabs", { screen: "LeaveTab", params: undefined });
   expect(navigateForNotification({ isReady: () => false, navigate: jest.fn() }, {})).toBe(false);
 });
 
@@ -117,5 +119,14 @@ test("a complaint push opens that complaint; the daily summary opens the list", 
   expect(routeForNotification({ type: "complaint_daily_summary", module: "complaint_summary", id: "" })).toEqual({
     name: "ServicesTab",
     params: { screen: "Complaints", initial: false },
+  });
+});
+
+// Live status (2026-10-23): "someone's location is off / disconnected" opens
+// the Team tab's Live list filtered to the people who need attention.
+test("a staff location alert opens Team → Live, filtered to who needs attention", () => {
+  expect(routeForNotification({ type: "staff_location_alert", module: "users", id: "u1" })).toEqual({
+    name: "TeamTab",
+    params: { screen: "Team", params: { segment: "live", filter: "attention", openedAt: expect.any(Number) } },
   });
 });
