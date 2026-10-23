@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 import { Camera, Map as MapLibreMap, ViewAnnotation } from "@maplibre/maplibre-react-native";
 import { colors, radius, spacing, typography } from "../../../theme";
+import { MAP_TILES } from "../../../constants/mapTiles.constants";
 
 /**
  * The team on one map (app-plan.md §2): last-known positions from
@@ -15,11 +16,12 @@ import { colors, radius, spacing, typography } from "../../../theme";
 const OSM_STYLE = {
   version: 8,
   sources: {
+    // Tile source: constants/mapTiles.constants.js (one place, 2026-10-23).
     osm: {
       type: "raster",
-      tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
-      tileSize: 256,
-      attribution: "© OpenStreetMap contributors",
+      tiles: [MAP_TILES.url],
+      tileSize: MAP_TILES.tileSize,
+      attribution: MAP_TILES.attribution,
     },
   },
   layers: [{ id: "osm", type: "raster", source: "osm" }],
