@@ -333,6 +333,25 @@ Commits: `f68177d`, `d8be41a`, `edfe299`, `e7ade23`, `f08adbd`, `0d699dd`.
   at 16:52 was caused by my adb driver tapping from a stale screen dump (driver fixed), not by the app.
   The local October payroll draft was approved to test payslips (local data only).
   Screenshots: `_advisor/screenshots/phase2/`.
+  **Unexplained:** Deepak's shift was checked out at 17:31 IST with a real live photo (camera opened inside
+  the app). No code path checks anyone out automatically; most likely my driver again, but not proven —
+  to watch on the real phone.
+- Item 4 — LIVE EMPLOYEE STATUS, backend + web done (`da6af9e`, `de1d37d`, `96d50b0`, `1fa19e4`):
+  device report on pings, location-off events, status for every person, day timeline, manager push,
+  web Live Map counts / problems first / coloured markers / a person's day (Chrome 1280 + 390 px).
+  App side in progress (screens written, native device report next).
+- Owner's away-until-Monday list, (2) + (3), 18:00–18:30:
+  - App icon recreated (`a013ac2`) by `app/scripts/generate-icons.mjs` from the logo: every density,
+    adaptive + round + themed monochrome, background #fbfbfa = splash, `app/store/play-icon-512.png`.
+    Checked on the emulator: clean, no dark fringe (`_advisor/screenshots/release-apk/01-app-drawer.png`).
+  - Release setup (`cb245ee`): signing from SMARTRAYS_UPLOAD_* (falls back to the debug key, says so),
+    R8 on with `-keep class com.smartrays.crm.BuildConfig { *; }`, production = HTTPS only, localtest
+    adds plain http. `app/scripts/build-release.sh localtest|production`.
+  - No upload key on this laptop → built `app/dist/smartrays-localtest-NOT-FOR-PLAY-debugkey-1.0.apk`
+    (105 MB, R8 on, debug-key signed — installs on a phone, NOT for Play). API host found in the APK
+    (classes.dex + resources.arsc). Installed on the emulator with Metro stopped: login ✓, home data ✓,
+    check-in with live photo + GPS ✓, tracking disclosure → "Allow all the time" ✓, foreground tracking
+    service ✓, first ping stored by the local backend ✓.
 
 ### WAITING FOR OWNER
 1. Firebase: `app/android/app/google-services.json` + backend FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL /
