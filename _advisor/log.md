@@ -371,6 +371,14 @@ Commits: `f68177d`, `d8be41a`, `edfe299`, `e7ade23`, `f08adbd`, `0d699dd`.
   - Emulator as Sandeep (manager): glance 2/1/1/0/0, "Not checked in" → Live list with just Ritu;
     his October calendar 18 present, 156.55 h, 90% of 20 working days. Screenshots
     `_advisor/screenshots/attendance-ui/`. App tests 201/201.
+- Item 6 — SALES ASSOCIATES done 19:05–19:12 (`6923f08`, `58b0ac7`): they get the employee screens
+  (Home with check-in + tracking + "What the office sees", Services, Leave, Me). Payslips is hidden
+  for anyone without `payroll.view` — the server refuses own payslips without it (sales associates and
+  managers have no payroll grant by design). Role shows as "sales associate".
+  Emulator: created ONE local demo user (local dev DB only) Kavita Sharma, sales_associate,
+  kavita.sharma@demo.smartrays.test / Demo@1234, manager Sandeep; signed in, walked the tabs, saw the
+  tracking notice, checked in with photo + GPS, tracking active. Screenshots
+  `_advisor/screenshots/sales-associate/`. App tests 202/202.
 - Owner's away-until-Monday list, (2) + (3), 18:00–18:30:
   - App icon recreated (`a013ac2`) by `app/scripts/generate-icons.mjs` from the logo: every density,
     adaptive + round + themed monochrome, background #fbfbfa = splash, `app/store/play-icon-512.png`.
