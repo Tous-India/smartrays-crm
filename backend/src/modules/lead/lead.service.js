@@ -1041,7 +1041,7 @@ const PREFERRED_TIME_LABELS = {
  * with the same notifications. The source is added to the editable source
  * list on first use, so it can be filtered on like any other.
  */
-export async function createLeadFromComplaintForm({ name, phone, address, description, callbackTime, location }) {
+export async function createLeadFromComplaintForm({ name, phone, address, companyName, description, callbackTime, location }) {
   const owner = await User.findOne({ role: "admin" }).sort({ createdAt: 1 });
   if (!owner) {
     throw new ApiError(500, "No admin account exists to own website-submitted leads");
@@ -1060,6 +1060,7 @@ export async function createLeadFromComplaintForm({ name, phone, address, descri
   const lead = await Lead.create({
     name,
     phone,
+    companyName: companyName || undefined,
     source: COMPLAINT_FORM_LEAD_SOURCE,
     ownerId: owner._id,
     siteAddress: address,

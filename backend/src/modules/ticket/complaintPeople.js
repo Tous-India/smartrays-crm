@@ -20,6 +20,17 @@ export function firstName(name) {
   return typeof name === "string" && name.trim() ? name.trim().split(/\s+/)[0] : null;
 }
 
+/**
+ * A complete Indian mobile as its 10 digits, or null: drops spaces, dashes and
+ * brackets, then a +91 / 91 country code or a leading 0.
+ */
+export function normalizeIndianMobile(phone) {
+  let digits = String(phone || "").replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("91")) digits = digits.slice(2);
+  else if (digits.length === 11 && digits.startsWith("0")) digits = digits.slice(1);
+  return /^\d{10}$/.test(digits) ? digits : null;
+}
+
 // India mobiles are matched on their last 10 digits, so "+91 98100 12345",
 // "098100-12345" and "9810012345" are the same number.
 const MATCH_DIGITS = 10;

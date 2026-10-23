@@ -21,7 +21,9 @@ const COMPLAINT_PRIORITIES = ["low", "medium", "high", "urgent"];
 const REMINDER_KINDS = ["unassigned", "visit_overdue"];
 // What `history[]` holds (§6.6: "timeline of status changes/comments"),
 // plus the complaint actions (2026-10-23) so the timeline says who did what.
-const TICKET_HISTORY_TYPES = ["status_change", "comment", "assigned", "sent_back", "photo"];
+// "linked" / "contact_saved": an assigner matched an unknown caller to a
+// customer and saved their number (2026-10-23).
+const TICKET_HISTORY_TYPES = ["status_change", "comment", "assigned", "sent_back", "photo", "linked", "contact_saved"];
 
 const ticketHistoryEntrySchema = new mongoose.Schema({
   type: {
@@ -167,6 +169,13 @@ const ticketSchema = new mongoose.Schema(
       default: null,
     },
     contactPhone: {
+      type: String,
+      trim: true,
+      default: null,
+    },
+    // The company or household name an unknown caller typed (2026-10-23) —
+    // required by the public form only when the phone matched no customer.
+    companyName: {
       type: String,
       trim: true,
       default: null,

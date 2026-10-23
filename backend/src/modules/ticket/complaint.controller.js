@@ -8,6 +8,9 @@ import {
   changeComplaintStatus,
   addComplaintPhoto,
   sendComplaintBack,
+  listCustomerOptions,
+  linkComplaintCustomer,
+  saveComplaintContact,
 } from "./complaint.service.js";
 
 export const list = asyncWrapper(async (req, res) => {
@@ -50,4 +53,22 @@ export const sendBack = asyncWrapper(async (req, res) => {
   const result = await sendComplaintBack(req.params.id, req.body, req.user);
 
   res.status(200).json(new ApiResponse(200, result, "Complaint sent back"));
+});
+
+export const customerOptions = asyncWrapper(async (req, res) => {
+  const options = await listCustomerOptions(req.query, req.user);
+
+  res.status(200).json(new ApiResponse(200, options, "Customers fetched successfully"));
+});
+
+export const linkCustomer = asyncWrapper(async (req, res) => {
+  const complaint = await linkComplaintCustomer(req.params.id, req.body, req.user);
+
+  res.status(200).json(new ApiResponse(200, complaint, "Complaint linked to the customer"));
+});
+
+export const saveContact = asyncWrapper(async (req, res) => {
+  const complaint = await saveComplaintContact(req.params.id, req.user);
+
+  res.status(200).json(new ApiResponse(200, complaint, "Number saved as a contact"));
 });

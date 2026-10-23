@@ -45,6 +45,8 @@ const complaint = (overrides = {}) => ({
   name: "Ramesh Sharma",
   phone: "98100 12345",
   address: "B-12, Sector 7, Dwarka, New Delhi",
+  // Required since 2026-10-23 when the phone matches no customer.
+  companyName: "Sharma household",
   description: "Inverter shows a red light since morning.",
   callbackTime: "morning",
   ...overrides,
@@ -230,12 +232,5 @@ describe("GET /public/complaints/status/:token", () => {
     const a = await request(app).get(`${FORM}/status/${"A".repeat(43)}`).expect(404);
     const b = await request(app).get(`${FORM}/status/short`).expect(404);
     expect(a.body.message).toBe(b.body.message);
-  });
-});
-
-describe("the per-customer links are gone", () => {
-  it("no longer serves a customer's own complaint link", async () => {
-    const customer = await Customer.create({ companyName: "Old Link Co", ownerId: admin._id, projectManagerId: admin._id });
-    await adminAgent.get(`/api/v1/customers/${customer._id}/complaint-link`).expect(404);
   });
 });

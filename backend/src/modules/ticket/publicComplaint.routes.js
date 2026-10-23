@@ -2,7 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import ApiError from "../../utils/ApiError.js";
 import { rateLimit } from "../../middlewares/rateLimit.middleware.js";
-import { publicSubmit, publicStatus } from "./publicComplaint.controller.js";
+import { publicSubmit, publicStatus, publicCheckPhone, publicLinkPrefill } from "./publicComplaint.controller.js";
 import { PHOTO_LIMITS } from "./publicComplaint.service.js";
 
 /**
@@ -10,9 +10,12 @@ import { PHOTO_LIMITS } from "./publicComplaint.service.js";
  * Mounted at /api/v1/public/complaints. One form for every customer; the
  * status page's token is the only credential for reading a complaint back.
  *
- * Abuse limits (per client address, kept in MongoDB so they hold across
- * Vercel instances): 5 submissions an hour; 60 status-page loads per 15
- * minutes.
+ * Abuse limits (kept in MongoDB so they hold across Vercel instances):
+ * - submit: 5 an hour per client address;
+ * - phone check (2026-10-23) — strict, so it cannot be used to test lots of
+ *   numbers: 10 per 15 minutes per address, and 300 an hour in total from
+ *   everyone together. A real customer needs one or two;
+ * - status page and a customer's own link: 60 loads per 15 minutes per address.
  */
 const publicComplaintRouter = Router();
 
@@ -21,6 +24,19 @@ const statusLimit = rateLimit({
   windowSeconds: 15 * 60,
   max: 60,
   message: "Too many requests. Please try again in a few minutes.",
+});
+const checkPerAddress = rateLimit({
+  name: "complaint-check-ip",
+  windowSeconds: 15 * 60,
+  max: 10,
+  message: "Too many tries. Please try again in a few minutes, or call us.",
+});
+const checkOverall = rateLimit({
+  name: "complaint-check-all",
+  windowSeconds: 60 * 60,
+  max: 300,
+  keyFrom: () => "all",
+  message: "The form is busy. Please try again in a little while, or call us.",
 });
 const submitPerAddress = rateLimit({
   name: "complaint-raise-ip",
@@ -49,6 +65,8 @@ function receivePhotos(req, res, next) {
 }
 
 publicComplaintRouter.post("/", submitPerAddress, receivePhotos, publicSubmit);
+publicComplaintRouter.post("/check-phone", checkPerAddress, checkOverall, publicCheckPhone);
+publicComplaintRouter.get("/link/:token", statusLimit, publicLinkPrefill);
 publicComplaintRouter.get("/status/:token", statusLimit, publicStatus);
 
 export default publicComplaintRouter;

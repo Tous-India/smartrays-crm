@@ -36,6 +36,7 @@ async function raise(fields = {}) {
     .field("name", fields.name || "Ramesh Sharma")
     .field("phone", fields.phone || "98100 12345")
     .field("address", fields.address || "B-12, Sector 7, Dwarka, New Delhi")
+    .field("companyName", fields.companyName || "Sharma household")
     .field("description", fields.description || "Inverter shows a red light since morning.");
   const response = await req.expect(201);
   await mongoose.connection.db.collection("ratelimithits").deleteMany({});

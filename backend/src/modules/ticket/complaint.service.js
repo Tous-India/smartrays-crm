@@ -4,9 +4,10 @@ import { can } from "../../helpers/permission.helper.js";
 import { uploadComplaintPhoto, signedComplaintPhotoUrl } from "../../services/cloudinary.service.js";
 import { createNotification } from "../notification/notification.service.js";
 import Customer from "../customer/customer.model.js";
+import Contact from "../customer/contact.model.js";
 import User from "../user/user.model.js";
 import Ticket, { COMPLAINT_PRIORITIES } from "./ticket.model.js";
-import { findComplaintAssigners } from "./complaintPeople.js";
+import { findComplaintAssigners, normalizeIndianMobile } from "./complaintPeople.js";
 import { checkPhotos } from "./publicComplaint.service.js";
 import { kickComplaintChecks } from "./ticketEscalation.service.js";
 
@@ -131,6 +132,7 @@ export async function listComplaints({ filter } = {}, user) {
     contactName: ticket.contactName ?? null,
     contactPhone: ticket.contactPhone ?? null,
     customerName: ticket.customerId ? customerNames.get(String(ticket.customerId)) ?? null : null,
+    companyName: ticket.companyName ?? null,
     description: descriptionOf(ticket),
     address: ticket.address ?? null,
     assigneeName: ticket.assignedToId ? userNames.get(String(ticket.assignedToId)) ?? null : null,
@@ -168,6 +170,11 @@ export async function getComplaintDetail(id, user) {
     User.find({ _id: { $in: [...peopleIds] } }).select("name").lean(),
   ]);
   const names = new Map(people.map((person) => [String(person._id), person.name]));
+  const isAssigner = canAssign(user);
+  const [suggestedCustomers, canSaveContact] = await Promise.all([
+    isAssigner && !customer ? similarCustomers(ticket.companyName || ticket.contactName) : [],
+    isAssigner && customer ? numberIsNew(customer, ticket.contactPhone) : false,
+  ]);
   const person = (personId) => (personId ? { _id: personId, name: names.get(String(personId)) ?? "Staff" } : null);
 
   return {
@@ -178,6 +185,7 @@ export async function getComplaintDetail(id, user) {
     visitDate: ticket.visitDate ?? null,
     contactName: ticket.contactName ?? null,
     contactPhone: ticket.contactPhone ?? null,
+    companyName: ticket.companyName ?? null,
     address: ticket.address ?? null,
     location: ticket.location?.lat !== undefined ? ticket.location : null,
     description: descriptionOf(ticket),
@@ -210,9 +218,77 @@ export async function getComplaintDetail(id, user) {
     })),
     createdAt: ticket.createdAt,
     resolvedAt: ticket.resolvedAt ?? null,
-    canAssign: canAssign(user),
-    canWork: isAssignee(ticket, user) || canAssign(user),
+    canAssign: isAssigner,
+    canWork: isAssignee(ticket, user) || isAssigner,
+    // Unknown caller (2026-10-23): customers whose name looks like what they
+    // typed — "Did you mean …?" — and, once linked, whether their number can
+    // be saved as that customer's contact.
+    suggestedCustomers,
+    canSaveContact,
   };
+}
+
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Customers whose name shares a word with the typed one — each word of 3+
+ * letters compared on its first 5 letters, so "Gupta Industry" finds "Gupta
+ * Industries". Most shared words first; at most 5.
+ */
+async function similarCustomers(typedName) {
+  const stems = [...new Set(String(typedName || "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3).map((w) => w.slice(0, 5)))];
+  if (stems.length === 0) return [];
+  const patterns = stems.map((stem) => new RegExp(`(^|[^a-z0-9])${escapeRegex(stem)}`, "i"));
+  const found = await Customer.find({ $or: patterns.map((pattern) => ({ companyName: pattern })) }).select("_id companyName").limit(25).lean();
+  const score = (name) => patterns.filter((pattern) => pattern.test(name)).length;
+  return found
+    .sort((a, b) => score(b.companyName) - score(a.companyName) || a.companyName.localeCompare(b.companyName))
+    .slice(0, 5)
+    .map(({ _id, companyName }) => ({ _id, companyName }));
+}
+
+/** True when this phone is not yet the customer's own or any of its contacts'. */
+async function numberIsNew(customer, phone) {
+  const mobile = normalizeIndianMobile(phone);
+  if (!mobile) return false;
+  const contacts = await Contact.find({ customerId: customer._id }).select("phone").lean();
+  return ![customer.phone, ...contacts.map((c) => c.phone)].some((known) => normalizeIndianMobile(known) === mobile);
+}
+
+/** GET /complaints/customer-options?search= — assigners finding the right customer. */
+export async function listCustomerOptions({ search } = {}, user) {
+  if (!canAssign(user)) throw new ApiError(403, "You do not have permission to link complaints to customers");
+  const text = typeof search === "string" ? search.trim() : "";
+  if (text.length < 2) return [];
+  return Customer.find({ companyName: new RegExp(escapeRegex(text), "i") }).select("_id companyName").sort({ companyName: 1 }).limit(10).lean();
+}
+
+/** PATCH /complaints/:id/customer { customerId } — this unknown caller is that customer. */
+export async function linkComplaintCustomer(id, { customerId } = {}, user) {
+  if (!canAssign(user)) throw new ApiError(403, "You do not have permission to link complaints to customers");
+  const ticket = await findComplaintOr404(id);
+  if (!mongoose.isValidObjectId(customerId)) throw new ApiError(400, "Please choose a customer.");
+  const customer = await Customer.findById(customerId).select("companyName");
+  if (!customer) throw new ApiError(400, "Please choose a customer.");
+
+  ticket.customerId = customer._id;
+  ticket.history.push({ type: "linked", authorId: user._id, comment: `Linked to customer ${customer.companyName}` });
+  await ticket.save();
+  return getComplaintDetail(ticket._id, user);
+}
+
+/** POST /complaints/:id/save-contact — the caller's name and number become a contact of the linked customer. */
+export async function saveComplaintContact(id, user) {
+  if (!canAssign(user)) throw new ApiError(403, "You do not have permission to save contacts");
+  const ticket = await findComplaintOr404(id);
+  if (!ticket.customerId) throw new ApiError(400, "Link the complaint to a customer first.");
+  const customer = await Customer.findById(ticket.customerId).select("companyName phone");
+  if (!(await numberIsNew(customer, ticket.contactPhone))) throw new ApiError(400, "This number is already saved for the customer.");
+
+  await Contact.create({ customerId: customer._id, name: ticket.contactName || "Contact", phone: ticket.contactPhone });
+  ticket.history.push({ type: "contact_saved", authorId: user._id, comment: `Saved ${ticket.contactPhone} as a contact of ${customer.companyName}` });
+  await ticket.save();
+  return getComplaintDetail(ticket._id, user);
 }
 
 async function validAssignee(assignedToId) {
