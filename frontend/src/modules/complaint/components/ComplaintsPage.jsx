@@ -50,7 +50,7 @@ function ComplaintRow({ row, onOpen }) {
         <div className="min-w-0">
           <p className="flex flex-wrap items-center gap-x-2 font-semibold">
             <span>{row.number}</span>
-            <span>{row.customerName || row.contactName || "Customer"}</span>
+            <span>{row.customerName || row.companyName || row.contactName || "Customer"}</span>
           </p>
           <p className="text-sm text-gray-600">{row.contactPhone}</p>
           <p className="truncate text-gray-700">{row.description}</p>

@@ -45,3 +45,13 @@ export function addComplaintPhoto(ticketId, photoUri) {
 export function sendComplaintBack(ticketId, reason) {
   return apiClient.post(`${API_PATHS.COMPLAINTS}/${ticketId}/send-back`, { reason });
 }
+
+/** `PATCH /complaints/:id/customer` — an unknown caller is that customer (assigners). */
+export function linkComplaintCustomer(ticketId, customerId) {
+  return apiClient.patch(`${API_PATHS.COMPLAINTS}/${ticketId}/customer`, { customerId });
+}
+
+/** `POST /complaints/:id/save-contact` — the caller's number becomes the customer's contact. */
+export function saveComplaintContact(ticketId) {
+  return apiClient.post(`${API_PATHS.COMPLAINTS}/${ticketId}/save-contact`);
+}

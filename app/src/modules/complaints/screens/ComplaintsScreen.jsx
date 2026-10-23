@@ -108,7 +108,7 @@ function ComplaintRow({ row, onPress }) {
     <Card onPress={onPress} style={unassigned && styles.unassigned} testID={`complaint-row-${row._id}`}>
       <View style={styles.header}>
         <Text style={[typography.body, styles.name]} numberOfLines={1}>
-          {row.number} · {row.customerName || row.contactName || "Customer"}
+          {row.number} · {row.customerName || row.companyName || row.contactName || "Customer"}
         </Text>
         <StatusPill label={STATUS_LABEL[row.status] || row.status} tone={STATUS_TONE[row.status]} testID={unassigned ? `complaint-unassigned-${row._id}` : undefined} />
       </View>

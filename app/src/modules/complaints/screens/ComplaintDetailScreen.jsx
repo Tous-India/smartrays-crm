@@ -14,7 +14,7 @@ import OfflineNote from "../../../components/OfflineNote";
 import useServerData from "../../../hooks/useServerData";
 import useIsOnline from "../../../hooks/useIsOnline";
 import useSessionStore from "../../../store/sessionStore";
-import { changeComplaintStatus, getComplaint, sendComplaintBack } from "../api/complaintApi";
+import { changeComplaintStatus, getComplaint, linkComplaintCustomer, saveComplaintContact, sendComplaintBack } from "../api/complaintApi";
 import { CALLBACK_LABEL, PRIORITY, STATUS_LABEL, STATUS_TONE, isResolved, mapsUrl, nextSteps, timeAgo } from "../complaints.utils";
 import { SCREENS } from "../../../constants/screens.constants";
 import { messageFromError } from "../../../utils/apiError.utils";
@@ -71,6 +71,20 @@ function ComplaintDetailScreen({ navigation, route }) {
     }
   }
 
+  // Unknown caller (2026-10-23): an assigner links the complaint to a customer, then saves the number.
+  async function act(key, action) {
+    setBusy(key);
+    setActionError(null);
+    try {
+      await action();
+      await complaint.refetch();
+    } catch (error) {
+      setActionError(messageFromError(error));
+    } finally {
+      setBusy(null);
+    }
+  }
+
   async function sendBack() {
     if (reason.trim().length < 5) {
       setReasonError("Please say why you are sending it back.");
@@ -106,6 +120,32 @@ function ComplaintDetailScreen({ navigation, route }) {
                 ? `Existing customer: ${record.matchedCustomer.companyName}${record.matchedCustomer.commissioningDate ? `, installed ${formatDate(record.matchedCustomer.commissioningDate)}` : ""}`
                 : "Not matched to an existing customer"}
             </Text>
+            {!record.matchedCustomer && record.companyName ? (
+              <Text style={[typography.body, styles.line, styles.bold]}>They typed: {record.companyName}</Text>
+            ) : null}
+            {record.canAssign && !record.matchedCustomer
+              ? (record.suggestedCustomers || []).map((suggestion) => (
+                  <PrimaryButton
+                    key={suggestion._id}
+                    title={`Did you mean ${suggestion.companyName}? Link`}
+                    onPress={() => act(`link-${suggestion._id}`, () => linkComplaintCustomer(ticketId, suggestion._id))}
+                    loading={busy === `link-${suggestion._id}`}
+                    disabled={!isOnline || busy !== null}
+                    style={styles.button}
+                    testID={`complaint-link-${suggestion._id}`}
+                  />
+                ))
+              : null}
+            {record.canSaveContact && record.matchedCustomer ? (
+              <PrimaryButton
+                title={`Save ${record.contactPhone} as a contact for ${record.matchedCustomer.companyName}`}
+                onPress={() => act("save-contact", () => saveComplaintContact(ticketId))}
+                loading={busy === "save-contact"}
+                disabled={!isOnline || busy !== null}
+                style={styles.button}
+                testID="complaint-save-contact"
+              />
+            ) : null}
             {record.address ? <Text style={[typography.body, styles.line]}>{record.address}</Text> : null}
             {record.callbackTime ? (
               <Text style={[typography.small, styles.line]} testID="complaint-callback">

@@ -1,10 +1,16 @@
 import { Linking } from "react-native";
 import { fireEvent, render, waitFor } from "@testing-library/react-native";
 import ComplaintDetailScreen from "./ComplaintDetailScreen";
-import { getComplaint, changeComplaintStatus, sendComplaintBack } from "../api/complaintApi";
+import { getComplaint, changeComplaintStatus, sendComplaintBack, linkComplaintCustomer, saveComplaintContact } from "../api/complaintApi";
 import useSessionStore from "../../../store/sessionStore";
 
-jest.mock("../api/complaintApi", () => ({ getComplaint: jest.fn(), changeComplaintStatus: jest.fn(), sendComplaintBack: jest.fn() }));
+jest.mock("../api/complaintApi", () => ({
+  getComplaint: jest.fn(),
+  changeComplaintStatus: jest.fn(),
+  sendComplaintBack: jest.fn(),
+  linkComplaintCustomer: jest.fn(),
+  saveComplaintContact: jest.fn(),
+}));
 jest.mock("@react-navigation/native", () => ({ useFocusEffect: jest.fn() }));
 
 /**
@@ -120,4 +126,23 @@ test("an assigner sees Assign / Reassign; a non-assignee sees no work buttons", 
 
   await fireEvent.press(screen.getByTestId("complaint-assign"));
   expect(navigation.navigate).toHaveBeenCalledWith("AssignComplaint", { ticketId: "t1" });
+});
+
+// 2026-10-23: a caller the phone did not match — what they typed; an assigner links and saves the number.
+test("an unknown caller: the typed name, 'Did you mean', Link, then Save as contact", async () => {
+  useSessionStore.setState({ user: { _id: "admin-1", name: "Vinay Gupta", role: "admin" } });
+  const unmatched = { ...BASE, matchedCustomer: null, companyName: "Gupta Industry", suggestedCustomers: [{ _id: "cust-9", companyName: "Gupta Industries" }], canAssign: true, canSaveContact: false };
+  const linked = { ...unmatched, matchedCustomer: { _id: "cust-9", companyName: "Gupta Industries" }, suggestedCustomers: [], canSaveContact: true };
+  getComplaint.mockReturnValueOnce(ok(unmatched)).mockReturnValueOnce(ok(linked)).mockReturnValue(ok({ ...linked, canSaveContact: false }));
+  linkComplaintCustomer.mockReturnValue(ok(linked));
+  saveComplaintContact.mockReturnValue(ok({ ...linked, canSaveContact: false }));
+  const screen = await render(<ComplaintDetailScreen navigation={navigation} route={route} />);
+
+  await waitFor(() => expect(screen.getByText("They typed: Gupta Industry")).toBeTruthy());
+  await fireEvent.press(screen.getByTestId("complaint-link-cust-9"));
+  await waitFor(() => expect(linkComplaintCustomer).toHaveBeenCalledWith("t1", "cust-9"));
+  await waitFor(() => expect(screen.getByTestId("complaint-save-contact")).toBeTruthy());
+  await fireEvent.press(screen.getByTestId("complaint-save-contact"));
+  await waitFor(() => expect(saveComplaintContact).toHaveBeenCalledWith("t1"));
+  await waitFor(() => expect(screen.queryByTestId("complaint-save-contact")).toBeNull());
 });

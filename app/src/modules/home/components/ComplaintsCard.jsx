@@ -43,7 +43,7 @@ function ComplaintsCard({ complaints, isLoading, error, onOpen, isAssigner = fal
           {shown.slice(0, PREVIEW_COUNT).map((row) => (
             <View key={row._id} style={styles.row}>
               <Text style={[typography.body, styles.title]} numberOfLines={1}>
-                {row.customerName || row.contactName || "Customer"}
+                {row.customerName || row.companyName || row.contactName || "Customer"}
               </Text>
               <Text style={[typography.small, isVisitOverdue(row) && styles.danger]}>{row.number}</Text>
             </View>
