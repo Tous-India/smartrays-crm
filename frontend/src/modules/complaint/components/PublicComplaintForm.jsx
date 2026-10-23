@@ -1,9 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import PublicShell from "./PublicShell";
-import { submitPublicComplaint } from "../api/complaintApi";
+import { checkComplaintPhone, getComplaintLinkPrefill, submitPublicComplaint } from "../api/complaintApi";
 import { CALLBACK_TIMES, PHOTO_LIMITS, REQUEST_KINDS } from "../constants/complaint.constants";
 import { shrinkPhoto } from "../utils/shrinkPhoto";
+import { normalizeMobile } from "../utils/phone";
 
 /**
  * `/complaint` — the public complaint form (2026-10-23). ONE link for every
@@ -12,20 +13,25 @@ import { shrinkPhoto } from "../utils/shrinkPhoto";
  * line. First choice: a complaint (goes to the complaints team) or a new
  * requirement (goes to sales as a lead). After sending a complaint, the
  * customer gets its number and a status link to keep.
+ *
+ * Phone first (2026-10-23): once the 10 digits are in, the server says only
+ * whether it is a known customer. Known → nothing more to say who they are
+ * (the address is optional — it is on file). Not known → "Company or
+ * household name" and the address are required. Nothing about the customer
+ * is ever shown back.
+ *
+ * `/c/:token` — a customer's OWN link (`linkToken`): the form comes prefilled
+ * and greets them; no phone check, no company name.
  */
-
-// Same rule as the server: digits with optional +, spaces, dashes or brackets, 7–15 digits.
-const PHONE_PATTERN = /^\+?[\d\s()-]+$/;
-
-function validPhone(phone) {
-  const digits = phone.replace(/\D/g, "");
-  return PHONE_PATTERN.test(phone) && digits.length >= 7 && digits.length <= 15;
-}
 
 const INPUT = "min-h-12 w-full rounded-xl border-2 border-gray-200 bg-white px-3 text-base focus:border-brand-navy focus:outline-none";
 
-function PublicComplaintForm() {
+function PublicComplaintForm({ linkToken = null }) {
   const [kind, setKind] = useState(null);
+  const [prefill, setPrefill] = useState(null); // a customer's own link: { customerName, … }
+  const [linkState, setLinkState] = useState(linkToken ? "loading" : "none"); // none | loading | ready | invalid | error
+  const [checked, setChecked] = useState({ mobile: null, matched: null }); // the last answer, and for which number
+  const [companyName, setCompanyName] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
@@ -40,6 +46,39 @@ function PublicComplaintForm() {
   const photoInput = useRef(null);
 
   const isComplaint = kind === "complaint";
+  const mobile = normalizeMobile(phone);
+  // idle (number not complete) | checking | matched | unmatched
+  const phoneCheck = linkToken || !mobile ? "idle" : checked.mobile !== mobile ? "checking" : checked.matched ? "matched" : "unmatched";
+  const needsCompany = !linkToken && phoneCheck === "unmatched";
+  const addressRequired = !linkToken && phoneCheck !== "matched";
+
+  // A customer's own link: fill in what we know.
+  useEffect(() => {
+    if (!linkToken) return;
+    getComplaintLinkPrefill(linkToken)
+      .then((response) => {
+        const data = response.data.data;
+        setPrefill(data);
+        setName(data.contactName || "");
+        setPhone(data.phone || "");
+        setAddress(data.address || "");
+        setLinkState("ready");
+      })
+      .catch((error) => setLinkState(error.response?.status === 404 ? "invalid" : "error"));
+  }, [linkToken]);
+
+  // Once the number is complete, ask whether it is a known customer. A failed
+  // check asks for the name anyway — the server decides in the end.
+  useEffect(() => {
+    if (linkToken || !mobile) return undefined;
+    let cancelled = false;
+    checkComplaintPhone(mobile)
+      .then((response) => !cancelled && setChecked({ mobile, matched: Boolean(response.data.data.matched) }))
+      .catch(() => !cancelled && setChecked({ mobile, matched: false }));
+    return () => {
+      cancelled = true;
+    };
+  }, [mobile, linkToken]);
 
   function findLocation() {
     if (!navigator.geolocation) {
@@ -79,9 +118,10 @@ function PublicComplaintForm() {
 
   function check() {
     if (!kind) return "Please choose: a complaint, or a new requirement.";
+    if (!mobile) return "Please enter your 10-digit mobile number.";
+    if (needsCompany && !companyName.trim()) return "Please enter your company or household name.";
     if (!name.trim()) return "Please enter your name.";
-    if (!validPhone(phone.trim())) return "Please enter a valid phone number.";
-    if (address.trim().length < 5) return "Please enter your address.";
+    if (addressRequired && address.trim().length < 5) return "Please enter your address.";
     if (description.trim().length < 5) return "Please tell us a little more.";
     return "";
   }
@@ -96,7 +136,9 @@ function PublicComplaintForm() {
     form.append("kind", kind);
     form.append("name", name.trim());
     form.append("phone", phone.trim());
-    form.append("address", address.trim());
+    if (address.trim()) form.append("address", address.trim());
+    if (needsCompany) form.append("companyName", companyName.trim());
+    if (linkToken) form.append("linkToken", linkToken);
     form.append("description", description.trim());
     form.append("callbackTime", callbackTime);
     if (location) {
@@ -172,9 +214,30 @@ function PublicComplaintForm() {
     );
   }
 
+  if (linkState === "loading") {
+    return (
+      <PublicShell>
+        <p className="py-16 text-center text-gray-500">Loading…</p>
+      </PublicShell>
+    );
+  }
+
+  if (linkState === "invalid" || linkState === "error") {
+    const invalid = linkState === "invalid";
+    return (
+      <PublicShell>
+        <div className="rounded-2xl bg-white p-6 text-center shadow-sm">
+          <h1 className="text-xl font-semibold">{invalid ? "This link is not valid" : "Could not open the page"}</h1>
+          <p className="mt-2 text-gray-600">{invalid ? "Please ask Smartrays for a new link." : "Please check your internet and try again."}</p>
+          {invalid && <p className="mt-1 text-gray-600">कृपया Smartrays से नया लिंक माँगें।</p>}
+        </div>
+      </PublicShell>
+    );
+  }
+
   return (
     <PublicShell>
-      <h1 className="text-2xl font-semibold leading-snug">How can we help?</h1>
+      <h1 className="text-2xl font-semibold leading-snug">{prefill ? `Hello, ${prefill.customerName}` : "How can we help?"}</h1>
       <p className="mt-1 text-gray-600">Tell us here. We will call you back.</p>
       <p className="text-sm text-gray-500">यहाँ बताइए — हम आपको फ़ोन करेंगे।</p>
 
@@ -208,10 +271,6 @@ function PublicComplaintForm() {
         <div className="space-y-3">
           <p className="text-lg font-semibold">2. Your details</p>
           <div>
-            <label htmlFor="complaint-name" className="mb-1 block text-sm text-gray-700">Your name · आपका नाम</label>
-            <input id="complaint-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} autoComplete="name" className={INPUT} />
-          </div>
-          <div>
             <label htmlFor="complaint-phone" className="mb-1 block text-sm text-gray-700">Phone number · फ़ोन नंबर</label>
             <input
               id="complaint-phone"
@@ -224,9 +283,33 @@ function PublicComplaintForm() {
               placeholder="98xxx xxxxx"
               className={INPUT}
             />
+            {phoneCheck === "checking" && <p className="mt-1 text-sm text-gray-500">Checking…</p>}
+          </div>
+          {needsCompany && (
+            <div>
+              <label htmlFor="complaint-company" className="mb-1 block text-sm text-gray-700">
+                Company or household name · कंपनी या घर का नाम
+              </label>
+              <input
+                id="complaint-company"
+                required
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                maxLength={120}
+                autoComplete="organization"
+                placeholder="e.g. Gupta Industries or Sharma residence"
+                className={INPUT}
+              />
+            </div>
+          )}
+          <div>
+            <label htmlFor="complaint-name" className="mb-1 block text-sm text-gray-700">Your name · आपका नाम</label>
+            <input id="complaint-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={80} autoComplete="name" className={INPUT} />
           </div>
           <div>
-            <label htmlFor="complaint-address" className="mb-1 block text-sm text-gray-700">Address · पता</label>
+            <label htmlFor="complaint-address" className="mb-1 block text-sm text-gray-700">
+              {addressRequired ? "Address · पता" : "Address (optional) · पता"}
+            </label>
             <textarea
               id="complaint-address"
               value={address}

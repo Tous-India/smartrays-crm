@@ -189,7 +189,7 @@ describe("non-401 responses are untouched", () => {
  * (/complaint/status/:token, 2026-10-23).
  */
 describe("public pages are never redirected to /login", () => {
-  it.each(["/forgot-password", "/reset-password", "/complaint", "/complaint/status/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcde"])(
+  it.each(["/forgot-password", "/reset-password", "/c/AbCdEfGhIjKlMnOpQrStUvWxYz012345", "/complaint", "/complaint/status/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcde"])(
     "stays on %s when the session check says SESSION_EXPIRED",
     async (pathname) => {
       window.location.pathname = pathname;

@@ -3,6 +3,9 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { App } from "antd";
 import ShareComplaintLinkButton from "./ShareComplaintLinkButton";
+import * as complaintApi from "../api/complaintApi";
+
+vi.mock("../api/complaintApi", () => ({ getCustomerComplaintLink: vi.fn() }));
 
 const URL = `${window.location.origin}/complaint`;
 const MESSAGE = `For any issue with your solar system, tell us here: ${URL}`;
@@ -34,13 +37,17 @@ describe("ShareComplaintLinkButton — the one public complaint link", () => {
     expect(writeText).toHaveBeenCalledWith(MESSAGE);
   });
 
-  it("from a customer's page, addresses WhatsApp and SMS to that customer's phone", async () => {
-    renderButton({ phone: "+91 98100 12345", customerName: "Sharma Residence" });
+  it("from a customer's page, shares THAT customer's own link (prefilled form), addressed to their phone", async () => {
+    const own = `${window.location.origin}/c/AbCdEfGhIjKlMnOpQrStUvWxYz012345`;
+    complaintApi.getCustomerComplaintLink.mockResolvedValue({ data: { data: { url: own } } });
+    renderButton({ customerId: "cust-1", phone: "+91 98100 12345", customerName: "Sharma Residence" });
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /Share complaint link/ }));
 
+    expect(complaintApi.getCustomerComplaintLink).toHaveBeenCalledWith("cust-1");
+    expect(await screen.findByTestId("complaint-link-url")).toHaveTextContent(own);
     expect(screen.getByRole("link", { name: /WhatsApp/ }).getAttribute("href")).toMatch(/^https:\/\/wa\.me\/919810012345\?text=/);
-    expect(screen.getByRole("link", { name: /SMS/ }).getAttribute("href")).toMatch(/^sms:\+919810012345\?body=/);
+    expect(decodeURIComponent(screen.getByRole("link", { name: /SMS/ }).getAttribute("href"))).toContain(own);
     expect(screen.getByText(/Sharma Residence/)).toBeInTheDocument();
-  });
+  });;
 });

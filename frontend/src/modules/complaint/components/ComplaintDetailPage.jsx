@@ -14,6 +14,7 @@ import { CALLBACK_LABEL, PRIORITY, STAFF_STATUS, WORK_STEPS } from "../constants
 import { shrinkPhoto } from "../utils/shrinkPhoto";
 import { formatDate, formatDateTime } from "../../../utils/date.utils";
 import AssignComplaintModal from "./AssignComplaintModal";
+import CustomerMatchPanel from "./CustomerMatchPanel";
 
 /**
  * `/complaints/:id` (2026-10-23) — one complaint, as a full page (it reads
@@ -164,20 +165,7 @@ function ComplaintDetailPage() {
       </div>
 
       <Section title={complaint.contactName || "Customer"}>
-        {complaint.matchedCustomer ? (
-          <p className="mb-2 rounded-lg bg-green-50 px-3 py-2 text-green-900">
-            Existing customer: {complaint.matchedCustomer.companyName}
-            {complaint.matchedCustomer.commissioningDate ? `, installed ${formatDate(complaint.matchedCustomer.commissioningDate)}` : ""}
-            {complaint.canAssign && (
-              <>
-                {" · "}
-                <Link to={`/customers/${complaint.matchedCustomer._id}`}>Open customer</Link>
-              </>
-            )}
-          </p>
-        ) : (
-          <p className="mb-2 rounded-lg bg-gray-50 px-3 py-2 text-gray-700">Not matched to an existing customer — details as typed.</p>
-        )}
+        <CustomerMatchPanel complaint={complaint} onChange={setComplaint} />
         <p className="text-gray-700">{complaint.address}</p>
         {complaint.callbackTime && <p className="text-sm text-gray-500">Call: {CALLBACK_LABEL[complaint.callbackTime]}</p>}
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">

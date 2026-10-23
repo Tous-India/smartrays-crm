@@ -14,6 +14,9 @@ vi.mock("../api/complaintApi", () => ({
   changeComplaintStatus: vi.fn(),
   addComplaintPhoto: vi.fn(),
   sendComplaintBack: vi.fn(),
+  linkComplaintCustomer: vi.fn(),
+  saveComplaintContact: vi.fn(),
+  searchComplaintCustomers: vi.fn(),
 }));
 
 const ADMIN = { _id: "admin-1", name: "Vinay Gupta", role: "admin", permissions: {} };
@@ -146,5 +149,38 @@ describe("ComplaintDetailPage — everything about one complaint", () => {
     await user.type(await screen.findByLabelText(/Note/), "Replaced the fuse.");
     await user.click(screen.getByRole("button", { name: "Resolved" }));
     expect(complaintApi.changeComplaintStatus).toHaveBeenCalledWith("t1", "resolved", "Replaced the fuse.");
+  });
+});
+
+// 2026-10-23: an unknown caller — what they typed, "Did you mean …?", link, save the number.
+describe("ComplaintDetailPage — a caller the phone did not match", () => {
+  const UNMATCHED = { ...BASE, matchedCustomer: null, companyName: "Gupta Industry", suggestedCustomers: [{ _id: "cust-9", companyName: "Gupta Industries" }], canSaveContact: false };
+
+  it("shows the typed name, suggests a customer, links it, then offers to save the number", async () => {
+    complaintApi.linkComplaintCustomer.mockResolvedValue({
+      data: { data: { ...UNMATCHED, matchedCustomer: { _id: "cust-9", companyName: "Gupta Industries", commissioningDate: null }, suggestedCustomers: [], canSaveContact: true } },
+    });
+    complaintApi.saveComplaintContact.mockResolvedValue({
+      data: { data: { ...UNMATCHED, matchedCustomer: { _id: "cust-9", companyName: "Gupta Industries" }, suggestedCustomers: [], canSaveContact: false } },
+    });
+    renderPage(ADMIN, UNMATCHED);
+    const user = userEvent.setup();
+
+    expect(await screen.findByText(/They typed: Gupta Industry/)).toBeInTheDocument();
+    expect(screen.getByText(/Did you mean Gupta Industries\?/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Link to Gupta Industries" }));
+    expect(complaintApi.linkComplaintCustomer).toHaveBeenCalledWith("t1", "cust-9");
+
+    const save = await screen.findByRole("button", { name: /Save 98100 12345 as a contact for Gupta Industries/ });
+    await user.click(save);
+    expect(complaintApi.saveComplaintContact).toHaveBeenCalledWith("t1");
+    expect(await screen.findByText(/Existing customer: Gupta Industries/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Save .* as a contact/ })).not.toBeInTheDocument();
+  });
+
+  it("a technician sees the typed name but cannot link", async () => {
+    renderPage(TECHNICIAN, { ...UNMATCHED, canAssign: false, suggestedCustomers: [] });
+    expect(await screen.findByText(/They typed: Gupta Industry/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Link to/ })).not.toBeInTheDocument();
   });
 });

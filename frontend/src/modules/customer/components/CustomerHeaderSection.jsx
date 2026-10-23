@@ -57,8 +57,8 @@ function CustomerHeaderSection({ customer, onEdit, onDelete, onChanged }) {
 
       {/* `wrap`: Edit / Deactivate / Delete pushed the page +48px at 390. */}
       <Space wrap>
-        {/* The one public complaint link, sent to this customer (2026-10-23). */}
-        <ShareComplaintLinkButton phone={customer.phone} customerName={customer.companyName} />
+        {/* This customer's own complaint link — the form opens prefilled (2026-10-23). */}
+        <ShareComplaintLinkButton customerId={customer._id} phone={customer.phone} customerName={customer.companyName} />
         <PermissionGate module="customers" action="edit">
           <Button icon={<EditOutlined />} onClick={onEdit}>
             Edit

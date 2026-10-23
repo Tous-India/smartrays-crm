@@ -37,9 +37,10 @@ const SESSION_EXPIRED = "SESSION_EXPIRED";
 // GET /auth/me on every load, and a signed-out visitor's 401 used to redirect
 // them to /login from everywhere but /login — so the emailed password-reset
 // link and the customer complaint link could never be opened. The complaint
-// form and its status page moved to /complaint (2026-10-23).
+// form and its status page moved to /complaint, and a customer's own link
+// (/c/:token) is back beside it (2026-10-23).
 const PUBLIC_PATHS = ["/login", "/forgot-password", "/reset-password", "/complaint"];
-const PUBLIC_PREFIXES = ["/complaint/"];
+const PUBLIC_PREFIXES = ["/complaint/", "/c/"];
 
 function isPublicPage(pathname) {
   return PUBLIC_PATHS.includes(pathname) || PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix));

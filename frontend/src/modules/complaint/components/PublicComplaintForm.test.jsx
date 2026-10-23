@@ -7,6 +7,8 @@ import * as complaintApi from "../api/complaintApi";
 
 vi.mock("../api/complaintApi", () => ({
   submitPublicComplaint: vi.fn(),
+  checkComplaintPhone: vi.fn(),
+  getComplaintLinkPrefill: vi.fn(),
 }));
 
 const TOKEN = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcde";
@@ -20,14 +22,17 @@ function renderForm() {
 }
 
 async function fillIn(user) {
-  await user.type(screen.getByLabelText(/Your name/), "Ramesh Sharma");
   await user.type(screen.getByLabelText(/Phone number/), "98100 12345");
+  await user.type(await screen.findByLabelText(/Company or household name/), "Sharma household");
+  await user.type(screen.getByLabelText(/Your name/), "Ramesh Sharma");
   await user.type(screen.getByLabelText(/Address/), "B-12, Sector 7, Dwarka");
   await user.type(screen.getByLabelText(/What happened|What do you need/), "Inverter shows a red light.");
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Not a known customer unless a test says so.
+  complaintApi.checkComplaintPhone.mockResolvedValue({ data: { data: { matched: false } } });
 });
 
 describe("PublicComplaintForm — one public link for every customer", () => {
@@ -44,12 +49,11 @@ describe("PublicComplaintForm — one public link for every customer", () => {
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: /Complaint \/ problem/ }));
     await user.click(screen.getByRole("button", { name: "Send" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("Please enter your name.");
+    expect(screen.getByRole("alert")).toHaveTextContent("Please enter your 10-digit mobile number.");
 
-    await user.type(screen.getByLabelText(/Your name/), "Ramesh");
     await user.type(screen.getByLabelText(/Phone number/), "12");
     await user.click(screen.getByRole("button", { name: "Send" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("Please enter a valid phone number.");
+    expect(screen.getByRole("alert")).toHaveTextContent("Please enter your 10-digit mobile number.");
     expect(complaintApi.submitPublicComplaint).not.toHaveBeenCalled();
   });
 
@@ -67,6 +71,7 @@ describe("PublicComplaintForm — one public link for every customer", () => {
     expect(form.get("name")).toBe("Ramesh Sharma");
     expect(form.get("phone")).toBe("98100 12345");
     expect(form.get("address")).toBe("B-12, Sector 7, Dwarka");
+    expect(form.get("companyName")).toBe("Sharma household");
     expect(form.get("description")).toBe("Inverter shows a red light.");
     expect(form.get("callbackTime")).toBe("evening");
 
@@ -115,5 +120,84 @@ describe("PublicComplaintForm — one public link for every customer", () => {
     await fillIn(user);
     await user.click(screen.getByRole("button", { name: "Send" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("You have sent several requests in a short time.");
+  });
+});
+
+// 2026-10-23: the company or household name only when the phone matches no customer.
+describe("PublicComplaintForm — phone first", () => {
+  it("checks the number once it is complete; a known customer gets no extra field and the address is optional", async () => {
+    complaintApi.checkComplaintPhone.mockResolvedValue({ data: { data: { matched: true } } });
+    complaintApi.submitPublicComplaint.mockResolvedValue({ data: { data: { kind: "complaint", number: 1010, statusToken: TOKEN } } });
+    renderForm();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Complaint \/ problem/ }));
+    await user.type(screen.getByLabelText(/Phone number/), "+91 98765-0000");
+    expect(complaintApi.checkComplaintPhone).not.toHaveBeenCalled();
+    await user.type(screen.getByLabelText(/Phone number/), "1");
+    expect(complaintApi.checkComplaintPhone).toHaveBeenCalledWith("9876500001");
+    await screen.findByLabelText(/Address \(optional\)/);
+    expect(screen.queryByLabelText(/Company or household name/)).not.toBeInTheDocument();
+    // Nothing about the customer is shown back.
+    expect(screen.queryByText(/Existing customer|Gupta/)).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText(/Your name/), "Anil");
+    await user.type(screen.getByLabelText(/What happened/), "Inverter red light again.");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    const form = complaintApi.submitPublicComplaint.mock.calls[0][0];
+    expect(form.get("companyName")).toBeNull();
+    expect(await screen.findByText("No. 1010")).toBeInTheDocument();
+  });
+
+  it("an unknown number must give a company or household name and an address", async () => {
+    renderForm();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: /Complaint \/ problem/ }));
+    await user.type(screen.getByLabelText(/Phone number/), "98111 22333");
+    const company = await screen.findByLabelText(/Company or household name/);
+    expect(company).toBeRequired();
+    await user.type(screen.getByLabelText(/Your name/), "Mohit");
+    await user.type(screen.getByLabelText(/What happened/), "Bill shows more units.");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Please enter your company or household name.");
+    await user.type(company, "Bansal Stores");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Please enter your address.");
+    expect(complaintApi.submitPublicComplaint).not.toHaveBeenCalled();
+  });
+});
+
+describe("PublicComplaintForm — a customer's own link", () => {
+  it("comes prefilled, greets the customer, asks no company name and sends the link code", async () => {
+    complaintApi.getComplaintLinkPrefill.mockResolvedValue({
+      data: { data: { customerName: "Sharma Residence", contactName: "Rajesh Sharma", phone: "098990 20000", address: "DLF Phase 3" } },
+    });
+    complaintApi.submitPublicComplaint.mockResolvedValue({ data: { data: { kind: "complaint", number: 1011, statusToken: TOKEN } } });
+    render(
+      <MemoryRouter>
+        <PublicComplaintForm linkToken="AbCdEfGhIjKlMnOpQrStUvWxYz012345" />
+      </MemoryRouter>
+    );
+    const user = userEvent.setup();
+    expect(await screen.findByText("Hello, Sharma Residence")).toBeInTheDocument();
+    expect(screen.getByLabelText(/Your name/)).toHaveValue("Rajesh Sharma");
+    expect(screen.getByLabelText(/Phone number/)).toHaveValue("098990 20000");
+    expect(screen.queryByLabelText(/Company or household name/)).not.toBeInTheDocument();
+    expect(complaintApi.checkComplaintPhone).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: /Complaint \/ problem/ }));
+    await user.type(screen.getByLabelText(/What happened/), "Panel cracked.");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    expect(complaintApi.submitPublicComplaint.mock.calls[0][0].get("linkToken")).toBe("AbCdEfGhIjKlMnOpQrStUvWxYz012345");
+    expect(await screen.findByText("No. 1011")).toBeInTheDocument();
+  });
+
+  it("a wrong code says so plainly", async () => {
+    complaintApi.getComplaintLinkPrefill.mockRejectedValue({ response: { status: 404 } });
+    render(
+      <MemoryRouter>
+        <PublicComplaintForm linkToken="AbCdEfGhIjKlMnOpQrStUvWxYz012345" />
+      </MemoryRouter>
+    );
+    expect(await screen.findByText("This link is not valid")).toBeInTheDocument();
   });
 });
