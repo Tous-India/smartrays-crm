@@ -239,3 +239,30 @@ Running as background processes of this session (they stop when the session ends
 `backend/.env.local` = the Vercel pull with local overrides (local `MONGODB_URI`, `NODE_ENV=development`,
 `VERCEL=1`, `CLOUDINARY_FOLDER_ROOT=smartrays-dev`, a local-only `CRON_SECRET`). Browser scripts used
 for verification are in `D:\Tools\verify` (outside the repo).
+
+---
+
+## Chat request 2026-10-23 — fix the remaining issues (owner's answers)
+Status: done (11:00–12:05 IST). Local only; nothing pushed or deployed.
+
+| Item | Done | Verified | Commit |
+|---|---|---|---|
+| Managers see customers their team project-manages (Q4) | yes | test (fails before); Chrome 1280+390: installation manager 0 → 8 customers | `0bfb4c8` |
+| Payroll warning for an unfinished month (Q8) | yes | test (fails before); Chrome 1280+390 | `f00412c` |
+| Attendance rate fix (Q8) | yes | 8 tests (fail before); Chrome 1280+390, 3 views | `467eee5` |
+| Dates DD MMM YYYY everywhere — web | yes | tests + source scan (fail before); Chrome forced to en-US, 9 pages × 2 widths, 0 slash dates; build passes | `23e660e` |
+| Dates DD MMM YYYY — app | yes | tests + scan (fail before); Jest only (no device) | `e78da65` |
+| Leads page usable on a phone | yes | 2 tests (fail before); Chrome 390 + 1280 | `eeefcbd` |
+| Remove mongodb@3.7 (Q10) | yes | test (fails before); backend suite 1219/1219 after | `0104571` |
+| Hourly cron → daily (Vercel Hobby) | yes | test holds every cron to ≤ daily (failed before) | `2c2fc82` |
+| Map tiles: CARTO → OpenStreetMap, one constant | yes | tests (fail before); Chrome 1280+390: tiles from tile.openstreetmap.org, OSM credit shown | `e985aec`, `2f4bdb3` |
+| Complaint form: optional name + phone (Q6) | yes | tests (fail before); Chrome 390: form → PM sees caller, Call dials their number | `c9e3ebb`, `29eb22f`, `20193c8` |
+| Check-in required before Arrived (Q5) | already built 2026-10-22 | test (failed before then); re-checked live today: Ritu not checked in → "Please check in first" | `0c2a2a5` |
+
+Attendance rate — old: (present + ½ half day) ÷ Mon–Fri days in the WHOLE month; new: (present +
+½ half day) ÷ (people in view × Mon–Sat days from the period start up to today), max 100 %, "—" before
+any working day. Why: the old one divided a whole team's days by one person's month (3 of 8 present =
+13.6 %), counted future days, and left Saturdays out of the bottom while worked Saturdays counted on top.
+
+Suites: backend 1224/1224, app 160/160, web 986/989 (3 = UserManagementPage, flaky only under
+full-suite load; 27/27 alone). Screenshots: `_advisor/screenshots/fixes-2026-10-23/`.
