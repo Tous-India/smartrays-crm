@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Circle, CircleMarker, MapContainer, Polyline, TileLayer, Tooltip, useMap, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
+import { MAP_TILES } from "../../../constants/mapTiles.constants";
 
 /**
  * A site visit on the map (2026-10-22): the site and its geofence circle,
@@ -32,7 +33,7 @@ function VisitMap({ site, radiusMeters = 200, route = [], arrival, completion, p
   return (
     <div style={{ height }} className="overflow-hidden rounded-lg border border-gray-200" data-testid="visit-map">
       <MapContainer center={center} zoom={site ? 15 : 10} style={{ height: "100%", width: "100%" }} scrollWheelZoom={false}>
-        <TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <TileLayer attribution={MAP_TILES.attribution} url={MAP_TILES.url} maxZoom={MAP_TILES.maxZoom} />
         {onPick && <ClickToPick onPick={onPick} />}
         {!onPick && <FitTo points={fitPoints} />}
         {routePoints.length > 1 && <Polyline positions={routePoints} pathOptions={{ color: COLORS.route, weight: 3, opacity: 0.8 }} />}

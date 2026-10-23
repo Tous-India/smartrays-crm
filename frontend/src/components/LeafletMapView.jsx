@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Polyline, Popup, useMap } from "react-
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import MarkerClusterLayer from "./MarkerClusterLayer";
+import { MAP_TILES } from "../constants/mapTiles.constants";
 
 // India centroid — a reasonable default center when there's nothing to plot
 // yet (no live employees checked in, or no history for the selected day).
@@ -224,12 +225,10 @@ function KeepMapSized() {
  * else. Markers stay legible against it because they carry their own shape
  * vocabulary now (see `buildPinIcon`), not colour alone.
  *
- * Still exactly ONE TileLayer, and still zero requests to OSM's own tile
- * servers — CARTO serves the raster, OSM only supplies the underlying data
- * and is credited for it. Attribution credits
- * both OpenStreetMap (the underlying data) and CARTO (the tile styling), as
- * CARTO's basemap terms require; `{r}` resolves to "@2x" on retina displays
- * and `subdomains` covers CARTO's a–d hosts.
+ * Still exactly ONE TileLayer. 2026-10-23: CARTO began drawing "API KEY
+ * REQUIRED" over the tiles, so the source moved to OpenStreetMap's standard
+ * tiles, set in ONE place — constants/mapTiles.constants.js — with
+ * OpenStreetMap's attribution.
  *
  * Deliberately basic per this module's own stated scope: no
  * clustering, no custom controls — just plot what's given and fit the
@@ -268,12 +267,8 @@ function LeafletMapView({
   return (
     <div data-testid="leaflet-map-container" style={{ height, width: "100%" }}>
       <MapContainer center={DEFAULT_CENTER} zoom={5} style={{ height: "100%", width: "100%" }} scrollWheelZoom>
-        <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-          subdomains="abcd"
-          maxZoom={20}
-        />
+        {/* Tile source: constants/mapTiles.constants.js (OpenStreetMap, 2026-10-23). */}
+        <TileLayer attribution={MAP_TILES.attribution} url={MAP_TILES.url} maxZoom={MAP_TILES.maxZoom} />
         {markers.map((marker, index) => (
           <Marker
             key={`${marker.lat}-${marker.lng}-${index}`}

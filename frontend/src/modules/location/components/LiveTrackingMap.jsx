@@ -19,7 +19,7 @@ const STALE_AFTER_MINUTES = 10;
  * employee on one map: their check-in point, the trail of pings since, and
  * their latest position.
  *
- * Renders through the shared `LeafletMapView` (CARTO Voyager tiles) rather
+ * Renders through the shared `LeafletMapView` (OpenStreetMap tiles, set in constants/mapTiles.constants.js) rather
  * than a second map component, so there is exactly one `TileLayer` in the
  * app and no way for a tile source to drift. `LeafletMapView` gained an
  * additive `paths` prop for this — `HistoryMapView` plots ONE employee's
