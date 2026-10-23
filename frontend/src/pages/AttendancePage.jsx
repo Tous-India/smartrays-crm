@@ -115,7 +115,12 @@ function AttendancePage() {
     return [{ key: "my-attendance", label: "My Attendance", children: <PersonalAttendanceView /> }];
   }, [isAdmin, canViewTeamAttendance, canViewLiveMap, canViewMonthlyReport]);
 
-  const [activeKey, setActiveKey] = useState(items[0].key);
+  // ?tab=live-map (2026-10-23) — the dashboard's "Open live map" lands on that
+  // tab; an unknown or unavailable key falls back to the first tab.
+  const [activeKey, setActiveKey] = useState(() => {
+    const requested = new URLSearchParams(window.location.search).get("tab");
+    return items.some((item) => item.key === requested) ? requested : items[0].key;
+  });
 
   return <Tabs activeKey={activeKey} onChange={setActiveKey} items={items} destroyOnHidden />;
 }

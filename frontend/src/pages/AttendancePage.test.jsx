@@ -95,6 +95,18 @@ describe("AttendancePage — role-based tabs", () => {
     expect(screen.queryByRole("tab", { name: "My Attendance" })).not.toBeInTheDocument();
   });
 
+  it("opens on the tab named in ?tab= — the dashboard's 'Open live map' (2026-10-23)", () => {
+    setUser({ _id: "admin-1", role: "admin", permissions: {} });
+    window.history.pushState({}, "", "/attendance?tab=live-map");
+
+    try {
+      render(<AttendancePage />);
+      expect(screen.getByRole("tab", { name: "Live Map" })).toHaveAttribute("aria-selected", "true");
+    } finally {
+      window.history.pushState({}, "", "/");
+    }
+  });
+
   it("gives an admin the §7.47 Report tab, after Leave Requests", () => {
     setUser({ _id: "admin-1", role: "admin", permissions: {} });
 

@@ -11,6 +11,7 @@ import PaymentsThisMonthWidget from "./widgets/PaymentsThisMonthWidget";
 import PayrollStatusWidget from "./widgets/PayrollStatusWidget";
 import MyServicesWidget from "./widgets/MyServicesWidget";
 import TeamServicesWidget from "./widgets/TeamServicesWidget";
+import LiveStaffWidget from "./widgets/LiveStaffWidget";
 
 /**
  * Declarative widget catalog — a role → ordered widget-component list, not a
@@ -45,6 +46,8 @@ import TeamServicesWidget from "./widgets/TeamServicesWidget";
  */
 export const DASHBOARD_WIDGETS_BY_ROLE = {
   admin: [
+    // Live staff (2026-10-23) first — the live map one tap from the dashboard.
+    LiveStaffWidget,
     LeadsPipelineWidget,
     LeadsFollowUpWidget,
     LeadsHotWidget,
@@ -67,6 +70,7 @@ export const DASHBOARD_WIDGETS_BY_ROLE = {
   // matrix (only admin approves leave, and Payments/Payroll have no manager
   // tier at all, unlike every other workforce module).
   manager: [
+    LiveStaffWidget,
     LeadsPipelineWidget,
     LeadsFollowUpWidget,
     LeadsHotWidget,
