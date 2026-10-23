@@ -87,6 +87,10 @@ async function ensureUserExists(userId, fieldLabel) {
   }
 }
 
+// Customer complaints (source "complaint_link") have their own endpoints and
+// permission since 2026-10-23 (complaint.service.js) — never reachable here.
+const NOT_A_COMPLAINT = { source: { $ne: "complaint_link" } };
+
 const SCOPE_ACTIONS = { all: "view_all", assigned: "view_assigned", own: "view_own" };
 
 /**
@@ -111,7 +115,9 @@ export async function listTickets(scope, requestingUser) {
 
   kickComplaintChecks();
 
-  const tickets = await Ticket.find(buildScopeFilter(resolvedScope, requestingUser)).sort({ createdAt: -1 }).lean();
+  const tickets = await Ticket.find({ ...buildScopeFilter(resolvedScope, requestingUser), ...NOT_A_COMPLAINT })
+    .sort({ createdAt: -1 })
+    .lean();
   return withNames(tickets);
 }
 
@@ -238,7 +244,7 @@ function buildScopeFilter(scope, requestingUser) {
  * assignment notification.
  */
 export async function assignTicket(ticketId, assignedToId, requestingUser) {
-  const ticket = await Ticket.findById(ticketId);
+  const ticket = await Ticket.findOne({ _id: ticketId, ...NOT_A_COMPLAINT });
 
   if (!ticket) {
     throw new ApiError(404, "Ticket not found");
@@ -267,7 +273,7 @@ export async function assignTicket(ticketId, assignedToId, requestingUser) {
  * for not confirming whether an out-of-scope record even exists.
  */
 async function getViewableTicketOrThrow(ticketId, requestingUser) {
-  const ticket = await Ticket.findById(ticketId);
+  const ticket = await Ticket.findOne({ _id: ticketId, ...NOT_A_COMPLAINT });
 
   if (!ticket || !canViewTicket(ticket, requestingUser)) {
     throw new ApiError(404, "Ticket not found");

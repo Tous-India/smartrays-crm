@@ -161,6 +161,7 @@ export async function submitPublicForm(body, files = []) {
     address: form.address,
     location: form.location,
     statusTokenHash: hashStatusToken(statusToken),
+    unassignedSince: new Date(),
     customerPhotos: uploaded.map(({ publicId }) => ({ publicId })),
     history: [{ type: "comment", byCustomer: true, comment: form.description }],
   });

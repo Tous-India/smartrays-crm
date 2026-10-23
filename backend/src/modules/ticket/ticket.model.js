@@ -215,6 +215,12 @@ const ticketSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // When it last became unassigned — raised, or sent back by the
+    // technician. The "not assigned in time" reminder counts from here.
+    unassignedSince: {
+      type: Date,
+      default: null,
+    },
     // Live-camera photos the technician took at the site.
     staffPhotos: {
       type: [

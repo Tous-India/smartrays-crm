@@ -19,6 +19,7 @@ import notificationRouter from "./modules/notification/notification.routes.js";
 import teamRouter, { teamTypeRouter } from "./modules/team/team.routes.js";
 import serviceRouter from "./modules/service/service.routes.js";
 import publicComplaintRouter from "./modules/ticket/publicComplaint.routes.js";
+import complaintRouter from "./modules/ticket/complaint.routes.js";
 import visitRouter from "./modules/visit/visit.routes.js";
 
 const router = Router();
@@ -42,6 +43,8 @@ router.use("/services", serviceRouter);
 // Verified site visits (2026-10-22) — built on Services.
 router.use("/visits", visitRouter);
 router.use("/tickets", ticketRouter);
+// Customer complaints, staff side (2026-10-23).
+router.use("/complaints", complaintRouter);
 // Public, no login — the complaint form and its status page (2026-10-23).
 router.use("/public/complaints", publicComplaintRouter);
 router.use("/payments", paymentRouter);
