@@ -1,5 +1,5 @@
 import { useCallback, useEffect } from "react";
-import { StyleSheet, Text } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import Screen from "../../../components/Screen";
 import TodayShiftCard from "../../attendance/components/TodayShiftCard";
@@ -7,6 +7,8 @@ import ServicesDueCard from "../components/ServicesDueCard";
 import ComplaintsCard from "../components/ComplaintsCard";
 import MyStatusCard from "../../live/components/MyStatusCard";
 import TodayGlanceCard from "../../live/components/TodayGlanceCard";
+import NotificationBell from "../../notifications/components/NotificationBell";
+import { listNotifications } from "../../notifications/api/notificationApi";
 import useLiveMeta from "../../live/hooks/useLiveMeta";
 import { getMyLiveStatus, getTeamLiveStatus } from "../../live/api/liveApi";
 import useMyAttendance from "../../attendance/hooks/useMyAttendance";
@@ -65,12 +67,18 @@ function HomeScreen({ navigation }) {
   const teamLive = useServerData(async () => (seesTeam ? (await getTeamLiveStatus()).data.data : null), { deps: [user?._id, seesTeam] });
   const { refetch: refetchTeamLive } = teamLive;
 
+  // The bell (2026-10-23): unread notifications, re-read on every return.
+  const notifications = useServerData(async () => (await listNotifications()).data.data, { initialData: [], deps: [user?._id] });
+  const { refetch: refetchNotifications } = notifications;
+  const unread = notifications.data.filter((notification) => !notification.isRead).length;
+
   useFocusEffect(
     useCallback(() => {
       refetch();
       refetchMyStatus();
       refetchTeamLive();
-    }, [refetch, refetchMyStatus, refetchTeamLive])
+      refetchNotifications();
+    }, [refetch, refetchMyStatus, refetchTeamLive, refetchNotifications])
   );
 
   function refreshAll() {
@@ -79,6 +87,7 @@ function HomeScreen({ navigation }) {
     myComplaints.refetch();
     myStatus.refetch();
     teamLive.refetch();
+    notifications.refetch();
   }
 
   // The prominent disclosure (app-plan.md §4.1) comes before the first
@@ -110,7 +119,10 @@ function HomeScreen({ navigation }) {
 
   return (
     <Screen onRefresh={refreshAll} refreshing={servicesDue.isRefreshing} testID="home-screen">
-      <Text style={typography.title}>Hello, {user?.name}</Text>
+      <View style={styles.titleRow}>
+        <Text style={[typography.title, styles.title]}>Hello, {user?.name}</Text>
+        <NotificationBell unread={unread} onPress={() => navigation.navigate(SCREENS.NOTIFICATIONS)} />
+      </View>
       <Text style={[typography.subtitle, styles.subtitle]}>Signed in as {roleLabel(user?.role)}</Text>
 
       <TodayShiftCard
@@ -161,6 +173,8 @@ function HomeScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
+  titleRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  title: { flex: 1 },
   subtitle: { marginTop: spacing.xs, marginBottom: spacing.xl },
 });
 

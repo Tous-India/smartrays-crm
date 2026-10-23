@@ -34,6 +34,8 @@ export const SCREENS = {
   TEAM_MEMBER_DAY: "TeamMemberDay",
   // A person's live status and their day as a timeline (2026-10-23).
   PERSON_DAY: "PersonDay",
+  // The in-app notifications list (2026-10-23), above the tabs.
+  NOTIFICATIONS: "Notifications",
   TEAM_SERVICE_DETAIL: "TeamServiceDetail",
   SERVICE_FORM: "ServiceForm",
 };
