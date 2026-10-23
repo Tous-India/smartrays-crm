@@ -27,6 +27,16 @@ export function listTeamLeaves() {
   return apiClient.get(API_PATHS.LEAVE, { params: { scope: "team" } });
 }
 
+/** `PATCH /leave/:id/approve` (2026-10-23) — the server checks the request is the caller's team's. */
+export function approveLeave(leaveId) {
+  return apiClient.patch(`${API_PATHS.LEAVE}/${leaveId}/approve`);
+}
+
+/** `PATCH /leave/:id/decline` — an optional reason, shown to the employee. */
+export function declineLeave(leaveId, reason) {
+  return apiClient.patch(`${API_PATHS.LEAVE}/${leaveId}/decline`, reason ? { reason } : {});
+}
+
 /** `GET /services/assignees` — who the caller may assign to; the picker's ONLY source. */
 export function listAssignees() {
   return apiClient.get(API_PATHS.SERVICE_ASSIGNEES);

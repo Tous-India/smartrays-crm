@@ -103,7 +103,15 @@ function TeamScreen({ navigation }) {
               onOpenService={(service) => navigation.navigate(SCREENS.TEAM_SERVICE_DETAIL, { serviceId: service._id })}
             />
           ) : null}
-          {current === SEGMENTS.LEAVE ? <TeamLeaveSection leaves={leaves} nameById={nameById} /> : null}
+          {current === SEGMENTS.LEAVE ? (
+            <TeamLeaveSection
+              leaves={leaves}
+              nameById={nameById}
+              canApprove={can(permissions, "leave", "approve")}
+              canDecline={can(permissions, "leave", "decline")}
+              isOnline={isOnline}
+            />
+          ) : null}
         </>
       )}
     </Screen>
