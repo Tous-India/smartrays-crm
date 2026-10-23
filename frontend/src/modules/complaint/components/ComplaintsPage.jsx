@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Alert, Button, Empty, Segmented, Spin, Tag } from "antd";
 import { usePermission } from "../../../hooks/usePermission";
+import { useIsPhone } from "../../../hooks/useIsPhone";
 import { listComplaints } from "../api/complaintApi";
 import { PRIORITY, STAFF_STATUS } from "../constants/complaint.constants";
 import { isVisitOverdue, timeAgo } from "../utils/complaintTime";
@@ -79,6 +80,7 @@ function ComplaintsPage() {
   const canAssign = usePermission("complaints", "assign");
   const canSeeAll = usePermission("complaints", "view_all") || canAssign;
   const navigate = useNavigate();
+  const isPhone = useIsPhone();
   const filters = canSeeAll ? ASSIGNER_FILTERS : TECHNICIAN_FILTERS;
   const [rows, setRows] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -119,13 +121,17 @@ function ComplaintsPage() {
         {canAssign && <ShareComplaintLinkButton />}
       </div>
 
-      <Segmented
-        block
-        size="large"
-        value={filter}
-        onChange={setFilter}
-        options={filters.map((f) => ({ value: f.value, label: `${f.label} (${counts[f.value] ?? 0})` }))}
-      />
+      {/* Four full labels do not fit across a phone: there they scroll sideways
+          instead of being cut to "Unass…". */}
+      <div className={isPhone ? "-mx-1 overflow-x-auto px-1 pb-1" : ""}>
+        <Segmented
+          block={!isPhone}
+          size="large"
+          value={filter}
+          onChange={setFilter}
+          options={filters.map((f) => ({ value: f.value, label: `${f.label} (${counts[f.value] ?? 0})` }))}
+        />
+      </div>
 
       {error && <Alert type="error" showIcon message="Could not load complaints" action={<Button onClick={load}>Try again</Button>} />}
 
