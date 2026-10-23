@@ -1,89 +1,143 @@
+import { useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 import Screen from "../../../components/Screen";
 import ScreenHeader from "../../../components/ScreenHeader";
 import Card from "../../../components/Card";
 import StatusPill from "../../../components/StatusPill";
 import ListState from "../../../components/ListState";
+import SegmentedControl from "../../../components/SegmentedControl";
 import useServerData from "../../../hooks/useServerData";
-import useSessionStore from "../../../store/sessionStore";
+import useMyPermissions, { can } from "../../../hooks/useMyPermissions";
 import { listComplaints } from "../api/complaintApi";
-import { CATEGORY_LABEL, STATUS_LABEL, STATUS_TONE, isActive, overdueText, sortForWork, timeAgo } from "../complaints.utils";
+import { PRIORITY, STATUS_LABEL, STATUS_TONE, isActive, isResolved, isVisitOverdue, timeAgo } from "../complaints.utils";
+import ShareComplaintLink from "../components/ShareComplaintLink";
 import { SCREENS } from "../../../constants/screens.constants";
+import { formatDate } from "../../../utils/date.utils";
 import { colors, spacing, typography } from "../../../theme";
 
 /**
- * "My complaints" (2026-10-22): customer complaints assigned to the person
- * holding the phone — the ones still to do on top, overdue first, then the
- * resolved ones. The server's list for a manager or admin holds everyone's;
- * this screen is about "mine", like the Home card. Tap → the complaint.
+ * Customer complaints (2026-10-23).
+ *
+ * - Assigners (admin, or complaints.assign / complaints.view_all): every
+ *   complaint, unassigned ones on top and marked, filters All / Unassigned /
+ *   Assigned / Resolved, and the share-link card.
+ * - Everyone else: "My complaints" — the server sends only theirs — active
+ *   first, then the resolved ones.
+ * Tap → the complaint.
  */
-function ComplaintsScreen({ navigation }) {
-  const user = useSessionStore((state) => state.user);
-  const complaints = useServerData(
-    async () => (await listComplaints()).data.data.filter((ticket) => String(ticket.assignedToId) === String(user?._id)),
-    { initialData: [], deps: [user?._id] }
-  );
+const FILTERS = [
+  { value: "all", label: "All", match: () => true },
+  { value: "unassigned", label: "Unassigned", match: (row) => row.status === "open" },
+  { value: "assigned", label: "Assigned", match: (row) => isActive(row) && row.status !== "open" },
+  { value: "resolved", label: "Resolved", match: isResolved },
+];
 
-  const sorted = sortForWork(complaints.data || []);
-  const active = sorted.filter(isActive);
-  const done = sorted.filter((ticket) => !isActive(ticket)).slice(0, 10);
+function ComplaintsScreen({ navigation }) {
+  const { permissions } = useMyPermissions();
+  const isAssigner = can(permissions, "complaints", "assign") || can(permissions, "complaints", "view_all");
+  const complaints = useServerData(async () => (await listComplaints()).data.data, { initialData: [] });
+  const [filter, setFilter] = useState("all");
+
+  const rows = complaints.data || [];
+  const open = (row) => navigation.navigate(SCREENS.COMPLAINT_DETAIL, { ticketId: row._id });
+
+  let sections;
+  if (isAssigner) {
+    const match = FILTERS.find((f) => f.value === filter).match;
+    sections = [{ key: "list", rows: rows.filter(match) }];
+  } else {
+    sections = [
+      { key: "active", rows: rows.filter(isActive) },
+      { key: "resolved", title: "Resolved", rows: rows.filter(isResolved).slice(0, 10) },
+    ];
+  }
+  const shownCount = sections.reduce((sum, section) => sum + section.rows.length, 0);
 
   return (
     <Screen onRefresh={complaints.refetch} refreshing={complaints.isRefreshing} testID="complaints-screen">
-      <ScreenHeader title="My complaints" subtitle="From customers' complaint links" onBack={() => navigation.goBack()} />
+      <ScreenHeader
+        title={isAssigner ? "Complaints" : "My complaints"}
+        subtitle={isAssigner ? "From the public complaint form" : "Assigned to you"}
+        onBack={() => navigation.goBack()}
+      />
+
+      {isAssigner ? (
+        <>
+          <ShareComplaintLink />
+          <View style={styles.filters}>
+            <SegmentedControl
+              options={FILTERS.map((f) => ({ value: f.value, label: `${f.label} (${rows.filter(f.match).length})` }))}
+              value={filter}
+              onChange={setFilter}
+              testID="complaint-filter"
+            />
+          </View>
+        </>
+      ) : null}
 
       <ListState
         isLoading={complaints.isLoading}
         error={complaints.error}
         onRetry={complaints.refetch}
-        isEmpty={sorted.length === 0}
-        emptyText="No complaints assigned to you."
+        isEmpty={shownCount === 0}
+        emptyText={isAssigner ? (filter === "unassigned" ? "Nothing waiting — everything is assigned." : "Nothing here.") : "No complaints assigned to you."}
         skeleton="service"
         testID="complaints-list"
       />
 
-      {active.map((ticket) => (
-        <ComplaintRow key={ticket._id} ticket={ticket} onPress={() => navigation.navigate(SCREENS.COMPLAINT_DETAIL, { ticketId: ticket._id })} />
-      ))}
-
-      {done.length > 0 ? <Text style={[typography.label, styles.section]}>Resolved</Text> : null}
-      {done.map((ticket) => (
-        <ComplaintRow key={ticket._id} ticket={ticket} onPress={() => navigation.navigate(SCREENS.COMPLAINT_DETAIL, { ticketId: ticket._id })} />
-      ))}
+      {sections.map((section) =>
+        section.rows.length > 0 ? (
+          <View key={section.key}>
+            {section.title ? <Text style={[typography.label, styles.section]}>{section.title}</Text> : null}
+            {section.rows.map((row) => (
+              <ComplaintRow key={row._id} row={row} onPress={() => open(row)} />
+            ))}
+          </View>
+        ) : null
+      )}
     </Screen>
   );
 }
 
-function ComplaintRow({ ticket, onPress }) {
-  const late = overdueText(ticket);
+function ComplaintRow({ row, onPress }) {
+  const unassigned = row.status === "open";
+  const priority = PRIORITY[row.priority];
+  const overdue = isVisitOverdue(row);
 
   return (
-    <Card onPress={onPress} testID={`complaint-row-${ticket._id}`}>
+    <Card onPress={onPress} style={unassigned && styles.unassigned} testID={`complaint-row-${row._id}`}>
       <View style={styles.header}>
         <Text style={[typography.body, styles.name]} numberOfLines={1}>
-          {ticket.number ? `${ticket.number} · ` : ""}
-          {ticket.customerName || "Customer"}
+          {row.number} · {row.customerName || row.contactName || "Customer"}
         </Text>
-        <StatusPill label={STATUS_LABEL[ticket.status] || ticket.status} tone={STATUS_TONE[ticket.status]} />
+        <StatusPill label={STATUS_LABEL[row.status] || row.status} tone={STATUS_TONE[row.status]} testID={unassigned ? `complaint-unassigned-${row._id}` : undefined} />
       </View>
-      <Text style={[typography.small, styles.line]}>
-        {CATEGORY_LABEL[ticket.category] || "Complaint"} · {timeAgo(ticket.createdAt)}
+      <Text style={[typography.body, styles.line]} numberOfLines={1}>
+        {row.description}
       </Text>
-      {late ? (
-        <Text style={[typography.small, styles.late]} testID={`complaint-late-${ticket._id}`}>
-          {late}
+      <View style={styles.footer}>
+        <Text style={[typography.small, styles.meta]} numberOfLines={1}>
+          {row.contactPhone} · {timeAgo(row.createdAt)}
+          {row.assigneeName ? ` · ${row.assigneeName}` : ""}
+          {row.visitDate ? ` · visit ${formatDate(row.visitDate)}` : ""}
         </Text>
-      ) : null}
+        {priority ? <StatusPill label={priority.label} tone={priority.tone} /> : null}
+      </View>
+      {overdue ? <Text style={[typography.small, styles.late]}>Visit date has passed</Text> : null}
     </Card>
   );
 }
 
 const styles = StyleSheet.create({
+  filters: { marginBottom: spacing.md },
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: spacing.sm },
   name: { flex: 1, fontWeight: "600" },
   line: { marginTop: spacing.xs },
+  footer: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: spacing.sm, marginTop: spacing.xs },
+  meta: { flex: 1 },
   late: { marginTop: spacing.xs, color: colors.danger, fontWeight: "600" },
   section: { marginTop: spacing.lg, marginBottom: spacing.sm },
+  unassigned: { borderLeftWidth: 4, borderLeftColor: colors.danger },
 });
 
 export default ComplaintsScreen;

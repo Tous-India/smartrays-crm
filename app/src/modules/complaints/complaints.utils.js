@@ -1,18 +1,40 @@
-// Plain words for customer complaints (2026-10-22), matching the web's.
+import Config from "react-native-config";
+import { toDateKey } from "../../utils/date.utils";
 
-export const COMPLAINT_STATUS = { OPEN: "open", IN_PROGRESS: "in_progress", RESOLVED: "resolved", CLOSED: "closed" };
+// Plain words for customer complaints (2026-10-23), matching the web's.
 
-export const STATUS_LABEL = { open: "Waiting", in_progress: "In progress", resolved: "Resolved", closed: "Resolved" };
-export const STATUS_TONE = { open: "neutral", in_progress: "warning", resolved: "success", closed: "success" };
-
-export const CATEGORY_LABEL = {
-  technical: "Not working",
-  sales_billing: "Billing / Payment",
-  installation: "Installation",
-  other: "Something else",
-  new_project: "New project",
-  existing_client_query: "Customer query",
+export const STATUS_LABEL = {
+  open: "Not assigned",
+  assigned: "Assigned",
+  on_the_way: "On the way",
+  working: "Working",
+  resolved: "Resolved",
+  closed: "Resolved",
 };
+export const STATUS_TONE = {
+  open: "danger",
+  assigned: "info",
+  on_the_way: "info",
+  working: "warning",
+  resolved: "success",
+  closed: "success",
+};
+
+// The technician's steps after Assigned, in order.
+export const WORK_STEPS = [
+  { value: "on_the_way", label: "On the way" },
+  { value: "working", label: "Working" },
+  { value: "resolved", label: "Resolved" },
+];
+const STEP_INDEX = { assigned: 0, on_the_way: 1, working: 2, resolved: 3 };
+
+export const PRIORITIES = [
+  { value: "low", label: "Low", tone: "neutral" },
+  { value: "medium", label: "Medium", tone: "info" },
+  { value: "high", label: "High", tone: "warning" },
+  { value: "urgent", label: "Urgent", tone: "danger" },
+];
+export const PRIORITY = Object.fromEntries(PRIORITIES.map((p) => [p.value, p]));
 
 export const CALLBACK_LABEL = {
   morning: "Morning (9 – 12)",
@@ -21,32 +43,25 @@ export const CALLBACK_LABEL = {
   anytime: "Any time",
 };
 
-// The server escalates after these (ticketEscalation.service.js).
-const ACKNOWLEDGE_HOURS = 4;
-const RESOLVE_HOURS = 48;
-const HOUR = 3600000;
-
-export function isActive(ticket) {
-  return ticket.status === COMPLAINT_STATUS.OPEN || ticket.status === COMPLAINT_STATUS.IN_PROGRESS;
+export function isResolved(complaint) {
+  return complaint.status === "resolved" || complaint.status === "closed";
 }
 
-/** "Not picked up for 6 h" / "Open 3 days" when past the rule, else null. */
-export function overdueText(ticket, now = Date.now()) {
-  const ageHours = (now - new Date(ticket.createdAt).getTime()) / HOUR;
-  if (ticket.status === COMPLAINT_STATUS.OPEN && ageHours >= ACKNOWLEDGE_HOURS) return `Not picked up for ${Math.floor(ageHours)} h`;
-  if (ticket.status === COMPLAINT_STATUS.IN_PROGRESS && ageHours >= RESOLVE_HOURS) return `Open ${Math.floor(ageHours / 24)} days`;
-  return null;
+export function isActive(complaint) {
+  return !isResolved(complaint);
 }
 
-/** Active first, overdue first among them, then oldest first. */
-export function sortForWork(tickets, now = Date.now()) {
-  return [...tickets].sort((a, b) => {
-    const active = Number(isActive(b)) - Number(isActive(a));
-    if (active) return active;
-    const overdue = Number(Boolean(overdueText(b, now))) - Number(Boolean(overdueText(a, now)));
-    if (overdue) return overdue;
-    return new Date(a.createdAt) - new Date(b.createdAt);
-  });
+/** The steps still ahead of this complaint — none until it is assigned. */
+export function nextSteps(complaint) {
+  const current = STEP_INDEX[complaint.status];
+  if (current === undefined || isResolved(complaint)) return [];
+  return WORK_STEPS.filter((step) => STEP_INDEX[step.value] > current);
+}
+
+/** Its visit date is before today and it is still being worked on. */
+export function isVisitOverdue(complaint, today = new Date()) {
+  if (!complaint.visitDate || complaint.status === "open" || isResolved(complaint)) return false;
+  return complaint.visitDate < toDateKey(today);
 }
 
 export function timeAgo(iso, now = Date.now()) {
@@ -56,4 +71,21 @@ export function timeAgo(iso, now = Date.now()) {
   const hours = Math.round(minutes / 60);
   if (hours < 48) return `${hours} h ago`;
   return `${Math.round(hours / 24)} days ago`;
+}
+
+/** Google Maps at the phone's GPS pin when the customer shared it, else the typed address. */
+export function mapsUrl(complaint) {
+  const query = complaint.location ? `${complaint.location.lat},${complaint.location.lng}` : encodeURIComponent(complaint.address || "");
+  return `https://www.google.com/maps/search/?api=1&query=${query}`;
+}
+
+// --- sharing the one public complaint form ---
+
+/** `https://crm…/complaint`, or null when the build has no WEB_APP_URL. */
+export function complaintFormUrl() {
+  return Config.WEB_APP_URL ? `${Config.WEB_APP_URL.replace(/\/+$/, "")}/complaint` : null;
+}
+
+export function complaintShareText(url) {
+  return `For any issue with your solar system, tell us here: ${url}`;
 }

@@ -12,6 +12,8 @@ const TONES = {
   success: { backgroundColor: colors.brandGreen, color: colors.textOnBrand },
   danger: { backgroundColor: colors.dangerBg, color: colors.danger },
   warning: { backgroundColor: "#fff7e6", color: "#ad6800" },
+  // Assigned / On the way (2026-10-23) — in hand, nothing wrong.
+  info: { backgroundColor: "#e8eef8", color: colors.brandNavy },
 };
 
 function StatusPill({ label, tone = "neutral", style, testID }) {

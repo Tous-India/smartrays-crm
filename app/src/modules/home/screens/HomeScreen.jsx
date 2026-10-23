@@ -42,16 +42,11 @@ function HomeScreen({ navigation }) {
     { initialData: [], deps: [user?._id] }
   );
 
-  // Customer complaints (2026-10-22): mine, for anyone who can see complaints.
+  // Customer complaints (2026-10-23): for an assigner, the ones not assigned
+  // yet; for anyone else, their own (the server sends only those).
   const { permissions } = useMyPermissions();
-  const canSeeComplaints = can(permissions, "tickets", "view_assigned") || can(permissions, "tickets", "view_all");
-  const myComplaints = useServerData(
-    async () =>
-      canSeeComplaints
-        ? (await listComplaints()).data.data.filter((ticket) => String(ticket.assignedToId) === String(user?._id))
-        : [],
-    { initialData: [], deps: [user?._id, canSeeComplaints] }
-  );
+  const isComplaintAssigner = can(permissions, "complaints", "assign") || can(permissions, "complaints", "view_all");
+  const myComplaints = useServerData(async () => (await listComplaints()).data.data, { initialData: [], deps: [user?._id] });
 
   useFocusEffect(
     useCallback(() => {
@@ -116,14 +111,13 @@ function HomeScreen({ navigation }) {
         onOpen={() => navigation.navigate(SCREENS.SERVICES_TAB)}
       />
 
-      {canSeeComplaints ? (
-        <ComplaintsCard
-          complaints={myComplaints.data}
-          isLoading={myComplaints.isLoading}
-          error={myComplaints.error}
-          onOpen={() => navigation.navigate(SCREENS.SERVICES_TAB, { screen: SCREENS.COMPLAINTS, initial: false })}
-        />
-      ) : null}
+      <ComplaintsCard
+        isAssigner={isComplaintAssigner}
+        complaints={myComplaints.data}
+        isLoading={myComplaints.isLoading}
+        error={myComplaints.error}
+        onOpen={() => navigation.navigate(SCREENS.SERVICES_TAB, { screen: SCREENS.COMPLAINTS, initial: false })}
+      />
     </Screen>
   );
 }

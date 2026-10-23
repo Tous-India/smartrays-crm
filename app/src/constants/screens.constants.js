@@ -7,6 +7,8 @@ export const SCREENS = {
   CAPTURE: "Capture",
   // Site photo for a verified visit (2026-10-22) — full screen, like Capture.
   VISIT_PHOTO: "VisitPhoto",
+  // A live-camera photo for a complaint (2026-10-23) — full screen too.
+  COMPLAINT_PHOTO: "ComplaintPhoto",
   TRACKING_DISCLOSURE: "TrackingDisclosure",
   BATTERY_GUIDANCE: "BatteryGuidance",
   UNSUPPORTED_ROLE: "UnsupportedRole",
@@ -18,6 +20,7 @@ export const SCREENS = {
   // Customer complaints (2026-10-22) — inside the Services (work) tab.
   COMPLAINTS: "Complaints",
   COMPLAINT_DETAIL: "ComplaintDetail",
+  ASSIGN_COMPLAINT: "AssignComplaint",
   LEAVE_TAB: "LeaveTab",
   LEAVE: "Leave",
   APPLY_LEAVE: "ApplyLeave",

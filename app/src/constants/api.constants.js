@@ -26,8 +26,8 @@ export const API_PATHS = {
   LOCATION_LIVE: "/location/live",
   SERVICE_ASSIGNEES: "/services/assignees",
   PUSH_DEVICES: "/notifications/devices",
-  // Customer complaints (2026-10-22) — the web's ticket endpoints.
-  TICKETS: "/tickets",
+  // Customer complaints (2026-10-23) — the web's complaint endpoints.
+  COMPLAINTS: "/complaints",
   // Verified site visits (2026-10-22).
   VISITS: "/visits",
 };

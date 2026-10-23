@@ -7,6 +7,7 @@ import ServicesScreen from "../modules/services/screens/ServicesScreen";
 import ServiceDetailScreen from "../modules/services/screens/ServiceDetailScreen";
 import ComplaintsScreen from "../modules/complaints/screens/ComplaintsScreen";
 import ComplaintDetailScreen from "../modules/complaints/screens/ComplaintDetailScreen";
+import AssignComplaintScreen from "../modules/complaints/screens/AssignComplaintScreen";
 import LeaveScreen from "../modules/leave/screens/LeaveScreen";
 import ApplyLeaveScreen from "../modules/leave/screens/ApplyLeaveScreen";
 import MeScreen from "../modules/me/screens/MeScreen";
@@ -42,6 +43,7 @@ function ServicesTab() {
       <ServicesStack.Screen name={SCREENS.SERVICE_DETAIL} component={ServiceDetailScreen} />
       <ServicesStack.Screen name={SCREENS.COMPLAINTS} component={ComplaintsScreen} />
       <ServicesStack.Screen name={SCREENS.COMPLAINT_DETAIL} component={ComplaintDetailScreen} />
+      <ServicesStack.Screen name={SCREENS.ASSIGN_COMPLAINT} component={AssignComplaintScreen} />
     </ServicesStack.Navigator>
   );
 }

@@ -2,22 +2,46 @@ import apiClient from "../../../api/apiClient";
 import { API_PATHS } from "../../../constants/api.constants";
 
 /**
- * Customer complaints (2026-10-22) — the web's ticket endpoints over Bearer
- * auth. Which complaints come back is the server's decision (an employee:
- * the ones assigned to them; a manager or admin: all).
+ * Customer complaints (2026-10-23) — the web's /complaints endpoints over
+ * Bearer auth. Which complaints come back is the server's decision
+ * (assigners: all; anyone else: the ones assigned to them).
  */
 
-/** `GET /tickets` — each row carries `customerName` and `assigneeName`. */
+const MULTIPART = { headers: { "Content-Type": "multipart/form-data" } };
+
+/** `GET /complaints` — unassigned first, then newest. */
 export function listComplaints() {
-  return apiClient.get(API_PATHS.TICKETS);
+  return apiClient.get(API_PATHS.COMPLAINTS);
 }
 
-/** `GET /tickets/:id` — who to call, what was said, signed photo links. 404 when out of scope. */
+/** `GET /complaints/:id` — everything about one; 404 when out of scope. */
 export function getComplaint(ticketId) {
-  return apiClient.get(`${API_PATHS.TICKETS}/${ticketId}`);
+  return apiClient.get(`${API_PATHS.COMPLAINTS}/${ticketId}`);
 }
 
-/** `PATCH /tickets/:id/status` — the assignee may move their own. */
-export function setComplaintStatus(ticketId, status, comment) {
-  return apiClient.patch(`${API_PATHS.TICKETS}/${ticketId}/status`, comment ? { status, comment } : { status });
+/** `GET /complaints/assignees` — every active staff member (assigners only). */
+export function listComplaintAssignees() {
+  return apiClient.get(`${API_PATHS.COMPLAINTS}/assignees`);
+}
+
+/** `PATCH /complaints/:id/assign` — technician, priority, visit date ("YYYY-MM-DD"). */
+export function assignComplaint(ticketId, { assignedToId, priority, visitDate }) {
+  return apiClient.patch(`${API_PATHS.COMPLAINTS}/${ticketId}/assign`, { assignedToId, priority, visitDate });
+}
+
+/** `PATCH /complaints/:id/status` — on_the_way, working or resolved; forward only. */
+export function changeComplaintStatus(ticketId, status, note) {
+  return apiClient.patch(`${API_PATHS.COMPLAINTS}/${ticketId}/status`, note ? { status, note } : { status });
+}
+
+/** `POST /complaints/:id/photos` — one live-camera photo. */
+export function addComplaintPhoto(ticketId, photoUri) {
+  const form = new FormData();
+  form.append("photo", { uri: photoUri, name: "complaint.jpg", type: "image/jpeg" });
+  return apiClient.post(`${API_PATHS.COMPLAINTS}/${ticketId}/photos`, form, MULTIPART);
+}
+
+/** `POST /complaints/:id/send-back` — back to the assigners, unassigned, with a reason. */
+export function sendComplaintBack(ticketId, reason) {
+  return apiClient.post(`${API_PATHS.COMPLAINTS}/${ticketId}/send-back`, { reason });
 }

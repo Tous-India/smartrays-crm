@@ -8,50 +8,79 @@ import StatusPill from "../../../components/StatusPill";
 import ListState from "../../../components/ListState";
 import PrimaryButton from "../../../components/PrimaryButton";
 import TextField from "../../../components/TextField";
+import LinkText from "../../../components/LinkText";
 import ErrorBanner from "../../../components/ErrorBanner";
 import OfflineNote from "../../../components/OfflineNote";
 import useServerData from "../../../hooks/useServerData";
 import useIsOnline from "../../../hooks/useIsOnline";
-import useMyPermissions, { can } from "../../../hooks/useMyPermissions";
 import useSessionStore from "../../../store/sessionStore";
-import { getComplaint, setComplaintStatus } from "../api/complaintApi";
-import { CALLBACK_LABEL, CATEGORY_LABEL, COMPLAINT_STATUS, STATUS_LABEL, STATUS_TONE, timeAgo } from "../complaints.utils";
+import { changeComplaintStatus, getComplaint, sendComplaintBack } from "../api/complaintApi";
+import { CALLBACK_LABEL, PRIORITY, STATUS_LABEL, STATUS_TONE, isResolved, mapsUrl, nextSteps, timeAgo } from "../complaints.utils";
+import { SCREENS } from "../../../constants/screens.constants";
 import { messageFromError } from "../../../utils/apiError.utils";
+import { formatDate } from "../../../utils/date.utils";
 import { colors, spacing, typography } from "../../../theme";
 
 /**
- * One customer complaint (2026-10-22), for the person handling it in the
- * field: one big Call button, when the customer wants the call, what they
- * said, their photos — then the one next step: "I'm on it", then "Mark
- * resolved". The server decides who may move it (the assignee, or someone
- * holding tickets.assign); the buttons show only for them, and a refusal is
- * shown in the server's words. Offline, the buttons stay, disabled (§3.3).
+ * One customer complaint (2026-10-23), for the person handling it in the
+ * field: one big Call button, Google Maps, what the customer said, the
+ * matched customer, who assigned it. Assigners get Assign / Reassign; the
+ * technician the next steps (On the way → Working → Resolved, with an
+ * optional note), a live photo, and Send back with a reason. The server
+ * decides who may do what (`canAssign`, `canWork`); a refusal is shown in its
+ * words. Offline, the buttons stay, disabled (§3.3).
  */
+const HISTORY_TEXT = {
+  sent_back: (entry) => `Sent back — ${entry.comment}`,
+  status_change: (entry) => `${STATUS_LABEL[entry.toStatus] || entry.toStatus}${entry.comment ? ` — ${entry.comment}` : ""}`,
+};
+
+function historyText(entry) {
+  if (entry.type === "comment" && entry.by === "Customer") return "Complaint received";
+  return HISTORY_TEXT[entry.type]?.(entry) ?? entry.comment ?? entry.type;
+}
+
 function ComplaintDetailScreen({ navigation, route }) {
   const { ticketId } = route.params;
   const isOnline = useIsOnline();
   const me = useSessionStore((state) => state.user);
-  const { permissions } = useMyPermissions();
   const complaint = useServerData(async () => (await getComplaint(ticketId)).data.data, { deps: [ticketId] });
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(null);
   const [actionError, setActionError] = useState(null);
+  const [sendingBack, setSendingBack] = useState(false);
+  const [reason, setReason] = useState("");
+  const [reasonError, setReasonError] = useState(null);
 
   const record = complaint.data;
-  const canAct = Boolean(record) && (can(permissions, "tickets", "assign") || String(record.assignedTo?._id) === String(me?._id));
-  // The person who raised it, if they left a number (2026-10-23); otherwise
-  // the customer's primary contact, then the customer's own phone.
-  const raisedBy = record?.raisedBy;
-  const contact = raisedBy?.phone ? raisedBy : record?.customer.primaryContact;
-  const phone = raisedBy?.phone || contact?.phone || record?.customer.phone;
+  const isMine = Boolean(record?.assignedTo) && String(record.assignedTo._id) === String(me?._id);
+  const canWork = Boolean(record?.canWork && record.assignedTo) && !isResolved(record);
+  const priority = record ? PRIORITY[record.priority] : null;
 
-  async function move(status, comment) {
+  async function move(status) {
     setBusy(status);
     setActionError(null);
     try {
-      await setComplaintStatus(ticketId, status, comment);
+      await changeComplaintStatus(ticketId, status, note.trim() || undefined);
       setNote("");
       await complaint.refetch();
+    } catch (error) {
+      setActionError(messageFromError(error));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function sendBack() {
+    if (reason.trim().length < 5) {
+      setReasonError("Please say why you are sending it back.");
+      return;
+    }
+    setBusy("send-back");
+    setActionError(null);
+    try {
+      await sendComplaintBack(ticketId, reason.trim());
+      navigation.goBack();
     } catch (error) {
       setActionError(messageFromError(error));
     } finally {
@@ -69,83 +98,169 @@ function ComplaintDetailScreen({ navigation, route }) {
         <>
           <Card>
             <View style={styles.header}>
-              <Text style={[typography.body, styles.customer]}>{record.customer.companyName}</Text>
+              <Text style={[typography.body, styles.customer]}>{record.contactName || "Customer"}</Text>
               <StatusPill label={STATUS_LABEL[record.status]} tone={STATUS_TONE[record.status]} testID="complaint-status" />
             </View>
-            {record.customer.siteAddress ? <Text style={[typography.small, styles.line]}>{record.customer.siteAddress}</Text> : null}
-            {raisedBy ? (
-              <Text style={[typography.body, styles.line]} testID="complaint-raised-by">
-                Raised by {raisedBy.name || "the customer"}
-                {raisedBy.phone ? ` · ${raisedBy.phone}` : ""}
+            <Text style={[typography.small, styles.line, record.matchedCustomer ? styles.matched : null]} testID="complaint-match">
+              {record.matchedCustomer
+                ? `Existing customer: ${record.matchedCustomer.companyName}${record.matchedCustomer.commissioningDate ? `, installed ${formatDate(record.matchedCustomer.commissioningDate)}` : ""}`
+                : "Not matched to an existing customer"}
+            </Text>
+            {record.address ? <Text style={[typography.body, styles.line]}>{record.address}</Text> : null}
+            {record.callbackTime ? (
+              <Text style={[typography.small, styles.line]} testID="complaint-callback">
+                Wants a call: {CALLBACK_LABEL[record.callbackTime]}
               </Text>
             ) : null}
 
-            {phone ? (
+            {record.contactPhone ? (
               <Pressable
-                onPress={() => Linking.openURL(`tel:${phone.replace(/\s+/g, "")}`)}
+                onPress={() => Linking.openURL(`tel:${record.contactPhone.replace(/[^\d+]/g, "")}`)}
                 accessibilityRole="button"
-                accessibilityLabel={`Call ${contact?.name || "customer"}`}
+                accessibilityLabel={`Call ${record.contactName || "customer"}`}
                 style={styles.call}
                 testID="complaint-call"
               >
                 <Ionicons name="call" size={22} color={colors.textOnBrand} />
                 <Text style={styles.callText} numberOfLines={1}>
-                  Call {contact?.name || "customer"} · {phone}
+                  Call {record.contactPhone}
                 </Text>
               </Pressable>
-            ) : (
-              <Text style={[typography.small, styles.line]}>No phone number saved for this customer.</Text>
-            )}
-            {record.callbackTime ? (
-              <Text style={[typography.body, styles.line]} testID="complaint-callback">
-                Wants a call: {CALLBACK_LABEL[record.callbackTime]}
-              </Text>
             ) : null}
+            <Pressable onPress={() => Linking.openURL(mapsUrl(record))} accessibilityRole="button" style={styles.maps} testID="complaint-maps">
+              <Ionicons name="navigate" size={20} color={colors.brandNavy} />
+              <Text style={styles.mapsText}>Open in Google Maps</Text>
+            </Pressable>
           </Card>
 
           <Card>
-            <Text style={typography.small}>
-              {CATEGORY_LABEL[record.category] || "Complaint"} · raised {timeAgo(record.createdAt)}
+            <Text style={typography.small}>Sent {timeAgo(record.createdAt)}</Text>
+            <Text style={[typography.body, styles.line]} testID="complaint-description">
+              {record.description}
             </Text>
-            {record.description ? (
-              <Text style={[typography.body, styles.line]} testID="complaint-description">
-                {record.description}
-              </Text>
-            ) : null}
-            {record.photoUrls.length > 0 ? (
+            {record.customerPhotos.length > 0 ? (
               <View style={styles.photos}>
-                {record.photoUrls.map((url, index) => (
-                  <Pressable key={url} onPress={() => Linking.openURL(url)} accessibilityLabel={`Open photo ${index + 1}`} testID={`complaint-photo-${index}`}>
-                    <Image source={{ uri: url }} style={styles.photo} />
+                {record.customerPhotos.map((photo, index) => (
+                  <Pressable key={photo.url} onPress={() => Linking.openURL(photo.url)} accessibilityLabel={`Open customer photo ${index + 1}`} testID={`complaint-photo-${index}`}>
+                    <Image source={{ uri: photo.url }} style={styles.photo} />
                   </Pressable>
                 ))}
               </View>
             ) : null}
           </Card>
 
+          <Card>
+            <View style={styles.header}>
+              <Text style={typography.label}>Assignment</Text>
+              {priority ? <StatusPill label={priority.label} tone={priority.tone} /> : null}
+            </View>
+            {record.assignedTo ? (
+              <>
+                <Text style={[typography.body, styles.line, styles.bold]}>
+                  {record.assignedTo.name}
+                  {record.visitDate ? ` · visit ${formatDate(record.visitDate)}` : ""}
+                </Text>
+                {record.assignedBy ? <Text style={[typography.small, styles.line]}>Assigned by {record.assignedBy.name}</Text> : null}
+              </>
+            ) : (
+              <Text style={[typography.body, styles.line, styles.danger]}>Not assigned yet</Text>
+            )}
+            {record.canAssign ? (
+              <PrimaryButton
+                title={record.assignedTo ? "Reassign" : "Assign"}
+                onPress={() => navigation.navigate(SCREENS.ASSIGN_COMPLAINT, { ticketId })}
+                disabled={!isOnline}
+                style={styles.button}
+                testID="complaint-assign"
+              />
+            ) : null}
+          </Card>
+
           <ErrorBanner message={actionError} testID="complaint-action-error" />
 
-          {canAct && record.status === COMPLAINT_STATUS.OPEN ? (
-            <PrimaryButton title="I'm on it" onPress={() => move(COMPLAINT_STATUS.IN_PROGRESS)} loading={busy === COMPLAINT_STATUS.IN_PROGRESS} disabled={!isOnline || busy !== null} testID="complaint-on-it" />
+          {canWork ? (
+            <Card>
+              <Text style={typography.label}>Update</Text>
+              <TextField label="Note (optional)" value={note} onChangeText={setNote} maxLength={1000} containerStyle={styles.button} testID="complaint-note" />
+              {nextSteps(record).map((step) => (
+                <PrimaryButton
+                  key={step.value}
+                  title={step.label}
+                  onPress={() => move(step.value)}
+                  loading={busy === step.value}
+                  disabled={!isOnline || busy !== null}
+                  style={styles.button}
+                  testID={`complaint-step-${step.value}`}
+                />
+              ))}
+              <Pressable
+                onPress={() => navigation.navigate(SCREENS.COMPLAINT_PHOTO, { ticketId })}
+                disabled={!isOnline}
+                accessibilityRole="button"
+                style={[styles.secondary, !isOnline && styles.disabled]}
+                testID="complaint-photo"
+              >
+                <Ionicons name="camera-outline" size={20} color={colors.brandNavy} />
+                <Text style={styles.mapsText}>Add photo</Text>
+              </Pressable>
+
+              {isMine && !sendingBack ? (
+                <View style={styles.sendBackLink}>
+                  <LinkText
+                    title={`Send back${record.assignedBy ? ` to ${record.assignedBy.name.split(" ")[0]}` : ""}`}
+                    onPress={() => setSendingBack(true)}
+                    testID="complaint-send-back"
+                  />
+                </View>
+              ) : null}
+              {isMine && sendingBack ? (
+                <>
+                  <TextField
+                    label="Why are you sending it back?"
+                    value={reason}
+                    onChangeText={(value) => {
+                      setReason(value);
+                      setReasonError(null);
+                    }}
+                    maxLength={500}
+                    error={reasonError}
+                    containerStyle={styles.button}
+                    testID="complaint-send-back-reason"
+                  />
+                  <PrimaryButton
+                    title="Send back"
+                    onPress={sendBack}
+                    loading={busy === "send-back"}
+                    disabled={!isOnline || busy !== null}
+                    style={styles.button}
+                    testID="complaint-send-back-confirm"
+                  />
+                </>
+              ) : null}
+              {!isOnline ? <OfflineNote what="updating a complaint" /> : null}
+            </Card>
           ) : null}
 
-          {canAct && (record.status === COMPLAINT_STATUS.OPEN || record.status === COMPLAINT_STATUS.IN_PROGRESS) ? (
-            <>
-              <TextField label="What was done? (optional)" value={note} onChangeText={setNote} maxLength={500} containerStyle={styles.note} testID="complaint-note" />
-              <PrimaryButton title="Mark resolved" onPress={() => move(COMPLAINT_STATUS.RESOLVED, note.trim() || undefined)} loading={busy === COMPLAINT_STATUS.RESOLVED} disabled={!isOnline || busy !== null} testID="complaint-resolve" />
-            </>
+          {record.staffPhotos.length > 0 ? (
+            <Card>
+              <Text style={typography.label}>Photos from the site</Text>
+              <View style={styles.photos}>
+                {record.staffPhotos.map((photo, index) => (
+                  <Pressable key={photo.url} onPress={() => Linking.openURL(photo.url)} accessibilityLabel={`Open site photo ${index + 1}`}>
+                    <Image source={{ uri: photo.url }} style={styles.photo} />
+                  </Pressable>
+                ))}
+              </View>
+            </Card>
           ) : null}
-
-          {!isOnline && canAct ? <OfflineNote what="updating a complaint" /> : null}
 
           <Text style={[typography.label, styles.section]}>History</Text>
           {record.history.map((entry, index) => (
             <View key={index} style={styles.history}>
+              <Text style={typography.body}>{historyText(entry)}</Text>
               <Text style={typography.small}>
                 {entry.by} · {timeAgo(entry.createdAt)}
               </Text>
-              {entry.type === "status_change" ? <Text style={typography.body}>Changed to {STATUS_LABEL[entry.toStatus]}</Text> : null}
-              {entry.comment ? <Text style={typography.body}>{entry.comment}</Text> : null}
             </View>
           ))}
         </>
@@ -158,6 +273,9 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: spacing.sm },
   customer: { flex: 1, fontWeight: "600" },
   line: { marginTop: spacing.sm },
+  bold: { fontWeight: "600" },
+  matched: { color: colors.brandGreen, fontWeight: "600" },
+  danger: { color: colors.danger, fontWeight: "600" },
   call: {
     marginTop: spacing.md,
     minHeight: 52,
@@ -170,9 +288,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
   },
   callText: { color: colors.textOnBrand, fontSize: 16, fontWeight: "600", flexShrink: 1 },
-  photos: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
+  maps: { marginTop: spacing.sm, minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm },
+  mapsText: { color: colors.brandNavy, fontSize: 16, fontWeight: "600" },
+  secondary: {
+    marginTop: spacing.md,
+    minHeight: 52,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.brandNavy,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: spacing.sm,
+  },
+  disabled: { opacity: 0.5 },
+  sendBackLink: { marginTop: spacing.lg, alignSelf: "center" },
+  photos: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.md },
   photo: { width: 96, height: 96, borderRadius: 8, backgroundColor: colors.brandPanelAlt },
-  note: { marginTop: spacing.md },
+  button: { marginTop: spacing.md },
   section: { marginTop: spacing.lg, marginBottom: spacing.sm },
   history: { paddingVertical: spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
 });

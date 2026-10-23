@@ -5,6 +5,7 @@ import CaptureScreen from "../modules/attendance/screens/CaptureScreen";
 import TrackingDisclosureScreen from "../modules/tracking/screens/TrackingDisclosureScreen";
 import BatteryGuidanceScreen from "../modules/tracking/screens/BatteryGuidanceScreen";
 import VisitPhotoScreen from "../modules/visits/screens/VisitPhotoScreen";
+import ComplaintPhotoScreen from "../modules/complaints/screens/ComplaintPhotoScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -19,6 +20,7 @@ function EmployeeNavigator() {
       <Stack.Screen name={SCREENS.MAIN_TABS} component={EmployeeTabs} />
       <Stack.Screen name={SCREENS.CAPTURE} component={CaptureScreen} />
       <Stack.Screen name={SCREENS.VISIT_PHOTO} component={VisitPhotoScreen} />
+      <Stack.Screen name={SCREENS.COMPLAINT_PHOTO} component={ComplaintPhotoScreen} />
       <Stack.Screen name={SCREENS.TRACKING_DISCLOSURE} component={TrackingDisclosureScreen} />
       <Stack.Screen name={SCREENS.BATTERY_GUIDANCE} component={BatteryGuidanceScreen} />
     </Stack.Navigator>
