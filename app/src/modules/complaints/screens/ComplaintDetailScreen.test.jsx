@@ -88,3 +88,14 @@ test("the server's refusal is shown in its own words", async () => {
 
   await waitFor(() => expect(screen.getByText("You do not have permission to change this ticket's status")).toBeTruthy());
 });
+
+// 2026-10-23: the customer may leave their own name and number on the complaint form.
+test("shows who raised it and calls the number they left", async () => {
+  getComplaint.mockReturnValue(ok({ ...COMPLAINT, raisedBy: { name: "Sunita", phone: "98111 22333" } }));
+  const openURL = jest.spyOn(Linking, "openURL").mockResolvedValue(true);
+  const screen = await render(<ComplaintDetailScreen navigation={navigation} route={route} />);
+
+  await waitFor(() => expect(screen.getByTestId("complaint-raised-by")).toBeTruthy());
+  await fireEvent.press(screen.getByTestId("complaint-call"));
+  expect(openURL).toHaveBeenCalledWith("tel:9811122333");
+});

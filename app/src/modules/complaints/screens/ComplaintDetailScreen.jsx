@@ -39,8 +39,11 @@ function ComplaintDetailScreen({ navigation, route }) {
 
   const record = complaint.data;
   const canAct = Boolean(record) && (can(permissions, "tickets", "assign") || String(record.assignedTo?._id) === String(me?._id));
-  const contact = record?.customer.primaryContact;
-  const phone = contact?.phone || record?.customer.phone;
+  // The person who raised it, if they left a number (2026-10-23); otherwise
+  // the customer's primary contact, then the customer's own phone.
+  const raisedBy = record?.raisedBy;
+  const contact = raisedBy?.phone ? raisedBy : record?.customer.primaryContact;
+  const phone = raisedBy?.phone || contact?.phone || record?.customer.phone;
 
   async function move(status, comment) {
     setBusy(status);
@@ -70,6 +73,12 @@ function ComplaintDetailScreen({ navigation, route }) {
               <StatusPill label={STATUS_LABEL[record.status]} tone={STATUS_TONE[record.status]} testID="complaint-status" />
             </View>
             {record.customer.siteAddress ? <Text style={[typography.small, styles.line]}>{record.customer.siteAddress}</Text> : null}
+            {raisedBy ? (
+              <Text style={[typography.body, styles.line]} testID="complaint-raised-by">
+                Raised by {raisedBy.name || "the customer"}
+                {raisedBy.phone ? ` · ${raisedBy.phone}` : ""}
+              </Text>
+            ) : null}
 
             {phone ? (
               <Pressable
