@@ -1,136 +1,95 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { App } from "antd";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import ComplaintsPage from "./ComplaintsPage";
 import useSessionStore from "../../../store/sessionStore";
 import * as complaintApi from "../api/complaintApi";
 
-vi.mock("antd", async (importOriginal) => {
-  const actual = await importOriginal();
-  const mockMessage = { success: vi.fn(), error: vi.fn() };
-  actual.App.useApp = () => ({ message: mockMessage });
-  return { ...actual, message: mockMessage };
-});
-
 vi.mock("../api/complaintApi", () => ({
   listComplaints: vi.fn(),
-  getComplaint: vi.fn(),
-  changeComplaintStatus: vi.fn(),
-  addComplaintComment: vi.fn(),
-  reassignComplaint: vi.fn(),
-}));
-
-vi.mock("../../../services/userDirectoryApi", () => ({
-  fetchUserDropdown: vi.fn(async () => ({ data: { data: [] } })),
 }));
 
 const HOUR = 3600000;
 const ago = (hours) => new Date(Date.now() - hours * HOUR).toISOString();
 
-const EMPLOYEE = { _id: "emp-1", name: "Ritu", role: "employee", permissions: { tickets: { view_assigned: true } } };
+const ADMIN = { _id: "admin-1", name: "Vinay Gupta", role: "admin", permissions: {} };
+const COORDINATOR = { _id: "c-1", name: "Office", role: "employee", permissions: { complaints: { view_all: true, assign: true } } };
+const TECHNICIAN = { _id: "tech-1", name: "Suresh Kumar", role: "employee", permissions: {} };
 
-const TICKETS = [
-  { _id: "t1", number: 1001, status: "open", category: "technical", subject: "Technical — inverter beeping", customerName: "Sharma Residence", assignedToId: "emp-1", assigneeName: "Ritu", createdAt: ago(1) },
-  { _id: "t2", number: 1002, status: "open", category: "installation", subject: "Installation — loose wire", customerName: "Verma Villa", assignedToId: "emp-1", assigneeName: "Ritu", createdAt: ago(6) },
-  { _id: "t3", number: 1003, status: "in_progress", category: "sales_billing", subject: "Sales / Billing — wrong bill", customerName: "Kapil Clinic", assignedToId: "emp-1", assigneeName: "Ritu", createdAt: ago(3) },
-  { _id: "t4", number: 1000, status: "resolved", category: "other", subject: "Other — call me", customerName: "Saxena Home", assignedToId: "emp-1", assigneeName: "Ritu", createdAt: ago(80) },
+const ROWS = [
+  { _id: "a", number: 1006, status: "open", priority: null, contactName: "Meena Joshi", contactPhone: "98765 43210", customerName: null, description: "Panels look dusty and output is low.", assigneeName: null, visitDate: null, createdAt: ago(2) },
+  { _id: "b", number: 1005, status: "assigned", priority: "urgent", contactName: "Ramesh", contactPhone: "98100 12345", customerName: "Sharma Residence", description: "Inverter red light", assigneeName: "Suresh Kumar", visitDate: "2026-10-25", createdAt: ago(5) },
+  { _id: "c", number: 1001, status: "resolved", priority: "low", contactName: "Anil", contactPhone: "99999 88888", customerName: null, description: "Meter reading", assigneeName: "Suresh Kumar", visitDate: "2026-10-20", createdAt: ago(80) },
 ];
 
-const DETAIL = {
-  _id: "t2",
-  number: 1002,
-  status: "open",
-  category: "installation",
-  source: "complaint_link",
-  callbackTime: "evening",
-  description: "A wire is hanging near the panels",
-  customer: { _id: "c1", companyName: "Verma Villa", phone: "+91 99990 10000", siteAddress: "Sector 12, Dwarka", primaryContact: { name: "Anita Verma", phone: "+91 98990 20000" } },
-  assignedTo: { _id: "emp-1", name: "Ritu" },
-  photoUrls: ["https://signed.test/p1"],
-  createdAt: ago(6),
-  acknowledgedAt: null,
-  resolvedAt: null,
-  escalations: [],
-  history: [{ type: "comment", by: "Customer", comment: "A wire is hanging near the panels", createdAt: ago(6) }],
-};
-
-function renderPage(path = "/complaints") {
+function renderPage(user) {
+  useSessionStore.setState({ user });
   return render(
-    <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route path="/complaints" element={<ComplaintsPage />} />
-        <Route path="/complaints/:id" element={<ComplaintsPage />} />
-      </Routes>
-    </MemoryRouter>
+    <App>
+      <MemoryRouter initialEntries={["/complaints"]}>
+        <Routes>
+          <Route path="/complaints" element={<ComplaintsPage />} />
+          <Route path="/complaints/:id" element={<p>Detail page</p>} />
+        </Routes>
+      </MemoryRouter>
+    </App>
   );
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useSessionStore.setState({ user: EMPLOYEE });
-  complaintApi.listComplaints.mockResolvedValue({ data: { data: TICKETS } });
-  complaintApi.getComplaint.mockResolvedValue({ data: { data: DETAIL } });
-  complaintApi.changeComplaintStatus.mockResolvedValue({ data: { data: {} } });
+  complaintApi.listComplaints.mockResolvedValue({ data: { data: ROWS } });
 });
 
-describe("ComplaintsPage", () => {
-  it("splits complaints into Waiting / In progress / Resolved with counts", async () => {
-    renderPage();
+describe("ComplaintsPage — the assigners' list", () => {
+  it("lists every complaint with priority, name, phone, short description and age; unassigned highlighted on top", async () => {
+    renderPage(ADMIN);
 
-    expect(await screen.findByText(/Verma Villa/)).toBeInTheDocument();
-    expect(screen.getByText("Waiting (2)")).toBeInTheDocument();
-    expect(screen.getByText("In progress (1)")).toBeInTheDocument();
-    expect(screen.getByText("Resolved (1)")).toBeInTheDocument();
-    expect(screen.queryByText(/Kapil Clinic/)).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Complaints" })).toBeInTheDocument();
+    const rows = screen.getAllByTestId("complaint-row");
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toHaveAttribute("data-unassigned", "true");
+    expect(within(rows[0]).getByText("Not assigned")).toBeInTheDocument();
+    expect(within(rows[0]).getByText("Meena Joshi")).toBeInTheDocument();
+    expect(within(rows[0]).getByText(/98765 43210/)).toBeInTheDocument();
+    expect(within(rows[0]).getByText(/2 h ago/)).toBeInTheDocument();
+    expect(within(rows[1]).getByText("Urgent")).toBeInTheDocument();
+    expect(within(rows[1]).getByText("Sharma Residence")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Share complaint link/ })).toBeInTheDocument();
   });
 
-  it("puts the overdue one first and says so in red words", async () => {
-    renderPage();
-
-    const items = await screen.findAllByRole("listitem");
-    expect(within(items[0]).getByText(/Verma Villa/)).toBeInTheDocument();
-    expect(within(items[0]).getByText("Not picked up for 6 h")).toBeInTheDocument();
-    expect(within(items[1]).queryByText(/Not picked up/)).not.toBeInTheDocument();
-  });
-
-  it("opens a complaint with a one-tap call button and the customer's words", async () => {
-    renderPage();
+  it("filters Unassigned / Assigned / Resolved", async () => {
+    renderPage(COORDINATOR);
     const user = userEvent.setup();
+    await screen.findAllByTestId("complaint-row");
 
-    await user.click(await screen.findByText(/Verma Villa/));
-
-    const call = await screen.findByRole("link", { name: /Call Anita Verma/ });
-    expect(call).toHaveAttribute("href", "tel:+919899020000");
-    expect(screen.getByText("Wants a call:")).toBeInTheDocument();
-    expect(screen.getAllByText("A wire is hanging near the panels").length).toBeGreaterThan(0);
-    expect(screen.getByAltText("Customer photo 1")).toHaveAttribute("src", "https://signed.test/p1");
+    await user.click(screen.getByText(/^Unassigned/));
+    expect(screen.getAllByTestId("complaint-row").map((row) => row.dataset.number)).toEqual(["1006"]);
+    await user.click(screen.getByText(/^Assigned/));
+    expect(screen.getAllByTestId("complaint-row").map((row) => row.dataset.number)).toEqual(["1005"]);
+    await user.click(screen.getByText(/^Resolved/));
+    expect(screen.getAllByTestId("complaint-row").map((row) => row.dataset.number)).toEqual(["1001"]);
   });
 
-  it("lets the assignee say I'm on it", async () => {
-    renderPage("/complaints/t2");
+  it("opens a complaint on tap", async () => {
+    renderPage(ADMIN);
     const user = userEvent.setup();
-
-    await user.click(await screen.findByRole("button", { name: "I'm on it" }));
-
-    expect(complaintApi.changeComplaintStatus).toHaveBeenCalledWith("t2", "in_progress");
-  });
-
-  it("does not show the action buttons to someone who is not the assignee", async () => {
-    useSessionStore.setState({ user: { ...EMPLOYEE, _id: "emp-2" } });
-    renderPage("/complaints/t2");
-
-    expect(await screen.findByRole("link", { name: /Call Anita Verma/ })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "I'm on it" })).not.toBeInTheDocument();
+    await user.click((await screen.findAllByTestId("complaint-row"))[1]);
+    expect(await screen.findByText("Detail page")).toBeInTheDocument();
   });
 });
 
-describe("ComplaintsPage — who raised it (2026-10-23)", () => {
-  it("shows who raised it and calls their number first", async () => {
-    complaintApi.getComplaint.mockResolvedValue({ data: { data: { ...DETAIL, raisedBy: { name: "Sunita", phone: "98111 22333" } } } });
-    renderPage("/complaints/t2");
+describe("ComplaintsPage — a technician's 'My complaints'", () => {
+  it("is titled My complaints, without the share button or the assigners' filters", async () => {
+    complaintApi.listComplaints.mockResolvedValue({ data: { data: ROWS.slice(1) } });
+    renderPage(TECHNICIAN);
 
-    expect(await screen.findByTestId("complaint-raised-by")).toHaveTextContent("Raised by Sunita · 98111 22333");
-    expect(screen.getByRole("link", { name: /Call Sunita/ })).toHaveAttribute("href", "tel:9811122333");
+    expect(await screen.findByRole("heading", { name: "My complaints" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Share complaint link/ })).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Unassigned/)).not.toBeInTheDocument();
+    // Active first by default.
+    expect(screen.getAllByTestId("complaint-row").map((row) => row.dataset.number)).toEqual(["1005"]);
   });
 });

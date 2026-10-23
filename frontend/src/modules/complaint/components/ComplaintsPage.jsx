@@ -1,47 +1,96 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { Alert, Button, Empty, Result, Segmented, Spin, Switch, Tag } from "antd";
+import { useNavigate } from "react-router-dom";
+import { Alert, Button, Empty, Segmented, Spin, Tag } from "antd";
 import { usePermission } from "../../../hooks/usePermission";
-import useSessionStore from "../../../store/sessionStore";
 import { listComplaints } from "../api/complaintApi";
-import { CATEGORY_LABEL, STAFF_STATUS } from "../constants/complaint.constants";
-import { overdueText, timeAgo } from "../utils/complaintTime";
-import ComplaintDrawer from "./ComplaintDrawer";
+import { PRIORITY, STAFF_STATUS } from "../constants/complaint.constants";
+import { isVisitOverdue, timeAgo } from "../utils/complaintTime";
+import { formatDate } from "../../../utils/date.utils";
+import ShareComplaintLinkButton from "./ShareComplaintLinkButton";
 
 /**
- * `/complaints` (2026-10-22) — customer complaints (the Tickets backend). One
- * page for every role: the server decides what each person sees (admin and
- * managers: all; employees: the ones assigned to them). Three tabs in plain
- * words — Waiting, In progress, Resolved — with the overdue ones in red, the
- * same rule the server escalates on. Cards, not a table, so it reads on a
- * phone; a tap opens the complaint.
+ * `/complaints` (2026-10-23) — customer complaints from the public form.
  *
- * `/complaints/:id` opens one directly — the notification links use it.
+ * - Assigners (admin, or `complaints.assign` / `complaints.view_all`): every
+ *   complaint, unassigned ones highlighted on top, filters All / Unassigned /
+ *   Assigned / Resolved, and the "Share complaint link" button.
+ * - Everyone else: "My complaints" — what is assigned to them (the server
+ *   decides), Active / Resolved.
+ *
+ * Cards, not a table, so it reads on a phone; a tap opens `/complaints/:id`.
  */
-const TABS = [
-  { value: "waiting", label: "Waiting", statuses: ["open"] },
-  { value: "in_progress", label: "In progress", statuses: ["in_progress"] },
-  { value: "resolved", label: "Resolved", statuses: ["resolved", "closed"] },
+const ASSIGNER_FILTERS = [
+  { value: "all", label: "All", match: () => true },
+  { value: "unassigned", label: "Unassigned", match: (row) => row.status === "open" },
+  { value: "assigned", label: "Assigned", match: (row) => ["assigned", "on_the_way", "working"].includes(row.status) },
+  { value: "resolved", label: "Resolved", match: (row) => ["resolved", "closed"].includes(row.status) },
+];
+const TECHNICIAN_FILTERS = [
+  { value: "active", label: "Active", match: (row) => !["resolved", "closed"].includes(row.status) },
+  { value: "resolved", label: "Resolved", match: (row) => ["resolved", "closed"].includes(row.status) },
 ];
 
+function ComplaintRow({ row, onOpen }) {
+  const unassigned = row.status === "open";
+  const priority = PRIORITY[row.priority];
+  const overdue = isVisitOverdue(row);
+  return (
+    <li>
+      <button
+        type="button"
+        data-testid="complaint-row"
+        data-number={row.number}
+        data-unassigned={unassigned ? "true" : "false"}
+        onClick={() => onOpen(row._id)}
+        className={`flex w-full items-start justify-between gap-3 rounded-xl border bg-white p-4 text-left hover:border-brand-navy ${
+          unassigned ? "border-l-4 border-red-300 border-l-red-600 bg-red-50/40" : "border-gray-200"
+        }`}
+      >
+        <div className="min-w-0">
+          <p className="flex flex-wrap items-center gap-x-2 font-semibold">
+            <span>{row.number}</span>
+            <span>{row.customerName || row.contactName || "Customer"}</span>
+          </p>
+          <p className="text-sm text-gray-600">{row.contactPhone}</p>
+          <p className="truncate text-gray-700">{row.description}</p>
+          <p className="text-sm text-gray-500">
+            {timeAgo(row.createdAt)}
+            {row.assigneeName && ` · ${row.assigneeName}`}
+            {row.visitDate && ` · visit ${formatDate(row.visitDate)}`}
+          </p>
+          {overdue && <p className="text-sm font-semibold text-red-700">Visit date has passed</p>}
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          <Tag color={STAFF_STATUS[row.status]?.color} className="!mr-0">
+            {STAFF_STATUS[row.status]?.label}
+          </Tag>
+          {priority && (
+            <Tag color={priority.color} className="!mr-0">
+              {priority.label}
+            </Tag>
+          )}
+        </div>
+      </button>
+    </li>
+  );
+}
+
 function ComplaintsPage() {
-  const me = useSessionStore((state) => state.user);
-  const canSeeAll = usePermission("tickets", "view_all");
-  const canSeeAssigned = usePermission("tickets", "view_assigned");
+  const canAssign = usePermission("complaints", "assign");
+  const canSeeAll = usePermission("complaints", "view_all") || canAssign;
   const navigate = useNavigate();
-  const { id: openId } = useParams();
-  const [tickets, setTickets] = useState([]);
+  const filters = canSeeAll ? ASSIGNER_FILTERS : TECHNICIAN_FILTERS;
+  const [rows, setRows] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [tab, setTab] = useState("waiting");
-  const [onlyMine, setOnlyMine] = useState(false);
+  const [filter, setFilter] = useState(filters[0].value);
 
   const load = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
       const response = await listComplaints();
-      setTickets(response.data.data);
+      setRows(response.data.data);
     } catch (loadError) {
       setError(loadError);
     } finally {
@@ -50,100 +99,49 @@ function ComplaintsPage() {
   }, []);
 
   useEffect(() => {
-    if (canSeeAll || canSeeAssigned) load();
-  }, [load, canSeeAll, canSeeAssigned]);
+    load();
+  }, [load]);
 
-  const visible = useMemo(
-    () => (onlyMine ? tickets.filter((ticket) => ticket.assignedToId === me?._id) : tickets),
-    [tickets, onlyMine, me]
-  );
-
-  const counts = useMemo(
-    () => Object.fromEntries(TABS.map((t) => [t.value, visible.filter((ticket) => t.statuses.includes(ticket.status)).length])),
-    [visible]
-  );
-
-  const shown = useMemo(() => {
-    const statuses = TABS.find((t) => t.value === tab).statuses;
-    const list = visible.filter((ticket) => statuses.includes(ticket.status));
-    // Overdue first, then oldest first — the one to do next is on top.
-    return list.sort((a, b) => {
-      const overdue = Number(Boolean(overdueText(b))) - Number(Boolean(overdueText(a)));
-      return overdue || new Date(a.createdAt) - new Date(b.createdAt);
-    });
-  }, [visible, tab]);
-
-  if (!canSeeAll && !canSeeAssigned) {
-    return <Result status="403" title="No access" subTitle="You do not have access to complaints." />;
-  }
-
-  const openTicket = (id) => navigate(id ? `/complaints/${id}` : "/complaints");
+  const counts = useMemo(() => Object.fromEntries(filters.map((f) => [f.value, rows.filter(f.match).length])), [rows, filters]);
+  const shown = useMemo(() => rows.filter(filters.find((f) => f.value === filter)?.match || (() => true)), [rows, filter, filters]);
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">Complaints</h1>
-          <p className="text-gray-500">From customers' complaint links. Tap one to call the customer and update it.</p>
+          <h1 className="text-2xl font-semibold">{canSeeAll ? "Complaints" : "My complaints"}</h1>
+          <p className="text-gray-500">
+            {canSeeAll
+              ? "From the public complaint form. Assign each one to a technician."
+              : "Complaints assigned to you. Tap one to call the customer and update it."}
+          </p>
         </div>
-        {canSeeAll && (
-          <label className="flex items-center gap-2 text-sm">
-            <Switch checked={onlyMine} onChange={setOnlyMine} aria-label="Only complaints assigned to me" />
-            Only mine
-          </label>
-        )}
+        {canAssign && <ShareComplaintLinkButton />}
       </div>
 
       <Segmented
         block
         size="large"
-        value={tab}
-        onChange={setTab}
-        options={TABS.map((t) => ({ value: t.value, label: `${t.label} (${counts[t.value] ?? 0})` }))}
+        value={filter}
+        onChange={setFilter}
+        options={filters.map((f) => ({ value: f.value, label: `${f.label} (${counts[f.value] ?? 0})` }))}
       />
 
-      {error && (
-        <Alert type="error" showIcon message="Could not load complaints" action={<Button onClick={load}>Try again</Button>} />
-      )}
+      {error && <Alert type="error" showIcon message="Could not load complaints" action={<Button onClick={load}>Try again</Button>} />}
 
       {isLoading ? (
-        <div className="py-16 text-center"><Spin /></div>
+        <div className="py-16 text-center">
+          <Spin />
+        </div>
       ) : shown.length === 0 ? (
-        <Empty description={tab === "waiting" ? "Nothing waiting — all picked up." : "Nothing here."} className="py-10" />
+        <Empty description={filter === "unassigned" ? "Nothing waiting — everything is assigned." : "Nothing here."} className="py-10" />
       ) : (
         <ul className="space-y-2">
-          {shown.map((ticket) => {
-            const late = overdueText(ticket);
-            return (
-              <li key={ticket._id}>
-                <button
-                  type="button"
-                  onClick={() => openTicket(ticket._id)}
-                  className="flex w-full items-start justify-between gap-3 rounded-xl border border-gray-200 bg-white p-4 text-left hover:border-brand-navy"
-                >
-                  <div className="min-w-0">
-                    <p className="font-semibold">
-                      {ticket.number ? `${ticket.number} · ` : ""}
-                      {ticket.customerName || "Customer"}
-                    </p>
-                    <p className="truncate text-gray-600">{ticket.subject}</p>
-                    <p className="text-sm text-gray-500">
-                      {CATEGORY_LABEL[ticket.category] || "Complaint"} · {timeAgo(ticket.createdAt)}
-                      {ticket.assigneeName && ` · ${ticket.assigneeName}`}
-                    </p>
-                    {late && <p className="text-sm font-semibold text-red-700">{late}</p>}
-                  </div>
-                  <Tag color={STAFF_STATUS[ticket.status]?.color} className="shrink-0">
-                    {STAFF_STATUS[ticket.status]?.label}
-                  </Tag>
-                </button>
-              </li>
-            );
-          })}
+          {shown.map((row) => (
+            <ComplaintRow key={row._id} row={row} onOpen={(id) => navigate(`/complaints/${id}`)} />
+          ))}
         </ul>
       )}
-
-      {openId && <ComplaintDrawer ticketId={openId} onClose={() => openTicket(null)} onChanged={load} />}
     </div>
   );
 }

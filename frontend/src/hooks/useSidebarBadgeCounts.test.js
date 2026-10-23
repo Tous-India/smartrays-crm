@@ -114,14 +114,14 @@ describe("useSidebarBadgeCounts", () => {
     expect(Object.keys(result.current).sort()).toEqual(["newComplaintsCount", "newLeadsCount", "pendingLeaveCount"]);
   });
 
-  // Customer complaints (2026-10-22): routed-to-me and escalated-to-me, unread.
+  // Customer complaints (2026-10-23): new, assigned to me, updates, send-backs, reminders — unread.
   it("counts unread complaint notifications only for someone who can see complaints", async () => {
     mockCountsByType({ complaints: 2 });
 
     const { result: allowed } = renderHook(() => useSidebarBadgeCounts({ canViewLeads: false, canViewComplaints: true }));
     await advance(0);
     expect(notificationApi.listNotificationsByType).toHaveBeenCalledWith(
-      ["complaint_assigned", "complaint_escalated"],
+      ["complaint_new", "complaint_assigned", "complaint_status", "complaint_sent_back", "complaint_reminder"],
       { unreadOnly: true }
     );
     expect(allowed.current.newComplaintsCount).toBe(2);
@@ -131,7 +131,7 @@ describe("useSidebarBadgeCounts", () => {
     const { result: notAllowed } = renderHook(() => useSidebarBadgeCounts({ canViewLeads: false }));
     await advance(0);
     expect(notificationApi.listNotificationsByType).not.toHaveBeenCalledWith(
-      ["complaint_assigned", "complaint_escalated"],
+      ["complaint_new", "complaint_assigned", "complaint_status", "complaint_sent_back", "complaint_reminder"],
       expect.anything()
     );
     expect(notAllowed.current.newComplaintsCount).toBe(0);

@@ -3,7 +3,7 @@ import { EditOutlined, DeleteOutlined } from "@ant-design/icons";
 import PermissionGate from "../../../routes/PermissionGate";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import CustomerStatusToggleButton from "./CustomerStatusToggleButton";
-import ComplaintLinkButton from "../../complaint/components/ComplaintLinkButton";
+import ShareComplaintLinkButton from "../../complaint/components/ShareComplaintLinkButton";
 import { CUSTOMER_STATUS_COLORS, CUSTOMER_STATUS_LABELS } from "../constants/customer.constants";
 import { formatDate } from "../../../utils/date.utils";
 
@@ -57,8 +57,8 @@ function CustomerHeaderSection({ customer, onEdit, onDelete, onChanged }) {
 
       {/* `wrap`: Edit / Deactivate / Delete pushed the page +48px at 390. */}
       <Space wrap>
-        {/* Copy / share the customer's complaint link (2026-10-22). */}
-        <ComplaintLinkButton customerId={customer._id} customerName={customer.companyName} />
+        {/* The one public complaint link, sent to this customer (2026-10-23). */}
+        <ShareComplaintLinkButton phone={customer.phone} customerName={customer.companyName} />
         <PermissionGate module="customers" action="edit">
           <Button icon={<EditOutlined />} onClick={onEdit}>
             Edit

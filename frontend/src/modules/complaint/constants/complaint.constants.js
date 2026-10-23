@@ -1,15 +1,24 @@
-// Customer complaint link (2026-10-22). Plain words, with a short Hindi line
+// Customer complaints (2026-10-23). Plain words, with a short Hindi line
 // under the customer-facing ones — the customers are homeowners and small
 // businesses across Delhi NCR, many more at ease reading Hindi.
 
-export const COMPLAINT_CATEGORIES = [
-  { value: "technical", label: "Not working", hindi: "काम नहीं कर रहा", hint: "Panels, inverter, power", icon: "🔧" },
-  { value: "sales_billing", label: "Billing / Payment", hindi: "बिल / भुगतान", hint: "Bill, payment, quote", icon: "🧾" },
-  { value: "installation", label: "Installation", hindi: "इंस्टॉलेशन", hint: "Fitting, wiring, structure", icon: "🏗️" },
-  { value: "other", label: "Something else", hindi: "कुछ और", hint: "Anything else", icon: "💬" },
+// The public form's first choice.
+export const REQUEST_KINDS = [
+  {
+    value: "complaint",
+    label: "Complaint / problem",
+    hindi: "शिकायत / समस्या",
+    hint: "Something is not working, a bill, a question",
+    icon: "🔧",
+  },
+  {
+    value: "requirement",
+    label: "New requirement",
+    hindi: "नई ज़रूरत",
+    hint: "New installation, extra panels, an upgrade",
+    icon: "☀️",
+  },
 ];
-
-export const CATEGORY_LABEL = Object.fromEntries(COMPLAINT_CATEGORIES.map((c) => [c.value, c.label]));
 
 export const CALLBACK_TIMES = [
   { value: "morning", label: "Morning", hindi: "सुबह", detail: "9 – 12" },
@@ -20,19 +29,39 @@ export const CALLBACK_TIMES = [
 
 export const CALLBACK_LABEL = Object.fromEntries(CALLBACK_TIMES.map((t) => [t.value, `${t.label}${t.detail ? ` (${t.detail})` : ""}`]));
 
-// What the CUSTOMER sees — three words only.
-export const PUBLIC_STATUS = {
-  received: { label: "Received", hindi: "मिल गई", color: "#163b78", background: "#e8eef8" },
-  in_progress: { label: "In progress", hindi: "काम चल रहा है", color: "#9a5b00", background: "#fff4e0" },
-  resolved: { label: "Resolved", hindi: "हल हो गई", color: "#1d8343", background: "#e6f4ec" },
-};
+// What the CUSTOMER sees on the status page — five steps, in order.
+export const PUBLIC_STEPS = [
+  { value: "received", label: "Received", hindi: "मिल गई" },
+  { value: "assigned", label: "Assigned", hindi: "तकनीशियन तय" },
+  { value: "on_the_way", label: "On the way", hindi: "रास्ते में" },
+  { value: "working", label: "Working", hindi: "काम चल रहा है" },
+  { value: "resolved", label: "Resolved", hindi: "हल हो गई" },
+];
 
-// What STAFF see — the same three words; "closed" reads as Resolved.
+// What STAFF see. "open" is Received — nobody assigned yet.
 export const STAFF_STATUS = {
-  open: { label: "Waiting", color: "blue" },
-  in_progress: { label: "In progress", color: "gold" },
+  open: { label: "Not assigned", color: "red" },
+  assigned: { label: "Assigned", color: "blue" },
+  on_the_way: { label: "On the way", color: "geekblue" },
+  working: { label: "Working", color: "gold" },
   resolved: { label: "Resolved", color: "green" },
   closed: { label: "Resolved", color: "green" },
 };
+
+// The technician's steps after Assigned, in order.
+export const WORK_STEPS = [
+  { value: "on_the_way", label: "On the way" },
+  { value: "working", label: "Working" },
+  { value: "resolved", label: "Resolved" },
+];
+
+export const PRIORITIES = [
+  { value: "low", label: "Low", color: "default" },
+  { value: "medium", label: "Medium", color: "blue" },
+  { value: "high", label: "High", color: "orange" },
+  { value: "urgent", label: "Urgent", color: "red" },
+];
+
+export const PRIORITY = Object.fromEntries(PRIORITIES.map((p) => [p.value, p]));
 
 export const PHOTO_LIMITS = { maxCount: 3, maxBytes: 5 * 1024 * 1024 };

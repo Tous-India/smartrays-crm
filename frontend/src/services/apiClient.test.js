@@ -185,10 +185,11 @@ describe("non-401 responses are untouched", () => {
  * interceptor sent them to /login from every page except /login itself. That
  * made /forgot-password and /reset-password (the emailed reset link)
  * unreachable for exactly the people who need them, and would do the same to
- * a customer's complaint link (/c/:token).
+ * the public complaint form (/complaint) and its status page
+ * (/complaint/status/:token, 2026-10-23).
  */
 describe("public pages are never redirected to /login", () => {
-  it.each(["/forgot-password", "/reset-password", "/c/AbCdEfGhIjKlMnOpQrStUvWxYz012345"])(
+  it.each(["/forgot-password", "/reset-password", "/complaint", "/complaint/status/AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcde"])(
     "stays on %s when the session check says SESSION_EXPIRED",
     async (pathname) => {
       window.location.pathname = pathname;

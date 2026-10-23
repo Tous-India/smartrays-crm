@@ -33,8 +33,9 @@ export const LEAVE_NOTIFICATION_TYPES = [
   "leave_unapproved_absence",
 ];
 
-// Customer complaints (2026-10-22): a new one routed to me, or one escalated to me.
-export const COMPLAINT_NOTIFICATION_TYPES = ["complaint_assigned", "complaint_escalated"];
+// Customer complaints (2026-10-23): a new one (assigners), one assigned to me,
+// an update or a send-back (assigners), a reminder.
+export const COMPLAINT_NOTIFICATION_TYPES = ["complaint_new", "complaint_assigned", "complaint_status", "complaint_sent_back", "complaint_reminder"];
 
 /**
  * Backs the Leads/Leave/Complaints sidebar count badges (`MainLayout.jsx`) — each is

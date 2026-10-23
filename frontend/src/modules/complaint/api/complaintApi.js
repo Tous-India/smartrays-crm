@@ -1,44 +1,46 @@
 import apiClient from "../../../services/apiClient";
 
 /**
- * Complaints (2026-10-22) — the customer complaint link. Public calls (no
- * login) take the link's token; staff calls use the ticket endpoints.
+ * Customer complaints (2026-10-23) — one public form for every customer (no
+ * login) and the staff endpoints under /complaints.
  */
 
 // --- public, no login ---
-export function getPublicComplaintPage(token) {
-  return apiClient.get(`/public/complaints/${encodeURIComponent(token)}`);
+export function submitPublicComplaint(formData) {
+  return apiClient.post("/public/complaints", formData);
 }
 
-export function raisePublicComplaint(token, formData) {
-  return apiClient.post(`/public/complaints/${encodeURIComponent(token)}`, formData);
+export function getPublicComplaintStatus(token) {
+  return apiClient.get(`/public/complaints/status/${encodeURIComponent(token)}`);
 }
 
 // --- staff ---
-export function listComplaints(scope) {
-  return apiClient.get("/tickets", { params: scope ? { scope } : {} });
+export function listComplaints(filter) {
+  return apiClient.get("/complaints", { params: filter ? { filter } : {} });
 }
 
 export function getComplaint(id) {
-  return apiClient.get(`/tickets/${id}`);
+  return apiClient.get(`/complaints/${id}`);
 }
 
-export function changeComplaintStatus(id, status, comment) {
-  return apiClient.patch(`/tickets/${id}/status`, comment ? { status, comment } : { status });
+export function listComplaintAssignees() {
+  return apiClient.get("/complaints/assignees");
 }
 
-export function addComplaintComment(id, comment) {
-  return apiClient.post(`/tickets/${id}/comments`, { comment });
+export function assignComplaint(id, { assignedToId, priority, visitDate }) {
+  return apiClient.patch(`/complaints/${id}/assign`, { assignedToId, priority, visitDate });
 }
 
-export function reassignComplaint(id, assignedToId) {
-  return apiClient.patch(`/tickets/${id}/assign`, { assignedToId });
+export function changeComplaintStatus(id, status, note) {
+  return apiClient.patch(`/complaints/${id}/status`, note ? { status, note } : { status });
 }
 
-export function getComplaintLink(customerId) {
-  return apiClient.get(`/customers/${customerId}/complaint-link`);
+export function addComplaintPhoto(id, file) {
+  const form = new FormData();
+  form.append("photo", file);
+  return apiClient.post(`/complaints/${id}/photos`, form);
 }
 
-export function resetComplaintLink(customerId) {
-  return apiClient.post(`/customers/${customerId}/complaint-link/reset`);
+export function sendComplaintBack(id, reason) {
+  return apiClient.post(`/complaints/${id}/send-back`, { reason });
 }
