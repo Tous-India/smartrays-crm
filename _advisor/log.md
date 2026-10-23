@@ -322,7 +322,7 @@ Commits: `f68177d`, `d8be41a`, `edfe299`, `e7ade23`, `f08adbd`, `0d699dd`.
   | Phone reboot, app NOT opened | ✓ tracking restarted by itself ~30 s after boot |
   | Offline 6 min (airplane mode) | ✓ 3 queued pings uploaded 1 min after reconnect, original capture times kept |
   | Leave apply (employee) | ✓ |
-  | Leave approve (manager) | **gap fixed** (`3ccc0a8`… see git): the app could not approve — added Approve / Decline on the Team tab; ✓ on device |
+  | Leave approve (manager) | **gap fixed** (`0e9c2ec`): the app could not approve — added Approve / Decline on the Team tab; ✓ on device |
   | Services + subtask tick | ✓ (saved on the server) |
   | Attendance history | ✓ |
   | Payslips | ✓ empty state; after approving the LOCAL October draft, the PDF opens in the phone's viewer |
