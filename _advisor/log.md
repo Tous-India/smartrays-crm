@@ -408,6 +408,29 @@ Commits: `f68177d`, `d8be41a`, `edfe299`, `e7ade23`, `f08adbd`, `0d699dd`.
     opened — now restarts by itself (MY_PACKAGE_REPLACED), verified on the emulator.
   - Web tests: map suites 327/327; the full run has load-timeout flakes on this 7.7 GB laptop with the
     emulator up (each failing file passes alone) — full rerun with the emulator off is in item 11.
+- Item 8 — GAPS + POLISH done 20:05–20:40 (`5ffea1d`, `3be814a`, `99b79fe`, `c3053c6`, `7555150`):
+  App vs web, per role (✓ = in the app):
+  | | Employee / Sales associate | Manager | Admin |
+  |---|---|---|---|
+  | Check in/out, tracking, own status | ✓ | ✓ | (not field staff) |
+  | Services / complaints | ✓ own | ✓ team + assign | ✓ all + assign |
+  | Leave apply / approve | ✓ apply | ✓ approve/decline | ✓ |
+  | Live status, map, person's day | — | ✓ team | ✓ everyone |
+  | Today at a glance / Open live map | — | ✓ | ✓ (one tap from Home) |
+  | Notifications | ✓ NEW list + bell | ✓ | ✓ |
+  | Attendance calendar + summary | ✓ | ✓ | ✓ |
+  | Payslips | ✓ if payroll.view | hidden (server refuses) | ✓ |
+  | Leads, customers, payments, AMC, reports, exports, payroll runs, permissions, users | web only (by design) | web only | web only |
+  - Web dashboard: "Live staff" widget for admin/manager — counts + "Open live map →" lands on the Live Map
+    tab (`?tab=live-map`). Chrome 1280/390 OK.
+  - App: in-app notifications (bell with unread count on Home + list, mark read/all) — the manager's
+    "no signal / location off" alerts are visible without push. Tapping one opens Team → Live (Need
+    attention).
+  - BUG FIXED: push/notification taps navigated to a tab name from the root navigator, which React
+    Navigation ignores ("not handled by any navigator") — every push tap would have landed nowhere.
+    Now routed through MainTabs; verified on the emulator via the notifications list.
+  - App: one offline banner on every screen (shared frame); empty / error / loading states were already
+    uniform through ListState / skeletons.
 
 ### WAITING FOR OWNER
 1. Firebase: `app/android/app/google-services.json` + backend FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL /
