@@ -1023,3 +1023,54 @@ export async function createLeadFromWebsiteIntake(rawPayload) {
 
   return lead;
 }
+
+// The public complaint form's "New requirement" choice (2026-10-23).
+export const COMPLAINT_FORM_LEAD_SOURCE = "Website complaint form";
+
+const PREFERRED_TIME_LABELS = {
+  morning: "Morning",
+  afternoon: "Afternoon",
+  evening: "Evening",
+  anytime: "Any time",
+};
+
+/**
+ * A "New requirement" (new installation, extra panels…) sent through the
+ * public complaint form becomes a lead for sales, not a complaint. Owned by
+ * the longest-tenured admin, the same rule as `createLeadFromWebsiteIntake`,
+ * with the same notifications. The source is added to the editable source
+ * list on first use, so it can be filtered on like any other.
+ */
+export async function createLeadFromComplaintForm({ name, phone, address, description, callbackTime, location }) {
+  const owner = await User.findOne({ role: "admin" }).sort({ createdAt: 1 });
+  if (!owner) {
+    throw new ApiError(500, "No admin account exists to own website-submitted leads");
+  }
+
+  await LeadSource.updateOne(
+    { name: COMPLAINT_FORM_LEAD_SOURCE },
+    { $setOnInsert: { name: COMPLAINT_FORM_LEAD_SOURCE, isActive: true } },
+    { upsert: true }
+  );
+
+  const notes = [description];
+  if (callbackTime) notes.push(`Preferred time to call: ${PREFERRED_TIME_LABELS[callbackTime] || callbackTime}`);
+  if (location) notes.push(`Location: https://www.google.com/maps?q=${location.lat},${location.lng}`);
+
+  const lead = await Lead.create({
+    name,
+    phone,
+    source: COMPLAINT_FORM_LEAD_SOURCE,
+    ownerId: owner._id,
+    siteAddress: address,
+    notes: notes.join("\n"),
+  });
+
+  await createNotification(owner._id, "lead_assigned", `New requirement from the complaint form: ${lead.name}`, {
+    module: "leads",
+    id: lead._id,
+  });
+  await notifyLeadCreation(lead);
+
+  return lead;
+}

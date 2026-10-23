@@ -34,7 +34,6 @@ import {
   validateCredentialInput,
   validateCredentialUpdateInput,
 } from "./customer.validation.js";
-import { getLink as getComplaintLinkHandler, resetLink as resetComplaintLinkHandler } from "../ticket/complaintLink.controller.js";
 
 const customerRouter = Router();
 
@@ -121,11 +120,5 @@ customerRouter.post(
 );
 
 customerRouter.get("/:id/activity", authenticate, requireCustomersView, getActivity);
-
-// Customer complaint link (2026-10-22). No route-level permission: the
-// customer's owner and project manager may share it even without
-// customers.view — complaintLink.service.js checks who may.
-customerRouter.get("/:id/complaint-link", authenticate, getComplaintLinkHandler);
-customerRouter.post("/:id/complaint-link/reset", authenticate, resetComplaintLinkHandler);
 
 export default customerRouter;

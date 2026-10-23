@@ -1,81 +1,48 @@
+import crypto from "node:crypto";
 import ApiError from "../../utils/ApiError.js";
 import { uploadComplaintPhoto } from "../../services/cloudinary.service.js";
 import { createNotification } from "../notification/notification.service.js";
+import { createLeadFromComplaintForm } from "../lead/lead.service.js";
 import User from "../user/user.model.js";
-import Ticket, { COMPLAINT_CATEGORIES, CALLBACK_TIMES } from "./ticket.model.js";
+import Ticket, { CALLBACK_TIMES } from "./ticket.model.js";
 import { nextTicketNumber } from "./ticketCounter.model.js";
-import { findCustomerByComplaintToken } from "./complaintLink.service.js";
+import { findComplaintAssigners, findCustomerByPhone, firstName } from "./complaintPeople.js";
 import { kickComplaintChecks } from "./ticketEscalation.service.js";
 
 /**
- * The public complaint page behind a customer's link — no login. Everything
- * it returns is about this one customer, and nothing carries an internal id:
- * the customer's name, and their own link-raised complaints by number.
+ * The public complaint form (2026-10-23) — ONE link for every customer, no
+ * login. Replaces the per-customer links of 2026-10-22.
+ *
+ * - "Complaint / problem" → a complaint (a Ticket, source "complaint_link")
+ *   with nobody assigned; every assigner is notified (complaintPeople.js).
+ * - "New requirement" → a lead for sales (lead.service.js), not a complaint.
+ *
+ * Nothing returned carries an internal id. The customer gets the complaint
+ * number and a status token: 32 random bytes (43 base64url characters),
+ * stored only as a SHA-256 hash, the only key to the status page.
  */
 
-// One message for every way a link can be wrong (unknown, malformed,
-// customer deactivated, link reset) — it must not reveal which.
-export const INVALID_LINK_MESSAGE = "This link is not valid. Please ask Smartrays for a new link.";
-
+export const INVALID_STATUS_LINK_MESSAGE = "This status link is not valid. Please check the link, or call us.";
 export const PHOTO_LIMITS = { maxCount: 3, maxBytes: 5 * 1024 * 1024 };
+const REQUEST_KINDS = ["complaint", "requirement"];
 const DESCRIPTION_LIMITS = { min: 5, max: 1000 };
-const CONTACT_NAME_MAX = 80;
+const NAME_MAX = 80;
+const ADDRESS_LIMITS = { min: 5, max: 300 };
 // A phone number: digits with optional +, spaces, dashes or brackets, 7–15 digits.
 const PHONE_PATTERN = /^\+?[\d\s()-]+$/;
-const RECENT_COMPLAINTS_SHOWN = 10;
+const STATUS_TOKEN_BYTES = 32;
+const STATUS_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
-const CATEGORY_LABELS = {
-  sales_billing: "Sales / Billing",
-  technical: "Technical / Not working",
-  installation: "Installation",
-  other: "Other",
-};
-
-// Which person each problem type goes to first. "Other" goes to the account
-// owner — the customer's main contact at Smartrays.
-const PREFERRED_ASSIGNEE = {
-  sales_billing: "ownerId",
-  technical: "projectManagerId",
-  installation: "projectManagerId",
-  other: "ownerId",
-};
-
-// What the customer sees: three plain words, not the internal states.
+// What the customer sees: five plain steps, not the internal states.
 export function publicStatus(status) {
-  if (status === "in_progress") return "in_progress";
+  if (status === "assigned" || status === "on_the_way" || status === "working") return status;
   if (status === "resolved" || status === "closed") return "resolved";
+  if (status === "in_progress") return "working";
   return "received";
 }
 
-async function customerOrThrow(token) {
-  const customer = await findCustomerByComplaintToken(token);
-  if (!customer) {
-    throw new ApiError(404, INVALID_LINK_MESSAGE);
-  }
-  return customer;
-}
-
-/** GET /public/complaints/:token */
-export async function getComplaintPage(token) {
-  const customer = await customerOrThrow(token);
-  kickComplaintChecks();
-
-  const complaints = await Ticket.find({ customerId: customer._id, source: "complaint_link" })
-    .sort({ createdAt: -1 })
-    .limit(RECENT_COMPLAINTS_SHOWN)
-    .select("number category status createdAt updatedAt")
-    .lean();
-
-  return {
-    customerName: customer.companyName,
-    complaints: complaints.map((ticket) => ({
-      number: ticket.number,
-      category: ticket.category,
-      status: publicStatus(ticket.status),
-      raisedAt: ticket.createdAt,
-      updatedAt: ticket.updatedAt,
-    })),
-  };
+export function hashStatusToken(token) {
+  return crypto.createHash("sha256").update(token).digest("hex");
 }
 
 // Magic bytes, not the file name or the browser's claimed type.
@@ -87,43 +54,12 @@ export function detectImageType(buffer) {
   return null;
 }
 
-function validateContact({ contactName, contactPhone }) {
-  const name = typeof contactName === "string" ? contactName.trim() : "";
-  const phone = typeof contactPhone === "string" ? contactPhone.trim() : "";
-
-  if (name.length > CONTACT_NAME_MAX) {
-    throw new ApiError(400, `Please keep your name under ${CONTACT_NAME_MAX} characters.`);
-  }
-  const digits = phone.replace(/\D/g, "");
-  if (phone && (!PHONE_PATTERN.test(phone) || digits.length < 7 || digits.length > 15)) {
-    throw new ApiError(400, "Please enter a valid phone number, or leave it empty.");
-  }
-
-  return { contactName: name || null, contactPhone: phone || null };
-}
-
-function validateComplaint({ category, description, callbackTime }, files) {
-  if (!COMPLAINT_CATEGORIES.includes(category)) {
-    throw new ApiError(400, "Please choose what the problem is about.");
-  }
-
-  const text = typeof description === "string" ? description.trim() : "";
-  if (text.length < DESCRIPTION_LIMITS.min) {
-    throw new ApiError(400, "Please tell us a little more about the problem.");
-  }
-  if (text.length > DESCRIPTION_LIMITS.max) {
-    throw new ApiError(400, `Please keep the description under ${DESCRIPTION_LIMITS.max} characters.`);
-  }
-
-  if (callbackTime && !CALLBACK_TIMES.includes(callbackTime)) {
-    throw new ApiError(400, "Please choose a callback time from the list.");
-  }
-
+/** Content-checked photos, or a plain-words 400. Shared with the technician's uploads. */
+export function checkPhotos(files) {
   if (files.length > PHOTO_LIMITS.maxCount) {
     throw new ApiError(400, `You can add up to ${PHOTO_LIMITS.maxCount} photos.`);
   }
-
-  const photos = files.map((file) => {
+  return files.map((file) => {
     if (file.size > PHOTO_LIMITS.maxBytes) {
       throw new ApiError(400, "Each photo must be smaller than 5 MB.");
     }
@@ -133,73 +69,138 @@ function validateComplaint({ category, description, callbackTime }, files) {
     }
     return { buffer: file.buffer, type };
   });
-
-  return { category, description: text, callbackTime: callbackTime || null, photos };
 }
 
-async function activeUser(userId) {
-  if (!userId) return null;
-  return User.findOne({ _id: userId, isActive: true }).select("_id name role managerId");
+function text(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function parseLocation(body) {
+  if (body.lat === undefined && body.lng === undefined) return null;
+  const lat = Number(body.lat);
+  const lng = Number(body.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    throw new ApiError(400, "Your location could not be read. Please type your address instead.");
+  }
+  const accuracy = Number(body.locationAccuracy);
+  return { lat, lng, ...(Number.isFinite(accuracy) && accuracy >= 0 ? { accuracy } : {}) };
+}
+
+function validateForm(body) {
+  if (!REQUEST_KINDS.includes(body.kind)) {
+    throw new ApiError(400, "Please choose: a complaint, or a new requirement.");
+  }
+
+  const name = text(body.name);
+  if (!name) throw new ApiError(400, "Please enter your name.");
+  if (name.length > NAME_MAX) throw new ApiError(400, `Please keep your name under ${NAME_MAX} characters.`);
+
+  const phone = text(body.phone);
+  const digits = phone.replace(/\D/g, "");
+  if (!PHONE_PATTERN.test(phone) || digits.length < 7 || digits.length > 15) {
+    throw new ApiError(400, "Please enter a valid phone number.");
+  }
+
+  const address = text(body.address);
+  if (address.length < ADDRESS_LIMITS.min) throw new ApiError(400, "Please enter your address.");
+  if (address.length > ADDRESS_LIMITS.max) {
+    throw new ApiError(400, `Please keep the address under ${ADDRESS_LIMITS.max} characters.`);
+  }
+
+  const description = text(body.description);
+  if (description.length < DESCRIPTION_LIMITS.min) throw new ApiError(400, "Please tell us a little more.");
+  if (description.length > DESCRIPTION_LIMITS.max) {
+    throw new ApiError(400, `Please keep the description under ${DESCRIPTION_LIMITS.max} characters.`);
+  }
+
+  const callbackTime = body.callbackTime || null;
+  if (callbackTime && !CALLBACK_TIMES.includes(callbackTime)) {
+    throw new ApiError(400, "Please choose a time from the list.");
+  }
+
+  return { kind: body.kind, name, phone, address, description, callbackTime, location: parseLocation(body) };
+}
+
+function shorten(value, max = 60) {
+  return value.length > max ? `${value.slice(0, max - 3)}…` : value;
 }
 
 /**
- * Routing rule: the preferred person for this problem type; if they are not
- * an active user, the other of owner / project manager; if neither, the
- * first active admin. Exported for the staff UI's explanation text and tests.
+ * POST /public/complaints (multipart: kind, name, phone, address, lat?, lng?,
+ * locationAccuracy?, description, callbackTime?, photos[] — complaints only).
  */
-export async function pickAssignee(customer, category) {
-  const preferredField = PREFERRED_ASSIGNEE[category] || "ownerId";
-  const otherField = preferredField === "ownerId" ? "projectManagerId" : "ownerId";
+export async function submitPublicForm(body, files = []) {
+  const form = validateForm(body);
 
-  const preferred = await activeUser(customer[preferredField]);
-  if (preferred) return preferred;
+  if (form.kind === "requirement") {
+    await createLeadFromComplaintForm(form);
+    return { kind: "requirement" };
+  }
 
-  const other = await activeUser(customer[otherField]);
-  if (other) return other;
+  const photos = checkPhotos(files);
+  const customer = await findCustomerByPhone(form.phone);
 
-  return User.findOne({ role: "admin", isActive: true }).sort({ createdAt: 1 }).select("_id name role managerId");
-}
-
-/** POST /public/complaints/:token (multipart: category, description, callbackTime?, photos[]) */
-export async function raiseComplaint(token, body, files = []) {
-  const customer = await customerOrThrow(token);
-  const complaint = validateComplaint(body, files);
-  const contact = validateContact(body);
-
-  const assignee = await pickAssignee(customer, complaint.category);
   const uploaded = [];
-  for (const photo of complaint.photos) {
+  for (const photo of photos) {
     uploaded.push(await uploadComplaintPhoto(photo.buffer, photo.type));
   }
 
+  const statusToken = crypto.randomBytes(STATUS_TOKEN_BYTES).toString("base64url");
   const number = await nextTicketNumber();
-  const label = CATEGORY_LABELS[complaint.category];
-  const summary = complaint.description.length > 60 ? `${complaint.description.slice(0, 57)}…` : complaint.description;
+  const who = customer ? customer.companyName : form.name;
 
   const ticket = await Ticket.create({
-    subject: `${label} — ${summary}`,
-    customerId: customer._id,
-    category: complaint.category,
+    subject: shorten(form.description),
+    customerId: customer?._id ?? null,
+    category: "other",
     source: "complaint_link",
     number,
-    callbackTime: complaint.callbackTime,
-    contactName: contact.contactName,
-    contactPhone: contact.contactPhone,
-    assignedToId: assignee?._id || null,
+    callbackTime: form.callbackTime,
+    contactName: form.name,
+    contactPhone: form.phone,
+    address: form.address,
+    location: form.location,
+    statusTokenHash: hashStatusToken(statusToken),
     customerPhotos: uploaded.map(({ publicId }) => ({ publicId })),
-    history: [{ type: "comment", byCustomer: true, comment: complaint.description }],
+    history: [{ type: "comment", byCustomer: true, comment: form.description }],
   });
 
-  if (assignee) {
-    await createNotification(
-      assignee._id,
-      "complaint_assigned",
-      `Complaint ${number} from ${customer.companyName}: ${label} — ${summary}`,
-      { module: "complaints", id: ticket._id }
-    );
+  const assigners = await findComplaintAssigners();
+  const message = `New complaint ${number} from ${who}: ${shorten(form.description)}`;
+  for (const assigner of assigners) {
+    await createNotification(assigner._id, "complaint_new", message, { module: "complaints", id: ticket._id });
   }
 
   kickComplaintChecks();
 
-  return { number, status: publicStatus(ticket.status) };
+  return { kind: "complaint", number, statusToken };
+}
+
+/** GET /public/complaints/status/:token */
+export async function getPublicStatus(token) {
+  if (typeof token !== "string" || !STATUS_TOKEN_PATTERN.test(token)) {
+    throw new ApiError(404, INVALID_STATUS_LINK_MESSAGE);
+  }
+  const ticket = await Ticket.findOne({ statusTokenHash: hashStatusToken(token), source: "complaint_link" })
+    .select("number status assignedToId visitDate createdAt updatedAt resolvedAt")
+    .lean();
+  if (!ticket) {
+    throw new ApiError(404, INVALID_STATUS_LINK_MESSAGE);
+  }
+
+  kickComplaintChecks();
+
+  const status = publicStatus(ticket.status);
+  const technician =
+    status !== "received" && ticket.assignedToId ? await User.findById(ticket.assignedToId).select("name").lean() : null;
+
+  return {
+    number: ticket.number,
+    status,
+    technicianName: firstName(technician?.name),
+    visitDate: status !== "received" ? ticket.visitDate ?? null : null,
+    raisedAt: ticket.createdAt,
+    updatedAt: ticket.updatedAt,
+    resolvedAt: status === "resolved" ? ticket.resolvedAt ?? null : null,
+  };
 }

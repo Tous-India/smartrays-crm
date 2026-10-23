@@ -176,30 +176,6 @@ const customerSchema = new mongoose.Schema(
       enum: SUBSIDY_CLAIM_STATUSES,
       default: "not_applicable",
     },
-    // Customer complaint link (2026-10-22) — complaintLink.service.js. The
-    // token itself is never stored readable: a SHA-256 hash finds the
-    // customer when the link is opened, and an AES-GCM copy (the Credentials
-    // vault key) lets staff copy the same link again. Created on first
-    // request; "reset" replaces both, which kills the old link.
-    complaintLinkTokenHash: {
-      type: String,
-      default: undefined,
-      select: false,
-    },
-    complaintLinkTokenEncrypted: {
-      type: String,
-      default: undefined,
-      select: false,
-    },
-    complaintLinkTokenIv: {
-      type: String,
-      default: undefined,
-      select: false,
-    },
-    complaintLinkCreatedAt: {
-      type: Date,
-      default: null,
-    },
     // The site's map position (2026-10-22), picked on a map when a site visit
     // is assigned and reused for the next one. Optional — most customers have
     // none until their first visit.
@@ -211,11 +187,6 @@ const customerSchema = new mongoose.Schema(
   {
     timestamps: true,
   }
-);
-
-customerSchema.index(
-  { complaintLinkTokenHash: 1 },
-  { unique: true, partialFilterExpression: { complaintLinkTokenHash: { $type: "string" } } }
 );
 
 const Customer = mongoose.model("Customer", customerSchema);

@@ -42,7 +42,7 @@ router.use("/services", serviceRouter);
 // Verified site visits (2026-10-22) — built on Services.
 router.use("/visits", visitRouter);
 router.use("/tickets", ticketRouter);
-// Public, no login — the customer complaint link (2026-10-22).
+// Public, no login — the complaint form and its status page (2026-10-23).
 router.use("/public/complaints", publicComplaintRouter);
 router.use("/payments", paymentRouter);
 router.use("/amc", amcRouter);

@@ -121,7 +121,7 @@ export async function listTickets(scope, requestingUser) {
  * additive: every field the list returned before is still there, unchanged.
  */
 async function withNames(tickets) {
-  const customerIds = [...new Set(tickets.map((ticket) => String(ticket.customerId)))];
+  const customerIds = [...new Set(tickets.map((ticket) => ticket.customerId).filter(Boolean).map(String))];
   const userIds = [...new Set(tickets.map((ticket) => ticket.assignedToId).filter(Boolean).map(String))];
 
   const [customers, users] = await Promise.all([
