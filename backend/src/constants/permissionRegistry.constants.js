@@ -89,6 +89,12 @@ export const PERMISSION_REGISTRY = {
   // `sales_associate` gets none of these — the matrix marks both ticket rows
   // "–" for that role.
   tickets: ["create", "assign", "view_all", "view_assigned", "view_own"],
+  // Customer complaints (2026-10-23) — tickets from the public complaint
+  // form. `view_all` sees every complaint; `assign` hands them to a
+  // technician and receives every new complaint and its reminders. Admin
+  // only by default; grantable to anyone (e.g. an office coordinator). A
+  // technician needs neither to work the complaints assigned to them.
+  complaints: ["view_all", "assign"],
   // Added (§7.9, Phase 7). Admin only per §5's matrix — every other role is
   // "–", so no manager/sales_associate/employee/customer default exists at
   // all for this module (unlike every ownership-scoped module above).

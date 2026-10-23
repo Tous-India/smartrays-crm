@@ -43,7 +43,7 @@ export const LEVEL_LABELS = { none: "None", view: "View", edit: "Edit", full: "F
  * one module's scope differently from every other, so all five of its keys
  * render as chips instead and nothing is silently coerced.
  */
-const CAPABILITY_ONLY_MODULES = new Set(["permissions", "teams", "tickets"]);
+const CAPABILITY_ONLY_MODULES = new Set(["permissions", "teams", "tickets", "complaints"]);
 
 /**
  * Modules where scope is real behaviour but is NOT stored as a permission
@@ -73,6 +73,7 @@ export const MODULE_LABELS = {
   travelLogs: "Travel Logs",
   payroll: "Payroll",
   tickets: "Support Tickets",
+  complaints: "Customer Complaints",
   payments: "Payments",
   amc: "AMC Contracts",
   teams: "Teams",
@@ -95,6 +96,8 @@ export const CAPABILITY_LABELS = {
   "tickets.view_own": "See own tickets",
   "tickets.view_assigned": "See assigned tickets",
   "tickets.view_all": "See all tickets",
+  "complaints.view_all": "See all customer complaints",
+  "complaints.assign": "Assign complaints (gets every new complaint and reminder)",
   // Services (§7.72) — the standard ladder; scope is by role (own / own team / all).
   "services.view": "See services",
   "services.create": "Create and assign services",
