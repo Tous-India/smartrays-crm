@@ -357,6 +357,20 @@ Commits: `f68177d`, `d8be41a`, `edfe299`, `e7ade23`, `f08adbd`, `0d699dd`.
     permission events, location-off card state — each shown failing before its change).
   - Not tested on device: the manager PUSH after 15 min (needs Firebase — backend tests cover the
     notification record).
+- Item 5 — ATTENDANCE UI done 18:55–19:05 (`677f9fb`, `e095422`, `4b49993`), no rule changed:
+  - Home shift card: big Check in / Check out; "Checked in at 6:23 PM · working 0h 15m", tracking
+    status right under it.
+  - Check-in steps: Check in → Take photo → Check in (3 taps; the tracking notice only the first time).
+    Every failure has words + a fix: camera denied/blocked, location denied/blocked, poor fix, GPS timeout,
+    no internet, server refusal (server's words) — added "Turn on location" when location is off.
+  - Me → Attendance history: month calendar (present green, half day amber, absent red, on leave purple,
+    on shift blue, Sundays plain), tap a day for its records; summary = the WEB's own rule copied
+    (present + ½ half day over Mon–Sat working days so far) + hours worked.
+  - Managers/admins: "Today at a glance" on Home — On shift · Need attention · Not checked in · Checked
+    out · On leave; each opens Team → Live filtered; "Open live map" = the live map in one tap (item 8).
+  - Emulator as Sandeep (manager): glance 2/1/1/0/0, "Not checked in" → Live list with just Ritu;
+    his October calendar 18 present, 156.55 h, 90% of 20 working days. Screenshots
+    `_advisor/screenshots/attendance-ui/`. App tests 201/201.
 - Owner's away-until-Monday list, (2) + (3), 18:00–18:30:
   - App icon recreated (`a013ac2`) by `app/scripts/generate-icons.mjs` from the logo: every density,
     adaptive + round + themed monochrome, background #fbfbfa = splash, `app/store/play-icon-512.png`.
