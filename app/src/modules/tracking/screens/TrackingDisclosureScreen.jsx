@@ -29,7 +29,10 @@ import { colors, radius, spacing, typography } from "../../../theme";
  * install's device id, and cached on the device; a change to this text bumps
  * DISCLOSURE_VERSION and everyone is asked again.
  */
-function TrackingDisclosureScreen({ navigation }) {
+function TrackingDisclosureScreen({ navigation, route }) {
+  // `afterwards: "back"` (2026-10-23): opened from an OPEN shift to turn
+  // tracking on — return Home, never to the check-in camera.
+  const backToShift = route?.params?.afterwards === "back";
   const [intervalMinutes, setIntervalMinutes] = useState(null);
   const [isWorking, setIsWorking] = useState(false);
   const [notice, setNotice] = useState(null);
@@ -41,6 +44,10 @@ function TrackingDisclosureScreen({ navigation }) {
   }, []);
 
   function goToCheckIn() {
+    if (backToShift) {
+      navigation.goBack();
+      return;
+    }
     navigation.replace(SCREENS.CAPTURE, { mode: CAPTURE_MODES.CHECK_IN });
   }
 

@@ -101,7 +101,7 @@ function HomeScreen({ navigation }) {
         onCheckIn={handleCheckIn}
         onCheckOut={() => navigation.navigate(SCREENS.CAPTURE, { mode: CAPTURE_MODES.CHECK_OUT })}
         trackingState={trackingState}
-        onFixTracking={() => navigation.navigate(SCREENS.TRACKING_DISCLOSURE)}
+        onFixTracking={() => navigation.navigate(SCREENS.TRACKING_DISCLOSURE, openRecord ? { afterwards: "back" } : undefined)}
       />
 
       <ServicesDueCard
