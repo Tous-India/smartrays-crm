@@ -255,8 +255,10 @@ function ComplaintDetailScreen({ navigation, route }) {
           ) : null}
 
           <Text style={[typography.label, styles.section]}>History</Text>
+          {/* A key per entry, not the index: with index keys, a refetch that
+              added entries drew one row's text over another on Android. */}
           {record.history.map((entry, index) => (
-            <View key={index} style={styles.history}>
+            <View key={`${entry.createdAt}-${entry.type}-${index}`} style={styles.history}>
               <Text style={typography.body}>{historyText(entry)}</Text>
               <Text style={typography.small}>
                 {entry.by} · {timeAgo(entry.createdAt)}
