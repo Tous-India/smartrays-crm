@@ -119,6 +119,11 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+        // Google Maps (2026-10-23): the Android key comes from the untracked env
+        // file react-native-config reads (GOOGLE_MAPS_API_KEY in .env /
+        // .env.localtest / .env.production), never from the repo. Empty → the
+        // app shows "Map not configured" instead of a map.
+        manifestPlaceholders += [googleMapsApiKey: (project.env.get("GOOGLE_MAPS_API_KEY") ?: "")]
     }
     signingConfigs {
         debug {
@@ -140,7 +145,7 @@ android {
         debug {
             signingConfig signingConfigs.debug
             // Cleartext only to the development hosts (src/debug/res/xml).
-            manifestPlaceholders = [networkSecurityConfig: "@xml/network_security_config"]
+            manifestPlaceholders += [networkSecurityConfig: "@xml/network_security_config"]
         }
         release {
             if (hasUploadKey) {
@@ -150,7 +155,7 @@ android {
                 signingConfig signingConfigs.debug
             }
             // production: HTTPS only. localtest: also plain http to the laptop's backend.
-            manifestPlaceholders = [networkSecurityConfig: smartraysBuild == "localtest" ? "@xml/network_security_config_localtest" : "@xml/network_security_config_production"]
+            manifestPlaceholders += [networkSecurityConfig: smartraysBuild == "localtest" ? "@xml/network_security_config_localtest" : "@xml/network_security_config_production"]
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }

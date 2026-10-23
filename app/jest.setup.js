@@ -18,7 +18,7 @@ jest.mock("react-native-keychain", () => ({
   __entries: mockKeychainEntries,
 }));
 
-jest.mock("react-native-config", () => ({ API_BASE_URL: "http://test.local/api/v1", WEB_APP_URL: "https://web.test" }));
+jest.mock("react-native-config", () => ({ API_BASE_URL: "http://test.local/api/v1", WEB_APP_URL: "https://web.test", GOOGLE_MAPS_API_KEY: "test-maps-key" }));
 
 // The native safe-area provider renders nothing until the platform reports
 // insets; the package's own Jest mock supplies them.
@@ -79,17 +79,20 @@ jest.mock("react-native-bootsplash", () => ({
   default: { hide: jest.fn(async () => {}), isVisible: jest.fn(() => false) },
 }));
 
-// The map (MapLibre): plain views carrying the real props, so a test can
-// count markers and press one through its `onPress`.
-jest.mock("@maplibre/maplibre-react-native", () => {
+// The map (Google, react-native-maps — 2026-10-23): plain views carrying the
+// real props, so a test can count markers and press one through its `onPress`.
+jest.mock("react-native-maps", () => {
   const React = require("react");
   const { View } = require("react-native");
   const stub = (name) => {
-    const Component = ({ children, ...props }) => React.createElement(View, { testID: `mock-${name}`, ...props }, children);
+    const Component = React.forwardRef(({ children, ...props }, ref) => {
+      React.useImperativeHandle(ref, () => ({ fitToCoordinates: jest.fn(), animateToRegion: jest.fn() }));
+      return React.createElement(View, { testID: `mock-${name}`, ...props }, children);
+    });
     Component.displayName = name;
     return Component;
   };
-  return { __esModule: true, Map: stub("map"), Camera: stub("camera"), ViewAnnotation: stub("view-annotation"), Marker: stub("marker") };
+  return { __esModule: true, default: stub("map-view"), Marker: stub("map-marker"), PROVIDER_GOOGLE: "google" };
 });
 
 // Firebase (STEP 4): an in-memory twin of the messaging SDK. `apps` says
