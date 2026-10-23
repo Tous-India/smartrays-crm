@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import PublicShell from "./PublicShell";
 import { checkComplaintPhone, getComplaintLinkPrefill, submitPublicComplaint } from "../api/complaintApi";
 import { CALLBACK_TIMES, PHOTO_LIMITS, REQUEST_KINDS } from "../constants/complaint.constants";
@@ -26,7 +26,10 @@ import { normalizeMobile } from "../utils/phone";
 
 const INPUT = "min-h-12 w-full rounded-xl border-2 border-gray-200 bg-white px-3 text-base focus:border-brand-navy focus:outline-none";
 
-function PublicComplaintForm({ linkToken = null }) {
+function PublicComplaintForm({ linkToken: linkTokenProp = null }) {
+  // `/c/:token` passes the code in the URL; tests may pass it directly.
+  const { token } = useParams();
+  const linkToken = linkTokenProp ?? token ?? null;
   const [kind, setKind] = useState(null);
   const [prefill, setPrefill] = useState(null); // a customer's own link: { customerName, … }
   const [linkState, setLinkState] = useState(linkToken ? "loading" : "none"); // none | loading | ready | invalid | error
