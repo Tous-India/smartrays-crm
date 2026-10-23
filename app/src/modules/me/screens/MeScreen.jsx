@@ -7,9 +7,11 @@ import PrimaryButton from "../../../components/PrimaryButton";
 import { SkeletonBlock } from "../../../components/Skeleton";
 import useServerData from "../../../hooks/useServerData";
 import useSessionStore from "../../../store/sessionStore";
+import useMyPermissions, { can } from "../../../hooks/useMyPermissions";
 import { signOut } from "../../auth/session.service";
 import { getMyTeam } from "../api/meApi";
 import { SCREENS } from "../../../constants/screens.constants";
+import { roleLabel } from "../../../constants/roles.constants";
 import { messageFromError } from "../../../utils/apiError.utils";
 import { colors, spacing, typography } from "../../../theme";
 
@@ -22,6 +24,11 @@ import { colors, spacing, typography } from "../../../theme";
 function MeScreen({ navigation }) {
   const user = useSessionStore((state) => state.user);
   const team = useServerData(async () => (await getMyTeam()).data.data);
+  // Own payslips need payroll.view on the server; without it (a sales
+  // associate, a manager) the door would only lead to a refusal. Shown while
+  // the permissions are still loading.
+  const { permissions } = useMyPermissions();
+  const hasPayslips = permissions === null || can(permissions, "payroll", "view");
 
   function teamLine(pick) {
     if (team.isLoading) {
@@ -42,7 +49,7 @@ function MeScreen({ navigation }) {
       <Card testID="me-profile">
         <Text style={typography.title}>{user?.name}</Text>
         <Text style={[typography.subtitle, styles.line]}>{user?.email}</Text>
-        <Row label="Role" value={user?.role} />
+        <Row label="Role" value={roleLabel(user?.role)} />
         {user?.designation ? <Row label="Designation" value={user.designation} /> : null}
         <Row label="Department" value={teamLine((data) => data?.name)} testID="me-department" />
         <Row label="Manager" value={teamLine((data) => data?.head?.name)} testID="me-manager" />
@@ -55,13 +62,15 @@ function MeScreen({ navigation }) {
         onPress={() => navigation.navigate(SCREENS.ATTENDANCE_HISTORY)}
         testID="me-attendance-history"
       />
-      <LinkRow
-        icon="document-text-outline"
-        title="Payslips"
-        subtitle="Approved payroll runs, as PDFs"
-        onPress={() => navigation.navigate(SCREENS.PAYSLIPS)}
-        testID="me-payslips"
-      />
+      {hasPayslips ? (
+        <LinkRow
+          icon="document-text-outline"
+          title="Payslips"
+          subtitle="Approved payroll runs, as PDFs"
+          onPress={() => navigation.navigate(SCREENS.PAYSLIPS)}
+          testID="me-payslips"
+        />
+      ) : null}
 
       <PrimaryButton title="Sign out" onPress={signOut} style={styles.signOut} testID="me-sign-out" />
     </Screen>

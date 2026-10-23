@@ -22,6 +22,7 @@ import { getDisclosureAnswer } from "../../tracking/tracking.service";
 import { getOemGuidance } from "../../tracking/oem.utils";
 import * as tracking from "../../tracking/trackingAdapter";
 import { CAPTURE_MODES, SCREENS } from "../../../constants/screens.constants";
+import { roleLabel } from "../../../constants/roles.constants";
 import { TRACKING_FLAGS } from "../../../constants/tracking.constants";
 import { spacing, typography } from "../../../theme";
 
@@ -110,7 +111,7 @@ function HomeScreen({ navigation }) {
   return (
     <Screen onRefresh={refreshAll} refreshing={servicesDue.isRefreshing} testID="home-screen">
       <Text style={typography.title}>Hello, {user?.name}</Text>
-      <Text style={[typography.subtitle, styles.subtitle]}>Signed in as {user?.role}</Text>
+      <Text style={[typography.subtitle, styles.subtitle]}>Signed in as {roleLabel(user?.role)}</Text>
 
       <TodayShiftCard
         openRecord={attendance.openRecord}

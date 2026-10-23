@@ -5,6 +5,8 @@ import PayslipsScreen from "./PayslipsScreen";
 import useSessionStore from "../../../store/sessionStore";
 import { getMyTeam, listMyPayroll, openPayslip } from "../api/meApi";
 import { getMyAttendance } from "../../attendance/api/attendanceApi";
+import apiClient from "../../../api/apiClient";
+import { clearPermissionsCache } from "../../../hooks/useMyPermissions";
 import { signOut } from "../../auth/session.service";
 import { monthKey } from "../../attendance/attendance.utils";
 import { formatMonth, formatShortDate } from "../../../utils/date.utils";
@@ -33,8 +35,12 @@ function serverError(status, message) {
   return error;
 }
 
+const defaultAdapter = apiClient.defaults.adapter;
+
 beforeEach(() => {
   jest.clearAllMocks();
+  clearPermissionsCache();
+  apiClient.defaults.adapter = defaultAdapter;
   useSessionStore.getState().setSignedIn({ _id: "u1", name: "Testing User 2", email: "t2@example.com", role: "employee", designation: "Field engineer" });
 });
 
@@ -54,6 +60,21 @@ describe("MeScreen", () => {
     expect(navigation.navigate).toHaveBeenCalledWith("Payslips");
     await fireEvent.press(screen.getByTestId("me-sign-out"));
     expect(signOut).toHaveBeenCalled();
+  });
+
+  test("no payroll grant (a sales associate) → no Payslips door; the rest is the same (2026-10-23)", async () => {
+    apiClient.defaults.adapter = async (config) => ({
+      status: 200,
+      statusText: "200",
+      headers: {},
+      config,
+      data: { data: { role: "sales_associate", permissions: { leave: { view: true }, services: { view: true } } } },
+    });
+    getMyTeam.mockReturnValue(ok(null));
+    const screen = await render(<MeScreen navigation={navigation} />);
+
+    await waitFor(() => expect(screen.queryByTestId("me-payslips")).toBeNull());
+    expect(screen.getByTestId("me-attendance-history")).toBeTruthy();
   });
 
   test("no team (a manager, or nobody assigned) → dashes", async () => {

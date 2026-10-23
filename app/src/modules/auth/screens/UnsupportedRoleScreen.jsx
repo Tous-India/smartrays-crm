@@ -4,6 +4,7 @@ import BrandHeader from "../../../components/BrandHeader";
 import PrimaryButton from "../../../components/PrimaryButton";
 import useSessionStore from "../../../store/sessionStore";
 import { signOut } from "../session.service";
+import { roleLabel } from "../../../constants/roles.constants";
 import { spacing, typography } from "../../../theme";
 
 /**
@@ -22,7 +23,7 @@ function UnsupportedRoleScreen() {
       <View style={styles.body}>
         <Text style={typography.title}>This app is for field staff</Text>
         <Text style={[typography.subtitle, styles.text]}>
-          {greeting} account ({user?.role}) uses the web CRM. Employee, manager and admin accounts sign in here.
+          {greeting} account ({roleLabel(user?.role)}) uses the web CRM. Employee, sales associate, manager and admin accounts sign in here.
         </Text>
         <PrimaryButton title="Sign out" onPress={signOut} testID="unsupported-sign-out" />
       </View>

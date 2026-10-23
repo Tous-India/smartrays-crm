@@ -96,6 +96,8 @@ export function canAny(permissions, moduleName, actions) {
 /** Sign-out and tests: forget the cached answer. */
 export function clearPermissionsCache() {
   cached = null;
+  // A request still on its way belongs to whoever asked before — not to the next reader.
+  inFlight = null;
 }
 
 export default useMyPermissions;
