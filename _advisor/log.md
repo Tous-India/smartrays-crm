@@ -431,6 +431,21 @@ Commits: `f68177d`, `d8be41a`, `edfe299`, `e7ade23`, `f08adbd`, `0d699dd`.
     Now routed through MainTabs; verified on the emulator via the notifications list.
   - App: one offline banner on every screen (shared frame); empty / error / loading states were already
     uniform through ListState / skeletons.
+- Item 9 — TEST APK done 20:35–20:55 (`0ccca69`, `0b9aeee`):
+  `app/dist/smartrays-localtest-NOT-FOR-PLAY-debugkey-1.0.apk` — 66 MB (68,290,232 bytes; was 105 MB before
+  MapLibre left), all 4 CPU types, R8 on, release build, signed with the DEBUG key (no upload key here —
+  installs on any phone, NOT for the Play Store). API = http://192.168.1.8:5000/api/v1 (this laptop on Wi-Fi;
+  the phone must be on the same Wi-Fi and the backend running). API host verified inside the APK.
+  - BUG FIXED: the first build crashed at start — R8 renamed WorkManager's Room database (pulled in since
+    react-native-maps). Keep rules added; rebuilt.
+  - Tested on the emulator with Metro STOPPED: manager — Home glance 3/3/1/0/0, bell 9+, notifications list
+    with the real staff alerts, Open live map → Team Live ("Map not configured", list + counts), person's
+    day timeline; employee — login, Home "Checked in at 6:23 PM · working 2h 24m", "What the office sees",
+    tracking resumed on sign-in, attendance calendar + summary, CHECK-OUT and CHECK-IN with the camera +
+    GPS, pings uploaded with the device report, GPS off/on events sent within 1 s.
+  - Seen, not changed (owner's rules): the server recorded 0.37 h for a 6:23–8:48 PM shift; and the month
+    summary (the web's rule, copied) counts RECORDS, so a day with several shifts counts several times
+    ("21 present" in a 20-working-day month) — see WAITING FOR OWNER 5.
 
 ### WAITING FOR OWNER
 1. Firebase: `app/android/app/google-services.json` + backend FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL /
@@ -443,3 +458,7 @@ Commits: `f68177d`, `d8be41a`, `edfe299`, `e7ade23`, `f08adbd`, `0d699dd`.
    .env.localtest as GOOGLE_MAPS_API_KEY; a BROWSER key restricted to the CRM's domains ("Maps JavaScript
    API" only) → frontend/.env.local locally and VITE_GOOGLE_MAPS_API_KEY in Vercel (your go). Until then
    maps say "Map not configured".
+5. Two attendance numbers to confirm (no rule was changed): (a) Deepak's shift 6:23–8:48 PM got
+   workingHours 0.37 from the server — expected (e.g. only tracked time counts), or a bug to look at?
+   (b) The month summary (web and app, same rule) counts attendance RECORDS; with two shifts in a day that
+   day counts twice. Count DAYS instead? Your call — it changes a displayed calculation.
