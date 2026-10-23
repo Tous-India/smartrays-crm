@@ -7,34 +7,28 @@ const markerCalls = [];
 const polylineCalls = [];
 
 /**
- * `react-leaflet`'s real `MapContainer` needs an actual browser Map
- * instance (DOM measurement, tile loading) that jsdom doesn't support —
- * mocked at the module boundary here instead, the same "stub the map
- * library" approach previously used for `window.google.maps`. `Marker`/
- * `Polyline` are captured into plain arrays so tests can assert against the
- * exact props `LeafletMapView` passed them.
+ * The Maps JavaScript API cannot run in jsdom — the React wrapper is mocked
+ * at the module boundary and `Marker`/`Polyline` props are captured into
+ * plain arrays, so tests assert against exactly what `GoogleMapView` passed.
  */
-vi.mock("react-leaflet", () => ({
-  MapContainer: ({ children }) => <div data-testid="rl-map">{children}</div>,
-  TileLayer: () => null,
-  Marker: (props) => {
-    markerCalls.push(props);
-    return <div data-testid="rl-marker" />;
-  },
-  Polyline: (props) => {
-    polylineCalls.push(props);
-    return <div data-testid="rl-polyline" />;
-  },
-  Popup: ({ children }) => children,
-  // `LeafletMapView` now also re-measures the container (§7.66,
-  // `KeepMapSized`), so the stub map needs those two methods as well —
-  // without them the component throws on mount.
-  useMap: () => ({
-    fitBounds: vi.fn(),
-    invalidateSize: vi.fn(),
-    getContainer: () => document.createElement("div"),
-  }),
-}));
+vi.mock("@vis.gl/react-google-maps", async () => {
+  const React = await import("react");
+  return {
+    APIProvider: ({ children }) => children,
+    Map: ({ children }) => <div data-testid="gmap">{children}</div>,
+    Marker: React.forwardRef(function Marker(props) {
+      markerCalls.push(props);
+      return <div data-testid="gmap-marker" />;
+    }),
+    InfoWindow: ({ children }) => children,
+    Polyline: (props) => {
+      polylineCalls.push(props);
+      return <div data-testid="gmap-polyline" />;
+    },
+    useMap: () => null,
+    useMarkerRef: () => [() => {}, null],
+  };
+});
 
 vi.mock("../hooks/useLocationHistory", () => ({
   default: vi.fn(),
@@ -68,11 +62,11 @@ describe("HistoryMapView", () => {
 
     render(<HistoryMapView />);
 
-    expect(screen.getByTestId("leaflet-map-container")).toBeInTheDocument();
+    expect(screen.getByTestId("google-map-container")).toBeInTheDocument();
     expect(polylineCalls).toHaveLength(1);
-    expect(polylineCalls[0].positions).toEqual([
-      [12.9, 77.6],
-      [12.91, 77.61],
+    expect(polylineCalls[0].path).toEqual([
+      { lat: 12.9, lng: 77.6 },
+      { lat: 12.91, lng: 77.61 },
     ]);
   });
 
@@ -111,7 +105,7 @@ describe("HistoryMapView — reused for the Attendance map integration (§7.4d, 
 
     expect(useLocationHistory).toHaveBeenCalledWith({ employeeId: "emp-9", date: "2026-06-01" });
     expect(screen.queryByPlaceholderText("Select an employee")).not.toBeInTheDocument();
-    expect(screen.getByTestId("leaflet-map-container")).toBeInTheDocument();
+    expect(screen.getByTestId("google-map-container")).toBeInTheDocument();
   });
 
   it("passes deriveExtraMarkers(pings) through to the map as markers", () => {
@@ -123,8 +117,8 @@ describe("HistoryMapView — reused for the Attendance map integration (§7.4d, 
 
     expect(deriveExtraMarkers).toHaveBeenCalledWith(pings);
     expect(markerCalls).toHaveLength(1);
-    expect(markerCalls[0]).toMatchObject({ position: [1, 1], title: "Test marker" });
+    expect(markerCalls[0]).toMatchObject({ position: { lat: 1, lng: 1 }, title: "Test marker" });
     // "red" maps to a real, distinguishing fill color in the pin's SVG icon.
-    expect(markerCalls[0].icon.options.html).toContain("#e03131");
+    expect(decodeURIComponent(markerCalls[0].icon.url)).toContain("#e03131");
   });
 });

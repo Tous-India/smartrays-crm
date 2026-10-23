@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import dayjs from "dayjs";
 import { Alert, Empty, List, Spin, Tag, Tooltip, Typography } from "antd";
-import LeafletMapView from "../../../components/LeafletMapView";
+import GoogleMapView from "../../../components/GoogleMapView";
 import useLiveTrails from "../hooks/useLiveTrails";
 import useLiveStatus from "../hooks/useLiveStatus";
 import LiveStatusPanel from "./LiveStatusPanel";
@@ -21,11 +21,10 @@ const STALE_AFTER_MINUTES = 10;
  * employee on one map: their check-in point, the trail of pings since, and
  * their latest position.
  *
- * Renders through the shared `LeafletMapView` (OpenStreetMap tiles, set in constants/mapTiles.constants.js) rather
- * than a second map component, so there is exactly one `TileLayer` in the
- * app and no way for a tile source to drift. `LeafletMapView` gained an
- * additive `paths` prop for this — `HistoryMapView` plots ONE employee's
- * single polyline and could not show several at once.
+ * Renders through the shared `GoogleMapView` (Google Maps since 2026-10-23)
+ * rather than a second map component, so there is one map setup in the app.
+ * It has an additive `paths` prop for this — `HistoryMapView` plots ONE
+ * employee's single polyline and could not show several at once.
  *
  * Marker colours carry meaning, matching the app's existing semantics:
  * blue = check-in start, green = current position (fresh), red = current
@@ -219,7 +218,7 @@ function LiveTrackingMap() {
           it must not be hidden just because the map has something to draw. */}
       {unlocatable.length > 0 && <UnlocatableWarning people={unlocatable} />}
 
-      <LeafletMapView markers={markers} paths={paths} />
+      <GoogleMapView markers={markers} paths={paths} />
 
       {/* The status panel (counts, problems first, a person's day) replaces
           the old list once live status has loaded. */}

@@ -4,9 +4,9 @@ import LiveTrackingMap from "./LiveTrackingMap";
 import * as locationApi from "../api/locationApi";
 import * as attendanceApi from "../../attendance/api/attendanceApi";
 
-// The map itself is exercised by LeafletMapView's own consumers; stubbed here
-// so these tests are about what the live view DERIVES, not about Leaflet.
-vi.mock("../../../components/LeafletMapView", () => ({
+// The map itself is exercised by GoogleMapView's own consumers; stubbed here
+// so these tests are about what the live view DERIVES, not about the map.
+vi.mock("../../../components/GoogleMapView", () => ({
   default: ({ markers, paths }) => (
     <div
       data-testid="map"

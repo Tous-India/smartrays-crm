@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import dayjs from "dayjs";
 import { Alert, Empty, Segmented, Select, Spin, Tag, Typography } from "antd";
-import LeafletMapView from "../../../components/LeafletMapView";
+import GoogleMapView from "../../../components/GoogleMapView";
 import useLocationHistoryRange from "../hooks/useLocationHistoryRange";
 import useUserDirectory from "../../../hooks/useUserDirectory";
 import useSessionStore from "../../../store/sessionStore";
@@ -232,7 +232,7 @@ function LocationHistoryMap() {
         <Empty description="No location history in this range" />
       ) : (
         <>
-          <LeafletMapView
+          <GoogleMapView
             clusteredMarkers={clusteredMarkers}
             renderClusterPopup={renderPopup}
             onClusterMarkerClick={focusEmployee}

@@ -12,28 +12,7 @@ vi.mock("../../location/hooks/useLocationHistory", () => ({
   default: vi.fn(() => ({ pings: [], isLoading: false, error: null })),
 }));
 
-// `react-leaflet`'s real `MapContainer` needs an actual browser Map instance
-// (DOM measurement, tile loading) jsdom doesn't support — stubbed at the
-// module boundary, same pattern `HistoryMapView.test.jsx`/`LiveMapView.test.jsx`
-// already use (§11.6, 2026-08-04 — migrated from Google Maps to Leaflet).
-vi.mock("react-leaflet", () => ({
-  MapContainer: ({ children }) => <div data-testid="rl-map">{children}</div>,
-  TileLayer: () => null,
-  Marker: ({ children }) => <div data-testid="rl-marker">{children}</div>,
-  Polyline: () => <div data-testid="rl-polyline" />,
-  // Needed since §7.66: this record now yields check-in/check-out markers, so
-  // a Marker (and therefore its Popup) actually renders here for the first
-  // time. Previously nothing produced a marker in this test.
-  Popup: ({ children }) => <div data-testid="rl-popup">{children}</div>,
-  // `LeafletMapView` now also re-measures the container (§7.66,
-  // `KeepMapSized`), so the stub map needs those two methods as well —
-  // without them the component throws on mount.
-  useMap: () => ({
-    fitBounds: vi.fn(),
-    invalidateSize: vi.fn(),
-    getContainer: () => document.createElement("div"),
-  }),
-}));
+// The map renders through the global Google Maps stub (src/test/setup.js).
 
 const useLocationHistory = (await import("../../location/hooks/useLocationHistory")).default;
 
@@ -198,7 +177,7 @@ describe("AttendancePhotoModal", () => {
 
       await userEvent.click(screen.getByRole("button", { name: "View on Map" }));
 
-      expect(await screen.findByTestId("leaflet-map-container")).toBeInTheDocument();
+      expect(await screen.findByTestId("google-map-container")).toBeInTheDocument();
       // Locked to this record — no employee/date picker to reach for a
       // different day.
       expect(screen.queryByPlaceholderText("Select an employee")).not.toBeInTheDocument();
