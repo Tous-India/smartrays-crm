@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The TEST release build only (-PsmartraysBuild=localtest, 2026-10-23): it
+  talks to the laptop's local backend over plain http (the emulator's
+  10.0.2.2, or the laptop's Wi-Fi address from a phone). Never the Play build.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

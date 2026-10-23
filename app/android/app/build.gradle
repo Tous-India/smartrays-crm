@@ -70,7 +70,29 @@ react {
 /**
  * Set this to true to Run Proguard on Release builds to minify the Java bytecode.
  */
-def enableProguardInReleaseBuilds = false
+def enableProguardInReleaseBuilds = true
+
+/**
+ * Release builds (2026-10-23).
+ *
+ * Signing: the Play upload key, read from Gradle properties — put them in
+ * D:/Tools/gradle-home/gradle.properties (GRADLE_USER_HOME), never in the repo:
+ *   SMARTRAYS_UPLOAD_STORE_FILE, SMARTRAYS_UPLOAD_STORE_PASSWORD,
+ *   SMARTRAYS_UPLOAD_KEY_ALIAS, SMARTRAYS_UPLOAD_KEY_PASSWORD
+ * Without them a release build is signed with the DEBUG key, says so, and must
+ * never go to the Play Store.
+ *
+ * Which backend: `-PsmartraysBuild=localtest` (the laptop's local backend over
+ * plain http — testing only) or `production` (the default: HTTPS only). The
+ * API address itself comes from the env file react-native-config reads
+ * (ENVFILE=.env.localtest / .env.production) — see app/scripts/build-release.sh.
+ */
+def uploadKeyProps = ["SMARTRAYS_UPLOAD_STORE_FILE", "SMARTRAYS_UPLOAD_STORE_PASSWORD", "SMARTRAYS_UPLOAD_KEY_ALIAS", "SMARTRAYS_UPLOAD_KEY_PASSWORD"]
+def hasUploadKey = uploadKeyProps.every { project.hasProperty(it) && project.property(it) }
+def smartraysBuild = (project.findProperty("smartraysBuild") ?: "production").toString()
+if (!(smartraysBuild in ["localtest", "production"])) {
+    throw new GradleException("smartraysBuild must be localtest or production, not '${smartraysBuild}'")
+}
 
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
@@ -105,15 +127,30 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        if (hasUploadKey) {
+            release {
+                storeFile file(project.property("SMARTRAYS_UPLOAD_STORE_FILE"))
+                storePassword project.property("SMARTRAYS_UPLOAD_STORE_PASSWORD")
+                keyAlias project.property("SMARTRAYS_UPLOAD_KEY_ALIAS")
+                keyPassword project.property("SMARTRAYS_UPLOAD_KEY_PASSWORD")
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
+            // Cleartext only to the development hosts (src/debug/res/xml).
+            manifestPlaceholders = [networkSecurityConfig: "@xml/network_security_config"]
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            if (hasUploadKey) {
+                signingConfig signingConfigs.release
+            } else {
+                println "(Smartrays) No SMARTRAYS_UPLOAD_* properties — this release build is signed with the DEBUG key. NOT for the Play Store."
+                signingConfig signingConfigs.debug
+            }
+            // production: HTTPS only. localtest: also plain http to the laptop's backend.
+            manifestPlaceholders = [networkSecurityConfig: smartraysBuild == "localtest" ? "@xml/network_security_config_localtest" : "@xml/network_security_config_production"]
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }
