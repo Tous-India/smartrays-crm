@@ -2,6 +2,46 @@
 
 One section per instruction number, append-only. Format and protocol: `_advisor/README.md`.
 
+## MONDAY 2026-10-26 — READ THIS FIRST
+
+**Install on the phone:** `D:Projectssmart-rays-crmappdistsmartrays-localtest-NOT-FOR-PLAY-debugkey-1.0.apk`
+(66 MB, release build, R8 on, DEBUG-key signed = installs on any phone, NOT for Play). It talks to THIS
+laptop's backend at http://192.168.1.8:5000 — phone on the same Wi-Fi, backend running. Production build
+(not for testing with real data yet): `appdistsmartrays-production-NOT-FOR-PLAY-debugkey-1.0.apk`.
+
+**Works — and how it was tested** (emulator, release APK with Metro stopped, local backend; web in Chrome):
+- Login (employee, sales associate, manager, admin); new app icon.
+- Check-in / check-out with live photo + GPS; "Checked in at 6:23 PM · working 2h 24m".
+- Background tracking: screen off, app swiped away, reboot, app UPDATE (fixed Friday), offline queue.
+- Live status: phone sends battery/charging/network/location-on; GPS off → manager sees "Location off" in
+  seconds; employee sees "What the office sees" + fix-it button; Team → Live (counts, list problems
+  first, person's day timeline); "Today at a glance" + "Open live map" on Home; web Live Map + dashboard
+  "Live staff".
+- Notifications list + bell in the app (manager's "no signal" alerts visible without push).
+- Attendance calendar + month summary (now counting DAYS — see below); complaints; leave; services.
+- Suites: backend 1265/1265, app 212/212, web 1016 (1 known flaky file under full load, passes alone).
+
+**Doesn't work yet:**
+- Maps: "Map not configured" everywhere until the Google keys exist (lists/counts still work).
+- Push notifications: need Firebase files. Play Store build: needs the upload key.
+- The live backend doesn't have this work yet (not deployed — your go); the production APK needs it.
+- Real-phone test: not done (waiting for "phone ready").
+
+**Today's answers (owner's Monday message):**
+1. Backup — all commits on `backup/full-2026-10-23` (local HEAD = remote); main untouched.
+2. 0.37 h shift — CAUSE: the server subtracts "silent" windows >10 min (gross − connectivity gaps).
+   Deepak's phone sent nothing 18:44–20:47 IST because I had signed him out on the emulator to test as
+   other users (last ping 18:43:59, next 20:47:28). Rule worked as written; not an emulator pause.
+   LATENT ISSUE FOUND: gaps are measured from heartbeats, and the app heartbeats only after an upload —
+   so a technician in a no-signal area whose phone keeps CAPTURING fixes still loses that time.
+   PROPOSED (not done, needs your yes): when a gap closes, keep only the parts with no captured fix
+   (fixes uploaded late still prove presence); and warn before signing out during an open shift.
+3. Count DAYS — done on web + app (`0560d51`, `79dc81e`). Deepak, October: BEFORE 22 present, 100 %
+   → AFTER 19 present, 1 on leave, 86.4 % (19 of 22 working days). 23 Oct had 4 records.
+
+**WAITING FOR OWNER** (full list at the bottom of this log): Firebase files · signing key + gradle.properties ·
+Google Maps keys (Android + browser) · your yes on the gap fix (2 above) · "phone ready" · deploy go.
+
 ## Instruction #1 — Overnight build brief
 Started: 2026-10-22 17:40 IST
 Status: done 2026-10-22 19:55 IST — see FINAL REPORT at the end of this section (device testing blocked)
