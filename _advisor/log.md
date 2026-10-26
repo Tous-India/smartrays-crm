@@ -4,10 +4,20 @@ One section per instruction number, append-only. Format and protocol: `_advisor/
 
 ## MONDAY 2026-10-26 — READ THIS FIRST
 
-**Install on the phone:** `D:Projectssmart-rays-crmappdistsmartrays-localtest-NOT-FOR-PLAY-debugkey-1.0.apk`
-(66 MB, release build, R8 on, DEBUG-key signed = installs on any phone, NOT for Play). It talks to THIS
-laptop's backend at http://192.168.1.8:5000 — phone on the same Wi-Fi, backend running. Production build
-(not for testing with real data yet): `appdistsmartrays-production-NOT-FOR-PLAY-debugkey-1.0.apk`.
+**Install on the phone:** `D:Projectssmart-rays-crmappdistsmartrays-localtest-signed-1.0.apk`
+(66 MB, release build, R8 on, signed with the NEW upload key). It talks to THIS laptop's backend at
+http://192.168.1.10:5000 (the laptop's Wi-Fi address changed from .8 to .10 over the weekend — if it changes
+again, edit app/.env.localtest and re-run `scripts/build-release.sh localtest`). Phone on the same Wi-Fi,
+backend running. Production build: `appdistsmartrays-production-signed-1.0.apk` (live backend, HTTPS only).
+
+**New upload key (owner's go, 2026-10-26):** the old key could not be found, so a NEW one was created —
+`D:Toolskeyssmartrays-upload.jks` (outside the repo), alias `smartrays-upload`, valid to 2054;
+the four SMARTRAYS_UPLOAD_* properties are in `D:Toolsgradle-homegradle.properties`; the password is in
+`D:ToolskeysPASSWORD-MOVE-THIS.txt` — move it AND a copy of the .jks to a safe place, then delete the
+text file. Upload key SHA-1 `6E:01:75:8E:04:92:A1:86:CF:DF:13:F5:C2:62:FA:73:3A:6D:45:4F`, SHA-256
+`59:CE:86:E0:9C:B1:5A:27:B7:E6:A9:63:1C:EE:27:F5:AB:BD:B0:8E:40:6D:DB:FD:AF:EA:C6:B2:C7:69:21:52`.
+Both APKs verified with apksigner. Old debug-key APKs deleted. A phone that has a debug-key build must
+UNINSTALL it first (different signature).
 
 **Works — and how it was tested** (emulator, release APK with Metro stopped, local backend; web in Chrome):
 - Login (employee, sales associate, manager, admin); new app icon.
@@ -23,7 +33,7 @@ laptop's backend at http://192.168.1.8:5000 — phone on the same Wi-Fi, backend
 
 **Doesn't work yet:**
 - Maps: "Map not configured" everywhere until the Google keys exist (lists/counts still work).
-- Push notifications: need Firebase files. Play Store build: needs the upload key.
+- Push notifications: need Firebase files.
 - The live backend doesn't have this work yet (not deployed — your go); the production APK needs it.
 - Real-phone test: not done (waiting for "phone ready").
 
@@ -39,7 +49,7 @@ laptop's backend at http://192.168.1.8:5000 — phone on the same Wi-Fi, backend
 3. Count DAYS — done on web + app (`0560d51`, `79dc81e`). Deepak, October: BEFORE 22 present, 100 %
    → AFTER 19 present, 1 on leave, 86.4 % (19 of 22 working days). 23 Oct had 4 records.
 
-**WAITING FOR OWNER** (full list at the bottom of this log): Firebase files · signing key + gradle.properties ·
+**WAITING FOR OWNER** (full list at the bottom of this log): Firebase files · move the key password ·
 Google Maps keys (Android + browser) · your yes on the gap fix (2 above) · "phone ready" · deploy go.
 
 ## Instruction #1 — Overnight build brief
