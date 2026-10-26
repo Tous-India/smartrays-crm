@@ -508,6 +508,19 @@ Commits: `f68177d`, `d8be41a`, `edfe299`, `e7ade23`, `f08adbd`, `0d699dd`.
   - Heads-up: the live backend does not have today's endpoints yet (live status, timeline, status events,
     complaints redesign…) until the backend is deployed (your go) — until then those parts of this APK
     would show errors against the live server.
+- Item 11 — DEPLOY READINESS REPORT (2026-10-26, NOT deployed): `_advisor/deploy-readiness-2026-10-26.md` —
+  ready to deploy on your go: backend 1265/1265, app 212/212, web 1016 (one known flaky file); no new required
+  env vars; 2 new daily crons on existing secrets (check the plan's cron limit); DB changes additive only (no
+  migration); order backend → web → production APK.
+
+### FINAL — MASTER BRIEF (2026-10-26)
+All 11 items done: 1 suites + screenshots · 2 complaint company-name rule · 3 phase-2 device tests ·
+4 live employee status (backend, web, app, native) · 5 attendance UI · 6 sales associates · 7 Google Maps
+(app + web, "Map not configured" until keys) · 8 gaps + polish (notifications, dashboard live staff, offline
+banner, push-tap fix) · 9 TEST APK · 10 PRODUCTION APK (now signed with the new upload key) · 11 readiness
+report. Bugs found and fixed along the way: tracking dead after an app update, release crash (R8 + WorkManager),
+push taps landing nowhere, invisible map markers, a date-rule violation. Open: the connectivity-gap payroll fix
+(your yes), keys/Firebase, real-phone test, deploy.
 
 ### WAITING FOR OWNER
 1. Firebase: `app/android/app/google-services.json` + backend FIREBASE_PROJECT_ID / FIREBASE_CLIENT_EMAIL /
