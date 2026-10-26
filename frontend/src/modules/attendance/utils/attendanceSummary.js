@@ -30,10 +30,8 @@ const WEEKLY_OFF_DAYS = [0]; // 0 = Sunday
 export function computeAttendanceSummary(records, { from, to, peopleCount = 1, now = dayjs() }) {
   const counts = { present: 0, absent: 0, half_day: 0, on_leave: 0 };
 
-  records.forEach((record) => {
-    if (COUNTABLE_STATUSES.includes(record.status)) {
-      counts[record.status] += 1;
-    }
+  dayStatuses(records).forEach((status) => {
+    counts[status] += 1;
   });
 
   const workingDays = countWorkingDays(dayjs(from), dayjs(to), dayjs(now));
@@ -43,6 +41,35 @@ export function computeAttendanceSummary(records, { from, to, peopleCount = 1, n
     expectedDays > 0 ? Math.min(100, Math.round((attendedDays / expectedDays) * 1000) / 10) : null;
 
   return { ...counts, workingDays, peopleCount, expectedDays, attendedDays, attendanceRate };
+}
+
+// When one person has several records on one day, the day counts once, as its
+// best outcome.
+const DAY_RANK = ["present", "half_day", "on_leave", "absent"];
+
+/**
+ * One status per person per DAY (2026-10-26, owner's decision): two shifts on
+ * the same day are one present day, not two — counting records had shown
+ * "21 present" in a 20-working-day month. Records without a date (or an
+ * employee) cannot be grouped and count as their own day, as before.
+ */
+function dayStatuses(records) {
+  const byDay = new Map();
+
+  records.forEach((record, index) => {
+    if (!COUNTABLE_STATUSES.includes(record.status)) {
+      return;
+    }
+
+    const key = record.date ? `${record.employeeId ?? ""}|${dayjs(record.date).format("YYYY-MM-DD")}` : `#${index}`;
+    const current = byDay.get(key);
+
+    if (!current || DAY_RANK.indexOf(record.status) < DAY_RANK.indexOf(current)) {
+      byDay.set(key, record.status);
+    }
+  });
+
+  return [...byDay.values()];
 }
 
 /** Working days from `from` to `to` (inclusive), counting only days up to today. */

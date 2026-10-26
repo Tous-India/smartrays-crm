@@ -17,6 +17,29 @@ describe("computeAttendanceSummary", () => {
     expect(summary).toMatchObject({ present: 2, absent: 1, half_day: 1, on_leave: 1 });
   });
 
+  it("counts DAYS, not records (2026-10-26, owner): two shifts on one day are one present day", () => {
+    const records = [
+      { employeeId: "e1", date: "2026-06-01T18:30:00.000Z", status: "present", workingHours: 3 },
+      { employeeId: "e1", date: "2026-06-01T18:30:00.000Z", status: "present", workingHours: 2 },
+      { employeeId: "e1", date: "2026-06-02T18:30:00.000Z", status: "half_day", workingHours: 4 },
+      // The same day for someone else is their own day.
+      { employeeId: "e2", date: "2026-06-01T18:30:00.000Z", status: "present", workingHours: 8 },
+    ];
+
+    const summary = computeAttendanceSummary(records, { ...JUNE_2026, peopleCount: 2, now: AFTER_JUNE });
+
+    expect(summary).toMatchObject({ present: 2, half_day: 1, attendedDays: 2.5 });
+  });
+
+  it("a day with a present shift and an absent mark counts once, as present", () => {
+    const records = [
+      { employeeId: "e1", date: "2026-06-03T18:30:00.000Z", status: "absent" },
+      { employeeId: "e1", date: "2026-06-03T18:30:00.000Z", status: "present" },
+    ];
+
+    expect(computeAttendanceSummary(records, { ...JUNE_2026, peopleCount: 1, now: AFTER_JUNE })).toMatchObject({ present: 1, absent: 0 });
+  });
+
   it("counts Monday to Saturday as working days (June 2026 has 26)", () => {
     const summary = computeAttendanceSummary([], { ...JUNE_2026, peopleCount: 1, now: AFTER_JUNE });
 
