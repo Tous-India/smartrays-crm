@@ -17,6 +17,14 @@ describe("computeAttendanceSummary (same rule as the web)", () => {
     expect(summary.hours).toBe(27.75);
   });
 
+  test("counts DAYS, not records (2026-10-26, owner): two shifts on one day are one present day; hours still add up", () => {
+    const records = [at(1, "present", 3), at(1, "present", 2), at(2, "half_day", 4), { ...at(3, "absent"), _id: "x" }, { ...at(3, "present", 1), _id: "y" }];
+    const summary = computeAttendanceSummary(records, { from: new Date(2026, 9, 1), to: new Date(2026, 9, 31), now: new Date(2026, 9, 10, 12) });
+
+    expect(summary).toMatchObject({ present: 2, half_day: 1, absent: 0, attendedDays: 2.5 });
+    expect(summary.hours).toBe(10);
+  });
+
   test("no working day yet → no rate; never above 100", () => {
     expect(computeAttendanceSummary([], { from: new Date(2026, 10, 1), to: new Date(2026, 10, 30), now: new Date(2026, 9, 20) }).attendanceRate).toBeNull();
     const many = [1, 2, 3].map((day) => at(day, "present"));

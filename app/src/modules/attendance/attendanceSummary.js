@@ -4,12 +4,14 @@
 // frontend/src/modules/attendance/utils/attendanceSummary.js:
 //   attended days = present + ½ × half_day
 //   rate          = attended ÷ Monday–Saturday working days that have happened
+//   counted per person per DAY (2026-10-26, owner) — not per record
 // Change both together. Nothing here decides a status: every day's colour is
 // the status the server gave its record.
 
 const COUNTABLE_STATUSES = ["present", "absent", "half_day", "on_leave"];
 // Sunday is the weekly off (the web's WEEKLY_OFF_DAYS).
 const WEEKLY_OFF_DAYS = [0];
+const DAY_RANK = ["present", "half_day", "on_leave", "absent"];
 const INDIA_OFFSET_MS = 330 * 60 * 1000;
 
 function startOfLocalDay(date) {
@@ -34,13 +36,24 @@ export function computeAttendanceSummary(records, { from, to, peopleCount = 1, n
   const counts = { present: 0, absent: 0, half_day: 0, on_leave: 0 };
   let hours = 0;
 
-  records.forEach((record) => {
+  // One status per person per DAY (2026-10-26, owner's decision — same as the
+  // web): several shifts on a day count once, as the day's best outcome.
+  // Hours still add up across every shift.
+  const byDay = new Map();
+  records.forEach((record, index) => {
     if (COUNTABLE_STATUSES.includes(record.status)) {
-      counts[record.status] += 1;
+      const key = record.date ? `${record.employeeId ?? ""}|${indiaDate(record.date).join("-")}` : `#${index}`;
+      const current = byDay.get(key);
+      if (!current || DAY_RANK.indexOf(record.status) < DAY_RANK.indexOf(current)) {
+        byDay.set(key, record.status);
+      }
     }
     if (typeof record.workingHours === "number") {
       hours += record.workingHours;
     }
+  });
+  byDay.forEach((status) => {
+    counts[status] += 1;
   });
 
   const workingDays = countWorkingDays(from, to, now);
